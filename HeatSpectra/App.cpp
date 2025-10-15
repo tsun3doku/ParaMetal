@@ -1,5 +1,12 @@
-#define GLFW_INCLUDE_VULKAN                       
-#include <GLFW/glfw3.h>                                                   
+#ifdef _WIN32
+#define VK_USE_PLATFORM_WIN32_KHR
+#include <Windows.h>
+#endif
+
+#include <vulkan/vulkan.h>
+
+#include "VulkanWindow.h"
+#include "App.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -9,16 +16,15 @@
 
 #include "Camera.hpp"
 #include "Model.hpp"
+#include "VulkanDevice.hpp"
+#include "MemoryAllocator.hpp"
 #include "UniformBufferManager.hpp"
-
-#include "HeatSystem.hpp"
 #include "ResourceManager.hpp"
+#include "HeatSystem.hpp"
 #include "DeferredRenderer.hpp"
 #include "GBuffer.hpp"
-
 #include "VulkanImage.hpp"
 #include "CommandBufferManager.hpp"
-#include "MemoryAllocator.hpp"
 
 #include <iostream>
 #include <fstream>
@@ -50,7 +56,7 @@ const bool enableValidationLayers = false;
 const bool enableValidationLayers = true;
 #endif
 
-VkResult static CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
+static VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
     const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger) {
     auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
     if (func != nullptr) {
@@ -61,129 +67,173 @@ VkResult static CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugU
     }
 }
 
-void static DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator) {
+static void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator) {
     auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
     if (func != nullptr) {
         func(instance, debugMessenger, pAllocator);
     }
 }
 
-class App {
-public:
-    App() {}
-    void run() {
-        initWindow();
-        initVulkan();
-        mainLoop();
-        cleanup();
+static void scrollCallback(void* userPtr, double xOffset, double yOffset) {
+    auto* app = static_cast<App*>(userPtr);
+    app->handleScrollInput(xOffset, yOffset);
+}
+
+static void keyCallback(void* userPtr, Qt::Key key, bool pressed) {
+    auto* app = static_cast<App*>(userPtr);
+    app->handleKeyInput(key, pressed);
+}
+
+App::App() : wireframeEnabled(false), commonSubdivisionEnabled(false), 
+             currentFrame(0), frameRate(240), mouseX(0.0), mouseY(0.0),
+             isShuttingDown(false), isCameraUpdated(false), 
+             edgeSelectionRequested(false), isOperating(false) {}
+
+App::~App() = default;
+
+void App::handleScrollInput(double xOffset, double yOffset) {
+    camera.processMouseScroll(xOffset, yOffset);
+}
+
+void App::handleKeyInput(Qt::Key key, bool pressed) {
+    // Only handle key press, not release
+    if (!pressed) 
+        return;
+    
+    // H = Toggle wireframe
+    if (key == Qt::Key_H) {
+        wireframeEnabled = !wireframeEnabled;
     }
-
-private:
-    GLFWwindow* window{};
-
-    VkInstance instance{};
-    VkDebugUtilsMessengerEXT debugMessenger{};
-    VkSurfaceKHR surface{};
-
-    VulkanDevice vulkanDevice;
-    std::unique_ptr<MemoryAllocator> memoryAllocator;
-    std::unique_ptr<ResourceManager> resourceManager;
-    std::unique_ptr<UniformBufferManager> uniformBufferManager;
-
-    VkSwapchainKHR swapChain{};
-    std::vector<VkImage> swapChainImages;
-    VkFormat swapChainImageFormat{};
-    VkExtent2D swapChainExtent{};
-    std::vector<VkImageView> swapChainImageViews;
-
-    //HDR hdr;
-    std::unique_ptr<DeferredRenderer> deferredRenderer;
-    std::unique_ptr<GBuffer> gbuffer;
-
-    std::vector<VkSemaphore> imageAvailableSemaphores;
-    std::vector<VkSemaphore> renderFinishedSemaphores;
-    std::vector<VkSemaphore> computeFinishedSemaphores;
-    std::vector<VkFence> inFlightFences;
-    uint32_t currentFrame = 0;
-    uint32_t frameRate = 240;
-
-    std::unique_ptr<HeatSystem> heatSystem;
-    Camera camera;
-    glm::vec3 center;
-
-    double mouseX = 0.0, mouseY = 0.0;
-    bool framebufferResized = false;
-    bool wireframeEnabled = false;
-    bool commonSubdivisionEnabled = false;
-
-    std::atomic<bool> isCameraUpdated{
-        false
-    };
-    std::atomic<bool> edgeSelectionRequested{ 
-        false 
-    };
-
-    void initWindow() {
-        glfwInit();
-
-        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        glfwSwapInterval(0);
-
-        window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
-        glfwSetWindowUserPointer(window, this);
-        glfwSetScrollCallback(window, scroll_callback);
-        glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
-        glfwSetKeyCallback(window, key_callback);
-
+    // C = Toggle common subdivision
+    else if (key == Qt::Key_C) {
+        commonSubdivisionEnabled = !commonSubdivisionEnabled;
     }
-
-    static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
-        auto app = reinterpret_cast<App*>(glfwGetWindowUserPointer(window));
-        app->framebufferResized = true;
-
-        WIDTH = width;
-        HEIGHT = height;
+    // Space = Toggle heat simulation
+    else if (key == Qt::Key_Space) {
+        toggleHeatSystem();
     }
-    static void scroll_callback(GLFWwindow* window, double xOffset, double yOffset) {
-        auto app = reinterpret_cast<App*>(glfwGetWindowUserPointer(window));
-        app->camera.processMouseScroll(xOffset, yOffset);
+    // R = Reset simulation
+    else if (key == Qt::Key_R) {
+        resetHeatSystem();
     }
+}
 
-    static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-        auto app = reinterpret_cast<App*>(glfwGetWindowUserPointer(window));
-        if (key == GLFW_KEY_H && action == GLFW_PRESS) {
-            app->wireframeEnabled = !app->wireframeEnabled;
-        }
-        if (key == GLFW_KEY_C && action == GLFW_PRESS) {
-            app->commonSubdivisionEnabled = !app->commonSubdivisionEnabled;
-        }
-        // Toggle simulation
-        if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
-            bool newState = !app->heatSystem->getIsActive();
-            app->heatSystem->setActive(newState);
-        }
-        // Reset simulation
-        if (key == GLFW_KEY_R && action == GLFW_PRESS && (mods & GLFW_MOD_CONTROL)) {
-            app->heatSystem->requestReset();
-        }
+bool App::isHeatSystemActive() const {
+    if (heatSystem) {
+        return heatSystem->getIsActive();
     }
+    return false;
+}
 
-    void initCore() {
-        createInstance();
-        setupDebugMessenger();
-        createSurface();
-        vulkanDevice.init(instance, surface, deviceExtensions, validationLayers, enableValidationLayers);
-        memoryAllocator = std::make_unique<MemoryAllocator>(vulkanDevice);
+void App::toggleHeatSystem() {
+    if (heatSystem) {
+        bool newState = !heatSystem->getIsActive();
+        heatSystem->setActive(newState);
     }
+}
 
-    void initSwapChain() {
-        createSwapChain();
-        createImageViews();
+void App::resetHeatSystem() {
+    if (heatSystem) {
+        heatSystem->requestReset();
     }
+}
 
-    void initRenderResources() {
-        // Create DeferredRenderer first since it owns render pass and image views
-        deferredRenderer = std::make_unique<DeferredRenderer>(
+void App::performRemeshing(int iterations) {
+    if (!resourceManager) {
+        return;
+    }
+        
+    // Flag render thread to pause
+    isOperating.store(true, std::memory_order_release);    
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    
+    // Wait for all frames to finish
+    for (size_t i = 0; i < MAXFRAMESINFLIGHT; i++) {
+        vkWaitForFences(vulkanDevice.getDevice(), 1, &inFlightFences[i], VK_TRUE, UINT64_MAX);
+    }
+    
+    // Wait for GPU calls to finish before modifying buffers
+    vkDeviceWaitIdle(vulkanDevice.getDevice());
+    
+    resourceManager->performRemeshing(iterations);
+    
+    // Resume rendering
+    isOperating.store(false, std::memory_order_release);   
+}
+
+void App::loadModel(const std::string& modelPath) {
+    if (!resourceManager) {
+        return;
+    }
+    
+    std::cout << "[App] Loading new model: " << modelPath << std::endl;
+    
+    // Flag render thread to pause
+    isOperating.store(true, std::memory_order_release);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    
+    // Wait for all frames to finish
+    for (size_t i = 0; i < MAXFRAMESINFLIGHT; i++) {
+        vkWaitForFences(vulkanDevice.getDevice(), 1, &inFlightFences[i], VK_TRUE, UINT64_MAX);
+    }
+    
+    // Wait for GPU calls to finish before modifying buffers
+    vkDeviceWaitIdle(vulkanDevice.getDevice());
+    
+    // Reload models with new path
+    resourceManager->reloadModels(modelPath);
+    
+    if (heatSystem) {
+        // Recreate heat system for new model geometry
+        std::cout << "[App] Recreating heat system for new model..." << std::endl;
+        heatSystem->cleanupResources(vulkanDevice);
+        heatSystem->cleanup(vulkanDevice);
+        heatSystem.reset();
+
+        heatSystem = std::make_unique<HeatSystem>(
+            vulkanDevice,
+            *memoryAllocator,
+            *resourceManager,
+            *uniformBufferManager,
+            MAXFRAMESINFLIGHT
+        );
+    }
+    
+    // Update camera to look at new model center
+    center = resourceManager->getSimModel().getBoundingBoxCenter();
+    camera.setLookAt(center);
+    isCameraUpdated.store(true, std::memory_order_release);
+    
+    // Resume rendering
+    isOperating.store(false, std::memory_order_release);
+    
+    std::cout << "[App] Model loaded successfully" << std::endl;
+}
+
+void App::run(VulkanWindow* qtWindow) {
+    window = qtWindow;
+    setupCallbacks();
+    initVulkan();
+    mainLoop();
+    cleanup();
+}
+
+void App::initCore() {
+    createInstance();
+    setupDebugMessenger();
+    createSurface();
+    vulkanDevice.init(instance, surface, deviceExtensions, validationLayers, enableValidationLayers);
+    memoryAllocator = std::make_unique<MemoryAllocator>(vulkanDevice);
+}
+
+void App::initSwapChain() {
+    createSwapChain();
+    createImageViews();
+}
+
+void App::initRenderResources() {
+    // Create DeferredRenderer first since it owns render pass and image views
+    deferredRenderer = std::make_unique<DeferredRenderer>(
             vulkanDevice,
             swapChainImageFormat,
             swapChainExtent,
@@ -239,7 +289,14 @@ private:
         camera.setLookAt(center);
     }
 
-    void initVulkan() {
+void App::setupCallbacks() {
+    // Set up scroll callback for camera zoom
+    window->setScrollCallback(scrollCallback, this);
+    // Set up key callback for controls
+    window->setKeyCallback(keyCallback, this);
+}
+
+void App::initVulkan() {
         std::cout << "Initializing Vulkan..." << std::endl;
         initCore();
         initSwapChain();
@@ -247,37 +304,60 @@ private:
         createSyncObjects();
     }
 
-    void mainLoop() {
+void App::mainLoop() {
         std::thread renderThread(&App::renderLoop, this);
         auto lastTime = std::chrono::high_resolution_clock::now();
-        while (!glfwWindowShouldClose(window)) {
+        
+        while (!window->shouldClose()) {
             auto currentTime = std::chrono::high_resolution_clock::now();
             float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
             lastTime = currentTime;
 
-            glfwPollEvents();
-            camera.processKeyInput(window, deltaTime);
-            camera.processMouseMovement(window);
+            // Get input state from Qt window
+            bool wPressed = window->isKeyPressed(Qt::Key_W);
+            bool sPressed = window->isKeyPressed(Qt::Key_S);
+            bool aPressed = window->isKeyPressed(Qt::Key_A);
+            bool dPressed = window->isKeyPressed(Qt::Key_D);
+            bool qPressed = window->isKeyPressed(Qt::Key_Q);
+            bool ePressed = window->isKeyPressed(Qt::Key_E);
+            bool shiftPressed = window->isKeyPressed(Qt::Key_Shift);
+            
+            camera.processKeyInput(wPressed, sPressed, aPressed, dPressed, 
+                                  qPressed, ePressed, shiftPressed, deltaTime);
+            
+            // Get mouse state
+            bool middleButton = window->isMiddleButtonPressed();
+            double mouseX, mouseY;
+            window->getMousePosition(mouseX, mouseY);
+            camera.processMouseMovement(middleButton, mouseX, mouseY);
+            
             isCameraUpdated.store(true, std::memory_order_release);
         }
+        
+        // Set App's shutdown flag to true if Qt's window is closing
+        isShuttingDown = true;
         renderThread.join();
     }
 
-    void renderLoop() {
+void App::renderLoop() {
         const double targetFrameTime = 1.0 / frameRate;
         auto lastFrameTime = std::chrono::high_resolution_clock::now();
         int frameCount = 0;
 
-        while (!glfwWindowShouldClose(window)) {
+        while (!window->shouldClose() && !isShuttingDown) {
+            // Skip rendering if remeshing is in progress
+            if (isOperating.load(std::memory_order_acquire)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
+            
             if (isCameraUpdated.load(std::memory_order_acquire)) {
                 float deltaTime = std::chrono::duration<float>(
                     std::chrono::high_resolution_clock::now() - lastFrameTime).count();
                 camera.update(deltaTime);
                 isCameraUpdated.store(false, std::memory_order_release);
             }
-            //if (edgeSelectionRequested.exchange(false, std::memory_order_acq_rel)) {
-            //    resourceManager->getSimModel().handleEdgeSelection(camera, static_cast<int>(mouseX), static_cast<int>(HEIGHT - mouseY), WIDTH, HEIGHT);
-            //}
+            
             drawFrame();
 
             while (std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - lastFrameTime).count() < targetFrameTime) {
@@ -295,13 +375,13 @@ private:
         vkDeviceWaitIdle(vulkanDevice.getDevice());
     }
 
-    void cleanupSwapChain() {
-        vkDeviceWaitIdle(vulkanDevice.getDevice());
+void App::cleanupSwapChain() {
+    vkDeviceWaitIdle(vulkanDevice.getDevice());
 
-        gbuffer->cleanupFramebuffers(vulkanDevice, MAXFRAMESINFLIGHT);
-        deferredRenderer->cleanupImages(vulkanDevice, MAXFRAMESINFLIGHT);
+    gbuffer->cleanupFramebuffers(vulkanDevice, MAXFRAMESINFLIGHT);
+    deferredRenderer->cleanupImages(vulkanDevice, MAXFRAMESINFLIGHT);
 
-        gbuffer->freeCommandBuffers(vulkanDevice);
+    gbuffer->freeCommandBuffers(vulkanDevice);
 
         for (auto imageView : swapChainImageViews) {
             vkDestroyImageView(vulkanDevice.getDevice(), imageView, nullptr);
@@ -311,15 +391,27 @@ private:
         vkDestroySwapchainKHR(vulkanDevice.getDevice(), swapChain, nullptr);
     }
 
-    void recreateSwapChain() {
-        int width = 0, height = 0;
-        glfwGetFramebufferSize(window, &width, &height);
+void App::recreateSwapChain() {
+        // Dont recreate swapchain on shutdown
+        if (isShuttingDown)
+            return;
+            
+        int width = window->width();
+        int height = window->height();
+        
+        // Set minimum window size 
+        if (width < 32 || height < 32) {
+            return;
+        }
+        
+        // Wait for valid window size 
         while (width == 0 || height == 0) {
-            if (glfwWindowShouldClose(window))
+            if (window->shouldClose())
                 return;
-            glfwWaitEvents();
-            glfwGetFramebufferSize(window, &width, &height);
-
+            // Qt handles events automatically, just sleep briefly
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            width = window->width();
+            height = window->height();
         }
 
         vkDeviceWaitIdle(vulkanDevice.getDevice());
@@ -354,23 +446,23 @@ private:
         currentFrame = 0;
     }
 
-    void cleanupRenderResources() {
+void App::cleanupRenderResources() {
         deferredRenderer->cleanup(vulkanDevice);
         gbuffer->cleanup(vulkanDevice, MAXFRAMESINFLIGHT);
-        uniformBufferManager->cleanup(MAXFRAMESINFLIGHT);
+        uniformBufferManager->cleanup(MAXFRAMESINFLIGHT);      
         heatSystem->cleanupResources(vulkanDevice);
-        heatSystem->cleanup(vulkanDevice);
+        heatSystem->cleanup(vulkanDevice);    
+}
+
+void App::cleanupTextures() {
+
     }
 
-    void cleanupTextures() {
-
-    }
-
-    void cleanupScene() {
+void App::cleanupScene() {
         resourceManager->cleanup();
     }
 
-    void cleanupSyncObjects() {
+void App::cleanupSyncObjects() {
         for (size_t i = 0; i < MAXFRAMESINFLIGHT; i++) {
             vkDestroySemaphore(vulkanDevice.getDevice(), renderFinishedSemaphores[i], nullptr);
             vkDestroySemaphore(vulkanDevice.getDevice(), imageAvailableSemaphores[i], nullptr);
@@ -379,7 +471,7 @@ private:
         }
     }
 
-    void cleanupCore() {
+void App::cleanupCore() {
         vulkanDevice.cleanup();
         if (enableValidationLayers) {
             DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
@@ -388,20 +480,18 @@ private:
         vkDestroyInstance(instance, nullptr);
     }
 
-    void cleanup() {
+void App::cleanup() {
+        vkDeviceWaitIdle(vulkanDevice.getDevice());
         cleanupSwapChain();
         cleanupRenderResources();
         cleanupTextures();
         cleanupScene();
         cleanupSyncObjects();
         memoryAllocator.reset();
-        cleanupCore();
-
-        glfwDestroyWindow(window);
-        glfwTerminate();
+        cleanupCore();        
     }
 
-    void createInstance() {
+void App::createInstance() {
         if (enableValidationLayers && !checkValidationLayerSupport()) {
             throw std::runtime_error("Validation layers requested, but not available");
         }
@@ -459,8 +549,7 @@ private:
         }
     }
 
-
-    void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo) {
+void App::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo) {
         createInfo = {};
         createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
         createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT;
@@ -468,7 +557,7 @@ private:
         createInfo.pfnUserCallback = debugCallback;
     }
 
-    void setupDebugMessenger() {
+void App::setupDebugMessenger() {
         if (!enableValidationLayers)
             return;
 
@@ -480,18 +569,41 @@ private:
         }
     }
 
-    void createSurface() {
-        if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
+void App::createSurface() {
+#ifdef _WIN32
+        VkWin32SurfaceCreateInfoKHR createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+        createInfo.hwnd = (HWND)window->getNativeWindowHandle();
+        createInfo.hinstance = window->getNativeInstance();
+        
+        if (vkCreateWin32SurfaceKHR(instance, &createInfo, nullptr, &surface) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create window surface");
         }
+#else
+        throw std::runtime_error("Platform not supported yet");
+#endif
     }
 
-    void createSwapChain() {
+void App::createSwapChain() {
+        // Don't create swapchain if shutting down
+        if (isShuttingDown) {
+            return;
+        }
+        
         SwapChainSupportDetails swapChainSupport = vulkanDevice.querySwapChainSupport(vulkanDevice.getPhysicalDevice(), vulkanDevice.getSurface());
 
         VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
         VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
         VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
+        
+        // Validate extent is within bounds (surface might be invalid during shutdown)
+        if (extent.width == 0 || extent.height == 0 ||
+            extent.width < swapChainSupport.capabilities.minImageExtent.width ||
+            extent.height < swapChainSupport.capabilities.minImageExtent.height ||
+            extent.width > swapChainSupport.capabilities.maxImageExtent.width ||
+            extent.height > swapChainSupport.capabilities.maxImageExtent.height) {
+            return;
+        }
 
         uint32_t imageCount = 2; // Explicitly double buffering
         if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount) {
@@ -521,7 +633,8 @@ private:
             createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
         }
 
-        createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
+        // Always use identity transform (required by Qt/Windows surfaces)
+        createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
         createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
         createInfo.presentMode = presentMode;
         createInfo.clipped = VK_TRUE;
@@ -539,7 +652,7 @@ private:
         swapChainExtent = extent;
     }
 
-    void createImageViews() {
+void App::createImageViews() {
         swapChainImageViews.resize(swapChainImages.size());
 
         for (uint32_t i = 0; i < swapChainImages.size(); i++) {
@@ -547,7 +660,7 @@ private:
         }
     }
 
-    void createSyncObjects() {
+void App::createSyncObjects() {
         imageAvailableSemaphores.resize(MAXFRAMESINFLIGHT);
         renderFinishedSemaphores.resize(MAXFRAMESINFLIGHT);
         computeFinishedSemaphores.resize(MAXFRAMESINFLIGHT);
@@ -570,7 +683,12 @@ private:
         }
     }
 
-    void drawFrame() {
+void App::drawFrame() {
+        // Skip rendering if shutting down or operating
+        if (isShuttingDown || isOperating.load(std::memory_order_acquire)) {
+            return;
+        }
+        
         // Wait for previous frame's fence
         vkWaitForFences(vulkanDevice.getDevice(), 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
@@ -579,8 +697,7 @@ private:
         VkResult result = vkAcquireNextImageKHR(vulkanDevice.getDevice(), swapChain, UINT64_MAX,
             imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
 
-        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized) {
-            framebufferResized = false;
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
             recreateSwapChain();
             return;
         }
@@ -606,7 +723,14 @@ private:
         computeBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         computeBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-        heatSystem->update(vulkanDevice, window, *resourceManager, *uniformBufferManager, ubo, WIDTH, HEIGHT);
+        // Get arrow key state for heat source control
+        bool upPressed = window->isKeyPressed(Qt::Key_Up);
+        bool downPressed = window->isKeyPressed(Qt::Key_Down);
+        bool leftPressed = window->isKeyPressed(Qt::Key_Left);
+        bool rightPressed = window->isKeyPressed(Qt::Key_Right);
+        
+        heatSystem->update(vulkanDevice, upPressed, downPressed, leftPressed, rightPressed, 
+                          *resourceManager, *uniformBufferManager, ubo, WIDTH, HEIGHT);
         if (heatSystem->getIsActive()) {
             heatSystem->recordComputeCommands(computeCommandBuffer, *resourceManager, currentFrame);
 
@@ -671,20 +795,21 @@ private:
         currentFrame = (currentFrame + 1) % MAXFRAMESINFLIGHT;
     }
 
-    VkShaderModule createShaderModule(const std::vector<char>& code) {
-        VkShaderModuleCreateInfo createInfo{};
-        createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        createInfo.codeSize = code.size();
-        createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
+static VkShaderModule createShaderModule(VulkanDevice& vulkanDevice, const std::vector<char>& code) {
+    VkShaderModuleCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    createInfo.codeSize = code.size();
+    createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
 
-        VkShaderModule shaderModule;
-        if (vkCreateShaderModule(vulkanDevice.getDevice(), &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create shader module");
-        }
-
-        return shaderModule;
+    VkShaderModule shaderModule;
+    if (vkCreateShaderModule(vulkanDevice.getDevice(), &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create shader module");
     }
-    VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
+
+    return shaderModule;
+}
+
+VkSurfaceFormatKHR App::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
         for (const auto& availableFormat : availableFormats) {
             if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
                 return availableFormat;
@@ -694,7 +819,7 @@ private:
         return availableFormats[0];
     }
 
-    VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
+VkPresentModeKHR App::chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
         for (const auto& availablePresentMode : availablePresentModes) {
             if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) { // VK_PRESENT_MODE_MAILBOX_KHR or VK_PRESENT_MODE_FIFO_KHR
                 return availablePresentMode;
@@ -704,13 +829,19 @@ private:
         return VK_PRESENT_MODE_FIFO_KHR;
     }
 
-    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
+VkExtent2D App::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
+        // Validate capabilities aren't corrupted
+        if (capabilities.minImageExtent.width == 0 || capabilities.minImageExtent.height == 0) {
+            // Surface is invalid/destroyed, return dummy extent (will be caught by shutdown check)
+            return {0, 0};
+        }
+        
         if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
             return capabilities.currentExtent;
         }
         else {
-            int width, height;
-            glfwGetFramebufferSize(window, &width, &height);
+            int width = window->width();
+            int height = window->height();
 
             VkExtent2D actualExtent = {
                 static_cast<uint32_t>(width),
@@ -724,12 +855,20 @@ private:
         }
     }
 
-    std::vector<const char*> getRequiredExtensions() {
-        uint32_t glfwExtensionCount = 0;
-        const char** glfwExtensions;
-        glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-
-        std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
+std::vector<const char*> App::getRequiredExtensions() {
+        std::vector<const char*> extensions;
+        
+        // Platform specific surface extension
+#ifdef _WIN32
+        extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+        extensions.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
+#elif defined(__linux__)
+        extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+        extensions.push_back(VK_KHR_XLIB_SURFACE_EXTENSION_NAME);
+#elif defined(__APPLE__)
+        extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+        extensions.push_back(VK_MVK_MACOS_SURFACE_EXTENSION_NAME);
+#endif
 
         if (enableValidationLayers) {
             extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -738,7 +877,7 @@ private:
         return extensions;
     }
 
-    bool checkValidationLayerSupport() {
+bool App::checkValidationLayerSupport() {
         uint32_t layerCount;
         vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
 
@@ -763,25 +902,9 @@ private:
         return true;
     }
 
-    static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-        VkDebugUtilsMessageTypeFlagsEXT messageType,
-        const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
-        std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
-
-        return VK_FALSE;
-    }
-};
-
-int main() {
-    App app;
-
-    try {
-        app.run();
-    }
-    catch (const std::exception& e) {
-        std::cerr << e.what() << std::endl;
-        return EXIT_FAILURE;
-    }
-
-    return EXIT_SUCCESS;
+VKAPI_ATTR VkBool32 VKAPI_CALL App::debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+    VkDebugUtilsMessageTypeFlagsEXT messageType,
+    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
+    std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
+    return VK_FALSE;
 }
