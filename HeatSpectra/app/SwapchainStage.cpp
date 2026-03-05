@@ -1,25 +1,33 @@
-﻿#include "RenderTargetStage.hpp"
+#include "SwapchainStage.hpp"
 
+#include "SwapchainManager.hpp"
+#include "framegraph/FrameGraph.hpp"
+#include "framegraph/FrameGraphVkTypes.hpp"
+#include "framegraph/FrameSync.hpp"
+#include "framegraph/FrameSimulation.hpp"
+#include "framegraph/VkFrameGraphBackend.hpp"
+#include "render/RenderConfig.hpp"
+#include "render/SceneRenderer.hpp"
+#include "render/WindowRuntimeState.hpp"
+#include "vulkan/VulkanDevice.hpp"
+
+#include <chrono>
 #include <iostream>
 #include <thread>
 
-#include "framegraph/FrameGraph.hpp"
-#include "framegraph/FrameSimulation.hpp"
-#include "framegraph/FrameGraphVkTypes.hpp"
-#include "framegraph/FrameSync.hpp"
-#include "RenderConfig.hpp"
-#include "SceneRenderer.hpp"
-#include "RenderTargetManager.hpp"
-#include "framegraph/VkFrameGraphBackend.hpp"
-#include "vulkan/VulkanDevice.hpp"
-#include "WindowRuntimeState.hpp"
-
-RenderTargetStage::RenderTargetStage(const WindowRuntimeState& windowState, VulkanDevice& vulkanDevice, RenderTargetManager& renderTargetManager,
-    FrameGraph& frameGraph, VkFrameGraphBackend& frameGraphBackend, SceneRenderer& sceneRenderer, FrameSync& frameSync,
-    FrameSimulation* simulation, std::atomic<bool>& isShuttingDown)
+SwapchainStage::SwapchainStage(
+    const WindowRuntimeState& windowState,
+    VulkanDevice& vulkanDevice,
+    SwapchainManager& swapchainManager,
+    FrameGraph& frameGraph,
+    VkFrameGraphBackend& frameGraphBackend,
+    SceneRenderer& sceneRenderer,
+    FrameSync& frameSync,
+    FrameSimulation* simulation,
+    std::atomic<bool>& isShuttingDown)
     : windowState(windowState),
       vulkanDevice(vulkanDevice),
-      renderTargetManager(renderTargetManager),
+      swapchainManager(swapchainManager),
       frameGraph(frameGraph),
       frameGraphBackend(frameGraphBackend),
       sceneRenderer(sceneRenderer),
@@ -28,26 +36,26 @@ RenderTargetStage::RenderTargetStage(const WindowRuntimeState& windowState, Vulk
       isShuttingDown(isShuttingDown) {
 }
 
-bool RenderTargetStage::initializeSyncObjects() {
+bool SwapchainStage::initializeSyncObjects() {
     return frameSync.initialize(vulkanDevice.getDevice(), renderconfig::MaxFramesInFlight);
 }
 
-void RenderTargetStage::shutdownSyncObjects() {
+void SwapchainStage::shutdownSyncObjects() {
     frameSync.shutdown();
 }
 
-void RenderTargetStage::cleanupSwapChain() {
+void SwapchainStage::cleanupSwapChain() {
     vkDeviceWaitIdle(vulkanDevice.getDevice());
     frameGraphBackend.cleanup(renderconfig::MaxFramesInFlight);
     sceneRenderer.freeCommandBuffers();
-    renderTargetManager.cleanup();
+    swapchainManager.cleanup();
 }
 
-void RenderTargetStage::setSimulation(FrameSimulation* updatedSimulation) {
+void SwapchainStage::setSimulation(FrameSimulation* updatedSimulation) {
     simulation = updatedSimulation;
 }
 
-bool RenderTargetStage::recreateSwapChain() {
+bool SwapchainStage::recreateSwapChain() {
     if (isShuttingDown.load(std::memory_order_acquire)) {
         return false;
     }
@@ -67,21 +75,22 @@ bool RenderTargetStage::recreateSwapChain() {
 
     cleanupSwapChain();
     frameSync.shutdown();
-    if (!renderTargetManager.create()) {
+    if (!swapchainManager.create()) {
         return false;
     }
 
-    const VkExtent2D targetExtent = renderTargetManager.getExtent();
-    const VkFormat targetFormat = renderTargetManager.getImageFormat();
+    const VkExtent2D targetExtent = swapchainManager.getExtent();
+    const VkFormat targetFormat = swapchainManager.getImageFormat();
 
     if (!frameGraph.compile(
             framegraph::vk::toFrameGraphFormat(targetFormat),
             framegraph::vk::toFrameGraphExtent(targetExtent))) {
         return false;
     }
+
     if (!frameGraphBackend.rebuild(
             frameGraph.getFrameGraphResult(),
-            renderTargetManager.getImageViews(),
+            swapchainManager.getImageViews(),
             targetExtent,
             renderconfig::MaxFramesInFlight)) {
         return false;
@@ -97,7 +106,7 @@ bool RenderTargetStage::recreateSwapChain() {
     sceneRenderer.updateDescriptorSets();
     sceneRenderer.resize(targetExtent);
     if (!sceneRenderer.createCommandBuffers()) {
-        std::cerr << "[RenderTargetStage] Failed to recreate scene command buffers" << std::endl;
+        std::cerr << "[SwapchainStage] Failed to recreate scene command buffers" << std::endl;
         return false;
     }
 
@@ -108,3 +117,24 @@ bool RenderTargetStage::recreateSwapChain() {
     return true;
 }
 
+FrameStageResult SwapchainStage::acquireFrameImage(uint32_t& imageIndex) {
+    const VkResult result = frameSync.acquireNextImage(swapchainManager.getSwapChain(), imageIndex);
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+        return FrameStageResult::RecreateSwapchain;
+    }
+
+    if (result != VK_SUCCESS) {
+        return FrameStageResult::Fatal;
+    }
+
+    return FrameStageResult::Continue;
+}
+
+FrameStageResult SwapchainStage::presentFrame(uint32_t imageIndex) {
+    const VkResult result = frameSync.present(vulkanDevice.getPresentQueue(), swapchainManager.getSwapChain(), imageIndex);
+    if (result == VK_SUCCESS) {
+        return FrameStageResult::Continue;
+    }
+    return FrameStageResult::RecreateSwapchain;
+}

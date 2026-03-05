@@ -1,24 +1,27 @@
 #pragma once
 
-#include "framegraph/FrameTypes.hpp"
+#include <vulkan/vulkan.h>
 
 #include <atomic>
+#include <cstdint>
+
+#include "framegraph/FrameTypes.hpp"
 
 struct WindowRuntimeState;
 class VulkanDevice;
-class RenderTargetManager;
+class SwapchainManager;
 class FrameGraph;
 class SceneRenderer;
 class FrameSync;
 class FrameSimulation;
 class VkFrameGraphBackend;
 
-class RenderTargetStage {
+class SwapchainStage {
 public:
-    RenderTargetStage(
+    SwapchainStage(
         const WindowRuntimeState& windowState,
         VulkanDevice& vulkanDevice,
-        RenderTargetManager& renderTargetManager,
+        SwapchainManager& swapchainManager,
         FrameGraph& frameGraph,
         VkFrameGraphBackend& frameGraphBackend,
         SceneRenderer& sceneRenderer,
@@ -32,10 +35,13 @@ public:
     bool recreateSwapChain();
     void setSimulation(FrameSimulation* simulation);
 
+    FrameStageResult acquireFrameImage(uint32_t& imageIndex);
+    FrameStageResult presentFrame(uint32_t imageIndex);
+
 private:
     const WindowRuntimeState& windowState;
     VulkanDevice& vulkanDevice;
-    RenderTargetManager& renderTargetManager;
+    SwapchainManager& swapchainManager;
     FrameGraph& frameGraph;
     VkFrameGraphBackend& frameGraphBackend;
     SceneRenderer& sceneRenderer;
