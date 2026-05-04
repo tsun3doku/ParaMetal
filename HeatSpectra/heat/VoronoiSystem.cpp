@@ -6,8 +6,6 @@
 #include "vulkan/VulkanBuffer.hpp"
 #include "vulkan/VulkanDevice.hpp"
 #include "voronoi/VoronoiCandidateCompute.hpp"
-#include "voronoi/VoronoiSurfaceStage.hpp"
-#include "voronoi/VoronoiStageContext.hpp"
 #include "voronoi/VoronoiGeoCompute.hpp"
 #include "voronoi/VoronoiModelRuntime.hpp"
 
@@ -26,23 +24,6 @@ VoronoiSystem::VoronoiSystem(
       renderCommandPool(renderCommandPool),
       maxFramesInFlight(maxFramesInFlight),
       voronoiBuilder(vulkanDevice, memoryAllocator, runtime.resourcesRef()) {
-
-    VoronoiStageContext stageContext{
-        vulkanDevice,
-        memoryAllocator,
-        resourceManager,
-        renderCommandPool,
-        runtime.resourcesRef()
-    };
-
-    surfaceStage = std::make_unique<VoronoiSurfaceStage>(stageContext);
-
-    if (!createSurfaceDescriptorPool(maxFramesInFlight) ||
-        !createSurfaceDescriptorSetLayout() ||
-        !createSurfacePipeline()) {
-        failInitialization("create surface compute resources");
-        return;
-    }
 
     initializeVoronoiGeoCompute();
     initializeVoronoiCandidateCompute();
@@ -145,27 +126,6 @@ void VoronoiSystem::initializeVoronoiCandidateCompute() {
     if (voronoiCandidateCompute) {
         voronoiCandidateCompute->initialize();
     }
-}
-
-bool VoronoiSystem::createSurfaceDescriptorPool(uint32_t maxFramesInFlight) {
-    if (!surfaceStage) {
-        return false;
-    }
-    return surfaceStage->createDescriptorPool(maxFramesInFlight);
-}
-
-bool VoronoiSystem::createSurfaceDescriptorSetLayout() {
-    if (!surfaceStage) {
-        return false;
-    }
-    return surfaceStage->createDescriptorSetLayout();
-}
-
-bool VoronoiSystem::createSurfacePipeline() {
-    if (!surfaceStage) {
-        return false;
-    }
-    return surfaceStage->createPipeline();
 }
 
 bool VoronoiSystem::rebuildVoronoiRuntime() {

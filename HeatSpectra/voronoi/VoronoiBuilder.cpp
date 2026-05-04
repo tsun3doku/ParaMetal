@@ -45,33 +45,6 @@ VoronoiBuilder::VoronoiBuilder(
       resources(resources) {
 }
 
-bool VoronoiBuilder::tryCreateStorageBuffer(
-    const char* label,
-    const void* data,
-    VkDeviceSize size,
-    VkBuffer& buffer,
-    VkDeviceSize& offset,
-    void** mapped,
-    bool hostVisible) const {
-    const VkResult result = createStorageBuffer(
-        memoryAllocator,
-        vulkanDevice,
-        data,
-        size,
-        buffer,
-        offset,
-        mapped,
-        hostVisible);
-
-    if (result != VK_SUCCESS || buffer == VK_NULL_HANDLE) {
-        std::cerr << "[VoronoiBuilder] Failed to create " << label
-                  << " storage buffer (VkResult=" << result << ")" << std::endl;
-        return false;
-    }
-
-    return true;
-}
-
 bool VoronoiBuilder::buildDomains(
     const std::vector<std::unique_ptr<VoronoiModelRuntime>>& modelRuntimes,
     std::vector<VoronoiDomain>& receiverVoronoiDomains,
@@ -231,13 +204,11 @@ bool VoronoiBuilder::createVoronoiGeometryBuffers(
     void* mappedPtr = nullptr;
 
     VkDeviceSize bufferSize = sizeof(voronoi::Node) * resources.voronoiNodeCount;
-    if (!tryCreateStorageBuffer(
-            "voronoi node",
-            initialNodes.data(),
-            bufferSize,
-            resources.voronoiNodeBuffer,
-            resources.voronoiNodeBufferOffset,
-            &resources.mappedVoronoiNodeData)) {
+    if (createStorageBuffer(memoryAllocator, vulkanDevice, initialNodes.data(), bufferSize,
+                            resources.voronoiNodeBuffer, resources.voronoiNodeBufferOffset,
+                            &resources.mappedVoronoiNodeData) != VK_SUCCESS ||
+        resources.voronoiNodeBuffer == VK_NULL_HANDLE) {
+        std::cerr << "[VoronoiBuilder] Failed to create voronoi node buffer" << std::endl;
         return false;
     }
 
@@ -249,13 +220,11 @@ bool VoronoiBuilder::createVoronoiGeometryBuffers(
     }
 
     bufferSize = sizeof(uint32_t) * flattenedNeighbors.size();
-    if (!tryCreateStorageBuffer(
-            "neighbor indices",
-            flattenedNeighbors.data(),
-            bufferSize,
-            resources.neighborIndicesBuffer,
-            resources.neighborIndicesBufferOffset,
-            &mappedPtr)) {
+    if (createStorageBuffer(memoryAllocator, vulkanDevice, flattenedNeighbors.data(), bufferSize,
+                            resources.neighborIndicesBuffer, resources.neighborIndicesBufferOffset,
+                            &mappedPtr) != VK_SUCCESS ||
+        resources.neighborIndicesBuffer == VK_NULL_HANDLE) {
+        std::cerr << "[VoronoiBuilder] Failed to create neighbor indices buffer" << std::endl;
         return false;
     }
 
@@ -265,13 +234,11 @@ bool VoronoiBuilder::createVoronoiGeometryBuffers(
     bufferSize = sizeof(float) * interfaceDataSize;
 
     void* mappedInterfaceAreas = nullptr;
-    if (!tryCreateStorageBuffer(
-            "interface areas",
-            emptyAreas.data(),
-            bufferSize,
-            resources.interfaceAreasBuffer,
-            resources.interfaceAreasBufferOffset,
-            &mappedInterfaceAreas)) {
+    if (createStorageBuffer(memoryAllocator, vulkanDevice, emptyAreas.data(), bufferSize,
+                            resources.interfaceAreasBuffer, resources.interfaceAreasBufferOffset,
+                            &mappedInterfaceAreas) != VK_SUCCESS ||
+        resources.interfaceAreasBuffer == VK_NULL_HANDLE) {
+        std::cerr << "[VoronoiBuilder] Failed to create interface areas buffer" << std::endl;
         return false;
     }
 
@@ -279,13 +246,11 @@ bool VoronoiBuilder::createVoronoiGeometryBuffers(
     bufferSize = sizeof(uint32_t) * interfaceDataSize;
 
     void* mappedInterfaceNeighborIds = nullptr;
-    if (!tryCreateStorageBuffer(
-            "interface neighbor ids",
-            emptyIds.data(),
-            bufferSize,
-            resources.interfaceNeighborIdsBuffer,
-            resources.interfaceNeighborIdsBufferOffset,
-            &mappedInterfaceNeighborIds)) {
+    if (createStorageBuffer(memoryAllocator, vulkanDevice, emptyIds.data(), bufferSize,
+                            resources.interfaceNeighborIdsBuffer, resources.interfaceNeighborIdsBufferOffset,
+                            &mappedInterfaceNeighborIds) != VK_SUCCESS ||
+        resources.interfaceNeighborIdsBuffer == VK_NULL_HANDLE) {
+        std::cerr << "[VoronoiBuilder] Failed to create interface neighbor ids buffer" << std::endl;
         return false;
     }
 
@@ -302,13 +267,11 @@ bool VoronoiBuilder::createVoronoiGeometryBuffers(
     }
 
     bufferSize = sizeof(voronoi::DebugCellGeometry) * numDebugCells;
-    if (!tryCreateStorageBuffer(
-            "debug cell geometry",
-            debugCells.data(),
-            bufferSize,
-            resources.debugCellGeometryBuffer,
-            resources.debugCellGeometryBufferOffset,
-            &resources.mappedDebugCellGeometryData)) {
+    if (createStorageBuffer(memoryAllocator, vulkanDevice, debugCells.data(), bufferSize,
+                            resources.debugCellGeometryBuffer, resources.debugCellGeometryBufferOffset,
+                            &resources.mappedDebugCellGeometryData) != VK_SUCCESS ||
+        resources.debugCellGeometryBuffer == VK_NULL_HANDLE) {
+        std::cerr << "[VoronoiBuilder] Failed to create debug cell geometry buffer" << std::endl;
         return false;
     }
 
@@ -317,38 +280,32 @@ bool VoronoiBuilder::createVoronoiGeometryBuffers(
     std::memset(dumpInfos.data(), 0, sizeof(voronoi::DumpInfo) * dumpCount);
 
     bufferSize = sizeof(voronoi::DumpInfo) * dumpCount;
-    if (!tryCreateStorageBuffer(
-            "voronoi dump",
-            dumpInfos.data(),
-            bufferSize,
-            resources.voronoiDumpBuffer,
-            resources.voronoiDumpBufferOffset,
-            &resources.mappedVoronoiDumpData)) {
+    if (createStorageBuffer(memoryAllocator, vulkanDevice, dumpInfos.data(), bufferSize,
+                            resources.voronoiDumpBuffer, resources.voronoiDumpBufferOffset,
+                            &resources.mappedVoronoiDumpData) != VK_SUCCESS ||
+        resources.voronoiDumpBuffer == VK_NULL_HANDLE) {
+        std::cerr << "[VoronoiBuilder] Failed to create voronoi dump buffer" << std::endl;
         return false;
     }
 
     bufferSize = sizeof(glm::vec4) * seedPositions.size();
     void* mappedSeeds = nullptr;
-    if (!tryCreateStorageBuffer(
-            "seed positions",
-            seedPositions.data(),
-            bufferSize,
-            resources.seedPositionBuffer,
-            resources.seedPositionBufferOffset,
-            &mappedSeeds)) {
+    if (createStorageBuffer(memoryAllocator, vulkanDevice, seedPositions.data(), bufferSize,
+                            resources.seedPositionBuffer, resources.seedPositionBufferOffset,
+                            &mappedSeeds) != VK_SUCCESS ||
+        resources.seedPositionBuffer == VK_NULL_HANDLE) {
+        std::cerr << "[VoronoiBuilder] Failed to create seed positions buffer" << std::endl;
         return false;
     }
     resources.mappedSeedPositionData = mappedSeeds;
 
     bufferSize = sizeof(uint32_t) * seedFlags.size();
     void* mappedFlags = nullptr;
-    if (!tryCreateStorageBuffer(
-            "seed flags",
-            seedFlags.data(),
-            bufferSize,
-            resources.seedFlagsBuffer,
-            resources.seedFlagsBufferOffset,
-            &mappedFlags)) {
+    if (createStorageBuffer(memoryAllocator, vulkanDevice, seedFlags.data(), bufferSize,
+                            resources.seedFlagsBuffer, resources.seedFlagsBufferOffset,
+                            &mappedFlags) != VK_SUCCESS ||
+        resources.seedFlagsBuffer == VK_NULL_HANDLE) {
+        std::cerr << "[VoronoiBuilder] Failed to create seed flags buffer" << std::endl;
         return false;
     }
     resources.mappedSeedFlagsData = mappedFlags;
@@ -712,19 +669,17 @@ bool VoronoiBuilder::generateDiagram(
         freeBuffer(resources.voxelTrianglesListBuffer, resources.voxelTrianglesListBufferOffset);
         freeBuffer(resources.voxelOffsetsBuffer, resources.voxelOffsetsBufferOffset);
 
-        std::vector<MeshTriangleGPU> meshTris = domain.integrator->getMeshTriangles();
+        const auto& meshTris = domain.integrator->getMeshTriangles();
         if (meshTris.empty()) {
-            meshTris.push_back({});
+            return false;
         }
 
-        VkDeviceSize bufferSize = sizeof(MeshTriangleGPU) * meshTris.size();
-        if (!tryCreateStorageBuffer(
-                "mesh triangles",
-                meshTris.data(),
-                bufferSize,
-                resources.meshTriangleBuffer,
-                resources.meshTriangleBufferOffset,
-                &mappedPtr)) {
+        VkDeviceSize bufferSize = sizeof(glm::vec4) * 3 * meshTris.size();
+        if (createStorageBuffer(memoryAllocator, vulkanDevice, meshTris.data(), bufferSize,
+                                resources.meshTriangleBuffer, resources.meshTriangleBufferOffset,
+                                &mappedPtr) != VK_SUCCESS ||
+            resources.meshTriangleBuffer == VK_NULL_HANDLE) {
+            std::cerr << "[VoronoiBuilder] Failed to create mesh triangles buffer" << std::endl;
             return false;
         }
 
@@ -775,38 +730,29 @@ bool VoronoiBuilder::generateDiagram(
         std::memcpy(mappedPtr, &params, sizeof(VoxelGrid::VoxelGridParams));
 
         bufferSize = sizeof(uint32_t) * occupancy32.size();
-        if (!tryCreateStorageBuffer(
-                "voxel occupancy",
-                occupancy32.data(),
-                bufferSize,
-                resources.voxelOccupancyBuffer,
-                resources.voxelOccupancyBufferOffset,
-                &mappedPtr,
-                true)) {
+        if (createStorageBuffer(memoryAllocator, vulkanDevice, occupancy32.data(), bufferSize,
+                                resources.voxelOccupancyBuffer, resources.voxelOccupancyBufferOffset,
+                                &mappedPtr, true) != VK_SUCCESS ||
+            resources.voxelOccupancyBuffer == VK_NULL_HANDLE) {
+            std::cerr << "[VoronoiBuilder] Failed to create voxel occupancy buffer" << std::endl;
             return false;
         }
 
         bufferSize = sizeof(int32_t) * trianglesList.size();
-        if (!tryCreateStorageBuffer(
-                "voxel triangle list",
-                trianglesList.data(),
-                bufferSize,
-                resources.voxelTrianglesListBuffer,
-                resources.voxelTrianglesListBufferOffset,
-                &mappedPtr,
-                true)) {
+        if (createStorageBuffer(memoryAllocator, vulkanDevice, trianglesList.data(), bufferSize,
+                                resources.voxelTrianglesListBuffer, resources.voxelTrianglesListBufferOffset,
+                                &mappedPtr, true) != VK_SUCCESS ||
+            resources.voxelTrianglesListBuffer == VK_NULL_HANDLE) {
+            std::cerr << "[VoronoiBuilder] Failed to create voxel triangle list buffer" << std::endl;
             return false;
         }
 
         bufferSize = sizeof(int32_t) * offsets.size();
-        if (!tryCreateStorageBuffer(
-                "voxel offsets",
-                offsets.data(),
-                bufferSize,
-                resources.voxelOffsetsBuffer,
-                resources.voxelOffsetsBufferOffset,
-                &mappedPtr,
-                true)) {
+        if (createStorageBuffer(memoryAllocator, vulkanDevice, offsets.data(), bufferSize,
+                                resources.voxelOffsetsBuffer, resources.voxelOffsetsBufferOffset,
+                                &mappedPtr, true) != VK_SUCCESS ||
+            resources.voxelOffsetsBuffer == VK_NULL_HANDLE) {
+            std::cerr << "[VoronoiBuilder] Failed to create voxel offsets buffer" << std::endl;
             return false;
         }
 
@@ -922,20 +868,24 @@ bool VoronoiBuilder::stageSurfaceMappings(std::vector<VoronoiDomain>& receiverVo
         KDTree index(3, cloud, nanoflann::KDTreeSingleIndexAdaptorParams(10));
         index.buildIndex();
 
-        const size_t supportCount = std::min<size_t>(32, regularSeedPositions.size());
+        const size_t targetSupportCount = 32;
+        const size_t initialSupportCount = std::min<size_t>(128, regularSeedPositions.size());
+        const size_t supportCount = std::min(initialSupportCount, regularSeedPositions.size());
 
         std::vector<voronoi::GMLSSurfaceStencil> stencils(surfacePoints.size());
         std::vector<voronoi::GMLSSurfaceWeight> valueWeights;
         std::vector<voronoi::GMLSSurfaceGradientWeight> gradientWeights;
-        valueWeights.reserve(surfacePoints.size() * supportCount);
-        gradientWeights.reserve(surfacePoints.size() * supportCount);
+        valueWeights.reserve(surfacePoints.size() * targetSupportCount);
+        gradientWeights.reserve(surfacePoints.size() * targetSupportCount);
 
         std::vector<size_t> retIndices(supportCount, 0);
         std::vector<float> outDistSq(supportCount, 0.0f);
         std::vector<glm::dvec3> sourcePositions;
+        std::vector<uint32_t> sourceGlobalIndices;
         std::vector<double> valueWeightDoubles;
         std::vector<glm::dvec3> gradientWeightTriples;
         sourcePositions.reserve(supportCount);
+        sourceGlobalIndices.reserve(supportCount);
 
         for (size_t vertexIndex = 0; vertexIndex < surfacePoints.size(); ++vertexIndex) {
             const glm::vec3& point = surfacePoints[vertexIndex];
@@ -946,11 +896,32 @@ bool VoronoiBuilder::stageSurfaceMappings(std::vector<VoronoiDomain>& receiverVo
             index.findNeighbors(resultSet, query);
 
             sourcePositions.clear();
+            sourceGlobalIndices.clear();
             float maxDistSq = 0.0f;
             for (size_t neighborIndex = 0; neighborIndex < supportCount; ++neighborIndex) {
-                sourcePositions.push_back(glm::dvec3(regularSeedPositions[retIndices[neighborIndex]]));
+                const size_t localIdx = retIndices[neighborIndex];
+                const glm::vec3& seedPos = regularSeedPositions[localIdx];
+
+                // Reject if the segment passes through empty voxels
+                if (domain.voxelGridBuilt) {
+                    if (!domain.voxelGrid.segmentStaysInside(point, seedPos, 7)) {
+                        continue;
+                    }
+                }
+
+                sourcePositions.push_back(glm::dvec3(seedPos));
+                sourceGlobalIndices.push_back(regularGlobalCellIndices[localIdx]);
                 if (outDistSq[neighborIndex] > maxDistSq) maxDistSq = outDistSq[neighborIndex];
+
+                if (sourcePositions.size() >= targetSupportCount) {
+                    break;
+                }
             }
+
+            if (sourcePositions.size() < 4) {
+                continue;
+            }
+
             const double kernelRadius = std::max<double>(static_cast<double>(std::sqrt(maxDistSq)) * 2.0, 1e-5);
             const bool validWeights = GMLS::computeWeights(
                 glm::dvec3(point),
@@ -969,8 +940,8 @@ bool VoronoiBuilder::stageSurfaceMappings(std::vector<VoronoiDomain>& receiverVo
                 continue;
             }
 
-            for (size_t neighborIndex = 0; neighborIndex < supportCount; ++neighborIndex) {
-                const uint32_t globalCellIndex = regularGlobalCellIndices[retIndices[neighborIndex]];
+            for (size_t neighborIndex = 0; neighborIndex < sourcePositions.size(); ++neighborIndex) {
+                const uint32_t globalCellIndex = sourceGlobalIndices[neighborIndex];
                 const float valueWeight = static_cast<float>(valueWeightDoubles[neighborIndex]);
                 const glm::dvec3 gradientWeight = gradientWeightTriples[neighborIndex];
 

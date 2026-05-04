@@ -4,6 +4,7 @@
 #include "CommandBufferManager.hpp"
 #include "util/file_utils.h"
 #include "VulkanImage.hpp"
+#include "VulkanBuffer.hpp"
 #include <iostream>
 
 VkResult createImage(const VulkanDevice& vulkanDevice, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
@@ -202,7 +203,7 @@ VkShaderModule createShaderModule(const VulkanDevice& vulkanDevice, const std::v
     return shaderModule;
 }
 
-VkResult createTextureImage(VulkanDevice& vulkanDevice, CommandPool& commandPool, VkImage& textureImage, VkDeviceMemory& textureImageMemory, const char* imagePath) {
+VkResult createTextureImage(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, CommandPool& commandPool, VkImage& textureImage, VkDeviceMemory& textureImageMemory, const char* imagePath) {
     textureImage = VK_NULL_HANDLE;
     textureImageMemory = VK_NULL_HANDLE;
     if (!imagePath) {
@@ -224,29 +225,13 @@ VkResult createTextureImage(VulkanDevice& vulkanDevice, CommandPool& commandPool
     }
 
     VkBuffer stagingBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory stagingBufferMemory = VK_NULL_HANDLE;
-    VkResult stagingBufferResult = vulkanDevice.createBuffer(
-        imageSize,
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        stagingBufferMemory,
-        stagingBuffer
-    );
-    if (stagingBufferResult != VK_SUCCESS) {
-        stbi_image_free(pixels);
-        return stagingBufferResult;
-    }
-
+    VkDeviceSize stagingBufferOffset = 0;
     void* data = nullptr;
-    const VkResult mapResult = vkMapMemory(vulkanDevice.getDevice(), stagingBufferMemory, 0, imageSize, 0, &data);
-    if (mapResult != VK_SUCCESS || !data) {
+    if (createStagingBuffer(memoryAllocator, imageSize, stagingBuffer, stagingBufferOffset, &data) != VK_SUCCESS || !data) {
         stbi_image_free(pixels);
-        vkDestroyBuffer(vulkanDevice.getDevice(), stagingBuffer, nullptr);
-        vkFreeMemory(vulkanDevice.getDevice(), stagingBufferMemory, nullptr);
-        return mapResult == VK_SUCCESS ? VK_ERROR_MEMORY_MAP_FAILED : mapResult;
+        return VK_ERROR_INITIALIZATION_FAILED;
     }
     memcpy(data, pixels, static_cast<size_t>(imageSize));
-    vkUnmapMemory(vulkanDevice.getDevice(), stagingBufferMemory);
 
     stbi_image_free(pixels);
 
@@ -255,34 +240,30 @@ VkResult createTextureImage(VulkanDevice& vulkanDevice, CommandPool& commandPool
         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         textureImage, textureImageMemory, VK_SAMPLE_COUNT_1_BIT);
     if (imageResult != VK_SUCCESS) {
-        vkDestroyBuffer(vulkanDevice.getDevice(), stagingBuffer, nullptr);
-        vkFreeMemory(vulkanDevice.getDevice(), stagingBufferMemory, nullptr);
+        memoryAllocator.free(stagingBuffer, stagingBufferOffset);
         return imageResult;
     }
 
     VkResult transitionResult = transitionImageLayout(
         commandPool, textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     if (transitionResult != VK_SUCCESS) {
-        vkDestroyBuffer(vulkanDevice.getDevice(), stagingBuffer, nullptr);
-        vkFreeMemory(vulkanDevice.getDevice(), stagingBufferMemory, nullptr);
+        memoryAllocator.free(stagingBuffer, stagingBufferOffset);
         return transitionResult;
     }
-    commandPool.copyBufferToImage(stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight)); 
+    commandPool.copyBufferToImage(stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
     transitionResult = transitionImageLayout(
         commandPool, textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     if (transitionResult != VK_SUCCESS) {
-        vkDestroyBuffer(vulkanDevice.getDevice(), stagingBuffer, nullptr);
-        vkFreeMemory(vulkanDevice.getDevice(), stagingBufferMemory, nullptr);
+        memoryAllocator.free(stagingBuffer, stagingBufferOffset);
         return transitionResult;
     }
 
-    vkDestroyBuffer(vulkanDevice.getDevice(), stagingBuffer, nullptr);
-    vkFreeMemory(vulkanDevice.getDevice(), stagingBufferMemory, nullptr);
+    memoryAllocator.free(stagingBuffer, stagingBufferOffset);
     return VK_SUCCESS;
 }
 
-VkResult createTextureImage(VulkanDevice& vulkanDevice, CommandPool& commandPool, const std::string& texturePath, VkImage& textureImage, VkDeviceMemory& textureImageMemory) {
-    return createTextureImage(vulkanDevice, commandPool, textureImage, textureImageMemory, texturePath.c_str());
+VkResult createTextureImage(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, CommandPool& commandPool, const std::string& texturePath, VkImage& textureImage, VkDeviceMemory& textureImageMemory) {
+    return createTextureImage(vulkanDevice, memoryAllocator, commandPool, textureImage, textureImageMemory, texturePath.c_str());
 }
 
 VkResult createTextureImageView(const VulkanDevice& vulkanDevice, VkImage textureImage, VkImageView& outImageView) {

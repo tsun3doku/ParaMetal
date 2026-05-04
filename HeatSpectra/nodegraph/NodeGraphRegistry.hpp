@@ -65,9 +65,10 @@ constexpr uint32_t Paused = 2;
 constexpr uint32_t ResetRequested = 3;
 constexpr uint32_t MaterialBindings = 4;
 constexpr uint32_t CellSize = 6;
-constexpr uint32_t VoxelResolution = 7;
 constexpr uint32_t ShowHeatOverlay = 8;
 constexpr uint32_t ContactThermalConductance = 9;
+constexpr uint32_t ShowFluxVectors = 10;
+constexpr uint32_t FluxVectorScale = 11;
 }
 
 namespace voronoi {

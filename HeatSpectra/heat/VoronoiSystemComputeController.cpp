@@ -195,6 +195,11 @@ bool VoronoiSystemComputeController::exportProduct(uint64_t socketKey, VoronoiPr
             surfaceProduct.gmlsSurfaceWeightBufferOffset = modelRuntime->getGMLSSurfaceWeightBufferOffset();
             surfaceProduct.gmlsSurfaceGradientWeightBuffer = modelRuntime->getGMLSSurfaceGradientWeightBuffer();
             surfaceProduct.gmlsSurfaceGradientWeightBufferOffset = modelRuntime->getGMLSSurfaceGradientWeightBufferOffset();
+            surfaceProduct.surfaceBuffer = modelRuntime->getSurfaceBuffer();
+            surfaceProduct.surfaceBufferOffset = modelRuntime->getSurfaceBufferOffset();
+            surfaceProduct.surfaceGradientBuffer = modelRuntime->getSurfaceGradientBuffer();
+            surfaceProduct.surfaceGradientBufferOffset = modelRuntime->getSurfaceGradientBufferOffset();
+            surfaceProduct.surfaceBufferView = modelRuntime->getSurfaceBufferView();
             surfaceProduct.supportingHalfedgeView = modelRuntime->getSupportingHalfedgeView();
             surfaceProduct.supportingAngleView = modelRuntime->getSupportingAngleView();
             surfaceProduct.halfedgeView = modelRuntime->getHalfedgeView();

@@ -157,7 +157,7 @@ void VoronoiSystemRuntime::setReceiverGeometry(
             continue;
         }
 
-        if (!modelRuntime->createSurfaceBuffers() || !modelRuntime->initializeSurfaceBuffer()) {
+        if (!modelRuntime->createSurfaceBuffers()) {
             std::cerr << "[VoronoiSystemRuntime] Failed to create surface buffers for runtimeModelId="
                       << receiverId << std::endl;
             modelRuntime->cleanup();

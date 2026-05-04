@@ -936,17 +936,23 @@ bool iODT::insertCircumcenter(uint32_t faceIdx, uint32_t& outNewVertex) {
     }
 
     glm::dvec3 startBary(1.0 / 3.0);
-    glm::dvec3 traceBaryVec = circumcenterBary - startBary;
-    double traceNorm2 = glm::dot(traceBaryVec, traceBaryVec);
 
-    if (traceNorm2 < 1e-24) {
+    // Convert barycentric start and target to cartesian for traceFromFace
+    auto tri = intrinsicMesh.layoutTriangle(faceIdx);
+    glm::dvec2 start2D = tri.vertices[0] * startBary.x + tri.vertices[1] * startBary.y + tri.vertices[2] * startBary.z;
+    glm::dvec2 circ2D  = tri.vertices[0] * circumcenterBary.x + tri.vertices[1] * circumcenterBary.y + tri.vertices[2] * circumcenterBary.z;
+    glm::dvec2 traceDir = circ2D - start2D;
+    double traceLen = glm::length(traceDir);
+
+    if (traceLen < 1e-12) {
         return false;
     }
 
-    GeodesicTracer::GeodesicTraceResult intrinsicRes = tracer.traceFromFaceBarycentric(
+    GeodesicTracer::GeodesicTraceResult intrinsicRes = tracer.traceFromFace(
         faceIdx,
         startBary,
-        traceBaryVec
+        traceDir,
+        traceLen
     );
 
     if (!intrinsicRes.success) {
@@ -1617,49 +1623,6 @@ bool iODT::resolveVertex(uint32_t newVertexIdx) {
         currHe = conn.getNextAroundVertex(currHe);
     }
     return true;
-}
-
-double iODT::computeMinAngle(uint32_t faceIdx) {
-    const auto& conn = intrinsicMesh.getConnectivity();
-    const auto& faces = conn.getFaces();
-
-    if (faceIdx >= faces.size()) {
-        return 0.0f;
-    }
-
-    // Get the halfedges of this face
-    std::vector<uint32_t> faceEdges = conn.getFaceHalfEdges(faceIdx);
-    if (faceEdges.size() != 3) {
-        return 0.0f;
-    }
-
-    // Get the edge lengths from edge objects
-    double a = conn.getIntrinsicLengthFromHalfEdge(faceEdges[0]);
-    double b = conn.getIntrinsicLengthFromHalfEdge(faceEdges[1]);
-    double c = conn.getIntrinsicLengthFromHalfEdge(faceEdges[2]);
-
-    // Minimum positive length for numerical stability
-    a = std::max(a, 1e-5);
-    b = std::max(b, 1e-5);
-    c = std::max(c, 1e-5);
-
-    // Calculate angles using the law of cosines
-    double cosA = (b * b + c * c - a * a) / (2.0f * b * c);
-    double cosB = (a * a + c * c - b * b) / (2.0f * a * c);
-    double cosC = (a * a + b * b - c * c) / (2.0f * a * b);
-
-    // Clamp to valid range to avoid numerical issues
-    cosA = glm::clamp(cosA, -1.0, 1.0);
-    cosB = glm::clamp(cosB, -1.0, 1.0);
-    cosC = glm::clamp(cosC, -1.0, 1.0);
-
-    // Convert to angles
-    double angleA = std::acos(cosA);
-    double angleB = std::acos(cosB);
-    double angleC = std::acos(cosC);
-
-    // Return the minimum angle
-    return std::min(std::min(angleA, angleB), angleC);
 }
 
 bool iODT::isEdgeOriginal(uint32_t edgeIdx) const {

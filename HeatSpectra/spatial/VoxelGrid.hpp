@@ -29,6 +29,12 @@ public:
     uint8_t getOccupancy(int x, int y, int z) const;
     glm::vec3 getCornerPosition(int x, int y, int z) const;
     glm::ivec3 worldToVoxel(const glm::vec3& pos) const;
+    glm::vec3 toCanonical(const glm::vec3& worldPos) const;
+
+    // Returns true if the entire segment from a to b stays within occupied (INSIDE or BORDER)
+    // voxels. Uses a 3D DDA walk through the voxel grid. Skips the first and last cells
+    // since they contain the endpoints which may sit in boundary cells.
+    bool segmentStaysInside(const glm::vec3& a, const glm::vec3& b, int outsideCornerThreshold = 2) const;
 
     void exportOccupancyVisualization(const std::string& filename) const;
 
@@ -46,7 +52,6 @@ private:
     static constexpr float CANONICAL_DOMAIN_SIZE = 1000.0f;
     static constexpr float CANONICAL_SCALE = 990.222f;
     static constexpr float CANONICAL_BIAS = 4.998f;
-    glm::vec3 toCanonical(const glm::vec3& worldPos) const;
     glm::vec3 toWorld(const glm::vec3& canonicalPos) const;
     static int clampInt(int v, int lo, int hi) { return std::max(lo, std::min(v, hi)); }
     

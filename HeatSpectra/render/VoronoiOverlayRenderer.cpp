@@ -4,13 +4,14 @@
 
 #include "renderers/PointRenderer.hpp"
 #include "renderers/VoronoiRenderer.hpp"
+#include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/UniformBufferManager.hpp"
 #include "vulkan/VulkanDevice.hpp"
 
 namespace render {
 
-VoronoiOverlayRenderer::VoronoiOverlayRenderer(VulkanDevice& device, UniformBufferManager& uniformBufferManager, CommandPool& renderCommandPool)
-    : voronoiRenderer(std::make_unique<VoronoiRenderer>(device, uniformBufferManager, renderCommandPool)),
+VoronoiOverlayRenderer::VoronoiOverlayRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, CommandPool& renderCommandPool)
+    : voronoiRenderer(std::make_unique<VoronoiRenderer>(device, allocator, uniformBufferManager, renderCommandPool)),
       pointRenderer(std::make_unique<PointRenderer>(device, uniformBufferManager)) {
 }
 

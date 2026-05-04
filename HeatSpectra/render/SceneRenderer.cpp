@@ -166,6 +166,7 @@ bool SceneRenderer::initializePasses() {
 
     auto blend = std::make_unique<render::BlendPass>(
         vulkanDevice,
+        memoryAllocator,
         renderCommandPool,
         frameGraphRuntime,
         maxFramesInFlight,

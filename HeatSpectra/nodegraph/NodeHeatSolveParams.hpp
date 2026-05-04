@@ -10,6 +10,8 @@ struct NodeGraphNode;
 
 struct HeatPreviewSettings {
     bool showHeatOverlay = false;
+    bool showFluxVectors = false;
+    double fluxVectorScale = 1.0;
 };
 
 struct HeatSolveNodeParams {
@@ -17,7 +19,6 @@ struct HeatSolveNodeParams {
     bool paused = false;
     bool resetRequested = false;
     double cellSize = 0.005;
-    int voxelResolution = 128;
     double contactThermalConductance = 16000.0;
     HeatPreviewSettings preview{};
     std::vector<HeatMaterialBindingRow> materialBindingRows;

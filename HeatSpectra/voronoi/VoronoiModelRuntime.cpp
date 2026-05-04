@@ -226,6 +226,43 @@ bool VoronoiModelRuntime::createSurfaceBuffers() {
         return false;
     }
 
+    // Create gradient color buffer 
+    const VkDeviceSize gradientBufferSize = sizeof(glm::vec4) * vertexCount;
+    if (createStorageBuffer(
+            memoryAllocator,
+            vulkanDevice,
+            nullptr,
+            gradientBufferSize,
+            surfaceGradientBuffer,
+            surfaceGradientBufferOffset,
+            nullptr,
+            false,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT) != VK_SUCCESS) {
+        std::cerr << "[VoronoiModelRuntime] Failed to create surface gradient buffer" << std::endl;
+        cleanup();
+        return false;
+    }
+
+    // Initialize gradient buffer to zero
+    std::vector<glm::vec4> zeroGradients(vertexCount, glm::vec4(0.0f));
+    VkBuffer gradientStagingBuffer = VK_NULL_HANDLE;
+    VkDeviceSize gradientStagingOffset = 0;
+    void* gradientStagingData = nullptr;
+
+    if (createStagingBuffer(
+            memoryAllocator,
+            gradientBufferSize,
+            gradientStagingBuffer,
+            gradientStagingOffset,
+            &gradientStagingData) == VK_SUCCESS && gradientStagingData) {
+        std::memcpy(gradientStagingData, zeroGradients.data(), static_cast<size_t>(gradientBufferSize));
+        VkCommandBuffer copyCmd = renderCommandPool.beginCommands();
+        VkBufferCopy copyRegion{ gradientStagingOffset, surfaceGradientBufferOffset, gradientBufferSize };
+        vkCmdCopyBuffer(copyCmd, gradientStagingBuffer, surfaceGradientBuffer, 1, &copyRegion);
+        renderCommandPool.endCommands(copyCmd);
+        memoryAllocator.free(gradientStagingBuffer, gradientStagingOffset);
+    }
+
     std::vector<glm::vec3> positions(vertexCount);
     for (size_t i = 0; i < vertexCount; ++i) {
         positions[i] = surfaceVertices[i].position;
@@ -283,13 +320,8 @@ bool VoronoiModelRuntime::initializeSurfaceBuffer() {
     VkBuffer stagingBuffer = VK_NULL_HANDLE;
     VkDeviceSize stagingOffset = 0;
     void* stagingData = nullptr;
-    if (createStagingBuffer(
-            memoryAllocator,
-            bufferSize,
-            stagingBuffer,
-            stagingOffset,
-            &stagingData) != VK_SUCCESS ||
-        !stagingData) {
+
+    if (createStagingBuffer(memoryAllocator, bufferSize, stagingBuffer, stagingOffset, &stagingData) != VK_SUCCESS || !stagingData) {
         std::cerr << "[VoronoiModelRuntime] Failed to create surface staging buffer" << std::endl;
         return false;
     }
@@ -324,6 +356,7 @@ bool VoronoiModelRuntime::resetSurfaceState() {
 
 void VoronoiModelRuntime::updateSurfaceDescriptors(
     VkDescriptorSetLayout surfaceLayout,
+    VkDescriptorSetLayout gradientLayout,
     VkDescriptorPool surfacePool,
     VkBuffer tempBufferA,
     VkDeviceSize tempBufferAOffset,
@@ -336,7 +369,8 @@ void VoronoiModelRuntime::updateSurfaceDescriptors(
     if (intrinsicVertexCount == 0 ||
         gmlsSurfaceStencilBuffer == VK_NULL_HANDLE ||
         gmlsSurfaceWeightBuffer == VK_NULL_HANDLE ||
-        gmlsSurfaceGradientWeightBuffer == VK_NULL_HANDLE) {
+        gmlsSurfaceGradientWeightBuffer == VK_NULL_HANDLE ||
+        surfaceGradientBuffer == VK_NULL_HANDLE) {
         return;
     }
 
@@ -351,7 +385,7 @@ void VoronoiModelRuntime::updateSurfaceDescriptors(
 
         VkDescriptorSet sets[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
         if (vkAllocateDescriptorSets(vulkanDevice.getDevice(), &allocInfo, sets) != VK_SUCCESS) {
-            std::cerr << "[VoronoiModelRuntime] Failed to allocate surface ping-pong descriptor sets" << std::endl;
+            std::cerr << "[VoronoiModelRuntime] Failed to allocate surface temperature descriptor sets" << std::endl;
             return;
         }
 
@@ -359,55 +393,96 @@ void VoronoiModelRuntime::updateSurfaceDescriptors(
         surfaceComputeSetB = sets[1];
     }
 
+    if (surfaceGradientComputeSetA == VK_NULL_HANDLE || surfaceGradientComputeSetB == VK_NULL_HANDLE) {
+        std::vector<VkDescriptorSetLayout> gradLayouts = { gradientLayout, gradientLayout };
+
+        VkDescriptorSetAllocateInfo gradAllocInfo{};
+        gradAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        gradAllocInfo.descriptorPool = surfacePool;
+        gradAllocInfo.descriptorSetCount = 2;
+        gradAllocInfo.pSetLayouts = gradLayouts.data();
+
+        VkDescriptorSet gradSets[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+        if (vkAllocateDescriptorSets(vulkanDevice.getDevice(), &gradAllocInfo, gradSets) != VK_SUCCESS) {
+            std::cerr << "[VoronoiModelRuntime] Failed to allocate surface gradient descriptor sets" << std::endl;
+            return;
+        }
+
+        surfaceGradientComputeSetA = gradSets[0];
+        surfaceGradientComputeSetB = gradSets[1];
+    }
+
     VkDescriptorBufferInfo surfaceInfo{ surfaceBuffer, surfaceBufferOffset, sizeof(heat::SurfacePoint) * intrinsicVertexCount };
+    VkDescriptorBufferInfo gradientInfo{ surfaceGradientBuffer, surfaceGradientBufferOffset, sizeof(glm::vec4) * intrinsicVertexCount };
     VkDescriptorBufferInfo timeInfo{ timeBuffer, timeBufferOffset, sizeof(heat::TimeUniform) };
     VkDescriptorBufferInfo stencilInfo{ gmlsSurfaceStencilBuffer, gmlsSurfaceStencilBufferOffset, VK_WHOLE_SIZE };
     VkDescriptorBufferInfo weightInfo{ gmlsSurfaceWeightBuffer, gmlsSurfaceWeightBufferOffset, VK_WHOLE_SIZE };
-    VkDescriptorBufferInfo gradientWeightInfo{
-        gmlsSurfaceGradientWeightBuffer,
-        gmlsSurfaceGradientWeightBufferOffset,
-        VK_WHOLE_SIZE
-    };
+    VkDescriptorBufferInfo gradientWeightInfo{gmlsSurfaceGradientWeightBuffer, gmlsSurfaceGradientWeightBufferOffset, VK_WHOLE_SIZE };
 
-    const VkDescriptorSet sets[2] = { surfaceComputeSetA, surfaceComputeSetB };
+    const VkDescriptorSet tempSets[2] = { surfaceComputeSetA, surfaceComputeSetB };
+    const VkDescriptorSet gradSets[2] = { surfaceGradientComputeSetA, surfaceGradientComputeSetB };
     const VkBuffer tempBuffers[2] = { tempBufferA, tempBufferB };
     const VkDeviceSize tempOffsets[2] = { tempBufferAOffset, tempBufferBOffset };
 
     for (uint32_t pass = 0; pass < 2; ++pass) {
         VkDescriptorBufferInfo nodeTempInfo{ tempBuffers[pass], tempOffsets[pass], sizeof(float) * nodeCount };
-        std::array<VkDescriptorBufferInfo*, 6> infos = {
+        std::array<VkDescriptorBufferInfo*, 4> tempInfos = {
             &nodeTempInfo,
             &surfaceInfo,
-            &timeInfo,
             &stencilInfo,
-            &weightInfo,
-            &gradientWeightInfo
+            &weightInfo
         };
-        std::array<uint32_t, 6> bindings = { 0u, 1u, 3u, 10u, 11u, 12u };
-        std::array<VkDescriptorType, 6> types = {
+        std::array<uint32_t, 4> tempBindings = { 0u, 1u, 10u, 11u };
+        std::array<VkDescriptorType, 4> tempTypes = {
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
         };
-        std::array<VkWriteDescriptorSet, 6> writes{};
-        for (size_t i = 0; i < writes.size(); ++i) {
-            writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[i].dstSet = sets[pass];
-            writes[i].dstBinding = bindings[i];
-            writes[i].dstArrayElement = 0;
-            writes[i].descriptorCount = 1;
-            writes[i].descriptorType = types[i];
-            writes[i].pBufferInfo = infos[i];
+        std::array<VkWriteDescriptorSet, 4> tempWrites{};
+        for (size_t i = 0; i < tempWrites.size(); ++i) {
+            tempWrites[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            tempWrites[i].dstSet = tempSets[pass];
+            tempWrites[i].dstBinding = tempBindings[i];
+            tempWrites[i].dstArrayElement = 0;
+            tempWrites[i].descriptorCount = 1;
+            tempWrites[i].descriptorType = tempTypes[i];
+            tempWrites[i].pBufferInfo = tempInfos[i];
         }
-        vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(tempWrites.size()), tempWrites.data(), 0, nullptr);
+
+        std::array<VkDescriptorBufferInfo*, 5> gradInfos = {
+            &nodeTempInfo,
+            &surfaceInfo,
+            &gradientInfo,
+            &stencilInfo,
+            &gradientWeightInfo
+        };
+        std::array<uint32_t, 5> gradBindings = { 0u, 1u, 2u, 10u, 12u };
+        std::array<VkDescriptorType, 5> gradTypes = {
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+        };
+        std::array<VkWriteDescriptorSet, 5> gradWrites{};
+        for (size_t i = 0; i < gradWrites.size(); ++i) {
+            gradWrites[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            gradWrites[i].dstSet = gradSets[pass];
+            gradWrites[i].dstBinding = gradBindings[i];
+            gradWrites[i].dstArrayElement = 0;
+            gradWrites[i].descriptorCount = 1;
+            gradWrites[i].descriptorType = gradTypes[i];
+            gradWrites[i].pBufferInfo = gradInfos[i];
+        }
+        vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(gradWrites.size()), gradWrites.data(), 0, nullptr);
     }
 }
 
 void VoronoiModelRuntime::recreateSurfaceDescriptors(
     VkDescriptorSetLayout surfaceLayout,
+    VkDescriptorSetLayout gradientLayout,
     VkDescriptorPool surfacePool,
     VkBuffer tempBufferA,
     VkDeviceSize tempBufferAOffset,
@@ -418,9 +493,12 @@ void VoronoiModelRuntime::recreateSurfaceDescriptors(
     uint32_t nodeCount) {
     surfaceComputeSetA = VK_NULL_HANDLE;
     surfaceComputeSetB = VK_NULL_HANDLE;
+    surfaceGradientComputeSetA = VK_NULL_HANDLE;
+    surfaceGradientComputeSetB = VK_NULL_HANDLE;
 
     updateSurfaceDescriptors(
         surfaceLayout,
+        gradientLayout,
         surfacePool,
         tempBufferA,
         tempBufferAOffset,
@@ -612,6 +690,11 @@ void VoronoiModelRuntime::cleanup() {
         memoryAllocator.free(surfaceBuffer, surfaceBufferOffset);
         surfaceBuffer = VK_NULL_HANDLE;
         surfaceBufferOffset = 0;
+    }
+    if (surfaceGradientBuffer != VK_NULL_HANDLE) {
+        memoryAllocator.free(surfaceGradientBuffer, surfaceGradientBufferOffset);
+        surfaceGradientBuffer = VK_NULL_HANDLE;
+        surfaceGradientBufferOffset = 0;
     }
     if (surfaceVertexBuffer != VK_NULL_HANDLE) {
         memoryAllocator.free(surfaceVertexBuffer, surfaceVertexBufferOffset);

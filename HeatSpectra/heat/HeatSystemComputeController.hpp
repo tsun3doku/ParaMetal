@@ -61,6 +61,11 @@ public:
         std::unordered_map<uint32_t, VkDeviceSize> receiverGMLSSurfaceGradientWeightBufferOffsetByModelId;
         std::unordered_map<uint32_t, std::vector<uint32_t>> receiverVoronoiSeedFlagsByModelId;
         std::unordered_map<uint32_t, std::vector<glm::vec3>> receiverVoronoiSeedPositionsByModelId;
+        std::vector<VkBuffer> receiverSurfaceBuffers;
+        std::vector<VkDeviceSize> receiverSurfaceBufferOffsets;
+        std::vector<VkBufferView> receiverSurfaceBufferViews;
+        std::vector<VkBuffer> receiverSurfaceGradientBuffers;
+        std::vector<VkDeviceSize> receiverSurfaceGradientBufferOffsets;
         std::vector<ContactCoupling> contactCouplings;
         uint64_t computeHash = 0;
     };
@@ -202,6 +207,11 @@ inline uint64_t buildComputeHash(const HeatSystemComputeController::Config& conf
         hash = RuntimeProductHash::mixPod(hash, id);
         hash = RuntimeProductHash::mixPodVector(hash, positions);
     }
+    hash = RuntimeProductHash::mixPodVector(hash, config.receiverSurfaceBuffers);
+    hash = RuntimeProductHash::mixPodVector(hash, config.receiverSurfaceBufferOffsets);
+    hash = RuntimeProductHash::mixPodVector(hash, config.receiverSurfaceBufferViews);
+    hash = RuntimeProductHash::mixPodVector(hash, config.receiverSurfaceGradientBuffers);
+    hash = RuntimeProductHash::mixPodVector(hash, config.receiverSurfaceGradientBufferOffsets);
     hash = RuntimeProductHash::mix(hash, static_cast<uint64_t>(config.contactCouplings.size()));
     for (const ContactCoupling& coupling : config.contactCouplings) {
         hash = RuntimeProductHash::mixPod(hash, static_cast<uint32_t>(coupling.couplingType));

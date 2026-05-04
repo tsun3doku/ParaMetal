@@ -70,7 +70,12 @@ public:
         const std::vector<VkBufferView>& inputHalfedgeViews,
         const std::vector<VkBufferView>& inputEdgeViews,
         const std::vector<VkBufferView>& inputTriangleViews,
-        const std::vector<VkBufferView>& inputLengthViews);
+        const std::vector<VkBufferView>& inputLengthViews,
+        const std::vector<VkBuffer>& receiverSurfaceBuffers,
+        const std::vector<VkDeviceSize>& receiverSurfaceBufferOffsets,
+        const std::vector<VkBufferView>& receiverSurfaceBufferViews,
+        const std::vector<VkBuffer>& receiverSurfaceGradientBuffers,
+        const std::vector<VkDeviceSize>& receiverSurfaceGradientBufferOffsets);
     void setThermalMaterials(const std::vector<RuntimeThermalMaterial>& runtimeThermalMaterials);
     void setParams(float contactThermalConductance);
     void setContactCouplings(const std::vector<ContactCoupling>& contactCouplings);

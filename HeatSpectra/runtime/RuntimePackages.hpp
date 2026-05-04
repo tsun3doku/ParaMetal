@@ -94,12 +94,14 @@ struct VoronoiPackage {
 struct HeatPackage {
     struct DisplaySettings {
         bool showHeatOverlay = false;
+        bool showFluxVectors = false;
+        float fluxVectorScale = 1.0f;
 
         bool anyVisible() const {
-            return showHeatOverlay;
+            return showHeatOverlay || showFluxVectors;
         }
     };
-    
+
     uint64_t packageHash = 0;
     HeatData authored;
     DisplaySettings display{};
@@ -113,7 +115,9 @@ struct HeatPackage {
 
     bool matches(const HeatPackage& other) const {
         return packageHash == other.packageHash &&
-            display.showHeatOverlay == other.display.showHeatOverlay;
+            display.showHeatOverlay == other.display.showHeatOverlay &&
+            display.showFluxVectors == other.display.showFluxVectors &&
+            display.fluxVectorScale == other.display.fluxVectorScale;
     }
 };
 

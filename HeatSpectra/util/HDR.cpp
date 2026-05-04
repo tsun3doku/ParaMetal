@@ -1,13 +1,13 @@
-﻿#include <stb_image.h> 
+﻿#include <stb_image.h>
 
 #include "hdr.hpp"
+#include "vulkan/VulkanBuffer.hpp"
 
 #include <iostream>
 #include <iomanip>
 
-HDR::HDR(VulkanDevice* device, CommandPool* cmdPool) 
-    : vulkanDevice(device), renderCommandPool(cmdPool) {
-    this->vulkanDevice = vulkanDevice;
+HDR::HDR(VulkanDevice* device, MemoryAllocator* memoryAllocator, CommandPool* cmdPool)
+    : vulkanDevice(device), memoryAllocator(memoryAllocator), renderCommandPool(cmdPool) {
     createHDRTextureImage(HDR_PATH);
     createCubemapImage();
     createHDRRenderPass();
@@ -41,19 +41,15 @@ void HDR::createHDRTextureImage(const std::string& filePath) {
 
     VkDeviceSize imageSize = texWidth * texHeight * 4; // 4 channels of floats
 
-    VkBuffer stagingBuffer;
-    VkDeviceMemory stagingBufferMemory;
-    stagingBuffer = vulkanDevice->createBuffer(
-        imageSize,
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        stagingBufferMemory
-    );
-
-    void* data;
-    vkMapMemory(vulkanDevice->getDevice(), stagingBufferMemory, 0, imageSize, 0, &data);
-        memcpy(data, pixels, static_cast<size_t>(imageSize));
-    vkUnmapMemory(vulkanDevice->getDevice(), stagingBufferMemory);
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    VkDeviceSize stagingBufferOffset = 0;
+    void* data = nullptr;
+    if (createStagingBuffer(*memoryAllocator, imageSize, stagingBuffer, stagingBufferOffset, &data) != VK_SUCCESS || !data) {
+        stbi_image_free(pixels);
+        std::cerr << "[HDR] Failed to create staging buffer" << std::endl;
+        return;
+    }
+    memcpy(data, pixels, static_cast<size_t>(imageSize));
 
     stbi_image_free(pixels);
 
@@ -87,8 +83,7 @@ void HDR::createHDRTextureImage(const std::string& filePath) {
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     // Clean up the staging buffer
-    vkDestroyBuffer(vulkanDevice->getDevice(), stagingBuffer, nullptr);
-    vkFreeMemory(vulkanDevice->getDevice(), stagingBufferMemory, nullptr);
+    memoryAllocator->free(stagingBuffer, stagingBufferOffset);
 
     // Create ImageView
     VkImageViewCreateInfo viewInfo{};
@@ -169,13 +164,13 @@ void HDR::prefilterEnvMap(float roughness) {
     }
 }
 
-void HDR::uploadHDRTextureData(float* data, VkDeviceMemory stagingBufferMemory, VkBuffer stagingBuffer, uint32_t texWidth, uint32_t texHeight) {
+void HDR::uploadHDRTextureData(float* data, VkBuffer stagingBuffer, VkDeviceSize stagingBufferOffset, uint32_t texWidth, uint32_t texHeight) {
     VkDeviceSize imageSize = texWidth * texHeight * 4;  // RGBA
 
-    void* stagingData;
-    vkMapMemory(vulkanDevice->getDevice(), stagingBufferMemory, 0, imageSize, 0, &stagingData);
-    memcpy(stagingData, data, static_cast<size_t>(imageSize));
-    vkUnmapMemory(vulkanDevice->getDevice(), stagingBufferMemory);
+    void* stagingData = memoryAllocator->getMappedPointer(stagingBuffer, stagingBufferOffset);
+    if (stagingData) {
+        memcpy(stagingData, data, static_cast<size_t>(imageSize));
+    }
 
     renderCommandPool->copyBufferToImage(stagingBuffer, envMapImage, texWidth, texHeight);
 }

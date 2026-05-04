@@ -233,6 +233,11 @@ private:
                 outConfig.receiverGMLSSurfaceWeightBufferOffsetByModelId[runtimeModelId] = surfaceProduct.gmlsSurfaceWeightBufferOffset;
                 outConfig.receiverGMLSSurfaceGradientWeightBufferByModelId[runtimeModelId] = surfaceProduct.gmlsSurfaceGradientWeightBuffer;
                 outConfig.receiverGMLSSurfaceGradientWeightBufferOffsetByModelId[runtimeModelId] = surfaceProduct.gmlsSurfaceGradientWeightBufferOffset;
+                outConfig.receiverSurfaceBuffers.push_back(surfaceProduct.surfaceBuffer);
+                outConfig.receiverSurfaceBufferOffsets.push_back(surfaceProduct.surfaceBufferOffset);
+                outConfig.receiverSurfaceBufferViews.push_back(surfaceProduct.surfaceBufferView);
+                outConfig.receiverSurfaceGradientBuffers.push_back(surfaceProduct.surfaceGradientBuffer);
+                outConfig.receiverSurfaceGradientBufferOffsets.push_back(surfaceProduct.surfaceGradientBufferOffset);
                 outConfig.receiverVoronoiSeedFlagsByModelId[runtimeModelId] = surfaceProduct.seedFlags;
                 outConfig.receiverVoronoiSeedPositionsByModelId[runtimeModelId] = surfaceProduct.seedPositions;
             }

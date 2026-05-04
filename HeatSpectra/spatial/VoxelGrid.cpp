@@ -614,6 +614,130 @@ uint8_t VoxelGrid::getOccupancy(int x, int y, int z) const {
     return occupancy[getCornerIndex(x, y, z)];
 }
 
+bool VoxelGrid::segmentStaysInside(const glm::vec3& a, const glm::vec3& b, int outsideCornerThreshold) const {
+    if (params.gridDim.x <= 0 || occupancy.empty()) {
+        return true; // No grid built, assume OK
+    }
+
+    glm::vec3 seg = b - a;
+    float segLen = glm::length(seg);
+    if (segLen < 1e-8f) {
+        return true; // Degenerate segment
+    }
+
+    // Convert endpoints to voxel-space float coordinates
+    float canonicalVoxelSize = CANONICAL_DOMAIN_SIZE / float(params.gridDim.x);
+    glm::vec3 aVox = toCanonical(a) / canonicalVoxelSize;
+    glm::vec3 bVox = toCanonical(b) / canonicalVoxelSize;
+
+    // Clamp start/end to grid bounds
+    aVox.x = glm::clamp(aVox.x, 0.0f, float(params.gridDim.x));
+    aVox.y = glm::clamp(aVox.y, 0.0f, float(params.gridDim.y));
+    aVox.z = glm::clamp(aVox.z, 0.0f, float(params.gridDim.z));
+    bVox.x = glm::clamp(bVox.x, 0.0f, float(params.gridDim.x));
+    bVox.y = glm::clamp(bVox.y, 0.0f, float(params.gridDim.y));
+    bVox.z = glm::clamp(bVox.z, 0.0f, float(params.gridDim.z));
+
+    glm::vec3 dVox = bVox - aVox;
+    float dVoxLen = glm::length(dVox);
+    if (dVoxLen < 1e-8f) {
+        return true; // Both endpoints in same cell after clamping
+    }
+
+    // Use unit direction for DDA; track distance in voxel-space units
+    glm::vec3 dir = dVox / dVoxLen;
+    float travelLimit = dVoxLen; // total distance in voxel cells
+
+    // Determine starting cell
+    int x = static_cast<int>(std::floor(aVox.x));
+    int y = static_cast<int>(std::floor(aVox.y));
+    int z = static_cast<int>(std::floor(aVox.z));
+    int endX = static_cast<int>(std::floor(bVox.x));
+    int endY = static_cast<int>(std::floor(bVox.y));
+    int endZ = static_cast<int>(std::floor(bVox.z));
+
+    // DDA step directions and parametric distances
+    int stepX = dir.x >= 0.0f ? 1 : -1;
+    int stepY = dir.y >= 0.0f ? 1 : -1;
+    int stepZ = dir.z >= 0.0f ? 1 : -1;
+
+    float tMaxX = (dir.x != 0.0f)
+        ? ((stepX > 0 ? (float(x + 1) - aVox.x) : (aVox.x - float(x))) / std::fabs(dir.x))
+        : FLT_MAX;
+    float tMaxY = (dir.y != 0.0f)
+        ? ((stepY > 0 ? (float(y + 1) - aVox.y) : (aVox.y - float(y))) / std::fabs(dir.y))
+        : FLT_MAX;
+    float tMaxZ = (dir.z != 0.0f)
+        ? ((stepZ > 0 ? (float(z + 1) - aVox.z) : (aVox.z - float(z))) / std::fabs(dir.z))
+        : FLT_MAX;
+
+    float tDeltaX = (dir.x != 0.0f) ? (1.0f / std::fabs(dir.x)) : FLT_MAX;
+    float tDeltaY = (dir.y != 0.0f) ? (1.0f / std::fabs(dir.y)) : FLT_MAX;
+    float tDeltaZ = (dir.z != 0.0f) ? (1.0f / std::fabs(dir.z)) : FLT_MAX;
+
+    int gridDimX = params.gridDim.x;
+    int gridDimY = params.gridDim.y;
+    int gridDimZ = params.gridDim.z;
+
+    bool firstCell = true;
+
+    while (true) {
+        bool isLastCell = (x == endX && y == endY && z == endZ);
+
+        if (!firstCell && !isLastCell) {
+            int outsideCount = 0;
+            if (getOccupancy(x, y, z) == 0) outsideCount++;
+            if (getOccupancy(x + 1, y, z) == 0) outsideCount++;
+            if (getOccupancy(x, y + 1, z) == 0) outsideCount++;
+            if (getOccupancy(x, y, z + 1) == 0) outsideCount++;
+            if (getOccupancy(x + 1, y + 1, z) == 0) outsideCount++;
+            if (getOccupancy(x + 1, y, z + 1) == 0) outsideCount++;
+            if (getOccupancy(x, y + 1, z + 1) == 0) outsideCount++;
+            if (getOccupancy(x + 1, y + 1, z + 1) == 0) outsideCount++;
+
+            if (outsideCount >= outsideCornerThreshold) {
+                return false;
+            }
+        }
+
+        if (isLastCell) {
+            break;
+        }
+
+        firstCell = false;
+
+        // Advance to next cell along the axis with smallest tMax
+        if (tMaxX < tMaxY) {
+            if (tMaxX < tMaxZ) {
+                if (tMaxX > travelLimit) break;
+                x += stepX;
+                tMaxX += tDeltaX;
+            } else {
+                if (tMaxZ > travelLimit) break;
+                z += stepZ;
+                tMaxZ += tDeltaZ;
+            }
+        } else {
+            if (tMaxY < tMaxZ) {
+                if (tMaxY > travelLimit) break;
+                y += stepY;
+                tMaxY += tDeltaY;
+            } else {
+                if (tMaxZ > travelLimit) break;
+                z += stepZ;
+                tMaxZ += tDeltaZ;
+            }
+        }
+
+        // Safety: stay within grid bounds
+        if (x < 0 || x >= gridDimX || y < 0 || y >= gridDimY || z < 0 || z >= gridDimZ) {
+            return false; // Left the grid entirely
+        }
+    }
+
+    return true;
+}
+
 glm::vec3 VoxelGrid::getCornerPosition(int x, int y, int z) const {
     float canonicalVoxelSize = CANONICAL_DOMAIN_SIZE / float(params.gridDim.x);
     glm::vec3 canonical = glm::vec3(x, y, z) * canonicalVoxelSize;

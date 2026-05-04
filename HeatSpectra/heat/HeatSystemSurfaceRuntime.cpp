@@ -23,7 +23,12 @@ void HeatSystemSurfaceRuntime::setReceiverPayloads(
     const std::vector<VkBufferView>& inputHalfedgeViews,
     const std::vector<VkBufferView>& inputEdgeViews,
     const std::vector<VkBufferView>& inputTriangleViews,
-    const std::vector<VkBufferView>& inputLengthViews) {
+    const std::vector<VkBufferView>& inputLengthViews,
+    const std::vector<VkBuffer>& receiverSurfaceBuffers,
+    const std::vector<VkDeviceSize>& receiverSurfaceBufferOffsets,
+    const std::vector<VkBufferView>& receiverSurfaceBufferViews,
+    const std::vector<VkBuffer>& receiverSurfaceGradientBuffers,
+    const std::vector<VkDeviceSize>& receiverSurfaceGradientBufferOffsets) {
     activeReceiverIntrinsicMeshes = receiverIntrinsicMeshes;
     activeReceiverRuntimeModelIds = receiverRuntimeModelIds;
     activeSupportingHalfedgeViews = supportingHalfedgeViews;
@@ -36,12 +41,15 @@ void HeatSystemSurfaceRuntime::setReceiverPayloads(
     activeInputEdgeViews = inputEdgeViews;
     activeInputTriangleViews = inputTriangleViews;
     activeInputLengthViews = inputLengthViews;
+    activeReceiverSurfaceBuffers = receiverSurfaceBuffers;
+    activeReceiverSurfaceBufferOffsets = receiverSurfaceBufferOffsets;
+    activeReceiverSurfaceBufferViews = receiverSurfaceBufferViews;
+    activeReceiverSurfaceGradientBuffers = receiverSurfaceGradientBuffers;
+    activeReceiverSurfaceGradientBufferOffsets = receiverSurfaceGradientBufferOffsets;
     receiverBindingsDirty = true;
 }
 
-bool HeatSystemSurfaceRuntime::ensureReceiverBindings(
-    VulkanDevice& vulkanDevice,
-    MemoryAllocator& memoryAllocator) {
+bool HeatSystemSurfaceRuntime::ensureReceiverBindings(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator) {
     if (!receiverBindingsDirty) {
         return true;
     }
@@ -60,7 +68,10 @@ bool HeatSystemSurfaceRuntime::ensureReceiverBindings(
         activeInputHalfedgeViews.size(),
         activeInputEdgeViews.size(),
         activeInputTriangleViews.size(),
-        activeInputLengthViews.size()
+        activeInputLengthViews.size(),
+        activeReceiverSurfaceBuffers.size(),
+        activeReceiverSurfaceBufferViews.size(),
+        activeReceiverSurfaceGradientBuffers.size()
     });
     receiverRuntimes.reserve(receiverCount);
 
@@ -76,7 +87,10 @@ bool HeatSystemSurfaceRuntime::ensureReceiverBindings(
             activeInputHalfedgeViews[index] == VK_NULL_HANDLE ||
             activeInputEdgeViews[index] == VK_NULL_HANDLE ||
             activeInputTriangleViews[index] == VK_NULL_HANDLE ||
-            activeInputLengthViews[index] == VK_NULL_HANDLE) {
+            activeInputLengthViews[index] == VK_NULL_HANDLE ||
+            activeReceiverSurfaceBuffers[index] == VK_NULL_HANDLE ||
+            activeReceiverSurfaceBufferViews[index] == VK_NULL_HANDLE ||
+            activeReceiverSurfaceGradientBuffers[index] == VK_NULL_HANDLE) {
             continue;
         }
 
@@ -94,118 +108,17 @@ bool HeatSystemSurfaceRuntime::ensureReceiverBindings(
             activeInputHalfedgeViews[index],
             activeInputEdgeViews[index],
             activeInputTriangleViews[index],
-            activeInputLengthViews[index]);
-        if (!receiverRuntime->createReceiverBuffers() || !receiverRuntime->initializeReceiverBuffer()) {
-            receiverRuntime->cleanup();
-            return false;
-        }
+            activeInputLengthViews[index],
+            activeReceiverSurfaceBuffers[index],
+            activeReceiverSurfaceBufferOffsets[index],
+            activeReceiverSurfaceBufferViews[index],
+            activeReceiverSurfaceGradientBuffers[index],
+            activeReceiverSurfaceGradientBufferOffsets[index]);
         receiverRuntimes.push_back(std::move(receiverRuntime));
     }
 
     receiverBindingsDirty = false;
     return true;
-}
-
-void HeatSystemSurfaceRuntime::refreshDescriptors(
-    const HeatSystemSimRuntime& simRuntime,
-    VkDescriptorSetLayout surfaceLayout,
-    VkDescriptorPool surfacePool,
-    bool forceReallocate) {
-    const uint32_t nodeCount = simRuntime.getNodeCount();
-    for (auto& receiverRuntime : receiverRuntimes) {
-        if (!receiverRuntime) {
-            continue;
-        }
-
-        if (forceReallocate) {
-            receiverRuntime->updateDescriptors(
-                surfaceLayout,
-                surfacePool,
-                simRuntime.getTempBufferA(),
-                simRuntime.getTempBufferAOffset(),
-                simRuntime.getTempBufferB(),
-                simRuntime.getTempBufferBOffset(),
-                simRuntime.getTimeBuffer(),
-                simRuntime.getTimeBufferOffset(),
-                nodeCount,
-                true);
-            continue;
-        }
-
-        receiverRuntime->updateDescriptors(
-            surfaceLayout,
-            surfacePool,
-            simRuntime.getTempBufferA(),
-            simRuntime.getTempBufferAOffset(),
-            simRuntime.getTempBufferB(),
-            simRuntime.getTempBufferBOffset(),
-            simRuntime.getTimeBuffer(),
-            simRuntime.getTimeBufferOffset(),
-            nodeCount);
-    }
-}
-
-void HeatSystemSurfaceRuntime::executeBufferTransfers(CommandPool& renderCommandPool) {
-    VkCommandBuffer copyCmd = renderCommandPool.beginCommands();
-    for (auto& receiverRuntime : receiverRuntimes) {
-        if (receiverRuntime) {
-            receiverRuntime->executeBufferTransfers(copyCmd);
-        }
-    }
-
-    VkMemoryBarrier memBarrier{};
-    memBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    memBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    memBarrier.dstAccessMask =
-        VK_ACCESS_SHADER_READ_BIT |
-        VK_ACCESS_SHADER_WRITE_BIT |
-        VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
-
-    vkCmdPipelineBarrier(
-        copyCmd,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
-            VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
-            VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
-            VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT |
-            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        0,
-        1,
-        &memBarrier,
-        0,
-        nullptr,
-        0,
-        nullptr);
-
-    renderCommandPool.endCommands(copyCmd);
-
-    for (auto& receiverRuntime : receiverRuntimes) {
-        if (receiverRuntime) {
-            receiverRuntime->cleanupStagingBuffers();
-        }
-    }
-}
-
-bool HeatSystemSurfaceRuntime::resetSurfaceTemperatures(CommandPool& renderCommandPool) {
-    bool hasResetUploads = false;
-    for (auto& receiverRuntime : receiverRuntimes) {
-        if (!receiverRuntime) {
-            continue;
-        }
-
-        if (!receiverRuntime->resetSurfaceTemp()) {
-            std::cerr << "[HeatSystemSurfaceRuntime] Failed to reset surface temperatures for model "
-                      << receiverRuntime->getRuntimeModelId() << std::endl;
-            continue;
-        }
-
-        hasResetUploads = true;
-    }
-
-    if (hasResetUploads) {
-        executeBufferTransfers(renderCommandPool);
-    }
-    return hasResetUploads;
 }
 
 void HeatSystemSurfaceRuntime::cleanup() {

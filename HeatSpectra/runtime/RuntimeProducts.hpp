@@ -95,6 +95,11 @@ struct VoronoiSurfaceProduct {
     VkDeviceSize gmlsSurfaceWeightBufferOffset = 0;
     VkBuffer gmlsSurfaceGradientWeightBuffer = VK_NULL_HANDLE;
     VkDeviceSize gmlsSurfaceGradientWeightBufferOffset = 0;
+    VkBuffer surfaceBuffer = VK_NULL_HANDLE;
+    VkDeviceSize surfaceBufferOffset = 0;
+    VkBuffer surfaceGradientBuffer = VK_NULL_HANDLE;
+    VkDeviceSize surfaceGradientBufferOffset = 0;
+    VkBufferView surfaceBufferView = VK_NULL_HANDLE;
     VkBufferView supportingHalfedgeView = VK_NULL_HANDLE;
     VkBufferView supportingAngleView = VK_NULL_HANDLE;
     VkBufferView halfedgeView = VK_NULL_HANDLE;
@@ -116,6 +121,9 @@ struct VoronoiSurfaceProduct {
             indexCount != 0 &&
             intrinsicVertexCount != 0 &&
             candidateBuffer != VK_NULL_HANDLE &&
+            surfaceBuffer != VK_NULL_HANDLE &&
+            surfaceGradientBuffer != VK_NULL_HANDLE &&
+            surfaceBufferView != VK_NULL_HANDLE &&
             supportingHalfedgeView != VK_NULL_HANDLE &&
             supportingAngleView != VK_NULL_HANDLE &&
             halfedgeView != VK_NULL_HANDLE &&
@@ -242,12 +250,22 @@ struct HeatProduct {
     bool paused = false;
     std::vector<uint32_t> sourceRuntimeModelIds;
     std::vector<uint32_t> receiverRuntimeModelIds;
+    std::vector<VkBuffer> receiverSurfaceBuffers;
+    std::vector<VkDeviceSize> receiverSurfaceBufferOffsets;
+    std::vector<uint32_t> receiverSurfacePointCounts;
     std::vector<VkBufferView> receiverSurfaceBufferViews;
+    std::vector<VkBuffer> receiverSurfaceGradientBuffers;
+    std::vector<VkDeviceSize> receiverSurfaceGradientBufferOffsets;
     uint64_t productHash = 0;
 
     bool isValid() const {
         return !receiverRuntimeModelIds.empty() &&
-            receiverRuntimeModelIds.size() == receiverSurfaceBufferViews.size();
+            receiverRuntimeModelIds.size() == receiverSurfaceBuffers.size() &&
+            receiverRuntimeModelIds.size() == receiverSurfaceBufferOffsets.size() &&
+            receiverRuntimeModelIds.size() == receiverSurfacePointCounts.size() &&
+            receiverRuntimeModelIds.size() == receiverSurfaceBufferViews.size() &&
+            receiverRuntimeModelIds.size() == receiverSurfaceGradientBuffers.size() &&
+            receiverRuntimeModelIds.size() == receiverSurfaceGradientBufferOffsets.size();
     }
 
 };
@@ -314,6 +332,10 @@ inline uint64_t buildProductHash(const VoronoiProduct& product) {
         hash = RuntimeProductHash::mixPod(hash, surfaceProduct.gmlsSurfaceWeightBufferOffset);
         hash = RuntimeProductHash::mixPod(hash, surfaceProduct.gmlsSurfaceGradientWeightBuffer);
         hash = RuntimeProductHash::mixPod(hash, surfaceProduct.gmlsSurfaceGradientWeightBufferOffset);
+        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.surfaceBuffer);
+        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.surfaceBufferOffset);
+        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.surfaceGradientBuffer);
+        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.surfaceGradientBufferOffset);
         hash = RuntimeProductHash::mixPod(hash, surfaceProduct.supportingHalfedgeView);
         hash = RuntimeProductHash::mixPod(hash, surfaceProduct.supportingAngleView);
         hash = RuntimeProductHash::mixPod(hash, surfaceProduct.halfedgeView);
@@ -363,6 +385,9 @@ inline uint64_t buildProductHash(const HeatProduct& product) {
     hash = RuntimeProductHash::mixPod(hash, static_cast<uint64_t>(product.paused ? 1u : 0u));
     hash = RuntimeProductHash::mixPodVector(hash, product.sourceRuntimeModelIds);
     hash = RuntimeProductHash::mixPodVector(hash, product.receiverRuntimeModelIds);
+    hash = RuntimeProductHash::mixPodVector(hash, product.receiverSurfaceBuffers);
+    hash = RuntimeProductHash::mixPodVector(hash, product.receiverSurfaceBufferOffsets);
+    hash = RuntimeProductHash::mixPodVector(hash, product.receiverSurfacePointCounts);
     hash = RuntimeProductHash::mixPodVector(hash, product.receiverSurfaceBufferViews);
     return hash;
 }

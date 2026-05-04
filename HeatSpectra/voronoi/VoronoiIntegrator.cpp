@@ -86,12 +86,11 @@ void VoronoiIntegrator::extractMeshTriangles(
             continue;
         }
 
-        MeshTriangleGPU tri;
-        tri.v0 = glm::vec4(positions[indices[i]], 0.0f);
-        tri.v1 = glm::vec4(positions[indices[i + 1]], 0.0f);
-        tri.v2 = glm::vec4(positions[indices[i + 2]], 0.0f);
-
-        meshTriangles.push_back(tri);
+        meshTriangles.push_back({
+            glm::vec4(positions[indices[i]], 0.0f),
+            glm::vec4(positions[indices[i + 1]], 0.0f),
+            glm::vec4(positions[indices[i + 2]], 0.0f)
+        });
     }
 
 }

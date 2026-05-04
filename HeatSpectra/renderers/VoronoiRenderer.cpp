@@ -1,6 +1,8 @@
 #include "VoronoiRenderer.hpp"
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/UniformBufferManager.hpp"
+#include "vulkan/MemoryAllocator.hpp"
+#include "vulkan/VulkanBuffer.hpp"
 #include "scene/Model.hpp"
 #include "util/Structs.hpp"
 #include "vulkan/VulkanImage.hpp"
@@ -12,8 +14,8 @@
 #include <cstring>
 #include <iostream>
 
-VoronoiRenderer::VoronoiRenderer(VulkanDevice& device, UniformBufferManager& uboManager, CommandPool& commandPool)
-    : vulkanDevice(device), uniformBufferManager(uboManager), renderCommandPool(commandPool) {
+VoronoiRenderer::VoronoiRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uboManager, CommandPool& commandPool)
+    : vulkanDevice(device), allocator(allocator), uniformBufferManager(uboManager), renderCommandPool(commandPool) {
 }
 
 VoronoiRenderer::~VoronoiRenderer() {
@@ -106,25 +108,13 @@ bool VoronoiRenderer::createWireframeTexture() {
 
     const VkDeviceSize imageSize = static_cast<VkDeviceSize>(pixels.size());
     VkBuffer stagingBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory stagingBufferMemory = VK_NULL_HANDLE;
-    if (vulkanDevice.createBuffer(
-            imageSize,
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            stagingBufferMemory,
-            stagingBuffer) != VK_SUCCESS) {
+    VkDeviceSize stagingBufferOffset = 0;
+    void* data = nullptr;
+    if (createStagingBuffer(allocator, imageSize, stagingBuffer, stagingBufferOffset, &data) != VK_SUCCESS || !data) {
         std::cerr << "VoronoiRenderer: Failed to create wireframe staging buffer" << std::endl;
         return false;
     }
-
-    void* data = nullptr;
-    if (vkMapMemory(vulkanDevice.getDevice(), stagingBufferMemory, 0, imageSize, 0, &data) != VK_SUCCESS || !data) {
-        vkDestroyBuffer(vulkanDevice.getDevice(), stagingBuffer, nullptr);
-        vkFreeMemory(vulkanDevice.getDevice(), stagingBufferMemory, nullptr);
-        return false;
-    }
     std::memcpy(data, pixels.data(), static_cast<size_t>(imageSize));
-    vkUnmapMemory(vulkanDevice.getDevice(), stagingBufferMemory);
 
     if (createImage(
             vulkanDevice,
@@ -138,8 +128,7 @@ bool VoronoiRenderer::createWireframeTexture() {
             wireframeTextureMemory,
             VK_SAMPLE_COUNT_1_BIT,
             mipLevels) != VK_SUCCESS) {
-        vkDestroyBuffer(vulkanDevice.getDevice(), stagingBuffer, nullptr);
-        vkFreeMemory(vulkanDevice.getDevice(), stagingBufferMemory, nullptr);
+        allocator.free(stagingBuffer, stagingBufferOffset);
         return false;
     }
 
@@ -150,16 +139,14 @@ bool VoronoiRenderer::createWireframeTexture() {
             VK_IMAGE_LAYOUT_UNDEFINED,
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             mipLevels) != VK_SUCCESS) {
-        vkDestroyBuffer(vulkanDevice.getDevice(), stagingBuffer, nullptr);
-        vkFreeMemory(vulkanDevice.getDevice(), stagingBufferMemory, nullptr);
+        allocator.free(stagingBuffer, stagingBufferOffset);
         return false;
     }
 
     {
         VkCommandBuffer commandBuffer = renderCommandPool.beginCommands();
         if (commandBuffer == VK_NULL_HANDLE) {
-            vkDestroyBuffer(vulkanDevice.getDevice(), stagingBuffer, nullptr);
-            vkFreeMemory(vulkanDevice.getDevice(), stagingBufferMemory, nullptr);
+            allocator.free(stagingBuffer, stagingBufferOffset);
             return false;
         }
         vkCmdCopyBufferToImage(
@@ -179,13 +166,11 @@ bool VoronoiRenderer::createWireframeTexture() {
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             mipLevels) != VK_SUCCESS) {
-        vkDestroyBuffer(vulkanDevice.getDevice(), stagingBuffer, nullptr);
-        vkFreeMemory(vulkanDevice.getDevice(), stagingBufferMemory, nullptr);
+        allocator.free(stagingBuffer, stagingBufferOffset);
         return false;
     }
 
-    vkDestroyBuffer(vulkanDevice.getDevice(), stagingBuffer, nullptr);
-    vkFreeMemory(vulkanDevice.getDevice(), stagingBufferMemory, nullptr);
+    allocator.free(stagingBuffer, stagingBufferOffset);
 
     wireframeTextureView = createImageView(
         vulkanDevice,

@@ -275,7 +275,7 @@ void mapSurfacePoints(
 				contactRatio = pair.contactArea / rTri.area;
 			}
 
-			glm::vec3 patchColor = glm::vec3(0.1f, 0.4f, 1.0f);
+			glm::vec3 patchColor = glm::vec3(0.0f, 0.304f, 0.918f); 
 			if (contactRatio > 0.95f) {
 				patchColor = glm::vec3(1.0f, 0.2f, 0.1f);
 			}

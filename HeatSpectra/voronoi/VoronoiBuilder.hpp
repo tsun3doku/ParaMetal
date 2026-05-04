@@ -15,10 +15,7 @@ class VulkanDevice;
 
 class VoronoiBuilder {
 public:
-    VoronoiBuilder(
-        VulkanDevice& vulkanDevice,
-        MemoryAllocator& memoryAllocator,
-        VoronoiResources& resources);
+    VoronoiBuilder(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, VoronoiResources& resources);
 
     bool buildDomains(
         const std::vector<std::unique_ptr<VoronoiModelRuntime>>& modelRuntimes,
@@ -38,14 +35,6 @@ public:
     void setGhost(std::vector<VoronoiDomain>& receiverVoronoiDomains, bool fromVolumes);
 
 private:
-    bool tryCreateStorageBuffer(
-        const char* label,
-        const void* data,
-        VkDeviceSize size,
-        VkBuffer& buffer,
-        VkDeviceSize& offset,
-        void** mapped,
-        bool hostVisible = true) const;
     bool createVoronoiGeometryBuffers(
         const std::vector<voronoi::Node>& initialNodes,
         const std::vector<glm::vec4>& seedPositions,

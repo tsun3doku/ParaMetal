@@ -89,10 +89,7 @@ void HeatSystemVoronoiStage::insertInterSubstepBarrier(
         nullptr);
 }
 
-void HeatSystemVoronoiStage::insertFinalTemperatureBarrier(
-    VkCommandBuffer commandBuffer,
-    const HeatSystemSimRuntime& simRuntime,
-    uint32_t numSubsteps) const {
+void HeatSystemVoronoiStage::insertFinalTemperatureBarrier(VkCommandBuffer commandBuffer, const HeatSystemSimRuntime& simRuntime, uint32_t numSubsteps) const {
     const bool writesBufferB = finalSubstepWritesBufferB(numSubsteps);
     VkBuffer finalTempBuffer = simRuntime.getTempBufferA();
     VkDeviceSize finalTempOffset = simRuntime.getTempBufferAOffset();
@@ -281,12 +278,7 @@ bool HeatSystemVoronoiStage::createDescriptorSets(uint32_t maxFramesInFlight, co
                     (j == 3) ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
                 descriptorWrites[j].pBufferInfo = &bufferInfos[j];
             }
-            vkUpdateDescriptorSets(
-                context.vulkanDevice.getDevice(),
-                8,
-                descriptorWrites.data(),
-                0,
-                nullptr);
+            vkUpdateDescriptorSets(context.vulkanDevice.getDevice(), 8, descriptorWrites.data(), 0, nullptr);
         }
 
         {

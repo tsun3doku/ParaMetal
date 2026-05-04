@@ -30,18 +30,16 @@ public:
         const std::vector<VkBufferView>& inputHalfedgeViews,
         const std::vector<VkBufferView>& inputEdgeViews,
         const std::vector<VkBufferView>& inputTriangleViews,
-        const std::vector<VkBufferView>& inputLengthViews);
+        const std::vector<VkBufferView>& inputLengthViews,
+        const std::vector<VkBuffer>& receiverSurfaceBuffers,
+        const std::vector<VkDeviceSize>& receiverSurfaceBufferOffsets,
+        const std::vector<VkBufferView>& receiverSurfaceBufferViews,
+        const std::vector<VkBuffer>& receiverSurfaceGradientBuffers,
+        const std::vector<VkDeviceSize>& receiverSurfaceGradientBufferOffsets);
     bool ensureReceiverBindings(
         VulkanDevice& vulkanDevice,
         MemoryAllocator& memoryAllocator);
     bool needsRebuild() const { return receiverBindingsDirty; }
-    void refreshDescriptors(
-        const HeatSystemSimRuntime& simRuntime,
-        VkDescriptorSetLayout surfaceLayout,
-        VkDescriptorPool surfacePool,
-        bool forceReallocate);
-    void executeBufferTransfers(CommandPool& renderCommandPool);
-    bool resetSurfaceTemperatures(CommandPool& renderCommandPool);
     void cleanup();
 
 private:
@@ -57,6 +55,11 @@ private:
     std::vector<VkBufferView> activeInputEdgeViews;
     std::vector<VkBufferView> activeInputTriangleViews;
     std::vector<VkBufferView> activeInputLengthViews;
+    std::vector<VkBuffer> activeReceiverSurfaceBuffers;
+    std::vector<VkDeviceSize> activeReceiverSurfaceBufferOffsets;
+    std::vector<VkBufferView> activeReceiverSurfaceBufferViews;
+    std::vector<VkBuffer> activeReceiverSurfaceGradientBuffers;
+    std::vector<VkDeviceSize> activeReceiverSurfaceGradientBufferOffsets;
     std::vector<std::unique_ptr<HeatReceiverRuntime>> receiverRuntimes;
     bool receiverBindingsDirty = true;
 };

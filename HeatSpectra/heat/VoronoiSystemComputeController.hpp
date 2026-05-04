@@ -49,6 +49,10 @@ public:
         std::vector<VkBufferView> inputEdgeViews;
         std::vector<VkBufferView> inputTriangleViews;
         std::vector<VkBufferView> inputLengthViews;
+        std::vector<VkBuffer> receiverSurfaceBuffers;
+        std::vector<VkDeviceSize> receiverSurfaceBufferOffsets;
+        std::vector<VkBuffer> receiverSurfaceGradientBuffers;
+        std::vector<VkDeviceSize> receiverSurfaceGradientBufferOffsets;
         uint64_t computeHash = 0;
     };
 
@@ -123,5 +127,9 @@ inline uint64_t buildComputeHash(const VoronoiSystemComputeController::Config& c
     hash = RuntimeProductHash::mixPodVector(hash, config.inputEdgeViews);
     hash = RuntimeProductHash::mixPodVector(hash, config.inputTriangleViews);
     hash = RuntimeProductHash::mixPodVector(hash, config.inputLengthViews);
+    hash = RuntimeProductHash::mixPodVector(hash, config.receiverSurfaceBuffers);
+    hash = RuntimeProductHash::mixPodVector(hash, config.receiverSurfaceBufferOffsets);
+    hash = RuntimeProductHash::mixPodVector(hash, config.receiverSurfaceGradientBuffers);
+    hash = RuntimeProductHash::mixPodVector(hash, config.receiverSurfaceGradientBufferOffsets);
     return hash;
 }

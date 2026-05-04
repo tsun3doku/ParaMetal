@@ -82,14 +82,6 @@ public:
     bool findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties, uint32_t& outMemoryTypeIndex) const;
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const;
 
-    VkResult createBuffer(
-        VkDeviceSize size,
-        VkBufferUsageFlags usage,
-        VkMemoryPropertyFlags properties,
-        VkDeviceMemory& bufferMemory,
-        VkBuffer& outBuffer);
-    VkBuffer createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceMemory& bufferMemory);
-
 private:
     void pickPhysicalDevice(VkInstance instance, VkSurfaceKHR surface);
     void createLogicalDevice(VkSurfaceKHR surface);

@@ -75,7 +75,12 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
         config.inputHalfedgeViews,
         config.inputEdgeViews,
         config.inputTriangleViews,
-        config.inputLengthViews);
+        config.inputLengthViews,
+        config.receiverSurfaceBuffers,
+        config.receiverSurfaceBufferOffsets,
+        config.receiverSurfaceBufferViews,
+        config.receiverSurfaceGradientBuffers,
+        config.receiverSurfaceGradientBufferOffsets);
     system.setThermalMaterials(config.runtimeThermalMaterials);
     system.setParams(config.contactThermalConductance);
     system.setContactCouplings(config.contactCouplings);
@@ -241,14 +246,28 @@ bool HeatSystemComputeController::exportProduct(uint64_t socketKey, HeatProduct&
 
     const auto& receivers = system.getReceivers();
     outProduct.receiverRuntimeModelIds.reserve(receivers.size());
+    outProduct.receiverSurfaceBuffers.reserve(receivers.size());
+    outProduct.receiverSurfaceBufferOffsets.reserve(receivers.size());
+    outProduct.receiverSurfacePointCounts.reserve(receivers.size());
     outProduct.receiverSurfaceBufferViews.reserve(receivers.size());
+    outProduct.receiverSurfaceGradientBuffers.reserve(receivers.size());
+    outProduct.receiverSurfaceGradientBufferOffsets.reserve(receivers.size());
     for (const auto& receiver : receivers) {
-        if (!receiver || receiver->getRuntimeModelId() == 0 || receiver->getSurfaceBufferView() == VK_NULL_HANDLE) {
+        if (!receiver ||
+            receiver->getRuntimeModelId() == 0 ||
+            receiver->getSurfaceBuffer() == VK_NULL_HANDLE ||
+            receiver->getSurfaceBufferView() == VK_NULL_HANDLE ||
+            receiver->getIntrinsicVertexCount() == 0) {
             continue;
         }
 
         outProduct.receiverRuntimeModelIds.push_back(receiver->getRuntimeModelId());
+        outProduct.receiverSurfaceBuffers.push_back(receiver->getSurfaceBuffer());
+        outProduct.receiverSurfaceBufferOffsets.push_back(receiver->getSurfaceBufferOffset());
         outProduct.receiverSurfaceBufferViews.push_back(receiver->getSurfaceBufferView());
+        outProduct.receiverSurfacePointCounts.push_back(static_cast<uint32_t>(receiver->getIntrinsicVertexCount()));
+        outProduct.receiverSurfaceGradientBuffers.push_back(receiver->getSurfaceGradientBuffer());
+        outProduct.receiverSurfaceGradientBufferOffsets.push_back(receiver->getSurfaceGradientBufferOffset());
     }
 
     outProduct.productHash = buildProductHash(outProduct);

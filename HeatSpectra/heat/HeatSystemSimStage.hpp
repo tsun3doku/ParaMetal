@@ -27,7 +27,11 @@ public:
         const HeatSystemVoronoiStage& voronoiStage,
         const HeatSystemSurfaceStage& surfaceStage,
         uint32_t maxNodeNeighbors,
-        uint32_t numSubsteps) const;
+        uint32_t numSubsteps,
+        const std::vector<VkDescriptorSet>& surfaceComputeSetsA,
+        const std::vector<VkDescriptorSet>& surfaceComputeSetsB,
+        const std::vector<VkDescriptorSet>& surfaceGradientComputeSetsA,
+        const std::vector<VkDescriptorSet>& surfaceGradientComputeSetsB) const;
 
 private:
     HeatSystemStageContext context;

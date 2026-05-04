@@ -26,14 +26,12 @@ public:
         VkBuffer seedPositionBuffer = VK_NULL_HANDLE;
         VkDeviceSize seedPositionBufferOffset = 0;
 
-
         VkBuffer voxelGridParamsBuffer = VK_NULL_HANDLE;
         VkDeviceSize voxelGridParamsBufferOffset = 0;
         VkDeviceSize voxelGridParamsBufferRange = 0;
 
         VkBuffer voxelOccupancyBuffer = VK_NULL_HANDLE;
         VkDeviceSize voxelOccupancyBufferOffset = 0;
-
 
         VkBuffer voxelTrianglesListBuffer = VK_NULL_HANDLE;
         VkDeviceSize voxelTrianglesListBufferOffset = 0;

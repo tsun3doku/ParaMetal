@@ -7,10 +7,11 @@
 class VulkanDevice;
 class UniformBufferManager;
 class CommandPool;
+class MemoryAllocator;
 
 class VoronoiRenderer {
 public:
-    VoronoiRenderer(VulkanDevice& device, UniformBufferManager& uniformBufferManager, CommandPool& commandPool);
+    VoronoiRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, CommandPool& commandPool);
     ~VoronoiRenderer();
 
     void initialize(VkRenderPass renderPass, uint32_t maxFramesInFlight);
@@ -40,6 +41,7 @@ private:
     bool createDescriptorSets(uint32_t maxFramesInFlight);
     bool createPipeline(VkRenderPass renderPass);
     VulkanDevice& vulkanDevice;
+    MemoryAllocator& allocator;
     UniformBufferManager& uniformBufferManager;
     CommandPool& renderCommandPool;
 

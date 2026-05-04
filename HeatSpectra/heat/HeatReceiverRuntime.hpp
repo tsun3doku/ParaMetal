@@ -25,28 +25,16 @@ public:
         VkBufferView inputHalfedgeView,
         VkBufferView inputEdgeView,
         VkBufferView inputTriangleView,
-        VkBufferView inputLengthView);
+        VkBufferView inputLengthView,
+        VkBuffer surfaceBuffer,
+        VkDeviceSize surfaceBufferOffset,
+        VkBufferView surfaceBufferView,
+        VkBuffer gradientBuffer,
+        VkDeviceSize gradientBufferOffset);
     ~HeatReceiverRuntime();
 
-    bool createReceiverBuffers();
-    bool initializeReceiverBuffer();
-    bool resetSurfaceTemp();
-
-    void updateDescriptors(
-        VkDescriptorSetLayout surfaceLayout,
-        VkDescriptorPool surfacePool,
-        VkBuffer tempBufferA,
-        VkDeviceSize tempBufferAOffset,
-        VkBuffer tempBufferB,
-        VkDeviceSize tempBufferBOffset,
-        VkBuffer timeBuffer,
-        VkDeviceSize timeBufferOffset,
-        uint32_t nodeCount,
-        bool forceReallocate = false);
-    void executeBufferTransfers(VkCommandBuffer commandBuffer);
-
-    void cleanup();
-    void cleanupStagingBuffers();
+    void setSurfaceBuffer(VkBuffer buffer, VkDeviceSize offset);
+    void setGradientBuffer(VkBuffer buffer, VkDeviceSize offset);
 
     void setGMLSSurfaceWeights(
         VkBuffer stencilBuffer,
@@ -55,6 +43,8 @@ public:
         VkDeviceSize valueWeightBufferOffset,
         VkBuffer gradientWeightBuffer,
         VkDeviceSize gradientWeightBufferOffset);
+
+    void cleanup();
 
     uint32_t getRuntimeModelId() const { return runtimeModelId; }
 
@@ -75,11 +65,26 @@ public:
     VkBufferView getInputTriangleView() const;
     VkBufferView getInputLengthView() const;
 
-    VkBuffer getSurfaceVertexBuffer() const { return surfaceVertexBuffer; }
-    VkDeviceSize getSurfaceVertexBufferOffset() const { return surfaceVertexBufferOffset; }
+    VkBuffer getSurfaceGradientBuffer() const { return surfaceGradientBuffer; }
+    VkDeviceSize getSurfaceGradientBufferOffset() const { return surfaceGradientBufferOffset; }
 
     VkDescriptorSet getSurfaceComputeSetA() const { return surfaceComputeSetA; }
     VkDescriptorSet getSurfaceComputeSetB() const { return surfaceComputeSetB; }
+    VkDescriptorSet getSurfaceGradientComputeSetA() const { return surfaceGradientComputeSetA; }
+    VkDescriptorSet getSurfaceGradientComputeSetB() const { return surfaceGradientComputeSetB; }
+
+    void updateDescriptors(
+        VkDescriptorSetLayout surfaceLayout,
+        VkDescriptorSetLayout gradientLayout,
+        VkDescriptorPool surfacePool,
+        VkBuffer tempBufferA,
+        VkDeviceSize tempBufferAOffset,
+        VkBuffer tempBufferB,
+        VkDeviceSize tempBufferBOffset,
+        VkBuffer timeBuffer,
+        VkDeviceSize timeBufferOffset,
+        uint32_t nodeCount,
+        bool forceReallocate = false);
 
 private:
     VulkanDevice& vulkanDevice;
@@ -110,13 +115,11 @@ private:
     VkDeviceSize surfaceBufferOffset = 0;
     VkBufferView surfaceBufferView = VK_NULL_HANDLE;
 
-    VkBuffer surfaceVertexBuffer = VK_NULL_HANDLE;
-    VkDeviceSize surfaceVertexBufferOffset = 0;
+    VkBuffer surfaceGradientBuffer = VK_NULL_HANDLE;
+    VkDeviceSize surfaceGradientBufferOffset = 0;
 
     VkDescriptorSet surfaceComputeSetA = VK_NULL_HANDLE;
     VkDescriptorSet surfaceComputeSetB = VK_NULL_HANDLE;
-
-    VkBuffer initStagingBuffer = VK_NULL_HANDLE;
-    VkDeviceSize initStagingOffset = 0;
-    VkDeviceSize initBufferSize = 0;
+    VkDescriptorSet surfaceGradientComputeSetA = VK_NULL_HANDLE;
+    VkDescriptorSet surfaceGradientComputeSetB = VK_NULL_HANDLE;
 };
