@@ -788,11 +788,24 @@ bool VoronoiBuilder::generateDiagram(
             bindings.voronoiDumpBufferOffset = resources.voronoiDumpBufferOffset;
 
             voronoiGeoCompute->updateDescriptors(bindings);
-            VoronoiGeoCompute::PushConstants geoPushConstants{};
-            geoPushConstants.debugEnable = debugEnable ? 1u : 0u;
-            geoPushConstants.nodeOffset = domain.nodeOffset;
-            geoPushConstants.nodeCount = domain.nodeCount;
-            voronoiGeoCompute->dispatch(geoPushConstants);
+
+            // Split large node counts into multiple smaller dispatches
+            const uint32_t NODES_PER_CHUNK = 100000;  
+            uint32_t nodesRemaining = domain.nodeCount;
+            uint32_t chunkBase = 0;
+
+            while (nodesRemaining > 0) {
+                uint32_t chunkSize = std::min(nodesRemaining, NODES_PER_CHUNK);
+
+                VoronoiGeoCompute::PushConstants geoPushConstants{};
+                geoPushConstants.debugEnable = debugEnable ? 1u : 0u;
+                geoPushConstants.nodeOffset = domain.nodeOffset + chunkBase;
+                geoPushConstants.nodeCount = chunkSize;
+                voronoiGeoCompute->dispatch(geoPushConstants);
+
+                chunkBase += chunkSize;
+                nodesRemaining -= chunkSize;
+            }
         }
     }
 

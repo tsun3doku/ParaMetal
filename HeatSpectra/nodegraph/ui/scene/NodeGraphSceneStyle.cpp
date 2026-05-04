@@ -49,7 +49,7 @@ QColor titleColor() {
 }
 
 QColor frozenCapActiveColor() {
-    return QColor(104, 222, 236);
+    return QColor(90, 170, 250);
 }
 
 QColor frozenCapInactiveColor() {
