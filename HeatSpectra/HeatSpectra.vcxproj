@@ -246,6 +246,7 @@ xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindows.dll" "$(OutDir)p
     <ClCompile Include="runtime\RuntimeRenderController.cpp" />
     <ClCompile Include="runtime\RuntimeSystems.cpp" />
     <ClCompile Include="scene\SceneController.cpp" />
+    <ClCompile Include="vulkan\MemoryPool.cpp" />
     <ClCompile Include="vulkan\VulkanInstanceContext.cpp" />
     <ClCompile Include="mesh\\remesher\\CommonSubdivision.cpp" />
     <ClCompile Include="contact\ContactSampling.cpp" />
@@ -525,6 +526,7 @@ xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindows.dll" "$(OutDir)p
     <ClInclude Include="runtime\RuntimeECS.hpp" />
     <ClInclude Include="render\WindowRuntimeState.hpp" />
     <ClInclude Include="scene\SceneController.hpp" />
+    <ClInclude Include="vulkan\MemoryPool.hpp" />
     <ClInclude Include="vulkan\VulkanInstanceContext.hpp" />
     <ClInclude Include="mesh\\remesher\\CommonSubdivision.hpp" />
     <ClInclude Include="contact\ContactSystemComputeController.hpp" />

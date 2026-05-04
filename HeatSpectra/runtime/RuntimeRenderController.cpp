@@ -41,10 +41,6 @@ RuntimeRenderFrameResult RuntimeRenderController::renderFrame(bool allowHeatSolv
     renderRuntime.renderFrame(flags, computePasses);
 
     ++frameCounter;
-    if (memoryAllocator &&
-        frameCounter % renderconfig::AllocatorDefragIntervalFrames == 0) {
-        memoryAllocator->defragment();
-    }
 
     return result;
 }
