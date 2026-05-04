@@ -2,6 +2,7 @@
 
 #include "renderers/HeatReceiverRenderer.hpp"
 #include "renderers/HeatSourceRenderer.hpp"
+#include "renderers/VectorArrowRenderer.hpp"
 #include "runtime/HeatDisplayController.hpp"
 
 #include <cstdint>
@@ -35,9 +36,11 @@ private:
     MemoryAllocator& memoryAllocator;
     std::unique_ptr<HeatSourceRenderer> sourceRenderer;
     std::unique_ptr<HeatReceiverRenderer> receiverRenderer;
+    std::unique_ptr<VectorArrowRenderer> vectorArrowRenderer;
     std::unordered_map<uint64_t, HeatDisplayController::Config> configsBySocket;
     std::vector<HeatSourceRenderer::SourceRenderBinding> sourceBindings;
     std::vector<HeatReceiverRenderer::ReceiverRenderBinding> receiverBindings;
+    std::vector<VectorArrowRenderer::VectorRenderBinding> fluxVectorBindings;
     uint32_t maxFramesInFlight = 0;
     bool initialized = false;
 };

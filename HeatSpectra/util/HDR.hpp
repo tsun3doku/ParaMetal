@@ -3,17 +3,18 @@
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/CommandBufferManager.hpp"
 #include "vulkan/VulkanImage.hpp"
+#include "vulkan/MemoryAllocator.hpp"
 #include "scene/Camera.hpp"
 
 #include <glm/glm.hpp>
 #include <string>
 #include <vector>
 
-const std::string HDR_PATH = "C:/Users/tsundoku/Documents/Visual Studio 2022/Projects/HeatSpectra/HeatSpectra/textures/rainforest.hdr"; 
+const std::string HDR_PATH = "C:/Users/tsundoku/Documents/Visual Studio 2022/Projects/HeatSpectra/HeatSpectra/textures/rainforest.hdr";
 
 class HDR {
 public:
-    HDR(VulkanDevice* vulkanDevice, CommandPool* renderCommandPool);
+    HDR(VulkanDevice* vulkanDevice, MemoryAllocator* memoryAllocator, CommandPool* renderCommandPool);
 	void init(VulkanDevice& vulkanDevice);
 	void createHDRTextureImage(const std::string& filePath);
 	void prefilterEnvMap(float roughness);
@@ -34,6 +35,7 @@ public:
 
 private:
 	VulkanDevice* vulkanDevice;
+	MemoryAllocator* memoryAllocator;
 	CommandPool* renderCommandPool;  // For image operations
 	Camera* camera;
 
@@ -57,7 +59,7 @@ private:
 	const uint32_t mipLevels = 6;
 	const uint32_t vertexCount = 6;
 
-	void uploadHDRTextureData(float* data, VkDeviceMemory stagingBufferMemory, VkBuffer stagingBuffer, uint32_t texWidth, uint32_t texHeight);
+	void uploadHDRTextureData(float* data, VkBuffer stagingBuffer, VkDeviceSize stagingBufferOffset, uint32_t texWidth, uint32_t texHeight);
 	void createImage(VulkanDevice& vulkanDevice, const VkImageCreateInfo& createInfo, VkImage& image, VkDeviceMemory& imageMemory);
 	void renderToCubemap(Camera& camera, VkCommandBuffer commandBuffer);
 	void createCubemapImage();

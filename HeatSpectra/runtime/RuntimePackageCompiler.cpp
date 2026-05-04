@@ -339,6 +339,8 @@ HeatPackage RuntimePackageCompiler::buildHeatPackage(
 
     const HeatSolveNodeParams nodeParams = readHeatSolveNodeParams(node);
     package.display.showHeatOverlay = nodeParams.preview.showHeatOverlay;
+    package.display.showFluxVectors = nodeParams.preview.showFluxVectors;
+    package.display.fluxVectorScale = static_cast<float>(nodeParams.preview.fluxVectorScale);
 
     if (!payloadRegistry) {
         return package;
@@ -494,6 +496,14 @@ void RuntimePackageCompiler::compileAndApply(
 
             switch (output.contract.producedPayloadType) {
             case NodePayloadType::Geometry: {
+                if (node.frozen) {
+                    auto entity = static_cast<ECSEntity>(outputValue->socketKey);
+                    if (registry.valid(entity) && registry.all_of<ModelPackage>(entity)) {
+                        staleEntities.erase(entity);
+                    }
+                    break;
+                }
+
                 const GeometryData* geometry = resolvePayload<GeometryData>(payloadRegistry, outputValue);
                 if (!geometry) {
                     break;
@@ -504,6 +514,14 @@ void RuntimePackageCompiler::compileAndApply(
                 break;
             }
             case NodePayloadType::Remesh: {
+                if (node.frozen) {
+                    auto entity = static_cast<ECSEntity>(outputValue->socketKey);
+                    if (registry.valid(entity) && registry.all_of<RemeshPackage>(entity)) {
+                        staleEntities.erase(entity);
+                    }
+                    break;
+                }
+
                 const RemeshData* remesh = resolvePayload<RemeshData>(payloadRegistry, outputValue);
                 if (!remesh || !remesh->active || remesh->sourceMeshHandle.key == 0) {
                     break;
@@ -515,6 +533,14 @@ void RuntimePackageCompiler::compileAndApply(
                 break;
             }
             case NodePayloadType::Voronoi: {
+                if (node.frozen) {
+                    auto entity = static_cast<ECSEntity>(outputValue->socketKey);
+                    if (registry.valid(entity) && registry.all_of<VoronoiPackage>(entity)) {
+                        staleEntities.erase(entity);
+                    }
+                    break;
+                }
+
                 const VoronoiData* voronoi = resolvePayload<VoronoiData>(payloadRegistry, outputValue);
                 if (!voronoi) {
                     break;
@@ -525,6 +551,14 @@ void RuntimePackageCompiler::compileAndApply(
                 break;
             }
             case NodePayloadType::Contact: {
+                if (node.frozen) {
+                    auto entity = static_cast<ECSEntity>(outputValue->socketKey);
+                    if (registry.valid(entity) && registry.all_of<ContactPackage>(entity)) {
+                        staleEntities.erase(entity);
+                    }
+                    break;
+                }
+
                 const ContactData* contact = resolvePayload<ContactData>(payloadRegistry, outputValue);
                 if (!contact) {
                     break;
@@ -535,6 +569,14 @@ void RuntimePackageCompiler::compileAndApply(
                 break;
             }
             case NodePayloadType::Heat: {
+                if (node.frozen) {
+                    auto entity = static_cast<ECSEntity>(outputValue->socketKey);
+                    if (registry.valid(entity) && registry.all_of<HeatPackage>(entity)) {
+                        staleEntities.erase(entity);
+                    }
+                    break;
+                }
+
                 const HeatData* heat = resolvePayload<HeatData>(payloadRegistry, outputValue);
                 if (!heat) {
                     break;

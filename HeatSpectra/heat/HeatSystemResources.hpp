@@ -34,9 +34,15 @@ public:
 
     VkDescriptorPool surfaceDescriptorPool = VK_NULL_HANDLE;
     VkDescriptorSetLayout surfaceDescriptorSetLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout surfaceGradientDescriptorSetLayout = VK_NULL_HANDLE;
 
     VkPipelineLayout surfacePipelineLayout = VK_NULL_HANDLE;
     VkPipeline surfacePipeline = VK_NULL_HANDLE;
+    VkPipelineLayout surfaceGradientPipelineLayout = VK_NULL_HANDLE;
+    VkPipeline surfaceGradientPipeline = VK_NULL_HANDLE;
+
+    VkBuffer surfaceGradientBuffer = VK_NULL_HANDLE;
+    VkDeviceSize surfaceGradientBufferOffset = 0;
 
     VkDescriptorPool contactDescriptorPool = VK_NULL_HANDLE;
     VkDescriptorSetLayout contactDescriptorSetLayout = VK_NULL_HANDLE;

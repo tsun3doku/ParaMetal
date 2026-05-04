@@ -1,7 +1,8 @@
 ﻿#pragma once
 
 #include "VulkanDevice.hpp"
-#include "CommandBufferManager.hpp"  // CommandPool class is defined here
+#include "CommandBufferManager.hpp"
+#include "MemoryAllocator.hpp"
 #include <string>
 #include <vector>
 
@@ -15,7 +16,7 @@ VkImageCreateInfo createImageCreateInfo(uint32_t width, uint32_t height, VkForma
 VkResult createShaderModule(const VulkanDevice& vulkanDevice, const std::vector<char>& code, VkShaderModule& outShaderModule);
 VkShaderModule createShaderModule(const VulkanDevice& vulkanDevice, const std::vector<char>& code);
 
-VkResult createTextureImage(VulkanDevice& vulkanDevice, CommandPool& commandPool, const std::string& texturePath, VkImage& textureImage, VkDeviceMemory& textureImageMemory);
-VkResult createTextureImage(VulkanDevice& vulkanDevice, CommandPool& commandPool, VkImage& textureImage, VkDeviceMemory& textureImageMemory, const char* imagePath);
+VkResult createTextureImage(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, CommandPool& commandPool, const std::string& texturePath, VkImage& textureImage, VkDeviceMemory& textureImageMemory);
+VkResult createTextureImage(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, CommandPool& commandPool, VkImage& textureImage, VkDeviceMemory& textureImageMemory, const char* imagePath);
 VkResult createTextureImageView(const VulkanDevice& vulkanDevice, VkImage textureImage, VkImageView& outImageView);
 VkResult createTextureSampler(const VulkanDevice& vulkanDevice, VkSampler& textureSampler);

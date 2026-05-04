@@ -16,7 +16,6 @@ public:
     static const uint32_t INVALID_INDEX = static_cast<uint32_t>(-1);
 
     bool optimalDelaunayTriangulation(int iterations, double minAngleDegrees, double maxEdgeLength, double stepSize);
-    bool insertPoint(uint32_t faceIdx, const glm::dvec3& baryCoords, uint32_t& outVertex, bool* outWasInserted = nullptr);
 
     GeodesicTracer::GeodesicTraceResult traceIntrinsicHalfedgeAlongInput(uint32_t intrinsicHalfedgeIdx);
 
@@ -58,6 +57,7 @@ private:
     void queueRefineFace(uint32_t faceIdx, float minAngleThreshold, float minAreaThreshold, std::priority_queue<FaceCandidate>& faceQueue);
     void queueDelaunayEdge(uint32_t edgeIdx, std::deque<uint32_t>& edgeQueue, std::vector<uint8_t>& inQueue);
 
+    bool insertPoint(uint32_t faceIdx, const glm::dvec3& baryCoords, uint32_t& outVertex, bool* outWasInserted = nullptr);
     bool insertCircumcenter(uint32_t faceIdx, uint32_t& outNewVertex);
     bool splitEdge(uint32_t edgeIdx, uint32_t& outNewVertex, uint32_t& outDiagFront, uint32_t& outDiagBack, uint32_t HESplit, double t = 0.5);
     bool splitEdge(uint32_t heEdge, double tParam, uint32_t& outNewV, bool* outWasInserted = nullptr);
@@ -65,7 +65,6 @@ private:
     bool computeWeightedCircumcenter(uint32_t vertIdx, glm::dvec2& outAvgVec, double& outAvgLen);
     bool resolveVertex(uint32_t newVertexIdx);
 
-    double computeMinAngle(uint32_t faceIdx);
     bool isEdgeOriginal(uint32_t edgeIdx) const;
 
     void initializeVertexLocations();

@@ -204,9 +204,10 @@ NodeTypeDefinition NodeGraphRegistry::buildHeatSolveNode() {
             {nodegraphparams::heatsolve::ResetRequested, "Reset Requested", NodeGraphParamType::Bool, 0.0, 0, false, "", true},
             makeArrayParamDefinition(nodegraphparams::heatsolve::MaterialBindings, "Material Bindings", std::move(materialBindingDefinition)),
             {nodegraphparams::heatsolve::CellSize, "Cell Size", NodeGraphParamType::Float, 0.005, 0, false, "", false},
-            {nodegraphparams::heatsolve::VoxelResolution, "Voxel Resolution", NodeGraphParamType::Int, 0.0, 128, false, "", false},
             {nodegraphparams::heatsolve::ShowHeatOverlay, "Show Heat Overlay", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::ContactThermalConductance, "Contact Thermal Conductance", NodeGraphParamType::Float, 16000.0, 0, false, "", false},
+            {nodegraphparams::heatsolve::ShowFluxVectors, "Show Flux Vectors", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
+            {nodegraphparams::heatsolve::FluxVectorScale, "Flux Vector Scale", NodeGraphParamType::Float, 1.0, 0, false, "", false},
         },
     };
 }

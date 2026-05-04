@@ -17,7 +17,6 @@ class VulkanDevice;
 class CommandPool;
 class VoronoiGeoCompute;
 class VoronoiCandidateCompute;
-class VoronoiSurfaceStage;
 
 class VoronoiSystem {
 public:
@@ -77,9 +76,6 @@ private:
     void failInitialization(const char* stage);
     void initializeVoronoiGeoCompute();
     void initializeVoronoiCandidateCompute();
-    bool createSurfaceDescriptorPool(uint32_t maxFramesInFlight);
-    bool createSurfaceDescriptorSetLayout();
-    bool createSurfacePipeline();
     bool rebuildVoronoiRuntime();
     void executeBufferTransfers();
     void dispatchVoronoiCandidateUpdates();
@@ -92,7 +88,6 @@ private:
 
     std::unique_ptr<VoronoiGeoCompute> voronoiGeoCompute;
     std::unique_ptr<VoronoiCandidateCompute> voronoiCandidateCompute;
-    std::unique_ptr<VoronoiSurfaceStage> surfaceStage;
     VoronoiBuilder voronoiBuilder;
 
     uint32_t maxFramesInFlight;

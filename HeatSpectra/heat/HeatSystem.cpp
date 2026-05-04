@@ -99,7 +99,12 @@ void HeatSystem::setReceiverPayloads(
     const std::vector<VkBufferView>& inputHalfedgeViews,
     const std::vector<VkBufferView>& inputEdgeViews,
     const std::vector<VkBufferView>& inputTriangleViews,
-    const std::vector<VkBufferView>& inputLengthViews) {
+    const std::vector<VkBufferView>& inputLengthViews,
+    const std::vector<VkBuffer>& receiverSurfaceBuffers,
+    const std::vector<VkDeviceSize>& receiverSurfaceBufferOffsets,
+    const std::vector<VkBufferView>& receiverSurfaceBufferViews,
+    const std::vector<VkBuffer>& receiverSurfaceGradientBuffers,
+    const std::vector<VkDeviceSize>& receiverSurfaceGradientBufferOffsets) {
     receiverRuntimeModelIds = updatedReceiverRuntimeModelIds;
     surfaceRuntime.setReceiverPayloads(
         updatedReceiverIntrinsicMeshes,
@@ -113,7 +118,12 @@ void HeatSystem::setReceiverPayloads(
         inputHalfedgeViews,
         inputEdgeViews,
         inputTriangleViews,
-        inputLengthViews);
+        inputLengthViews,
+        receiverSurfaceBuffers,
+        receiverSurfaceBufferOffsets,
+        receiverSurfaceBufferViews,
+        receiverSurfaceGradientBuffers,
+        receiverSurfaceGradientBufferOffsets);
     voronoiConfigDirty = true;
 }
 
@@ -262,7 +272,7 @@ bool HeatSystem::rebuildHeatStateRuntimes(bool forceDescriptorReallocate) {
         return false;
     }
 
-    surfaceRuntime.executeBufferTransfers(renderCommandPool);
+    // Surface buffers are owned by Voronoi - no staging transfers needed
     if (!heatContactRuntime.ensureCouplings(
             vulkanDevice,
             memoryAllocator,
@@ -336,15 +346,22 @@ bool HeatSystem::rebuildHeatStateRuntimes(bool forceDescriptorReallocate) {
         return false;
     }
 
-    if (resources.surfaceDescriptorSetLayout != VK_NULL_HANDLE &&
-        resources.surfaceDescriptorPool != VK_NULL_HANDLE) {
-        if (forceDescriptorReallocate) {
-            vkResetDescriptorPool(vulkanDevice.getDevice(), resources.surfaceDescriptorPool, 0);
+    // Update HeatReceiverRuntime descriptor sets for surface temperature/gradient compute
+    for (const auto& receiver : surfaceRuntime.getReceivers()) {
+        if (!receiver || receiver->getIntrinsicVertexCount() == 0) {
+            continue;
         }
-        surfaceRuntime.refreshDescriptors(
-            simRuntime,
+        receiver->updateDescriptors(
             resources.surfaceDescriptorSetLayout,
+            resources.surfaceGradientDescriptorSetLayout,
             resources.surfaceDescriptorPool,
+            simRuntime.getTempBufferA(),
+            simRuntime.getTempBufferAOffset(),
+            simRuntime.getTempBufferB(),
+            simRuntime.getTempBufferBOffset(),
+            simRuntime.getTimeBuffer(),
+            simRuntime.getTimeBufferOffset(),
+            resources.voronoiNodeCount,
             forceDescriptorReallocate);
     }
 
@@ -360,7 +377,7 @@ void HeatSystem::setActive(bool active) {
 
 void HeatSystem::resetHeatState() {
     simRuntime.reset();
-    surfaceRuntime.resetSurfaceTemperatures(renderCommandPool);
+    // Surface temperature reset is handled by Voronoi system (buffer owner)
 }
 
 bool HeatSystem::createComputeCommandBuffers(uint32_t maxFramesInFlight) {
@@ -420,6 +437,24 @@ void HeatSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t c
             vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, timingQueryPool, timingQueryBase);
         }
 
+        // Collect descriptor sets from HeatReceiverRuntime for each receiver
+        std::vector<VkDescriptorSet> surfaceComputeSetsA, surfaceComputeSetsB;
+        std::vector<VkDescriptorSet> surfaceGradientComputeSetsA, surfaceGradientComputeSetsB;
+        for (const auto& receiver : surfaceRuntime.getReceivers()) {
+            if (!receiver) {
+                surfaceComputeSetsA.push_back(VK_NULL_HANDLE);
+                surfaceComputeSetsB.push_back(VK_NULL_HANDLE);
+                surfaceGradientComputeSetsA.push_back(VK_NULL_HANDLE);
+                surfaceGradientComputeSetsB.push_back(VK_NULL_HANDLE);
+                continue;
+            }
+
+            surfaceComputeSetsA.push_back(receiver->getSurfaceComputeSetA());
+            surfaceComputeSetsB.push_back(receiver->getSurfaceComputeSetB());
+            surfaceGradientComputeSetsA.push_back(receiver->getSurfaceGradientComputeSetA());
+            surfaceGradientComputeSetsB.push_back(receiver->getSurfaceGradientComputeSetB());
+        }
+
         simStage->recordComputeCommands(
             commandBuffer,
             currentFrame,
@@ -429,7 +464,11 @@ void HeatSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t c
             *voronoiStage,
             *surfaceStage,
             MAX_NODE_NEIGHBORS,
-            NUM_SUBSTEPS);
+            NUM_SUBSTEPS,
+            surfaceComputeSetsA,
+            surfaceComputeSetsB,
+            surfaceGradientComputeSetsA,
+            surfaceGradientComputeSetsB);
 
         if (timingQueryPool != VK_NULL_HANDLE) {
             vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timingQueryPool, timingQueryBase + 1);

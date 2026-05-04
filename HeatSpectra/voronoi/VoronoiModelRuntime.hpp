@@ -64,6 +64,7 @@ public:
         const std::vector<voronoi::GMLSSurfaceGradientWeight>& gradientWeights);
     void updateSurfaceDescriptors(
         VkDescriptorSetLayout surfaceLayout,
+        VkDescriptorSetLayout gradientLayout,
         VkDescriptorPool surfacePool,
         VkBuffer tempBufferA,
         VkDeviceSize tempBufferAOffset,
@@ -74,6 +75,7 @@ public:
         uint32_t nodeCount);
     void recreateSurfaceDescriptors(
         VkDescriptorSetLayout surfaceLayout,
+        VkDescriptorSetLayout gradientLayout,
         VkDescriptorPool surfacePool,
         VkBuffer tempBufferA,
         VkDeviceSize tempBufferAOffset,
@@ -100,6 +102,7 @@ public:
     const SupportingHalfedge::IntrinsicMesh& getIntrinsicMesh() const { return intrinsicMesh; }
     const std::vector<glm::vec3>& getGeometryPositions() const { return geometryPositions; }
     const std::vector<uint32_t>& getGeometryTriangleIndices() const { return geometryTriangleIndices; }
+    const std::vector<SurfaceVertex>& getSurfaceVertices() const { return surfaceVertices; }
     std::vector<glm::vec3> getIntrinsicSurfacePositions() const;
     const std::vector<uint32_t>& getIntrinsicTriangleIndices() const { return intrinsicTriangleIndices; }
     VkBuffer getTriangleIndicesBuffer() const { return triangleIndicesBuffer; }
@@ -113,12 +116,16 @@ public:
     VkDeviceSize getSurfaceVertexBufferOffset() const { return surfaceVertexBufferOffset; }
     VkDescriptorSet getSurfaceComputeSetA() const { return surfaceComputeSetA; }
     VkDescriptorSet getSurfaceComputeSetB() const { return surfaceComputeSetB; }
+    VkDescriptorSet getSurfaceGradientComputeSetA() const { return surfaceGradientComputeSetA; }
+    VkDescriptorSet getSurfaceGradientComputeSetB() const { return surfaceGradientComputeSetB; }
     VkBuffer getGMLSSurfaceStencilBuffer() const { return gmlsSurfaceStencilBuffer; }
     VkDeviceSize getGMLSSurfaceStencilBufferOffset() const { return gmlsSurfaceStencilBufferOffset; }
     VkBuffer getGMLSSurfaceWeightBuffer() const { return gmlsSurfaceWeightBuffer; }
     VkDeviceSize getGMLSSurfaceWeightBufferOffset() const { return gmlsSurfaceWeightBufferOffset; }
     VkBuffer getGMLSSurfaceGradientWeightBuffer() const { return gmlsSurfaceGradientWeightBuffer; }
     VkDeviceSize getGMLSSurfaceGradientWeightBufferOffset() const { return gmlsSurfaceGradientWeightBufferOffset; }
+    VkBuffer getSurfaceGradientBuffer() const { return surfaceGradientBuffer; }
+    VkDeviceSize getSurfaceGradientBufferOffset() const { return surfaceGradientBufferOffset; }
     VkBufferView getSupportingHalfedgeView() const;
     VkBufferView getSupportingAngleView() const;
     VkBufferView getHalfedgeView() const;
@@ -176,6 +183,9 @@ private:
     VkBuffer gmlsSurfaceGradientWeightBuffer = VK_NULL_HANDLE;
     VkDeviceSize gmlsSurfaceGradientWeightBufferOffset = 0;
 
+    VkBuffer surfaceGradientBuffer = VK_NULL_HANDLE;
+    VkDeviceSize surfaceGradientBufferOffset = 0;
+
     VkBuffer gmlsSurfaceStencilStagingBuffer = VK_NULL_HANDLE;
     VkDeviceSize gmlsSurfaceStencilStagingOffset = 0;
     VkDeviceSize gmlsSurfaceStencilBufferSize = 0;
@@ -197,6 +207,8 @@ private:
 
     VkDescriptorSet surfaceComputeSetA = VK_NULL_HANDLE;
     VkDescriptorSet surfaceComputeSetB = VK_NULL_HANDLE;
+    VkDescriptorSet surfaceGradientComputeSetA = VK_NULL_HANDLE;
+    VkDescriptorSet surfaceGradientComputeSetB = VK_NULL_HANDLE;
 
     VkBuffer initStagingBuffer = VK_NULL_HANDLE;
     VkDeviceSize initStagingOffset = 0;

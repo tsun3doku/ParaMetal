@@ -315,9 +315,6 @@
     <ClCompile Include="heat\HeatReceiverRuntime.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="voronoi\VoronoiSurfaceStage.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="voronoi\VoronoiBuilder.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -403,6 +400,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="renderers\HeatSourceRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="renderers\VectorArrowRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="util\GlyphText.cpp">
@@ -689,6 +689,12 @@
     <None Include="shaders\timing_overlay.vert">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="shaders\vector_arrow.frag">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\vector_arrow.vert">
+      <Filter>Shaders</Filter>
+    </None>
     <None Include="shaders\grid_label.frag">
       <Filter>Shaders</Filter>
     </None>
@@ -711,9 +717,6 @@
       <Filter>Shaders</Filter>
     </None>
     <None Include="shaders\point_cloud.vert">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="shaders\heat_surface.slang">
       <Filter>Shaders</Filter>
     </None>
     <None Include="shaders\contact_lines.frag" />
@@ -1009,9 +1012,6 @@
     <ClInclude Include="voronoi\VoronoiStageContext.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="voronoi\VoronoiSurfaceStage.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="voronoi\VoronoiBuilder.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1106,6 +1106,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="renderers\HeatSourceRenderer.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="renderers\VectorArrowRenderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="vulkan\VulkanBuffer.hpp">

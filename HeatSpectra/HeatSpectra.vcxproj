@@ -277,11 +277,11 @@ xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindows.dll" "$(OutDir)p
     <ClCompile Include="renderers\HashGridRenderer.cpp" />
     <ClCompile Include="renderers\HeatReceiverRenderer.cpp" />
     <ClCompile Include="renderers\HeatSourceRenderer.cpp" />
+    <ClCompile Include="renderers\VectorArrowRenderer.cpp" />
     <ClCompile Include="util\HDR.cpp" />
     <ClCompile Include="heat\HeatReceiverRuntime.cpp" />
     <ClCompile Include="voronoi\VoronoiBuilder.cpp" />
     <ClCompile Include="voronoi\VoronoiModelRuntime.cpp" />
-    <ClCompile Include="voronoi\VoronoiSurfaceStage.cpp" />
     <ClCompile Include="heat\HeatSystemPresets.cpp" />
     <ClCompile Include="heat\HeatSourceRuntime.cpp" />
     <ClCompile Include="heat\HeatSystemComputeController.cpp" />
@@ -420,7 +420,6 @@ xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindows.dll" "$(OutDir)p
     <None Include="shaders\heat_source.vert" />
     <None Include="shaders\heat_geometry.slang" />
     <None Include="shaders\heat_source.comp" />
-    <None Include="shaders\heat_surface.slang" />
     <None Include="shaders\heat_tetra.comp" />
     <None Include="shaders\heat_voronoi.comp" />
     <None Include="shaders\intrinsic_normals.frag" />
@@ -442,6 +441,8 @@ xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindows.dll" "$(OutDir)p
     <None Include="shaders\surfel_debug.vert" />
     <None Include="shaders\timing_overlay.frag" />
     <None Include="shaders\timing_overlay.vert" />
+    <None Include="shaders\vector_arrow.frag" />
+    <None Include="shaders\vector_arrow.vert" />
     <None Include="shaders\voronoi_candidates_intrinsic.slang" />
     <None Include="shaders\voronoi_surface.frag" />
     <None Include="shaders\voronoi_surface.geom" />
@@ -558,6 +559,7 @@ xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindows.dll" "$(OutDir)p
     <ClInclude Include="renderers\HashGridRenderer.hpp" />
     <ClInclude Include="renderers\HeatReceiverRenderer.hpp" />
     <ClInclude Include="renderers\HeatSourceRenderer.hpp" />
+    <ClInclude Include="renderers\VectorArrowRenderer.hpp" />
     <ClInclude Include="util\HDR.hpp" />
     <ClInclude Include="heat\HeatReceiverRuntime.hpp" />
     <ClInclude Include="voronoi\VoronoiBuilder.hpp" />
@@ -566,7 +568,6 @@ xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindows.dll" "$(OutDir)p
     <ClInclude Include="voronoi\VoronoiGpuStructs.hpp" />
     <ClInclude Include="voronoi\VoronoiResources.hpp" />
     <ClInclude Include="voronoi\VoronoiStageContext.hpp" />
-    <ClInclude Include="voronoi\VoronoiSurfaceStage.hpp" />
     <ClInclude Include="heat\HeatSystemPresets.hpp" />
     <ClInclude Include="heat\HeatSourceRuntime.hpp" />
     <ClInclude Include="heat\HeatSystemComputeController.hpp" />

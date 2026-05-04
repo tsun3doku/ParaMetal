@@ -12,12 +12,13 @@ class UniformBufferManager;
 class VulkanDevice;
 class VoronoiRenderer;
 class CommandPool;
+class MemoryAllocator;
 
 namespace render {
 
 class VoronoiOverlayRenderer {
 public:
-    VoronoiOverlayRenderer(VulkanDevice& device, UniformBufferManager& uniformBufferManager, CommandPool& renderCommandPool);
+    VoronoiOverlayRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, CommandPool& renderCommandPool);
     ~VoronoiOverlayRenderer();
 
     void initialize(VkRenderPass renderPass, uint32_t subpass, uint32_t maxFramesInFlight);

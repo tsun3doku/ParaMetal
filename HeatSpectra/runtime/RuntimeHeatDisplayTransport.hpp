@@ -57,7 +57,7 @@ private:
         if (!controller || !ecsRegistry || socketKey == 0) {
             return false;
         }
-        if (!package.display.showHeatOverlay) {
+        if (!package.display.anyVisible()) {
             return false;
         }
         if (package.sourceModelProducts.size() != package.sourceTemperatures.size()) {
@@ -74,14 +74,21 @@ private:
 
         outConfig = {};
         outConfig.showHeatOverlay = package.display.showHeatOverlay;
+        outConfig.showFluxVectors = package.display.showFluxVectors;
+        outConfig.fluxVectorScale = package.display.fluxVectorScale;
         outConfig.authoredActive = package.authored.active;
         outConfig.active = computeProduct->active;
         outConfig.paused = computeProduct->paused;
+        // Get surfaceBufferView from VoronoiProduct (Voronoi owns the surface buffers and views)
         std::unordered_map<uint32_t, VkBufferView> surfaceBufferViewByRuntimeModelId;
-        surfaceBufferViewByRuntimeModelId.reserve(computeProduct->receiverRuntimeModelIds.size());
-        for (size_t index = 0; index < computeProduct->receiverRuntimeModelIds.size(); ++index) {
-            surfaceBufferViewByRuntimeModelId[computeProduct->receiverRuntimeModelIds[index]] =
-                computeProduct->receiverSurfaceBufferViews[index];
+        if (package.voronoiProduct.isValid()) {
+            const VoronoiProduct* voronoiProduct = tryGetProduct<VoronoiProduct>(*ecsRegistry, package.voronoiProduct.outputSocketKey);
+            if (voronoiProduct) {
+                surfaceBufferViewByRuntimeModelId.reserve(voronoiProduct->surfaces.size());
+                for (const VoronoiSurfaceProduct& surfaceProduct : voronoiProduct->surfaces) {
+                    surfaceBufferViewByRuntimeModelId[surfaceProduct.runtimeModelId] = surfaceProduct.surfaceBufferView;
+                }
+            }
         }
 
         for (size_t index = 0; index < package.sourceModelProducts.size(); ++index) {
@@ -133,6 +140,29 @@ private:
 
             outConfig.receiverModels.push_back(*modelProduct);
             outConfig.receiverBufferViews.push_back(receiverBufferViews);
+
+            if (modelProduct->runtimeModelId != 0 &&
+                index < computeProduct->receiverSurfaceBuffers.size() &&
+                index < computeProduct->receiverSurfaceBufferOffsets.size() &&
+                index < computeProduct->receiverSurfacePointCounts.size()) {
+                outConfig.receiverSurfaceBuffers.push_back(computeProduct->receiverSurfaceBuffers[index]);
+                outConfig.receiverSurfaceBufferOffsets.push_back(computeProduct->receiverSurfaceBufferOffsets[index]);
+                outConfig.receiverSurfacePointCounts.push_back(computeProduct->receiverSurfacePointCounts[index]);
+            } else {
+                outConfig.receiverSurfaceBuffers.push_back(VK_NULL_HANDLE);
+                outConfig.receiverSurfaceBufferOffsets.push_back(0);
+                outConfig.receiverSurfacePointCounts.push_back(0);
+            }
+
+            if (modelProduct->runtimeModelId != 0 &&
+                index < computeProduct->receiverSurfaceGradientBuffers.size() &&
+                index < computeProduct->receiverSurfaceGradientBufferOffsets.size()) {
+                outConfig.receiverSurfaceGradientBuffers.push_back(computeProduct->receiverSurfaceGradientBuffers[index]);
+                outConfig.receiverSurfaceGradientBufferOffsets.push_back(computeProduct->receiverSurfaceGradientBufferOffsets[index]);
+            } else {
+                outConfig.receiverSurfaceGradientBuffers.push_back(VK_NULL_HANDLE);
+                outConfig.receiverSurfaceGradientBufferOffsets.push_back(0);
+            }
         }
 
         outConfig.displayHash = buildDisplayHash(outConfig, computeProduct->productHash);

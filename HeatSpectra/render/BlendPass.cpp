@@ -8,6 +8,8 @@
 #include <vector>
 
 #include "vulkan/CommandBufferManager.hpp"
+#include "vulkan/MemoryAllocator.hpp"
+#include "vulkan/VulkanBuffer.hpp"
 #include "framegraph/FrameGraphPasses.hpp"
 #include "util/File_utils.h"
 #include "framegraph/VkFrameGraphRuntime.hpp"
@@ -40,9 +42,10 @@ std::string resolveBackgroundPath() {
 
 namespace render {
 
-BlendPass::BlendPass(VulkanDevice& device, CommandPool& commandPool, VkFrameGraphRuntime& runtime, uint32_t framesInFlight, framegraph::PassId passId,
+BlendPass::BlendPass(VulkanDevice& device, MemoryAllocator& memoryAllocator, CommandPool& commandPool, VkFrameGraphRuntime& runtime, uint32_t framesInFlight, framegraph::PassId passId,
     framegraph::ResourceId surfaceResolveId, framegraph::ResourceId lineResolveId, framegraph::ResourceId lightingResolveId, framegraph::ResourceId albedoResolveId)
     : vulkanDevice(device),
+      memoryAllocator(memoryAllocator),
       commandPool(commandPool),
       frameGraphRuntime(runtime),
       maxFramesInFlight(framesInFlight),
@@ -462,28 +465,14 @@ bool BlendPass::createBackgroundResources() {
 
     const VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * static_cast<VkDeviceSize>(height) * 4;
     VkBuffer stagingBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory stagingBufferMemory = VK_NULL_HANDLE;
-    if (vulkanDevice.createBuffer(
-        imageSize,
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        stagingBufferMemory,
-        stagingBuffer) != VK_SUCCESS) {
+    VkDeviceSize stagingBufferOffset = 0;
+    void* mappedData = nullptr;
+    if (createStagingBuffer(memoryAllocator, imageSize, stagingBuffer, stagingBufferOffset, &mappedData) != VK_SUCCESS || !mappedData) {
         stbi_image_free(pixels);
         std::cerr << "[BlendPass] Failed to create staging buffer" << std::endl;
         return false;
     }
-
-    void* mappedData = nullptr;
-    if (vkMapMemory(vulkanDevice.getDevice(), stagingBufferMemory, 0, imageSize, 0, &mappedData) != VK_SUCCESS) {
-        vkDestroyBuffer(vulkanDevice.getDevice(), stagingBuffer, nullptr);
-        vkFreeMemory(vulkanDevice.getDevice(), stagingBufferMemory, nullptr);
-        stbi_image_free(pixels);
-        std::cerr << "[BlendPass] Failed to map staging memory" << std::endl;
-        return false;
-    }
     memcpy(mappedData, pixels, static_cast<size_t>(imageSize));
-    vkUnmapMemory(vulkanDevice.getDevice(), stagingBufferMemory);
     stbi_image_free(pixels);
 
     if (createImage(
@@ -497,8 +486,7 @@ bool BlendPass::createBackgroundResources() {
         backgroundImage,
         backgroundImageMemory,
         VK_SAMPLE_COUNT_1_BIT) != VK_SUCCESS) {
-        vkDestroyBuffer(vulkanDevice.getDevice(), stagingBuffer, nullptr);
-        vkFreeMemory(vulkanDevice.getDevice(), stagingBufferMemory, nullptr);
+        memoryAllocator.free(stagingBuffer, stagingBufferOffset);
         std::cerr << "[BlendPass] Failed to create background image" << std::endl;
         return false;
     }
@@ -509,8 +497,7 @@ bool BlendPass::createBackgroundResources() {
         VK_FORMAT_R8G8B8A8_SRGB,
         VK_IMAGE_LAYOUT_UNDEFINED,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) != VK_SUCCESS) {
-        vkDestroyBuffer(vulkanDevice.getDevice(), stagingBuffer, nullptr);
-        vkFreeMemory(vulkanDevice.getDevice(), stagingBufferMemory, nullptr);
+        memoryAllocator.free(stagingBuffer, stagingBufferOffset);
         std::cerr << "[BlendPass] Failed to transition image to transfer-dst" << std::endl;
         return false;
     }
@@ -527,14 +514,12 @@ bool BlendPass::createBackgroundResources() {
         VK_FORMAT_R8G8B8A8_SRGB,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) != VK_SUCCESS) {
-        vkDestroyBuffer(vulkanDevice.getDevice(), stagingBuffer, nullptr);
-        vkFreeMemory(vulkanDevice.getDevice(), stagingBufferMemory, nullptr);
+        memoryAllocator.free(stagingBuffer, stagingBufferOffset);
         std::cerr << "[BlendPass] Failed to transition image to shader-read" << std::endl;
         return false;
     }
 
-    vkDestroyBuffer(vulkanDevice.getDevice(), stagingBuffer, nullptr);
-    vkFreeMemory(vulkanDevice.getDevice(), stagingBufferMemory, nullptr);
+    memoryAllocator.free(stagingBuffer, stagingBufferOffset);
 
     if (createImageView(
         vulkanDevice,

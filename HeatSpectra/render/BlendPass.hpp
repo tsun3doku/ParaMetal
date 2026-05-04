@@ -8,6 +8,7 @@
 class VulkanDevice;
 class VkFrameGraphRuntime;
 class CommandPool;
+class MemoryAllocator;
 
 namespace render {
 
@@ -15,6 +16,7 @@ class BlendPass : public Pass {
 public:
     BlendPass(
         VulkanDevice& device,
+        MemoryAllocator& memoryAllocator,
         CommandPool& commandPool,
         VkFrameGraphRuntime& frameGraphRuntime,
         uint32_t framesInFlight,
@@ -40,6 +42,7 @@ private:
     void destroyBackgroundResources();
 
     ::VulkanDevice& vulkanDevice;
+    MemoryAllocator& memoryAllocator;
     CommandPool& commandPool;
     VkFrameGraphRuntime& frameGraphRuntime;
     uint32_t maxFramesInFlight = 0;

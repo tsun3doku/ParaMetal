@@ -54,12 +54,6 @@ NodeHeatSolverPanel::NodeHeatSolverPanel(QWidget* parent)
     heatCellSizeRow->setValue(0.005);
     layout->addWidget(heatCellSizeRow);
 
-    heatVoxelResolutionRow = new NodeGraphSliderRow("Voxel Resolution", this);
-    heatVoxelResolutionRow->setRange(8.0, 1024.0);
-    heatVoxelResolutionRow->setDecimals(0);
-    heatVoxelResolutionRow->setValue(128.0);
-    layout->addWidget(heatVoxelResolutionRow);
-
     heatContactThermalConductanceRow = new NodeGraphSliderRow("Contact Thermal Conductance", this);
     heatContactThermalConductanceRow->setRange(0.0, 100000.0);
     heatContactThermalConductanceRow->setDecimals(0);
@@ -71,6 +65,15 @@ NodeHeatSolverPanel::NodeHeatSolverPanel(QWidget* parent)
 
     heatOverlayCheckBox = new QCheckBox("Heat Overlay", this);
     layout->addWidget(heatOverlayCheckBox);
+
+    fluxVectorsCheckBox = new QCheckBox("Flux Vectors", this);
+    layout->addWidget(fluxVectorsCheckBox);
+
+    fluxVectorScaleRow = new NodeGraphSliderRow("Flux Vector Scale", this);
+    fluxVectorScaleRow->setRange(0.0, 10.0);
+    fluxVectorScaleRow->setDecimals(2);
+    fluxVectorScaleRow->setValue(1.0);
+    layout->addWidget(fluxVectorScaleRow);
 
     layout->addWidget(new QLabel("Receiver Material Bindings:", this));
 
@@ -154,6 +157,44 @@ NodeHeatSolverPanel::NodeHeatSolverPanel(QWidget* parent)
 
         setStatus("Heat settings applied.");
     });
+    connect(fluxVectorsCheckBox, &QCheckBox::toggled, this, [this](bool checked) {
+        if (isSyncing()) {
+            return;
+        }
+
+        HeatSolveNodeParams params{};
+        if (!tryLoadNodeParams(params)) {
+            setStatus("Cannot update flux vector settings for this node.");
+            return;
+        }
+
+        params.preview.showFluxVectors = checked;
+        if (!writeNodeParams(params)) {
+            setStatus("Failed to update flux vector settings.");
+            return;
+        }
+
+        setStatus("Heat settings applied.");
+    });
+    fluxVectorScaleRow->setValueChangedCallback([this](double value) {
+        if (isSyncing()) {
+            return;
+        }
+
+        HeatSolveNodeParams params{};
+        if (!tryLoadNodeParams(params)) {
+            setStatus("Cannot update flux vector scale for this node.");
+            return;
+        }
+
+        params.preview.fluxVectorScale = value;
+        if (!writeNodeParams(params)) {
+            setStatus("Failed to update flux vector scale.");
+            return;
+        }
+
+        setStatus("Heat settings applied.");
+    });
     connect(heatBindingAddButton, &QPushButton::clicked, this, [this]() {
         const QString receiverKey = heatBindingGroupComboBox->currentText().trimmed();
         const QString presetName = heatBindingPresetComboBox->currentText().trimmed();
@@ -213,9 +254,10 @@ void NodeHeatSolverPanel::refreshFromNode() {
     refreshBindingGroupOptions();
     setSyncing(true);
     heatCellSizeRow->setValue(params.cellSize);
-    heatVoxelResolutionRow->setValue(static_cast<double>(params.voxelResolution));
     heatContactThermalConductanceRow->setValue(params.contactThermalConductance);
     heatOverlayCheckBox->setChecked(params.preview.showHeatOverlay);
+    fluxVectorsCheckBox->setChecked(params.preview.showFluxVectors);
+    fluxVectorScaleRow->setValue(params.preview.fluxVectorScale);
 
     const std::vector<HeatMaterialBindingRow>& bindingRows = params.materialBindingRows;
     heatBindingsTable->setRowCount(0);
@@ -473,7 +515,6 @@ void NodeHeatSolverPanel::applySolveSettings() {
     }
 
     params.cellSize = heatCellSizeRow->value();
-    params.voxelResolution = static_cast<int>(heatVoxelResolutionRow->value());
     params.contactThermalConductance = heatContactThermalConductanceRow->value();
     if (!writeNodeParams(params)) {
         setStatus("Failed to update solver settings.");

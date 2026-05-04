@@ -118,6 +118,7 @@ void OverlayPass::create() {
 
     voronoiOverlayRenderer = std::make_unique<VoronoiOverlayRenderer>(
         vulkanDevice,
+        memoryAllocator,
         uniformBufferManager,
         renderCommandPool);
     if (!voronoiOverlayRenderer) {

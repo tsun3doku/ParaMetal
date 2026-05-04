@@ -22,6 +22,15 @@ public:
         VkCommandBuffer commandBuffer,
         uint32_t nodeCount,
         const std::vector<std::unique_ptr<HeatReceiverRuntime>>& receivers,
+        const std::vector<VkDescriptorSet>& surfaceComputeSetsA,
+        const std::vector<VkDescriptorSet>& surfaceComputeSetsB,
+        bool finalWritesBufferB) const;
+    void dispatchSurfaceGradientUpdates(
+        VkCommandBuffer commandBuffer,
+        uint32_t nodeCount,
+        const std::vector<std::unique_ptr<HeatReceiverRuntime>>& receivers,
+        const std::vector<VkDescriptorSet>& surfaceGradientComputeSetsA,
+        const std::vector<VkDescriptorSet>& surfaceGradientComputeSetsB,
         bool finalWritesBufferB) const;
 
 private:

@@ -22,9 +22,11 @@ void HeatSystemSimStage::recordComputeCommands(
     const HeatSystemVoronoiStage& voronoiStage,
     const HeatSystemSurfaceStage& surfaceStage,
     uint32_t maxNodeNeighbors,
-    uint32_t numSubsteps) const {
-    (void)currentFrame;
-
+    uint32_t numSubsteps,
+    const std::vector<VkDescriptorSet>& surfaceComputeSetsA,
+    const std::vector<VkDescriptorSet>& surfaceComputeSetsB,
+    const std::vector<VkDescriptorSet>& surfaceGradientComputeSetsA,
+    const std::vector<VkDescriptorSet>& surfaceGradientComputeSetsB) const {
     const uint32_t nodeCount = simRuntime.getNodeCount();
     if (nodeCount == 0 || numSubsteps == 0) {
         return;
@@ -44,19 +46,20 @@ void HeatSystemSimStage::recordComputeCommands(
             pushConstant,
             static_cast<int>(substepIndex),
             workGroupCount);
-        voronoiStage.insertInterSubstepBarrier(
-            commandBuffer,
-            simRuntime,
-            static_cast<int>(substepIndex),
-            numSubsteps);
+        voronoiStage.insertInterSubstepBarrier(commandBuffer, simRuntime, static_cast<int>(substepIndex), numSubsteps);
     }
 
     voronoiStage.insertFinalTemperatureBarrier(commandBuffer, simRuntime, numSubsteps);
 
     pushConstant.substepIndex = 0;
-    surfaceStage.dispatchSurfaceTemperatureUpdates(
-        commandBuffer,
-        nodeCount,
-        receivers,
-        voronoiStage.finalSubstepWritesBufferB(numSubsteps));
+    const bool finalWritesBufferB = voronoiStage.finalSubstepWritesBufferB(numSubsteps);
+
+    // Dispatch temperature update every frame
+    surfaceStage.dispatchSurfaceTemperatureUpdates(commandBuffer, nodeCount, receivers, surfaceComputeSetsA, surfaceComputeSetsB, finalWritesBufferB);
+
+    // Dispatch gradient update every nth frame
+    constexpr uint32_t GRADIENT_UPDATE_INTERVAL = 4;
+    if (currentFrame % GRADIENT_UPDATE_INTERVAL == 0) {
+        surfaceStage.dispatchSurfaceGradientUpdates(commandBuffer, nodeCount, receivers, surfaceGradientComputeSetsA, surfaceGradientComputeSetsB, finalWritesBufferB);
+    }
 }

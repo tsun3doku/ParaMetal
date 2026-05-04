@@ -2,12 +2,9 @@
 
 #include <cstdint>
 #include <vector>
+#include <array>
 
 #include <glm/glm.hpp>
-
-struct MeshTriangleGPU {
-    glm::vec4 v0, v1, v2;
-};
 
 class VoronoiIntegrator {
 public:
@@ -17,14 +14,13 @@ public:
     void extractMeshTriangles(const std::vector<glm::vec3>& positions, const std::vector<uint32_t>& indices);
     void computeNeighbors(const std::vector<glm::dvec3>& seedPositions,int K);
 
-    // Getters
     const std::vector<uint32_t>& getNeighborIndices() const { return neighborIndices; }
-    const std::vector<MeshTriangleGPU>& getMeshTriangles() const { return meshTriangles; }
+    const std::vector<std::array<glm::vec4, 3>>& getMeshTriangles() const { return meshTriangles; }
     const std::vector<glm::vec4>& getSeedPositions() const { return seedPositions; }
 
 private:
     std::vector<uint32_t> neighborIndices;
-    std::vector<MeshTriangleGPU> meshTriangles;
+    std::vector<std::array<glm::vec4, 3>> meshTriangles;
 
     std::vector<glm::vec4> seedPositions;
 };
