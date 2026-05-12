@@ -270,10 +270,6 @@ void MainRenderGraph::buildMainRenderGraph(FrameGraph& frameGraph) {
         makeRef(resNormalResolve),
         makeRef(resPositionResolve),
         makeRef(
-            resDepthResolve,
-            framegraph::ImageAspect::Depth,
-            framegraph::ResourceLayout::DepthStencilReadOnly),
-        makeRef(
             resDepthMSAA,
             framegraph::ImageAspect::Stencil,
             framegraph::ResourceLayout::DepthStencilReadOnly),

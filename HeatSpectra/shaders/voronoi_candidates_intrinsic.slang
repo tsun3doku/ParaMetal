@@ -1,27 +1,24 @@
 static const uint K_CANDIDATES = 64;
 
-struct SurfacePoint
+struct SurfaceVertex
 {
-    float3 position;
-    float temperature;
-    float3 normal;
-    float area;
-    float4 color;
+    float4 position;
+    float4 normal;
 };
 
 struct PushConstants
 {
     uint faceCount;
     uint seedCount;
-    uint seedOffset;
     uint _pad0;
+    uint _pad1;
 };
 
 [[vk::push_constant]]
 PushConstants pc;
 
 [[vk::binding(0)]]
-StructuredBuffer<SurfacePoint> vertexBuffer;
+StructuredBuffer<SurfaceVertex> vertexBuffer;
 
 [[vk::binding(1)]]
 StructuredBuffer<uint> faceIndexBuffer;
@@ -58,9 +55,9 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
         return;
     }
 
-    float3 p0 = vertexBuffer[indices.x].position;
-    float3 p1 = vertexBuffer[indices.y].position;
-    float3 p2 = vertexBuffer[indices.z].position;
+    float3 p0 = vertexBuffer[indices.x].position.xyz;
+    float3 p1 = vertexBuffer[indices.y].position.xyz;
+    float3 p2 = vertexBuffer[indices.z].position.xyz;
     float3 center = (p0 + p1 + p2) / 3.0f;
 
     float bestDist[K_CANDIDATES];
@@ -74,8 +71,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 
     for (uint s = 0; s < pc.seedCount; ++s)
     {
-        uint globalSeedIndex = pc.seedOffset + s;
-        float3 sp = seedPositions[globalSeedIndex].xyz;
+        float3 sp = seedPositions[s].xyz;
         float d0 = dot(p0 - sp, p0 - sp);
         float d1 = dot(p1 - sp, p1 - sp);
         float d2 = dot(p2 - sp, p2 - sp);
@@ -96,7 +92,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
         }
 
         bestDist[insertPos] = distSq;
-        bestId[insertPos] = globalSeedIndex;
+        bestId[insertPos] = s;
     }
 
     uint base = faceId * K_CANDIDATES;

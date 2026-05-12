@@ -50,8 +50,6 @@ bool computeWeights(
     outGradientWeights.resize(sourcePositions.size(), glm::dvec3(0.0));
 
     glm::dmat4 moment(0.0);
-    // thread_local: after the first call on each thread these vectors never
-    // reallocate — they just resize in place. Safe with OpenMP parallel for.
     thread_local std::vector<glm::dvec4> basisValues;
     thread_local std::vector<double>     kernelWeights;
     basisValues.assign(sourcePositions.size(), glm::dvec4(0.0));
@@ -71,8 +69,6 @@ bool computeWeights(
         moment += weight * glm::outerProduct(basis, basis);
     }
 
-    // Compute inverse once and detect singularity via NaN/Inf on the diagonal —
-    // avoids a separate glm::determinant call (which internally repeats the same work).
     const glm::dmat4 inverseMoment = glm::inverse(moment);
     if (!std::isfinite(inverseMoment[0][0]) || !std::isfinite(inverseMoment[1][1]) ||
         !std::isfinite(inverseMoment[2][2]) || !std::isfinite(inverseMoment[3][3])) {
@@ -113,6 +109,37 @@ bool computeWeights(
     }
 
     return true;
+}
+
+inline std::vector<float> buildScatterWeights(const std::vector<double>& valueWeights) {
+    std::vector<float> scatterWeights(valueWeights.size(), 0.0f);
+    double positiveSum = 0.0;
+    for (size_t i = 0; i < valueWeights.size(); ++i) {
+        const double positiveWeight = std::max(0.0, valueWeights[i]);
+        scatterWeights[i] = static_cast<float>(positiveWeight);
+        positiveSum += positiveWeight;
+    }
+    if (positiveSum > 1e-12) {
+        const float invSum = static_cast<float>(1.0 / positiveSum);
+        for (float& weight : scatterWeights) weight *= invSum;
+        return scatterWeights;
+    }
+    double absSum = 0.0;
+    for (size_t i = 0; i < valueWeights.size(); ++i) {
+        const double absWeight = std::abs(valueWeights[i]);
+        scatterWeights[i] = static_cast<float>(absWeight);
+        absSum += absWeight;
+    }
+    if (absSum > 1e-12) {
+        const float invSum = static_cast<float>(1.0 / absSum);
+        for (float& weight : scatterWeights) weight *= invSum;
+        return scatterWeights;
+    }
+    if (!scatterWeights.empty()) {
+        const float uniformWeight = 1.0f / static_cast<float>(scatterWeights.size());
+        for (float& weight : scatterWeights) weight = uniformWeight;
+    }
+    return scatterWeights;
 }
 
 } // namespace GMLS

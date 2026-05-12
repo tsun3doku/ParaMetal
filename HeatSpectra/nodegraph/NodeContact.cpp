@@ -74,11 +74,6 @@ void NodeContact::execute(NodeGraphKernelContext& context) const {
         contactData.receiverPayloadHash = receiverPayloadHash;
         contactData.pair.minNormalDot = static_cast<float>(params.minNormalDot);
         contactData.pair.contactRadius = static_cast<float>(params.contactRadius);
-        contactData.pair.type =
-            emitterInput->dataType == NodePayloadType::HeatSource &&
-            receiverInput->dataType == NodePayloadType::HeatReceiver
-            ? ContactCouplingType::SourceToReceiver
-            : ContactCouplingType::ReceiverToReceiver;
         contactData.pair.hasValidContact = true;
         contactData.active = true;
 
@@ -112,13 +107,5 @@ bool NodeContact::computeInputHash(const NodeGraphKernelHashContext& context, ui
     NodeGraphHash::combineFloat(outHash, static_cast<float>(params.minNormalDot));
     NodeGraphHash::combineFloat(outHash, static_cast<float>(params.contactRadius));
 
-    const ContactCouplingType type =
-        (emitterInput &&
-         receiverInput &&
-         emitterInput->dataType == NodePayloadType::HeatSource &&
-         receiverInput->dataType == NodePayloadType::HeatReceiver)
-        ? ContactCouplingType::SourceToReceiver
-        : ContactCouplingType::ReceiverToReceiver;
-    NodeGraphHash::combine(outHash, static_cast<uint64_t>(type));
     return true;
 }

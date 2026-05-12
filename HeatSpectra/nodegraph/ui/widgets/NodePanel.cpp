@@ -5,7 +5,7 @@
 #include "nodegraph/NodeGraphBridge.hpp"
 #include "nodegraph/NodeGraphDebugCache.hpp"
 #include "NodeContactPanel.hpp"
-#include "NodeHeatSourcePanel.hpp"
+#include "NodeHeatModelPanel.hpp"
 #include "NodeGroupPanel.hpp"
 #include "NodeHeatSolverPanel.hpp"
 #include "NodeModelPanel.hpp"
@@ -62,14 +62,11 @@ QString nodeTypeDescription(const NodeTypeId& typeId) {
     if (typeId == nodegraphtypes::Contact) {
         return "Assign a contact pairing between 3D models";
     }
-    if (typeId == nodegraphtypes::HeatSource) {
-        return "Assign source temperatures for models that emit heat";
+    if (typeId == nodegraphtypes::HeatModel) {
+        return "Assign thermal properties and boundary conditions to a 3D model";
     }
     if (typeId == nodegraphtypes::HeatSolve) {
         return "Simulate the transient transfer of heat between 3D geometry";
-    }
-    if (typeId == nodegraphtypes::HeatReceiver) {
-        return "Assign a 3D model as a heat recipient";
     }
     return "Select a node in the graph to inspect its parameters";
 }
@@ -140,7 +137,7 @@ void NodePanel::bind(NodeGraphBridge* nodeGraphBridgePtr, const RuntimeQuery* ru
     remeshPanel->bind(nodeGraphBridgePtr);
     voronoiPanel->bind(nodeGraphBridgePtr);
     contactPanel->bind(nodeGraphBridgePtr);
-    heatSourcePanel->bind(nodeGraphBridgePtr);
+    heatModelPanel->bind(nodeGraphBridgePtr);
     heatSolverPanel->bind(nodeGraphBridgePtr, runtimeQueryPtr);
 
     if (isVisible() && currentNodeId.isValid()) {
@@ -189,9 +186,9 @@ bool NodePanel::setNode(NodeGraphNodeId nodeId) {
         pageStack->setCurrentWidget(contactPage);
         contactPanel->setNode(currentNodeId);
         heatSolverPanel->stopStatusTimer();
-    } else if (currentNodeTypeId == nodegraphtypes::HeatSource) {
-        pageStack->setCurrentWidget(heatSourcePage);
-        heatSourcePanel->setNode(currentNodeId);
+    } else if (currentNodeTypeId == nodegraphtypes::HeatModel) {
+        pageStack->setCurrentWidget(heatModelPage);
+        heatModelPanel->setNode(currentNodeId);
         heatSolverPanel->stopStatusTimer();
     } else if (currentNodeTypeId == nodegraphtypes::HeatSolve) {
         pageStack->setCurrentWidget(heatPage);
@@ -317,13 +314,13 @@ void NodePanel::buildUi() {
     pageStack->addWidget(contactPage);
 
     {
-        heatSourcePanel = new NodeHeatSourcePanel(inspectorContent);
-        heatSourcePanel->setStatusSink([this](const QString& text) {
+        heatModelPanel = new NodeHeatModelPanel(inspectorContent);
+        heatModelPanel->setStatusSink([this](const QString& text) {
             statusLabel->setText(text);
         });
-        heatSourcePage = nodegraphwidgets::buildPanelCardPage(inspectorContent, heatSourcePanel);
+        heatModelPage = nodegraphwidgets::buildPanelCardPage(inspectorContent, heatModelPanel);
     }
-    pageStack->addWidget(heatSourcePage);
+    pageStack->addWidget(heatModelPage);
 
     {
         heatSolverPanel = new NodeHeatSolverPanel(inspectorContent);

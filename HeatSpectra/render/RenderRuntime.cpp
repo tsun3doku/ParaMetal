@@ -101,8 +101,6 @@ bool RenderRuntime::initializeBase(VkFormat swapChainFormat, VkExtent2D extent, 
         return false;
     }
 
-    computeTiming.initialize(vulkanDevice, renderconfig::MaxFramesInFlight);
-
     wireframeRenderer = std::make_unique<WireframeRenderer>(
         vulkanDevice,
         sceneRenderer->getGbufferDescriptorSetLayout(),
@@ -128,7 +126,6 @@ bool RenderRuntime::initializeFrameController(const FrameControllerServices& ser
         *frameGraphBackend,
         *sceneRenderer,
         frameSync,
-        computeTiming,
         frameStats,
         cameraController,
         services,
@@ -178,8 +175,6 @@ void RenderRuntime::cleanupSwapChain() {
 }
 
 void RenderRuntime::cleanup() {
-    computeTiming.shutdown();
-
     if (modelSelection) {
         modelSelection->cleanup();
     }

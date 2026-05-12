@@ -5,6 +5,7 @@
 class QString;
 class QLineEdit;
 class QWidget;
+class QComboBox;
 
 namespace nodegraphwidgets {
 
@@ -83,6 +84,7 @@ inline constexpr QColor colorSliderKnobStroke = QColor(239, 237, 248);
 
 QString px(int value);
 void styleLineEdit(QLineEdit* edit);
+void styleComboBox(QComboBox* combo);
 QWidget* buildPanelCardPage(QWidget* parent, QWidget* contentWidget);
 void applyNodePanelStyle(QWidget* panel);
 

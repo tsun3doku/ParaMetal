@@ -13,23 +13,63 @@
 #include <limits>
 #include <unordered_set>
 
-const VoronoiDomain* VoronoiSystemRuntime::findReceiverDomain(uint32_t receiverModelId) const {
-    if (receiverModelId == 0) {
-        return nullptr;
-    }
-
-    for (const VoronoiDomain& domain : receiverVoronoiDomains) {
-        if (domain.receiverModelId == receiverModelId) {
-            return &domain;
-        }
-    }
-
-    return nullptr;
-}
-
 void VoronoiSystemRuntime::invalidateMaterialization() {
     voronoiReady = false;
     voronoiSeederReady = false;
+    seeder.reset();
+    integrator.reset();
+    voxelGrid = VoxelGrid{};
+    voxelGridBuilt = false;
+    seedFlags.clear();
+    seedPositions.clear();
+    neighborIndices.clear();
+    meshTriangles.clear();
+}
+
+void VoronoiSystemRuntime::reorderNodes() {
+    if (seedPositions.empty()) {
+        return;
+    }
+
+    auto oldToNew = computeMortonPermutation(seedPositions);
+    if (oldToNew.empty()) {
+        return;
+    }
+
+    const uint32_t nodeCount = static_cast<uint32_t>(seedPositions.size());
+
+    // Reorder seedPositions
+    std::vector<glm::vec4> newPositions(nodeCount);
+    for (uint32_t oldIdx = 0; oldIdx < nodeCount; ++oldIdx) {
+        newPositions[oldToNew[oldIdx]] = seedPositions[oldIdx];
+    }
+    seedPositions = std::move(newPositions);
+
+    // Reorder seedFlags
+    if (!seedFlags.empty() && seedFlags.size() == nodeCount) {
+        std::vector<uint32_t> newFlags(nodeCount);
+        for (uint32_t oldIdx = 0; oldIdx < nodeCount; ++oldIdx) {
+            newFlags[oldToNew[oldIdx]] = seedFlags[oldIdx];
+        }
+        seedFlags = std::move(newFlags);
+    }
+
+    // Remap neighbor indices and reorder the flat array
+    if (!neighborIndices.empty()) {
+        const uint32_t maxNeighbors = static_cast<uint32_t>(neighborIndices.size()) / nodeCount;
+        std::vector<uint32_t> newNeighbors(neighborIndices.size());
+        for (uint32_t oldIdx = 0; oldIdx < nodeCount; ++oldIdx) {
+            const uint32_t newIdx = oldToNew[oldIdx];
+            for (uint32_t k = 0; k < maxNeighbors; ++k) {
+                uint32_t neighbor = neighborIndices[oldIdx * maxNeighbors + k];
+                if (neighbor != UINT32_MAX && neighbor < nodeCount) {
+                    neighbor = oldToNew[neighbor];
+                }
+                newNeighbors[newIdx * maxNeighbors + k] = neighbor;
+            }
+        }
+        neighborIndices = std::move(newNeighbors);
+    }
 }
 
 void VoronoiSystemRuntime::setReceiverGeometry(
@@ -59,8 +99,6 @@ void VoronoiSystemRuntime::setReceiverGeometry(
     const std::vector<VkBufferView>& inputEdgeViews,
     const std::vector<VkBufferView>& inputTriangleViews,
     const std::vector<VkBufferView>& inputLengthViews) {
-    activeReceiverModelIds = receiverModelIds;
-    clearReceiverDomains();
     invalidateMaterialization();
 
     for (auto& modelRuntime : modelRuntimes) {
@@ -70,31 +108,7 @@ void VoronoiSystemRuntime::setReceiverGeometry(
     }
     modelRuntimes.clear();
 
-    const size_t receiverCount = std::min({
-        receiverNodeModelIds.size(),
-        receiverGeometryPositions.size(),
-        receiverGeometryTriangleIndices.size(),
-        receiverIntrinsicMeshes.size(),
-        receiverSurfaceVertices.size(),
-        receiverIntrinsicTriangleIndices.size(),
-        receiverModelIds.size(),
-        meshVertexBuffers.size(),
-        meshVertexBufferOffsets.size(),
-        meshIndexBuffers.size(),
-        meshIndexBufferOffsets.size(),
-        meshIndexCounts.size(),
-        meshModelMatrices.size(),
-        supportingHalfedgeViews.size(),
-        supportingAngleViews.size(),
-        halfedgeViews.size(),
-        edgeViews.size(),
-        triangleViews.size(),
-        lengthViews.size(),
-        inputHalfedgeViews.size(),
-        inputEdgeViews.size(),
-        inputTriangleViews.size(),
-        inputLengthViews.size()
-    });
+    const size_t receiverCount = receiverModelIds.size();
 
     std::unordered_set<uint32_t> seenReceiverIds;
     for (std::size_t index = 0; index < receiverCount; ++index) {
@@ -169,13 +183,7 @@ void VoronoiSystemRuntime::setReceiverGeometry(
 }
 
 void VoronoiSystemRuntime::clearReceiverGeometry() {
-    if (activeReceiverModelIds.empty() && modelRuntimes.empty()) {
-        return;
-    }
-
-    clearReceiverDomains();
     invalidateMaterialization();
-    activeReceiverModelIds.clear();
 
     for (auto& modelRuntime : modelRuntimes) {
         if (modelRuntime) {
@@ -192,12 +200,7 @@ void VoronoiSystemRuntime::setParams(float updatedCellSize, int updatedVoxelReso
 
     cellSize = updatedCellSize;
     voxelResolution = updatedVoxelResolution;
-    clearReceiverDomains();
     invalidateMaterialization();
-}
-
-void VoronoiSystemRuntime::clearReceiverDomains() {
-    receiverVoronoiDomains.clear();
 }
 
 void VoronoiSystemRuntime::markSeederReady() {
@@ -223,8 +226,7 @@ void VoronoiSystemRuntime::uploadModelStagingBuffers(CommandPool& renderCommandP
         copyCmd,
         VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        0,
-        1, &memBarrier,
+        0, 1, &memBarrier,
         0, nullptr,
         0, nullptr);
 
@@ -255,7 +257,6 @@ void VoronoiSystemRuntime::cleanupResources(VulkanDevice& vulkanDevice) {
 }
 
 void VoronoiSystemRuntime::cleanup(MemoryAllocator& memoryAllocator) {
-    clearReceiverDomains();
     invalidateMaterialization();
 
     auto freeBuffer = [&](VkBuffer& buffer, VkDeviceSize& offset) {
@@ -267,25 +268,18 @@ void VoronoiSystemRuntime::cleanup(MemoryAllocator& memoryAllocator) {
     };
 
     freeBuffer(resources.voronoiNodeBuffer, resources.voronoiNodeBufferOffset);
-    resources.mappedVoronoiNodeData = nullptr;
     freeBuffer(resources.voronoiNeighborBuffer, resources.voronoiNeighborBufferOffset);
     freeBuffer(resources.neighborIndicesBuffer, resources.neighborIndicesBufferOffset);
     freeBuffer(resources.interfaceAreasBuffer, resources.interfaceAreasBufferOffset);
-    resources.mappedInterfaceAreasData = nullptr;
     freeBuffer(resources.interfaceNeighborIdsBuffer, resources.interfaceNeighborIdsBufferOffset);
-    resources.mappedInterfaceNeighborIdsData = nullptr;
     freeBuffer(resources.gmlsInterfaceBuffer, resources.gmlsInterfaceBufferOffset);
     freeBuffer(resources.meshTriangleBuffer, resources.meshTriangleBufferOffset);
     freeBuffer(resources.seedPositionBuffer, resources.seedPositionBufferOffset);
-    resources.mappedSeedPositionData = nullptr;
     freeBuffer(resources.seedFlagsBuffer, resources.seedFlagsBufferOffset);
-    resources.mappedSeedFlagsData = nullptr;
     freeBuffer(resources.occupancyPointBuffer, resources.occupancyPointBufferOffset);
     resources.occupancyPointCount = 0;
     freeBuffer(resources.debugCellGeometryBuffer, resources.debugCellGeometryBufferOffset);
-    resources.mappedDebugCellGeometryData = nullptr;
     freeBuffer(resources.voronoiDumpBuffer, resources.voronoiDumpBufferOffset);
-    resources.mappedVoronoiDumpData = nullptr;
     freeBuffer(resources.voxelGridParamsBuffer, resources.voxelGridParamsBufferOffset);
     freeBuffer(resources.voxelOccupancyBuffer, resources.voxelOccupancyBufferOffset);
     freeBuffer(resources.voxelTrianglesListBuffer, resources.voxelTrianglesListBufferOffset);

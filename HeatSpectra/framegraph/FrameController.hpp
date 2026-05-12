@@ -20,7 +20,6 @@ class SwapchainManager;
 class FrameGraph;
 class SceneRenderer;
 class FrameSync;
-class ComputeTiming;
 class FrameStats;
 class CameraController;
 class ModelRegistry;
@@ -54,7 +53,6 @@ public:
         VkFrameGraphBackend& frameGraphBackend,
         SceneRenderer& sceneRenderer,
         FrameSync& frameSync,
-        ComputeTiming& computeTiming,
         FrameStats& frameStats,
         CameraController& cameraController,
         FrameControllerServices services,
@@ -72,7 +70,6 @@ private:
     SwapchainManager& swapchainManager;
     SceneRenderer& sceneRenderer;
     FrameSync& frameSync;
-    ComputeTiming& computeTiming;
     FrameStats& frameStats;
     CameraController& cameraController;
     std::atomic<bool>& isOperating;

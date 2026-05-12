@@ -644,17 +644,20 @@ bool VoxelGrid::segmentStaysInside(const glm::vec3& a, const glm::vec3& b, int o
         return true; // Both endpoints in same cell after clamping
     }
 
-    // Use unit direction for DDA; track distance in voxel-space units
     glm::vec3 dir = dVox / dVoxLen;
     float travelLimit = dVoxLen; // total distance in voxel cells
 
     // Determine starting cell
-    int x = static_cast<int>(std::floor(aVox.x));
-    int y = static_cast<int>(std::floor(aVox.y));
-    int z = static_cast<int>(std::floor(aVox.z));
-    int endX = static_cast<int>(std::floor(bVox.x));
-    int endY = static_cast<int>(std::floor(bVox.y));
-    int endZ = static_cast<int>(std::floor(bVox.z));
+    int gridDimX = params.gridDim.x;
+    int gridDimY = params.gridDim.y;
+    int gridDimZ = params.gridDim.z;
+
+    int x = clampInt(static_cast<int>(std::floor(aVox.x)), 0, gridDimX - 1);
+    int y = clampInt(static_cast<int>(std::floor(aVox.y)), 0, gridDimY - 1);
+    int z = clampInt(static_cast<int>(std::floor(aVox.z)), 0, gridDimZ - 1);
+    int endX = clampInt(static_cast<int>(std::floor(bVox.x)), 0, gridDimX - 1);
+    int endY = clampInt(static_cast<int>(std::floor(bVox.y)), 0, gridDimY - 1);
+    int endZ = clampInt(static_cast<int>(std::floor(bVox.z)), 0, gridDimZ - 1);
 
     // DDA step directions and parametric distances
     int stepX = dir.x >= 0.0f ? 1 : -1;
@@ -674,10 +677,6 @@ bool VoxelGrid::segmentStaysInside(const glm::vec3& a, const glm::vec3& b, int o
     float tDeltaX = (dir.x != 0.0f) ? (1.0f / std::fabs(dir.x)) : FLT_MAX;
     float tDeltaY = (dir.y != 0.0f) ? (1.0f / std::fabs(dir.y)) : FLT_MAX;
     float tDeltaZ = (dir.z != 0.0f) ? (1.0f / std::fabs(dir.z)) : FLT_MAX;
-
-    int gridDimX = params.gridDim.x;
-    int gridDimY = params.gridDim.y;
-    int gridDimZ = params.gridDim.z;
 
     bool firstCell = true;
 

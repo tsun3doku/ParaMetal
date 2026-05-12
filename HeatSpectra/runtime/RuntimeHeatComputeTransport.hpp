@@ -91,10 +91,10 @@ private:
         if (!package.authored.active) {
             return false;
         }
-        if (package.sourceTemperatures.size() < package.sourceRemeshProducts.size()) {
+        if (package.voronoiProducts.empty()) {
             return false;
         }
-        if (package.receiverModelProducts.size() < package.receiverRemeshProducts.size()) {
+        if (package.remeshProducts.empty()) {
             return false;
         }
 
@@ -103,121 +103,72 @@ private:
         outConfig.paused = package.authored.paused;
         outConfig.resetRequested = package.authored.resetRequested;
         outConfig.contactThermalConductance = package.authored.contactThermalConductance;
-        outConfig.sourceIntrinsicMeshes.reserve(package.sourceRemeshProducts.size());
-        outConfig.sourceRuntimeModelIds.reserve(package.sourceRemeshProducts.size());
 
-        size_t sourceIndex = 0;
-        for (; sourceIndex < package.sourceRemeshProducts.size(); ++sourceIndex) {
-            const ProductHandle& remeshProductHandle = package.sourceRemeshProducts[sourceIndex];
-            const RemeshProduct* product =
-                tryGetProduct<RemeshProduct>(*ecsRegistry, remeshProductHandle.outputSocketKey);
+        // Collect all model payloads from HeatPackage.models
+        std::vector<RemeshProduct const*> modelProducts;
+
+        for (size_t i = 0; i < package.remeshProducts.size(); ++i) {
+            const ProductHandle& remeshProductHandle = package.remeshProducts[i];
+            const RemeshProduct* product = tryGetProduct<RemeshProduct>(*ecsRegistry, remeshProductHandle.outputSocketKey);
             if (!product || product->runtimeModelId == 0) {
-                break;
-            }
-
-            outConfig.sourceIntrinsicMeshes.push_back(product->intrinsicMesh);
-            outConfig.sourceRuntimeModelIds.push_back(product->runtimeModelId);
-            outConfig.sourceTemperatureByRuntimeId[product->runtimeModelId] = package.sourceTemperatures[sourceIndex];
-        }
-        if (sourceIndex != package.sourceRemeshProducts.size()) {
-            return false;
-        }
-
-        const size_t receiverCount = package.receiverRemeshProducts.size();
-        outConfig.receiverIntrinsicMeshes.resize(receiverCount);
-        outConfig.receiverRuntimeModelIds.resize(receiverCount, 0);
-        outConfig.supportingHalfedgeViews.resize(receiverCount, VK_NULL_HANDLE);
-        outConfig.supportingAngleViews.resize(receiverCount, VK_NULL_HANDLE);
-        outConfig.halfedgeViews.resize(receiverCount, VK_NULL_HANDLE);
-        outConfig.edgeViews.resize(receiverCount, VK_NULL_HANDLE);
-        outConfig.triangleViews.resize(receiverCount, VK_NULL_HANDLE);
-        outConfig.lengthViews.resize(receiverCount, VK_NULL_HANDLE);
-        outConfig.inputHalfedgeViews.resize(receiverCount, VK_NULL_HANDLE);
-        outConfig.inputEdgeViews.resize(receiverCount, VK_NULL_HANDLE);
-        outConfig.inputTriangleViews.resize(receiverCount, VK_NULL_HANDLE);
-        outConfig.inputLengthViews.resize(receiverCount, VK_NULL_HANDLE);
-
-        size_t receiverIndex = 0;
-        for (; receiverIndex < receiverCount; ++receiverIndex) {
-            const ProductHandle& remeshProductHandle = package.receiverRemeshProducts[receiverIndex];
-            const RemeshProduct* product =
-                tryGetProduct<RemeshProduct>(*ecsRegistry, remeshProductHandle.outputSocketKey);
-            if (!product || product->runtimeModelId == 0) {
-                break;
-            }
-
-            outConfig.receiverIntrinsicMeshes[receiverIndex] = product->intrinsicMesh;
-            outConfig.receiverRuntimeModelIds[receiverIndex] = product->runtimeModelId;
-            outConfig.supportingHalfedgeViews[receiverIndex] = product->supportingHalfedgeView;
-            outConfig.supportingAngleViews[receiverIndex] = product->supportingAngleView;
-            outConfig.halfedgeViews[receiverIndex] = product->halfedgeView;
-            outConfig.edgeViews[receiverIndex] = product->edgeView;
-            outConfig.triangleViews[receiverIndex] = product->triangleView;
-            outConfig.lengthViews[receiverIndex] = product->lengthView;
-            outConfig.inputHalfedgeViews[receiverIndex] = product->inputHalfedgeView;
-            outConfig.inputEdgeViews[receiverIndex] = product->inputEdgeView;
-            outConfig.inputTriangleViews[receiverIndex] = product->inputTriangleView;
-            outConfig.inputLengthViews[receiverIndex] = product->inputLengthView;
-        }
-        if (receiverIndex != receiverCount) {
-            return false;
-        }
-
-        std::unordered_map<uint32_t, HeatMaterialPresetId> presetByNodeModelId;
-        for (const HeatMaterialBinding& binding : package.authored.materialBindings) {
-            if (binding.receiverModelNodeId != 0) {
-                presetByNodeModelId[binding.receiverModelNodeId] = binding.presetId;
-            }
-        }
-
-        outConfig.runtimeThermalMaterials.reserve(receiverCount);
-        std::unordered_set<uint32_t> seenRuntimeModelIds;
-        for (size_t materialIndex = 0; materialIndex < receiverCount; ++materialIndex) {
-            const uint32_t runtimeModelId = outConfig.receiverRuntimeModelIds[materialIndex];
-            if (runtimeModelId == 0) {
-                continue;
-            }
-            if (!seenRuntimeModelIds.insert(runtimeModelId).second) {
-                continue;
-            }
-
-            const uint32_t receiverModelNodeId = static_cast<uint32_t>(package.receiverModelProducts[materialIndex].outputSocketKey >> 32);
-            const auto explicitIt = presetByNodeModelId.find(receiverModelNodeId);
-            if (explicitIt == presetByNodeModelId.end()) {
-                continue;
-            }
-
-            const HeatMaterialPresetId presetId = explicitIt->second;
-            const HeatMaterialPreset& preset = heatMaterialPresetById(presetId);
-            RuntimeThermalMaterial runtimeMaterial{};
-            runtimeMaterial.runtimeModelId = runtimeModelId;
-            runtimeMaterial.density = preset.density;
-            runtimeMaterial.specificHeat = preset.specificHeat;
-            runtimeMaterial.conductivity = preset.conductivity;
-            outConfig.runtimeThermalMaterials.push_back(runtimeMaterial);
-        }
-
-        std::sort(
-            outConfig.runtimeThermalMaterials.begin(),
-            outConfig.runtimeThermalMaterials.end(),
-            [](const RuntimeThermalMaterial& lhs, const RuntimeThermalMaterial& rhs) {
-                return lhs.runtimeModelId < rhs.runtimeModelId;
-            });
-
-        if (package.voronoiProduct.isValid()) {
-            const VoronoiProduct* product = tryGetProduct<VoronoiProduct>(*ecsRegistry, package.voronoiProduct.outputSocketKey);
-            if (!product) {
                 return false;
             }
+            modelProducts.push_back(product);
+        }
 
-            outConfig.voronoiNodeCount = product->nodeCount;
-            outConfig.voronoiNodes = product->mappedVoronoiNodes;
-            outConfig.voronoiNodeBuffer = product->nodeBuffer;
-            outConfig.voronoiNodeBufferOffset = product->nodeBufferOffset;
-            outConfig.gmlsInterfaceBuffer = product->gmlsInterfaceBuffer;
-            outConfig.gmlsInterfaceBufferOffset = product->gmlsInterfaceBufferOffset;
-            outConfig.seedFlagsBuffer = product->seedFlagsBuffer;
-            outConfig.seedFlagsBufferOffset = product->seedFlagsBufferOffset;
+        outConfig.modelIntrinsicMeshes.reserve(modelProducts.size());
+        outConfig.modelRuntimeModelIds.reserve(modelProducts.size());
+        outConfig.modelTemperatureByRuntimeId.reserve(modelProducts.size());
+        outConfig.modelBoundaryConditions.reserve(modelProducts.size());
+        outConfig.modelFixedTemperatureValues.reserve(modelProducts.size());
+
+        for (size_t i = 0; i < modelProducts.size(); ++i) {
+            const RemeshProduct* product = modelProducts[i];
+            const HeatModelData& modelData = package.models[i];
+            outConfig.modelIntrinsicMeshes.push_back(product->intrinsicMesh);
+            outConfig.modelRuntimeModelIds.push_back(product->runtimeModelId);
+            outConfig.modelTemperatureByRuntimeId[product->runtimeModelId] = modelData.initialTemperature;
+            outConfig.modelBoundaryConditions[product->runtimeModelId] = static_cast<uint32_t>(modelData.boundaryCondition);
+            outConfig.modelFixedTemperatureValues[product->runtimeModelId] = modelData.fixedTemperatureValue;
+            outConfig.modelDensity[product->runtimeModelId] = modelData.density;
+            outConfig.modelSpecificHeat[product->runtimeModelId] = modelData.specificHeat;
+            outConfig.modelConductivity[product->runtimeModelId] = modelData.conductivity;
+
+        }
+
+        // Collect topology buffers from all models
+        const size_t modelCount = modelProducts.size();
+        outConfig.supportingHalfedgeViews.resize(modelCount, VK_NULL_HANDLE);
+        outConfig.supportingAngleViews.resize(modelCount, VK_NULL_HANDLE);
+        outConfig.halfedgeViews.resize(modelCount, VK_NULL_HANDLE);
+        outConfig.edgeViews.resize(modelCount, VK_NULL_HANDLE);
+        outConfig.triangleViews.resize(modelCount, VK_NULL_HANDLE);
+        outConfig.lengthViews.resize(modelCount, VK_NULL_HANDLE);
+        outConfig.inputHalfedgeViews.resize(modelCount, VK_NULL_HANDLE);
+        outConfig.inputEdgeViews.resize(modelCount, VK_NULL_HANDLE);
+        outConfig.inputTriangleViews.resize(modelCount, VK_NULL_HANDLE);
+        outConfig.inputLengthViews.resize(modelCount, VK_NULL_HANDLE);
+
+        for (size_t i = 0; i < modelCount; ++i) {
+            const RemeshProduct* product = modelProducts[i];
+            outConfig.supportingHalfedgeViews[i] = product->supportingHalfedgeView;
+            outConfig.supportingAngleViews[i] = product->supportingAngleView;
+            outConfig.halfedgeViews[i] = product->halfedgeView;
+            outConfig.edgeViews[i] = product->edgeView;
+            outConfig.triangleViews[i] = product->triangleView;
+            outConfig.lengthViews[i] = product->lengthView;
+            outConfig.inputHalfedgeViews[i] = product->inputHalfedgeView;
+            outConfig.inputEdgeViews[i] = product->inputEdgeView;
+            outConfig.inputTriangleViews[i] = product->inputTriangleView;
+            outConfig.inputLengthViews[i] = product->inputLengthView;
+        }
+
+        // Collect Voronoi products - each model gets its own independent buffers
+        for (const ProductHandle& voronoiProductHandle : package.voronoiProducts) {
+            const VoronoiProduct* product = tryGetProduct<VoronoiProduct>(*ecsRegistry, voronoiProductHandle.outputSocketKey);
+            if (!product) {
+                continue;
+            }
 
             for (const VoronoiSurfaceProduct& surfaceProduct : product->surfaces) {
                 const uint32_t runtimeModelId = surfaceProduct.runtimeModelId;
@@ -225,32 +176,58 @@ private:
                     continue;
                 }
 
-                outConfig.receiverVoronoiNodeOffsetByModelId[runtimeModelId] = surfaceProduct.nodeOffset;
-                outConfig.receiverVoronoiNodeCountByModelId[runtimeModelId] = surfaceProduct.nodeCount;
-                outConfig.receiverGMLSSurfaceStencilBufferByModelId[runtimeModelId] = surfaceProduct.gmlsSurfaceStencilBuffer;
-                outConfig.receiverGMLSSurfaceStencilBufferOffsetByModelId[runtimeModelId] = surfaceProduct.gmlsSurfaceStencilBufferOffset;
-                outConfig.receiverGMLSSurfaceWeightBufferByModelId[runtimeModelId] = surfaceProduct.gmlsSurfaceWeightBuffer;
-                outConfig.receiverGMLSSurfaceWeightBufferOffsetByModelId[runtimeModelId] = surfaceProduct.gmlsSurfaceWeightBufferOffset;
-                outConfig.receiverGMLSSurfaceGradientWeightBufferByModelId[runtimeModelId] = surfaceProduct.gmlsSurfaceGradientWeightBuffer;
-                outConfig.receiverGMLSSurfaceGradientWeightBufferOffsetByModelId[runtimeModelId] = surfaceProduct.gmlsSurfaceGradientWeightBufferOffset;
-                outConfig.receiverSurfaceBuffers.push_back(surfaceProduct.surfaceBuffer);
-                outConfig.receiverSurfaceBufferOffsets.push_back(surfaceProduct.surfaceBufferOffset);
-                outConfig.receiverSurfaceBufferViews.push_back(surfaceProduct.surfaceBufferView);
-                outConfig.receiverSurfaceGradientBuffers.push_back(surfaceProduct.surfaceGradientBuffer);
-                outConfig.receiverSurfaceGradientBufferOffsets.push_back(surfaceProduct.surfaceGradientBufferOffset);
-                outConfig.receiverVoronoiSeedFlagsByModelId[runtimeModelId] = surfaceProduct.seedFlags;
-                outConfig.receiverVoronoiSeedPositionsByModelId[runtimeModelId] = surfaceProduct.seedPositions;
+                bool modelKnown = false;
+                for (uint32_t mIdx = 0; mIdx < static_cast<uint32_t>(outConfig.modelRuntimeModelIds.size()); ++mIdx) {
+                    if (outConfig.modelRuntimeModelIds[mIdx] == runtimeModelId) {
+                        modelKnown = true;
+                        break;
+                    }
+                }
+                if (!modelKnown) {
+                    continue;
+                }
+
+                outConfig.modelVoronoiNodesByModelId[runtimeModelId] = product->mappedVoronoiNodes;
+                outConfig.modelVoronoiNodeBufferByModelId[runtimeModelId] = product->nodeBuffer;
+                outConfig.modelVoronoiNodeBufferOffsetByModelId[runtimeModelId] = product->nodeBufferOffset;
+                outConfig.modelGMLSInterfaceBufferByModelId[runtimeModelId] = product->gmlsInterfaceBuffer;
+                outConfig.modelGMLSInterfaceBufferOffsetByModelId[runtimeModelId] = product->gmlsInterfaceBufferOffset;
+                outConfig.modelSeedFlagsBufferByModelId[runtimeModelId] = product->seedFlagsBuffer;
+                outConfig.modelSeedFlagsBufferOffsetByModelId[runtimeModelId] = product->seedFlagsBufferOffset;
+                outConfig.modelVoronoiNodeCountByModelId[runtimeModelId] = surfaceProduct.nodeCount;
+                outConfig.modelGMLSSurfaceStencilBufferByModelId[runtimeModelId] = surfaceProduct.gmlsSurfaceStencilBuffer;
+                outConfig.modelGMLSSurfaceStencilBufferOffsetByModelId[runtimeModelId] = surfaceProduct.gmlsSurfaceStencilBufferOffset;
+                outConfig.modelGMLSSurfaceWeightBufferByModelId[runtimeModelId] = surfaceProduct.gmlsSurfaceWeightBuffer;
+                outConfig.modelGMLSSurfaceWeightBufferOffsetByModelId[runtimeModelId] = surfaceProduct.gmlsSurfaceWeightBufferOffset;
+                outConfig.modelGMLSSurfaceGradientWeightBufferByModelId[runtimeModelId] = surfaceProduct.gmlsSurfaceGradientWeightBuffer;
+                outConfig.modelGMLSSurfaceGradientWeightBufferOffsetByModelId[runtimeModelId] = surfaceProduct.gmlsSurfaceGradientWeightBufferOffset;
+                outConfig.modelVoronoiSeedFlagsByModelId[runtimeModelId] = surfaceProduct.seedFlags;
+                outConfig.modelVoronoiSeedPositionsByModelId[runtimeModelId] = surfaceProduct.seedPositions;
+
+                
+                // Collect surface topology views from VoronoiProduct surfaces
+                outConfig.surfaceSupportingHalfedgeViews.push_back(surfaceProduct.supportingHalfedgeView);
+                outConfig.surfaceSupportingAngleViews.push_back(surfaceProduct.supportingAngleView);
+                outConfig.surfaceHalfedgeViews.push_back(surfaceProduct.halfedgeView);
+                outConfig.surfaceEdgeViews.push_back(surfaceProduct.edgeView);
+                outConfig.surfaceTriangleViews.push_back(surfaceProduct.triangleView);
+                outConfig.surfaceLengthViews.push_back(surfaceProduct.lengthView);
+                outConfig.surfaceInputHalfedgeViews.push_back(surfaceProduct.inputHalfedgeView);
+                outConfig.surfaceInputEdgeViews.push_back(surfaceProduct.inputEdgeView);
+                outConfig.surfaceInputTriangleViews.push_back(surfaceProduct.inputTriangleView);
+                outConfig.surfaceInputLengthViews.push_back(surfaceProduct.inputLengthView);
+                outConfig.surfaceRuntimeModelIds.push_back(runtimeModelId);
             }
         }
 
-        if (package.contactProduct.isValid()) {
-            const ContactProduct* product = tryGetProduct<ContactProduct>(*ecsRegistry, package.contactProduct.outputSocketKey);
+        for (const ProductHandle& contactProductHandle : package.contactProducts) {
+            const ContactProduct* product = tryGetProduct<ContactProduct>(*ecsRegistry, contactProductHandle.outputSocketKey);
             if (!product) {
-                return false;
+                continue;
             }
-
-            outConfig.contactCouplings = { product->coupling };
+            outConfig.contactCouplings.push_back(product->coupling);
         }
+
 
         outConfig.computeHash = buildComputeHash(outConfig);
         return true;

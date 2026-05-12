@@ -5,9 +5,12 @@
 
 #include <glm/glm.hpp>
 #include <vulkan/vulkan.h>
+#include <memory>
 
 #include "mesh/remesher/SupportingHalfedge.hpp"
 #include "voronoi/VoronoiGpuStructs.hpp"
+
+struct StencilKDTree;
 
 class VulkanDevice;
 class MemoryAllocator;
@@ -16,8 +19,8 @@ class CommandPool;
 class VoronoiModelRuntime {
 public:
     struct SurfaceVertex {
-        glm::vec3 position{0.0f};
-        glm::vec3 normal{0.0f, 0.0f, 1.0f};
+        glm::vec4 position{0.0f, 0.0f, 0.0f, 1.0f};
+        glm::vec4 normal{0.0f, 0.0f, 1.0f, 0.0f};
     };
 
     struct CpuData {
@@ -55,38 +58,18 @@ public:
 
     bool createVoronoiBuffers();
     bool createSurfaceBuffers();
-    bool initializeSurfaceBuffer();
     bool resetSurfaceState();
 
     void stageGMLSSurfaceData(
         const std::vector<voronoi::GMLSSurfaceStencil>& stencils,
         const std::vector<voronoi::GMLSSurfaceWeight>& valueWeights,
         const std::vector<voronoi::GMLSSurfaceGradientWeight>& gradientWeights);
-    void updateSurfaceDescriptors(
-        VkDescriptorSetLayout surfaceLayout,
-        VkDescriptorSetLayout gradientLayout,
-        VkDescriptorPool surfacePool,
-        VkBuffer tempBufferA,
-        VkDeviceSize tempBufferAOffset,
-        VkBuffer tempBufferB,
-        VkDeviceSize tempBufferBOffset,
-        VkBuffer timeBuffer,
-        VkDeviceSize timeBufferOffset,
-        uint32_t nodeCount);
-    void recreateSurfaceDescriptors(
-        VkDescriptorSetLayout surfaceLayout,
-        VkDescriptorSetLayout gradientLayout,
-        VkDescriptorPool surfacePool,
-        VkBuffer tempBufferA,
-        VkDeviceSize tempBufferAOffset,
-        VkBuffer tempBufferB,
-        VkDeviceSize tempBufferBOffset,
-        VkBuffer timeBuffer,
-        VkDeviceSize timeBufferOffset,
-        uint32_t nodeCount);
     void executeBufferTransfers(VkCommandBuffer commandBuffer);
     void cleanup();
     void cleanupStagingBuffers();
+
+    void setStencilKDTree(std::unique_ptr<StencilKDTree> kdTree);
+    StencilKDTree* getStencilKDTree() const { return stencilKDTree.get(); }
 
     uint32_t getNodeModelId() const { return nodeModelId; }
     uint32_t getRuntimeModelId() const { return runtimeModelId; }
@@ -111,21 +94,12 @@ public:
     VkDeviceSize getVoronoiCandidateBufferOffset() const { return voronoiCandidateBufferOffset; }
     VkBuffer getSurfaceBuffer() const { return surfaceBuffer; }
     VkDeviceSize getSurfaceBufferOffset() const { return surfaceBufferOffset; }
-    VkBufferView getSurfaceBufferView() const { return surfaceBufferView; }
-    VkBuffer getSurfaceVertexBuffer() const { return surfaceVertexBuffer; }
-    VkDeviceSize getSurfaceVertexBufferOffset() const { return surfaceVertexBufferOffset; }
-    VkDescriptorSet getSurfaceComputeSetA() const { return surfaceComputeSetA; }
-    VkDescriptorSet getSurfaceComputeSetB() const { return surfaceComputeSetB; }
-    VkDescriptorSet getSurfaceGradientComputeSetA() const { return surfaceGradientComputeSetA; }
-    VkDescriptorSet getSurfaceGradientComputeSetB() const { return surfaceGradientComputeSetB; }
     VkBuffer getGMLSSurfaceStencilBuffer() const { return gmlsSurfaceStencilBuffer; }
     VkDeviceSize getGMLSSurfaceStencilBufferOffset() const { return gmlsSurfaceStencilBufferOffset; }
     VkBuffer getGMLSSurfaceWeightBuffer() const { return gmlsSurfaceWeightBuffer; }
     VkDeviceSize getGMLSSurfaceWeightBufferOffset() const { return gmlsSurfaceWeightBufferOffset; }
     VkBuffer getGMLSSurfaceGradientWeightBuffer() const { return gmlsSurfaceGradientWeightBuffer; }
     VkDeviceSize getGMLSSurfaceGradientWeightBufferOffset() const { return gmlsSurfaceGradientWeightBufferOffset; }
-    VkBuffer getSurfaceGradientBuffer() const { return surfaceGradientBuffer; }
-    VkDeviceSize getSurfaceGradientBufferOffset() const { return surfaceGradientBufferOffset; }
     VkBufferView getSupportingHalfedgeView() const;
     VkBufferView getSupportingAngleView() const;
     VkBufferView getHalfedgeView() const;
@@ -183,9 +157,6 @@ private:
     VkBuffer gmlsSurfaceGradientWeightBuffer = VK_NULL_HANDLE;
     VkDeviceSize gmlsSurfaceGradientWeightBufferOffset = 0;
 
-    VkBuffer surfaceGradientBuffer = VK_NULL_HANDLE;
-    VkDeviceSize surfaceGradientBufferOffset = 0;
-
     VkBuffer gmlsSurfaceStencilStagingBuffer = VK_NULL_HANDLE;
     VkDeviceSize gmlsSurfaceStencilStagingOffset = 0;
     VkDeviceSize gmlsSurfaceStencilBufferSize = 0;
@@ -200,19 +171,10 @@ private:
 
     VkBuffer surfaceBuffer = VK_NULL_HANDLE;
     VkDeviceSize surfaceBufferOffset = 0;
-    VkBufferView surfaceBufferView = VK_NULL_HANDLE;
-
-    VkBuffer surfaceVertexBuffer = VK_NULL_HANDLE;
-    VkDeviceSize surfaceVertexBufferOffset = 0;
-
-    VkDescriptorSet surfaceComputeSetA = VK_NULL_HANDLE;
-    VkDescriptorSet surfaceComputeSetB = VK_NULL_HANDLE;
-    VkDescriptorSet surfaceGradientComputeSetA = VK_NULL_HANDLE;
-    VkDescriptorSet surfaceGradientComputeSetB = VK_NULL_HANDLE;
 
     VkBuffer initStagingBuffer = VK_NULL_HANDLE;
     VkDeviceSize initStagingOffset = 0;
     VkDeviceSize initBufferSize = 0;
 
-    static constexpr float AMBIENT_TEMPERATURE = 1.0f;
+    std::unique_ptr<StencilKDTree> stencilKDTree;
 };

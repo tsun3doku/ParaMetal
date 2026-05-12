@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include <vulkan/vulkan.h>
 
@@ -13,40 +14,17 @@ struct TimeUniform;
 
 class HeatSystemSimRuntime {
 public:
-    bool initialize(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, uint32_t nodeCount);
+    bool initialize(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator);
     void reset();
     void cleanup(MemoryAllocator& memoryAllocator);
 
-    bool isInitialized() const { return tempBufferA != VK_NULL_HANDLE && tempBufferB != VK_NULL_HANDLE && timeBuffer != VK_NULL_HANDLE; }
-    bool matchesNodeCount(uint32_t count) const { return nodeCount == count && isInitialized(); }
-
-    uint32_t getNodeCount() const { return nodeCount; }
-
-    VkBuffer getTempBufferA() const { return tempBufferA; }
-    VkDeviceSize getTempBufferAOffset() const { return tempBufferAOffset; }
-    void* getMappedTempBufferA() const { return mappedTempBufferA; }
-
-    VkBuffer getTempBufferB() const { return tempBufferB; }
-    VkDeviceSize getTempBufferBOffset() const { return tempBufferBOffset; }
-    void* getMappedTempBufferB() const { return mappedTempBufferB; }
+    bool isInitialized() const { return timeBuffer != VK_NULL_HANDLE; }
 
     VkBuffer getTimeBuffer() const { return timeBuffer; }
     VkDeviceSize getTimeBufferOffset() const { return timeBufferOffset; }
     heat::TimeUniform* getMappedTimeData() const;
 
 private:
-    static constexpr float AMBIENT_TEMPERATURE = 1.0f;
-
-    uint32_t nodeCount = 0;
-
-    VkBuffer tempBufferA = VK_NULL_HANDLE;
-    VkDeviceSize tempBufferAOffset = 0;
-    void* mappedTempBufferA = nullptr;
-
-    VkBuffer tempBufferB = VK_NULL_HANDLE;
-    VkDeviceSize tempBufferBOffset = 0;
-    void* mappedTempBufferB = nullptr;
-
     VkBuffer timeBuffer = VK_NULL_HANDLE;
     VkDeviceSize timeBufferOffset = 0;
     void* mappedTimeData = nullptr;

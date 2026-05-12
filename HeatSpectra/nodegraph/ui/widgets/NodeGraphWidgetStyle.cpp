@@ -1,5 +1,6 @@
 #include "NodeGraphWidgetStyle.hpp"
 
+#include <QComboBox>
 #include <QFrame>
 #include <QLineEdit>
 #include <QString>
@@ -34,6 +35,41 @@ void styleLineEdit(QLineEdit* edit) {
     stylesheet += "  border: 1px solid " + colorAccentFocus.name() + ";";
     stylesheet += "}";
     edit->setStyleSheet(stylesheet);
+}
+
+void styleComboBox(QComboBox* combo) {
+    if (!combo) {
+        return;
+    }
+
+    QString stylesheet;
+    stylesheet += "QComboBox {";
+    stylesheet += "  background: " + colorInputBackground.name() + ";";
+    stylesheet += "  color: " + colorTextInput.name() + ";";
+    stylesheet += "  border: 1px solid " + colorInputBorder.name() + ";";
+    stylesheet += "  border-radius: " + px(panelWidgetRadius) + ";";
+    stylesheet += "  padding: "
+        + px(panelFieldVerticalPadding) + " "
+        + px(panelFieldHorizontalPadding) + ";";
+    stylesheet += "}";
+    stylesheet += "QComboBox:focus {";
+    stylesheet += "  border: 1px solid " + colorAccentFocus.name() + ";";
+    stylesheet += "}";
+    stylesheet += "QComboBox::drop-down {";
+    stylesheet += "  width: 24px;";
+    stylesheet += "  border: none;";
+    stylesheet += "}";
+    stylesheet += "QComboBox::down-arrow {";
+    stylesheet += "  width: 8px;";
+    stylesheet += "  height: 8px;";
+    stylesheet += "}";
+    stylesheet += "QComboBox QAbstractItemView {";
+    stylesheet += "  background: " + colorInputBackground.name() + ";";
+    stylesheet += "  color: " + colorTextInput.name() + ";";
+    stylesheet += "  border: 1px solid " + colorInputBorder.name() + ";";
+    stylesheet += "  selection-background-color: " + colorAccent.name() + ";";
+    stylesheet += "}";
+    combo->setStyleSheet(stylesheet);
 }
 
 QWidget* buildPanelCardPage(QWidget* parent, QWidget* contentWidget) {

@@ -98,6 +98,7 @@ void NodeTransform::execute(NodeGraphKernelContext& context) const {
         forwardedGeometry.localToWorld = NodeModelTransform::toMatrixArray(
             NodeModelTransform::toMat4(forwardedGeometry.localToWorld) *
             NodeModelTransform::toMat4(localTransform));
+
         const uint64_t payloadKey = makeSocketKey(context.node.id, outputSocket.id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(forwardedGeometry));
         populateMetadata(outputValue, payloadRegistry);

@@ -12,6 +12,5 @@ public:
     virtual void update() = 0;
     virtual bool hasDispatchableComputeWork() const = 0;
     virtual const std::vector<VkCommandBuffer>& getComputeCommandBuffers() const = 0;
-    virtual void recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t currentFrame,
-        VkQueryPool timingQueryPool, uint32_t timingQueryBase) = 0;
+    virtual void recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t currentFrame) = 0;
 };

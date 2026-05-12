@@ -28,8 +28,6 @@ C:/VulkanSDK/1.3.283.0/Bin/glslc.exe intrinsic_vertex_normals.geom -o intrinsic_
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe intrinsic_vertex_normals.frag -o intrinsic_vertex_normals_frag.spv
 
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe heat_buffer.frag -o heat_buffer_frag.spv
-C:/VulkanSDK/1.3.283.0/Bin/glslc.exe heat_source.vert -o heat_source_vert.spv
-C:/VulkanSDK/1.3.283.0/Bin/glslc.exe heat_source.frag -o heat_source_frag.spv
 
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe lighting.vert -o lighting_vert.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe lighting.frag -o lighting_frag.spv
@@ -66,6 +64,7 @@ C:/VulkanSDK/1.3.283.0/Bin/glslc.exe --target-env=vulkan1.3 hash_grid_build.comp
 
 slangc heat_surface_temp.slang -target spirv -o heat_surface_temp_comp.spv
 slangc heat_surface_gradient.slang -target spirv -o heat_surface_gradient_comp.spv
+slangc contact.slang -target spirv -o contact_comp.spv
 
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe --target-env=vulkan1.3 heat_voronoi.comp -o heat_voronoi_comp.spv
 

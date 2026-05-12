@@ -24,12 +24,12 @@ std::unordered_set<uint64_t> NodeGraphDisplay::computeDisplaySelectedKeys(const 
         uint64_t socketKey = static_cast<uint64_t>(entity);
         const auto& package = registry.get<VoronoiPackage>(entity);
         std::vector<uint64_t> deps;
-        for (const ProductHandle& handle : package.receiverModelProducts) {
+        for (const ProductHandle& handle : package.modelProducts) {
             if (handle.outputSocketKey != 0) {
                 deps.push_back(handle.outputSocketKey);
             }
         }
-        for (const ProductHandle& handle : package.receiverRemeshProducts) {
+        for (const ProductHandle& handle : package.modelRemeshProducts) {
             if (handle.outputSocketKey != 0) {
                 deps.push_back(handle.outputSocketKey);
             }
@@ -40,17 +40,17 @@ std::unordered_set<uint64_t> NodeGraphDisplay::computeDisplaySelectedKeys(const 
         uint64_t socketKey = static_cast<uint64_t>(entity);
         const auto& package = registry.get<ContactPackage>(entity);
         std::vector<uint64_t> deps;
-        if (package.emitterModelProduct.outputSocketKey != 0) {
-            deps.push_back(package.emitterModelProduct.outputSocketKey);
+        if (package.modelAModelProduct.outputSocketKey != 0) {
+            deps.push_back(package.modelAModelProduct.outputSocketKey);
         }
-        if (package.receiverModelProduct.outputSocketKey != 0) {
-            deps.push_back(package.receiverModelProduct.outputSocketKey);
+        if (package.modelBModelProduct.outputSocketKey != 0) {
+            deps.push_back(package.modelBModelProduct.outputSocketKey);
         }
-        if (package.emitterRemeshProduct.outputSocketKey != 0) {
-            deps.push_back(package.emitterRemeshProduct.outputSocketKey);
+        if (package.modelARemeshProduct.outputSocketKey != 0) {
+            deps.push_back(package.modelARemeshProduct.outputSocketKey);
         }
-        if (package.receiverRemeshProduct.outputSocketKey != 0) {
-            deps.push_back(package.receiverRemeshProduct.outputSocketKey);
+        if (package.modelBRemeshProduct.outputSocketKey != 0) {
+            deps.push_back(package.modelBRemeshProduct.outputSocketKey);
         }
         depsByKey[socketKey] = std::move(deps);
     }
@@ -58,31 +58,25 @@ std::unordered_set<uint64_t> NodeGraphDisplay::computeDisplaySelectedKeys(const 
         uint64_t socketKey = static_cast<uint64_t>(entity);
         const auto& package = registry.get<HeatPackage>(entity);
         std::vector<uint64_t> deps;
-        for (const ProductHandle& handle : package.sourceModelProducts) {
+        for (const ProductHandle& handle : package.modelProducts) {
             if (handle.outputSocketKey != 0) {
                 deps.push_back(handle.outputSocketKey);
             }
         }
-        for (const ProductHandle& handle : package.receiverModelProducts) {
+        for (const ProductHandle& handle : package.remeshProducts) {
             if (handle.outputSocketKey != 0) {
                 deps.push_back(handle.outputSocketKey);
             }
         }
-        for (const ProductHandle& handle : package.sourceRemeshProducts) {
-            if (handle.outputSocketKey != 0) {
+        for (const ProductHandle& handle : package.voronoiProducts) {
+            if (handle.isValid()) {
                 deps.push_back(handle.outputSocketKey);
             }
         }
-        for (const ProductHandle& handle : package.receiverRemeshProducts) {
-            if (handle.outputSocketKey != 0) {
+        for (const ProductHandle& handle : package.contactProducts) {
+            if (handle.isValid()) {
                 deps.push_back(handle.outputSocketKey);
             }
-        }
-        if (package.voronoiProduct.isValid()) {
-            deps.push_back(package.voronoiProduct.outputSocketKey);
-        }
-        if (package.contactProduct.isValid()) {
-            deps.push_back(package.contactProduct.outputSocketKey);
         }
         depsByKey[socketKey] = std::move(deps);
     }

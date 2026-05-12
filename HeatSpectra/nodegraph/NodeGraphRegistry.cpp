@@ -3,11 +3,13 @@
 
 NodeSocketSignature NodeGraphRegistry::makeInputSocket(
     const char* name,
-    NodeGraphValueType valueType) {
+    NodeGraphValueType valueType,
+    bool variadic) {
     NodeSocketSignature signature{};
     signature.name = name;
     signature.direction = NodeGraphSocketDirection::Input;
     signature.valueType = valueType;
+    signature.variadic = variadic;
     return signature;
 }
 
@@ -106,34 +108,28 @@ NodeTypeDefinition NodeGraphRegistry::buildRemeshNode() {
     };
 }
 
-NodeTypeDefinition NodeGraphRegistry::buildHeatReceiverNode() {
+NodeTypeDefinition NodeGraphRegistry::buildHeatModelNode() {
     return {
-        nodegraphtypes::HeatReceiver,
-        "Heat Receiver",
+        nodegraphtypes::HeatModel,
+        "Heat Model",
         NodeGraphNodeCategory::System,
         {
             makeInputSocket("Mesh", NodeGraphValueType::Mesh),
             makeOutputSocket(
-                "Receiver",
-                NodePayloadType::HeatReceiver),
-        },
-        {},
-    };
-}
-
-NodeTypeDefinition NodeGraphRegistry::buildHeatSourceNode() {
-    return {
-        nodegraphtypes::HeatSource,
-        "Heat Source",
-        NodeGraphNodeCategory::System,
-        {
-            makeInputSocket("Mesh", NodeGraphValueType::Mesh),
-            makeOutputSocket(
-                "Source",
-                NodePayloadType::HeatSource),
+                "HeatModel",
+                NodePayloadType::HeatModel),
         },
         {
-            {nodegraphparams::heatsource::Temperature, "Temperature", NodeGraphParamType::Float, 100.0, 0, false, "", false},
+            {nodegraphparams::heatmodel::Density, "Density", NodeGraphParamType::Float, 1000.0, 0, false, "", false},
+            {nodegraphparams::heatmodel::SpecificHeat, "Specific Heat", NodeGraphParamType::Float, 1000.0, 0, false, "", false},
+            {nodegraphparams::heatmodel::Conductivity, "Conductivity", NodeGraphParamType::Float, 50.0, 0, false, "", false},
+            {nodegraphparams::heatmodel::InitialTemperature, "Initial Temperature", NodeGraphParamType::Float, 1.0, 0, false, "", false},
+            makeEnumParamDefinition(
+                nodegraphparams::heatmodel::BoundaryCondition,
+                "Boundary Condition",
+                "None",
+                {"None", "Fixed Temperature", "Fixed Power"}),
+            {nodegraphparams::heatmodel::FixedTemperatureValue, "Fixed Temperature", NodeGraphParamType::Float, 1.0, 0, false, "", false},
         },
     };
 }
@@ -162,7 +158,7 @@ NodeTypeDefinition NodeGraphRegistry::buildVoronoiNode() {
         "Voronoi",
         NodeGraphNodeCategory::System,
         {
-            makeInputSocket("Mesh", NodeGraphValueType::Mesh),
+            makeInputSocket("Mesh", NodeGraphValueType::Mesh, true),
             makeOutputSocket("Volume", NodePayloadType::Voronoi),
         },
         {
@@ -194,8 +190,8 @@ NodeTypeDefinition NodeGraphRegistry::buildHeatSolveNode() {
         "Heat Solve",
         NodeGraphNodeCategory::System,
         {
-            makeInputSocket("Volume", NodeGraphValueType::Volume),
-            makeInputSocket("Field", NodeGraphValueType::Field),
+            makeInputSocket("Volume", NodeGraphValueType::Volume, true),
+            makeInputSocket("Field", NodeGraphValueType::Field, true),
             makeOutputSocket("Heat", NodePayloadType::Heat),
         },
         {
@@ -231,8 +227,7 @@ const std::vector<NodeTypeDefinition>& NodeGraphRegistry::getBuiltInNodes() {
         buildTransformNode(),
         buildGroupNode(),
         buildRemeshNode(),
-        buildHeatReceiverNode(),
-        buildHeatSourceNode(),
+        buildHeatModelNode(),
         buildContactNode(),
         buildVoronoiNode(),
         buildHeatSolveNode(),

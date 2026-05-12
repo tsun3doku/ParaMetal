@@ -11,7 +11,9 @@
 #include "nodegraph/NodePayloadRegistry.hpp"
 #include "runtime/RuntimeHandleResolver.hpp"
 #include "runtime/RuntimeProducts.hpp"
+#include "domain/HeatModelData.hpp"
 
+#include <iostream>
 #include <optional>
 #include <set>
 #include <unordered_set>
@@ -86,12 +88,12 @@ static uint64_t buildVoronoiPackageHash(const VoronoiPackage& package, const ECS
     uint64_t hash = NodeGraphHash::start();
     NodeGraphHash::combine(hash, 3u);
     NodeGraphHash::combine(hash, package.authored.payloadHash);
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(package.receiverModelProducts.size()));
-    for (const ProductHandle& handle : package.receiverModelProducts) {
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(package.modelProducts.size()));
+    for (const ProductHandle& handle : package.modelProducts) {
         combineProductDependencyHash(hash, ecsRegistry, handle);
     }
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(package.receiverRemeshProducts.size()));
-    for (const ProductHandle& handle : package.receiverRemeshProducts) {
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(package.modelRemeshProducts.size()));
+    for (const ProductHandle& handle : package.modelRemeshProducts) {
         combineProductDependencyHash(hash, ecsRegistry, handle);
     }
     return hash;
@@ -101,10 +103,10 @@ static uint64_t buildContactPackageHash(const ContactPackage& package, const ECS
     uint64_t hash = NodeGraphHash::start();
     NodeGraphHash::combine(hash, 4u);
     NodeGraphHash::combine(hash, package.authored.payloadHash);
-    combineProductDependencyHash(hash, ecsRegistry, package.emitterModelProduct);
-    combineProductDependencyHash(hash, ecsRegistry, package.receiverModelProduct);
-    combineProductDependencyHash(hash, ecsRegistry, package.emitterRemeshProduct);
-    combineProductDependencyHash(hash, ecsRegistry, package.receiverRemeshProduct);
+    combineProductDependencyHash(hash, ecsRegistry, package.modelAModelProduct);
+    combineProductDependencyHash(hash, ecsRegistry, package.modelBModelProduct);
+    combineProductDependencyHash(hash, ecsRegistry, package.modelARemeshProduct);
+    combineProductDependencyHash(hash, ecsRegistry, package.modelBRemeshProduct);
     return hash;
 }
 
@@ -112,22 +114,20 @@ static uint64_t buildHeatPackageHash(const HeatPackage& package, const ECSRegist
     uint64_t hash = NodeGraphHash::start();
     NodeGraphHash::combine(hash, 5u);
     NodeGraphHash::combine(hash, package.authored.payloadHash);
-    combineProductDependencyHash(hash, ecsRegistry, package.voronoiProduct);
-    combineProductDependencyHash(hash, ecsRegistry, package.contactProduct);
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(package.sourceModelProducts.size()));
-    for (const ProductHandle& handle : package.sourceModelProducts) {
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(package.voronoiProducts.size()));
+    for (const ProductHandle& handle : package.voronoiProducts) {
         combineProductDependencyHash(hash, ecsRegistry, handle);
     }
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(package.sourceRemeshProducts.size()));
-    for (const ProductHandle& handle : package.sourceRemeshProducts) {
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(package.contactProducts.size()));
+    for (const ProductHandle& handle : package.contactProducts) {
         combineProductDependencyHash(hash, ecsRegistry, handle);
     }
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(package.receiverModelProducts.size()));
-    for (const ProductHandle& handle : package.receiverModelProducts) {
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(package.modelProducts.size()));
+    for (const ProductHandle& handle : package.modelProducts) {
         combineProductDependencyHash(hash, ecsRegistry, handle);
     }
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(package.receiverRemeshProducts.size()));
-    for (const ProductHandle& handle : package.receiverRemeshProducts) {
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(package.remeshProducts.size()));
+    for (const ProductHandle& handle : package.remeshProducts) {
         combineProductDependencyHash(hash, ecsRegistry, handle);
     }
     return hash;
@@ -147,60 +147,78 @@ uint64_t socketKey(NodeGraphNodeId nodeId, NodeGraphSocketId socketId) {
     return (static_cast<uint64_t>(nodeId.value) << 32) | static_cast<uint64_t>(socketId.value);
 }
 
-ProductHandle resolveHeatVoronoiInput(
+std::vector<ProductHandle> resolveHeatVoronoiInputs(
     const NodeGraphNode& node,
     const NodeGraphEvaluationState& evaluationState,
     const ECSRegistry& ecsRegistry) {
+    std::vector<ProductHandle> results;
     const NodeGraphSocket* volumeSocket = findInputSocket(node, NodeGraphValueType::Volume);
     if (!volumeSocket) {
-        return {};
+        return results;
     }
 
-    const auto sourceIt = evaluationState.sourceSocketByInputSocket.find(socketKey(node.id, volumeSocket->id));
-    if (sourceIt == evaluationState.sourceSocketByInputSocket.end()) {
-        return {};
+    const uint64_t inputKey = socketKey(node.id, volumeSocket->id);
+    const auto socketsIt = evaluationState.sourceSocketsByInputSocket.find(inputKey);
+    if (socketsIt == evaluationState.sourceSocketsByInputSocket.end()) {
+        return results;
     }
 
-    const auto outputIt = evaluationState.outputBySocket.find(sourceIt->second);
-    if (outputIt == evaluationState.outputBySocket.end() ||
-        outputIt->second.status != EvaluatedSocketStatus::Value) {
-        return {};
+    for (uint64_t sourceSocketKey : socketsIt->second) {
+        const auto outputIt = evaluationState.outputBySocket.find(sourceSocketKey);
+        if (outputIt == evaluationState.outputBySocket.end() ||
+            outputIt->second.status != EvaluatedSocketStatus::Value) {
+            continue;
+        }
+
+        const NodeDataBlock& inputBlock = outputIt->second.data;
+        if (inputBlock.dataType != NodePayloadType::Voronoi || inputBlock.payloadHandle.key == 0) {
+            continue;
+        }
+
+        ProductHandle handle = getPublishedHandle<VoronoiProduct>(ecsRegistry, sourceSocketKey);
+        if (handle.isValid()) {
+            results.push_back(handle);
+        }
     }
 
-    const NodeDataBlock& inputBlock = outputIt->second.data;
-    if (inputBlock.dataType != NodePayloadType::Voronoi || inputBlock.payloadHandle.key == 0) {
-        return {};
-    }
-
-    return getPublishedHandle<VoronoiProduct>(ecsRegistry, sourceIt->second);
+    return results;
 }
 
-ProductHandle resolveHeatContactInput(
+std::vector<ProductHandle> resolveHeatContactInputs(
     const NodeGraphNode& node,
     const NodeGraphEvaluationState& evaluationState,
     const ECSRegistry& ecsRegistry) {
+    std::vector<ProductHandle> results;
     const NodeGraphSocket* fieldSocket = findInputSocket(node, NodeGraphValueType::Field);
     if (!fieldSocket) {
-        return {};
+        return results;
     }
 
-    const auto sourceIt = evaluationState.sourceSocketByInputSocket.find(socketKey(node.id, fieldSocket->id));
-    if (sourceIt == evaluationState.sourceSocketByInputSocket.end()) {
-        return {};
+    const uint64_t inputKey = socketKey(node.id, fieldSocket->id);
+    const auto socketsIt = evaluationState.sourceSocketsByInputSocket.find(inputKey);
+    if (socketsIt == evaluationState.sourceSocketsByInputSocket.end()) {
+        return results;
     }
 
-    const auto outputIt = evaluationState.outputBySocket.find(sourceIt->second);
-    if (outputIt == evaluationState.outputBySocket.end() ||
-        outputIt->second.status != EvaluatedSocketStatus::Value) {
-        return {};
+    for (uint64_t sourceSocketKey : socketsIt->second) {
+        const auto outputIt = evaluationState.outputBySocket.find(sourceSocketKey);
+        if (outputIt == evaluationState.outputBySocket.end() ||
+            outputIt->second.status != EvaluatedSocketStatus::Value) {
+            continue;
+        }
+
+        const NodeDataBlock& inputBlock = outputIt->second.data;
+        if (inputBlock.dataType != NodePayloadType::Contact || inputBlock.payloadHandle.key == 0) {
+            continue;
+        }
+
+        ProductHandle handle = getPublishedHandle<ContactProduct>(ecsRegistry, sourceSocketKey);
+        if (handle.isValid()) {
+            results.push_back(handle);
+        }
     }
 
-    const NodeDataBlock& inputBlock = outputIt->second.data;
-    if (inputBlock.dataType != NodePayloadType::Contact || inputBlock.payloadHandle.key == 0) {
-        return {};
-    }
-
-    return getPublishedHandle<ContactProduct>(ecsRegistry, sourceIt->second);
+    return results;
 }
 
 std::optional<OutputValue> resolveOutputValue(
@@ -288,34 +306,38 @@ VoronoiPackage RuntimePackageCompiler::buildVoronoiPackage(
     VoronoiPackage package{};
     package.authored = voronoi;
 
-    if (!payloadRegistry || !voronoi.active || voronoi.receiverMeshHandles.empty()) {
+    if (!payloadRegistry || !voronoi.active || voronoi.modelMeshHandles.empty()) {
         return package;
     }
 
-    package.receiverModelProducts.reserve(voronoi.receiverMeshHandles.size());
-    package.receiverRemeshProducts.reserve(voronoi.receiverMeshHandles.size());
-    package.receiverLocalToWorlds.reserve(voronoi.receiverMeshHandles.size());
+    package.modelProducts.reserve(voronoi.modelMeshHandles.size());
+    package.modelRemeshProducts.reserve(voronoi.modelMeshHandles.size());
+    package.modelLocalToWorlds.reserve(voronoi.modelMeshHandles.size());
 
     std::set<NodeDataHandle> seenMeshHandles;
-    for (const NodeDataHandle& meshHandle : voronoi.receiverMeshHandles) {
+    for (size_t i = 0; i < voronoi.modelMeshHandles.size(); ++i) {
+        const NodeDataHandle& meshHandle = voronoi.modelMeshHandles[i];
+        
         if (!seenMeshHandles.insert(meshHandle).second) {
             continue;
         }
 
-        const std::optional<GeometryData> receiverGeometry = geometryFromHandle(payloadRegistry, meshHandle);
-        if (!receiverGeometry.has_value()) {
+        const std::optional<GeometryData> modelGeometry = geometryFromHandle(payloadRegistry, meshHandle);
+        if (!modelGeometry.has_value()) {
             continue;
         }
 
-        const ProductHandle receiverRemeshProduct =
+        const ProductHandle modelRemeshProduct =
             remeshProductFromHandle(runtimeBridge, payloadRegistry, registry, meshHandle);
-        if (!receiverRemeshProduct.isValid()) {
+        if (!modelRemeshProduct.isValid()) {
             continue;
         }
 
-        package.receiverLocalToWorlds.push_back(receiverGeometry->localToWorld);
-        package.receiverModelProducts.push_back(modelProductFromHandle(payloadRegistry, registry, meshHandle));
-        package.receiverRemeshProducts.push_back(receiverRemeshProduct);
+        const ProductHandle modelProduct = modelProductFromHandle(payloadRegistry, registry, meshHandle);
+
+        package.modelLocalToWorlds.push_back(modelGeometry->localToWorld);
+        package.modelProducts.push_back(modelProduct);
+        package.modelRemeshProducts.push_back(modelRemeshProduct);
     }
 
     const VoronoiNodeParams nodeParams = readVoronoiNodeParams(node);
@@ -330,12 +352,12 @@ HeatPackage RuntimePackageCompiler::buildHeatPackage(
     const NodePayloadRegistry* payloadRegistry,
     const ECSRegistry& registry,
     const HeatData& heat,
-    const ProductHandle& voronoiProduct,
-    const ProductHandle& contactProduct) const {
+    const std::vector<ProductHandle>& voronoiProducts,
+    const std::vector<ProductHandle>& contactProducts) const {
     HeatPackage package{};
     package.authored = heat;
-    package.voronoiProduct = voronoiProduct;
-    package.contactProduct = contactProduct;
+    package.voronoiProducts = voronoiProducts;
+    package.contactProducts = contactProducts;
 
     const HeatSolveNodeParams nodeParams = readHeatSolveNodeParams(node);
     package.display.showHeatOverlay = nodeParams.preview.showHeatOverlay;
@@ -346,74 +368,67 @@ HeatPackage RuntimePackageCompiler::buildHeatPackage(
         return package;
     }
 
-    std::unordered_set<uint64_t> seenSourceRemeshSocketKeys;
-    std::set<NodeDataHandle> seenSourceHandles;
-    package.sourceModelProducts.reserve(heat.sourceHandles.size());
-    package.sourceRemeshProducts.reserve(heat.sourceHandles.size());
-    package.sourceTemperatures.reserve(heat.sourceHandles.size());
-    for (const NodeDataHandle& sourceHandle : heat.sourceHandles) {
-        if (sourceHandle.key == 0) {
+    std::unordered_set<uint64_t> seenRemeshSocketKeys;
+    std::set<NodeDataHandle> seenHandles;
+    package.modelProducts.reserve(heat.heatModelHandles.size());
+    package.remeshProducts.reserve(heat.heatModelHandles.size());
+    package.models.reserve(heat.heatModelHandles.size());
+
+    for (size_t i = 0; i < heat.heatModelHandles.size(); ++i) {
+        const NodeDataHandle& modelHandle = heat.heatModelHandles[i];
+        
+        if (modelHandle.key == 0) {
             continue;
         }
 
-        const HeatSourceData* heatSource = payloadRegistry->get<HeatSourceData>(sourceHandle);
-        if (!heatSource || heatSource->meshHandle.key == 0) {
+        const HeatModelData* heatModel = payloadRegistry->get<HeatModelData>(modelHandle);
+        if (!heatModel || heatModel->meshHandle.key == 0) {
             continue;
         }
-        if (!seenSourceHandles.insert(heatSource->meshHandle).second) {
-            continue;
-        }
-
-        const std::optional<GeometryData> sourceGeometry = geometryFromHandle(payloadRegistry, heatSource->meshHandle);
-        if (!sourceGeometry.has_value()) {
+        
+        if (!seenHandles.insert(heatModel->meshHandle).second) {
             continue;
         }
 
-        const ProductHandle sourceModelProduct =
-            modelProductFromHandle(payloadRegistry, registry, heatSource->meshHandle);
-        if (!sourceModelProduct.isValid()) {
-            continue;
-        }
-        const ProductHandle sourceRemeshProduct =
-            remeshProductFromHandle(runtimeBridge, payloadRegistry, registry, heatSource->meshHandle);
-        if (!sourceRemeshProduct.isValid()) {
-            continue;
-        }
-        if (!seenSourceRemeshSocketKeys.insert(sourceRemeshProduct.outputSocketKey).second) {
+        const std::optional<GeometryData> geometry = geometryFromHandle(payloadRegistry, heatModel->meshHandle);
+        if (!geometry.has_value()) {
             continue;
         }
 
-        package.sourceModelProducts.push_back(sourceModelProduct);
-        package.sourceRemeshProducts.push_back(sourceRemeshProduct);
-        package.sourceTemperatures.push_back(heatSource->temperature);
-    }
-
-    std::set<NodeDataHandle> seenReceiverHandles;
-    package.receiverModelProducts.reserve(heat.receiverMeshHandles.size());
-    package.receiverRemeshProducts.reserve(heat.receiverMeshHandles.size());
-    for (const NodeDataHandle& meshHandle : heat.receiverMeshHandles) {
-        if (!seenReceiverHandles.insert(meshHandle).second) {
+        const ProductHandle modelProduct =
+            modelProductFromHandle(payloadRegistry, registry, heatModel->meshHandle);
+        if (!modelProduct.isValid()) {
+            continue;
+        }
+        
+        const ProductHandle remeshProduct =
+            remeshProductFromHandle(runtimeBridge, payloadRegistry, registry, heatModel->meshHandle);
+        if (!remeshProduct.isValid()) {
+            continue;
+        }
+        if (!seenRemeshSocketKeys.insert(remeshProduct.outputSocketKey).second) {
             continue;
         }
 
-        const std::optional<GeometryData> receiverGeometry = geometryFromHandle(payloadRegistry, meshHandle);
-        if (!receiverGeometry.has_value()) {
-            continue;
+        package.modelProducts.push_back(modelProduct);
+        package.remeshProducts.push_back(remeshProduct);
+
+        // Copy HeatModelData and merge material preset
+        HeatModelData modelData = *heatModel;
+
+        // Apply material preset if bound
+        const uint32_t modelNodeId = static_cast<uint32_t>(modelHandle.key);
+        for (const HeatMaterialBinding& binding : heat.materialBindings) {
+            if (binding.modelNodeId == modelNodeId) {
+                const HeatMaterialPreset& preset = heatMaterialPresetById(binding.presetId);
+                modelData.density = preset.density;
+                modelData.specificHeat = preset.specificHeat;
+                modelData.conductivity = preset.conductivity;
+                break;
+            }
         }
 
-        const ProductHandle receiverModelProduct =
-            modelProductFromHandle(payloadRegistry, registry, meshHandle);
-        if (!receiverModelProduct.isValid()) {
-            continue;
-        }
-        const ProductHandle receiverRemeshProduct =
-            remeshProductFromHandle(runtimeBridge, payloadRegistry, registry, meshHandle);
-        if (!receiverRemeshProduct.isValid()) {
-            continue;
-        }
-
-        package.receiverModelProducts.push_back(receiverModelProduct);
-        package.receiverRemeshProducts.push_back(receiverRemeshProduct);
+        package.models.push_back(std::move(modelData));
     }
 
     package.packageHash = buildHeatPackageHash(package, registry);
@@ -440,21 +455,21 @@ ContactPackage RuntimePackageCompiler::buildContactPackage(
         return package;
     }
 
-    const ContactPairEndpoint& emitterEndpoint = pair.endpointA;
-    const ContactPairEndpoint& receiverEndpoint = pair.endpointB;
+    const ContactPairEndpoint& endpointA = pair.endpointA;
+    const ContactPairEndpoint& endpointB = pair.endpointB;
 
-    const std::optional<GeometryData> emitterGeometry = geometryFromHandle(payloadRegistry, emitterEndpoint.meshHandle);
-    const std::optional<GeometryData> receiverGeometry = geometryFromHandle(payloadRegistry, receiverEndpoint.meshHandle);
-    if (!emitterGeometry.has_value() || !receiverGeometry.has_value()) {
+    const std::optional<GeometryData> geometryA = geometryFromHandle(payloadRegistry, endpointA.meshHandle);
+    const std::optional<GeometryData> geometryB = geometryFromHandle(payloadRegistry, endpointB.meshHandle);
+    if (!geometryA.has_value() || !geometryB.has_value()) {
         return package;
     }
 
-    package.emitterLocalToWorld = emitterGeometry->localToWorld;
-    package.receiverLocalToWorld = receiverGeometry->localToWorld;
-    package.emitterModelProduct = modelProductFromHandle(payloadRegistry, registry, emitterEndpoint.meshHandle);
-    package.receiverModelProduct = modelProductFromHandle(payloadRegistry, registry, receiverEndpoint.meshHandle);
-    package.emitterRemeshProduct = remeshProductFromHandle(runtimeBridge, payloadRegistry, registry, emitterEndpoint.meshHandle);
-    package.receiverRemeshProduct = remeshProductFromHandle(runtimeBridge, payloadRegistry, registry, receiverEndpoint.meshHandle);
+    package.modelALocalToWorld = geometryA->localToWorld;
+    package.modelBLocalToWorld = geometryB->localToWorld;
+    package.modelAModelProduct = modelProductFromHandle(payloadRegistry, registry, endpointA.meshHandle);
+    package.modelBModelProduct = modelProductFromHandle(payloadRegistry, registry, endpointB.meshHandle);
+    package.modelARemeshProduct = remeshProductFromHandle(runtimeBridge, payloadRegistry, registry, endpointA.meshHandle);
+    package.modelBRemeshProduct = remeshProductFromHandle(runtimeBridge, payloadRegistry, registry, endpointB.meshHandle);
 
     package.packageHash = buildContactPackageHash(package, registry);
     return package;
@@ -547,6 +562,7 @@ void RuntimePackageCompiler::compileAndApply(
                 }
 
                 VoronoiPackage package = buildVoronoiPackage(node, payloadRegistry, registry, *voronoi);
+
                 applyPackage<VoronoiPackage>(registry, outputValue->socketKey, package, staleEntities);
                 break;
             }
@@ -582,17 +598,17 @@ void RuntimePackageCompiler::compileAndApply(
                     break;
                 }
 
-                const ProductHandle voronoiProduct =
-                    resolveHeatVoronoiInput(node, evaluationState, registry);
-                const ProductHandle contactProduct =
-                    resolveHeatContactInput(node, evaluationState, registry);
+                const std::vector<ProductHandle> voronoiProducts =
+                    resolveHeatVoronoiInputs(node, evaluationState, registry);
+                const std::vector<ProductHandle> contactProducts =
+                    resolveHeatContactInputs(node, evaluationState, registry);
                 HeatPackage package = buildHeatPackage(
                     node,
                     payloadRegistry,
                     registry,
                     *heat,
-                    voronoiProduct,
-                    contactProduct);
+                    voronoiProducts,
+                    contactProducts);
                 applyPackage<HeatPackage>(registry, outputValue->socketKey, package, staleEntities);
                 break;
             }

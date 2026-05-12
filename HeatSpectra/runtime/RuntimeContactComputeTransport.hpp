@@ -88,31 +88,30 @@ private:
             return false;
         }
 
-        const RemeshProduct* emitterRemeshProduct =
-            package.emitterRemeshProduct.isValid()
-            ? tryGetProduct<RemeshProduct>(*ecsRegistry, package.emitterRemeshProduct.outputSocketKey)
+        const RemeshProduct* modelARemeshProduct =
+            package.modelARemeshProduct.isValid()
+            ? tryGetProduct<RemeshProduct>(*ecsRegistry, package.modelARemeshProduct.outputSocketKey)
             : nullptr;
-        const RemeshProduct* receiverRemeshProduct =
-            package.receiverRemeshProduct.isValid()
-            ? tryGetProduct<RemeshProduct>(*ecsRegistry, package.receiverRemeshProduct.outputSocketKey)
+        const RemeshProduct* modelBRemeshProduct =
+            package.modelBRemeshProduct.isValid()
+            ? tryGetProduct<RemeshProduct>(*ecsRegistry, package.modelBRemeshProduct.outputSocketKey)
             : nullptr;
-        if (!emitterRemeshProduct || !receiverRemeshProduct) {
+        if (!modelARemeshProduct || !modelBRemeshProduct) {
             return false;
         }
 
         outConfig = {};
-        outConfig.couplingType = package.authored.pair.type;
         outConfig.minNormalDot = package.authored.pair.minNormalDot;
         outConfig.contactRadius = package.authored.pair.contactRadius;
-        outConfig.emitterModelId = emitterRemeshProduct->runtimeModelId;
-        outConfig.emitterLocalToWorld = package.emitterLocalToWorld;
-        outConfig.emitterIntrinsicMesh = emitterRemeshProduct->intrinsicMesh;
-        outConfig.receiverModelId = receiverRemeshProduct->runtimeModelId;
-        outConfig.receiverLocalToWorld = package.receiverLocalToWorld;
-        outConfig.receiverIntrinsicMesh = receiverRemeshProduct->intrinsicMesh;
-        outConfig.emitterRuntimeModelId = emitterRemeshProduct->runtimeModelId;
-        outConfig.receiverRuntimeModelId = receiverRemeshProduct->runtimeModelId;
-        outConfig.receiverTriangleIndices = receiverRemeshProduct->intrinsicMesh.indices;
+        outConfig.modelAId = modelARemeshProduct->runtimeModelId;
+        outConfig.modelALocalToWorld = package.modelALocalToWorld;
+        outConfig.modelAIntrinsicMesh = modelARemeshProduct->intrinsicMesh;
+        outConfig.modelBId = modelBRemeshProduct->runtimeModelId;
+        outConfig.modelBLocalToWorld = package.modelBLocalToWorld;
+        outConfig.modelBIntrinsicMesh = modelBRemeshProduct->intrinsicMesh;
+        outConfig.modelARuntimeModelId = modelARemeshProduct->runtimeModelId;
+        outConfig.modelBRuntimeModelId = modelBRemeshProduct->runtimeModelId;
+        outConfig.modelBTriangleIndices = modelBRemeshProduct->intrinsicMesh.indices;
         if (!outConfig.isValid()) {
             return false;
         }

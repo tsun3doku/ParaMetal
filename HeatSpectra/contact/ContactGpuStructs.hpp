@@ -13,31 +13,23 @@ struct Sample {
 
 static_assert(sizeof(Sample) == 16, "Sample must match GPU stride");
 
-struct GMLSSample {
-    float areaWeight;
-    uint32_t receiverValueWeightOffset;
-    uint32_t receiverValueWeightCount;
-    uint32_t receiverScatterWeightOffset;
-    uint32_t receiverScatterWeightCount;
-    uint32_t emitterValueWeightOffset;
-    uint32_t emitterValueWeightCount;
-    uint32_t emitterScatterWeightOffset;
-    uint32_t emitterScatterWeightCount;
-    uint32_t _pad0;
-    uint32_t _pad1;
-    uint32_t _pad2;
+struct ContactSampleEntry {
+    uint32_t weightOffset;    
+    uint32_t weightCount;     
+    float conductance;        
+    uint32_t _pad;
 };
 
-static_assert(sizeof(GMLSSample) == 48, "GMLSSample must match GPU stride");
+static_assert(sizeof(ContactSampleEntry) == 16, "ContactSampleEntry must match GPU stride");
 
-struct GMLSWeight {
+struct ContactSampleWeight {
     uint32_t cellIndex;
     float weight;
     uint32_t _pad0;
     uint32_t _pad1;
 };
 
-static_assert(sizeof(GMLSWeight) == 16, "GMLSWeight must match GPU stride");
+static_assert(sizeof(ContactSampleWeight) == 16, "ContactSampleWeight must match GPU stride");
 
 struct PushConstant {
     uint32_t couplingKind;
@@ -48,4 +40,12 @@ struct PushConstant {
 
 static_assert(sizeof(PushConstant) == 16, "PushConstant must match GPU stride");
 
+struct ContactIndex {
+    uint32_t offset;
+    uint32_t count;
+    float contactK;
+    uint32_t _pad;
+};
+
+static_assert(sizeof(ContactIndex) == 16, "ContactIndex must match GPU stride");
 }

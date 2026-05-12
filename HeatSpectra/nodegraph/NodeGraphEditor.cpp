@@ -99,16 +99,17 @@ void NodeGraphEditor::resetToDefaultGraph() {
     const CreatedNode sourceTransform = createNode(nodegraphtypes::Transform, "Source Transform", rightColumnX, row2Y);
     const CreatedNode receiverRemesh = createNode(nodegraphtypes::Remesh, "Receiver Remesh", leftColumnX, row3Y);
     const CreatedNode sourceRemesh = createNode(nodegraphtypes::Remesh, "Source Remesh", rightColumnX, row3Y);
-    const CreatedNode heatReceiver = createNode(nodegraphtypes::HeatReceiver, "", leftColumnX, row4Y);
-    const CreatedNode heatSource = createNode(nodegraphtypes::HeatSource, "", rightColumnX, row4Y);
-    const CreatedNode voronoi = createNode(nodegraphtypes::Voronoi, "", leftColumnX, row5Y);
-    const CreatedNode contact = createNode(nodegraphtypes::Contact, "", rightColumnX, row5Y);
+    const CreatedNode receiverHeatModel = createNode(nodegraphtypes::HeatModel, "Receiver Heat Model", leftColumnX, row4Y);
+    const CreatedNode sourceHeatModel = createNode(nodegraphtypes::HeatModel, "Source Heat Model", rightColumnX, row4Y);
+    const CreatedNode receiverVoronoi = createNode(nodegraphtypes::Voronoi, "Receiver Voronoi", leftColumnX, row5Y);
+    const CreatedNode sourceVoronoi = createNode(nodegraphtypes::Voronoi, "Source Voronoi", rightColumnX, row5Y);
+    const CreatedNode contact = createNode(nodegraphtypes::Contact, "", centerColumnX, row5Y);
     const CreatedNode heatSolve = createNode(nodegraphtypes::HeatSolve, "", centerColumnX, row6Y);
 
     if (!receiverModel.id.isValid() || !receiverTransform.id.isValid() || !receiverRemesh.id.isValid() ||
         !sourceModel.id.isValid() || !sourceTransform.id.isValid() || !sourceRemesh.id.isValid() ||
-        !heatReceiver.id.isValid() || !heatSource.id.isValid() || !contact.id.isValid() ||
-        !voronoi.id.isValid() || !heatSolve.id.isValid()) {
+        !receiverHeatModel.id.isValid() || !sourceHeatModel.id.isValid() || !contact.id.isValid() ||
+        !receiverVoronoi.id.isValid() || !sourceVoronoi.id.isValid() || !heatSolve.id.isValid()) {
         return;
     }
 
@@ -122,25 +123,29 @@ void NodeGraphEditor::resetToDefaultGraph() {
     const NodeGraphSocketId sourceTransformOutputId = outputSocketByType(sourceTransform.node, NodeGraphValueType::Mesh);
     const NodeGraphSocketId sourceRemeshInputId = inputSocketByType(sourceRemesh.node, NodeGraphValueType::Mesh);
     const NodeGraphSocketId sourceRemeshOutputId = outputSocketByType(sourceRemesh.node, NodeGraphValueType::Mesh);
-    const NodeGraphSocketId heatReceiverInputId = inputSocketByType(heatReceiver.node, NodeGraphValueType::Mesh);
-    const NodeGraphSocketId heatSourceInputId = inputSocketByType(heatSource.node, NodeGraphValueType::Mesh);
-    const NodeGraphSocketId voronoiGeometryInputId = inputSocketByType(voronoi.node, NodeGraphValueType::Mesh);
+    const NodeGraphSocketId receiverHeatModelInputId = inputSocketByType(receiverHeatModel.node, NodeGraphValueType::Mesh);
+    const NodeGraphSocketId sourceHeatModelInputId = inputSocketByType(sourceHeatModel.node, NodeGraphValueType::Mesh);
+    const NodeGraphSocketId receiverVoronoiGeometryInputId = inputSocketByType(receiverVoronoi.node, NodeGraphValueType::Mesh);
+    const NodeGraphSocketId sourceVoronoiGeometryInputId = inputSocketByType(sourceVoronoi.node, NodeGraphValueType::Mesh);
     const NodeGraphSocketId heatSolveVoronoiInputId = inputSocketByType(heatSolve.node, NodeGraphValueType::Volume);
     const NodeGraphSocketId heatSolveContactInputId = inputSocketByType(heatSolve.node, NodeGraphValueType::Field);
     const NodeGraphSocketId contactEmitterInputId = inputSocketByName(contact.node, "Emitter");
     const NodeGraphSocketId contactReceiverInputId = inputSocketByName(contact.node, "Receiver");
-    const NodeGraphSocketId heatReceiverOutputId = firstOutputSocket(heatReceiver.node);
-    const NodeGraphSocketId heatSourceOutputId = firstOutputSocket(heatSource.node);
+    const NodeGraphSocketId receiverHeatModelOutputId = firstOutputSocket(receiverHeatModel.node);
+    const NodeGraphSocketId sourceHeatModelOutputId = firstOutputSocket(sourceHeatModel.node);
     const NodeGraphSocketId contactOutputId = firstOutputSocket(contact.node);
-    const NodeGraphSocketId voronoiOutputId = firstOutputSocket(voronoi.node);
+    const NodeGraphSocketId receiverVoronoiOutputId = firstOutputSocket(receiverVoronoi.node);
+    const NodeGraphSocketId sourceVoronoiOutputId = firstOutputSocket(sourceVoronoi.node);
 
     if (!receiverModelOutputId.isValid() || !receiverTransformInputId.isValid() || !receiverTransformOutputId.isValid() ||
         !receiverRemeshInputId.isValid() || !receiverRemeshOutputId.isValid() || !sourceModelOutputId.isValid() ||
         !sourceTransformInputId.isValid() || !sourceTransformOutputId.isValid() || !sourceRemeshInputId.isValid() ||
-        !sourceRemeshOutputId.isValid() || !heatReceiverInputId.isValid() || !heatSourceInputId.isValid() ||
-        !voronoiGeometryInputId.isValid() || !heatSolveVoronoiInputId.isValid() || !heatSolveContactInputId.isValid() ||
-        !contactEmitterInputId.isValid() || !contactReceiverInputId.isValid() || !heatReceiverOutputId.isValid() ||
-        !heatSourceOutputId.isValid() || !contactOutputId.isValid() || !voronoiOutputId.isValid()) {
+        !sourceRemeshOutputId.isValid() || !receiverHeatModelInputId.isValid() || !sourceHeatModelInputId.isValid() ||
+        !receiverVoronoiGeometryInputId.isValid() || !sourceVoronoiGeometryInputId.isValid() ||
+        !heatSolveVoronoiInputId.isValid() || !heatSolveContactInputId.isValid() ||
+        !contactEmitterInputId.isValid() || !contactReceiverInputId.isValid() || !receiverHeatModelOutputId.isValid() ||
+        !sourceHeatModelOutputId.isValid() || !contactOutputId.isValid() ||
+        !receiverVoronoiOutputId.isValid() || !sourceVoronoiOutputId.isValid()) {
         return;
     }
 
@@ -156,17 +161,38 @@ void NodeGraphEditor::resetToDefaultGraph() {
     sourceModelPath.stringValue = "models/heatsource_tube.obj";
     setNodeParameter(sourceModel.id, sourceModelPath);
 
+    // Set receiver heat model to None BC (receiver)
+    NodeGraphParamValue receiverHeatModelBC{};
+    receiverHeatModelBC.id = nodegraphparams::heatmodel::BoundaryCondition;
+    receiverHeatModelBC.type = NodeGraphParamType::Enum;
+    receiverHeatModelBC.enumValue = "None";
+    setNodeParameter(receiverHeatModel.id, receiverHeatModelBC);
+
+    // Set source heat model to Fixed Temperature BC (source)
+    NodeGraphParamValue sourceHeatModelBC{};
+    sourceHeatModelBC.id = nodegraphparams::heatmodel::BoundaryCondition;
+    sourceHeatModelBC.type = NodeGraphParamType::Enum;
+    sourceHeatModelBC.enumValue = "Fixed Temperature";
+    setNodeParameter(sourceHeatModel.id, sourceHeatModelBC);
+    NodeGraphParamValue sourceHeatModelTemp{};
+    sourceHeatModelTemp.id = nodegraphparams::heatmodel::FixedTemperatureValue;
+    sourceHeatModelTemp.type = NodeGraphParamType::Float;
+    sourceHeatModelTemp.floatValue = 100.0;
+    setNodeParameter(sourceHeatModel.id, sourceHeatModelTemp);
+
     std::string errorMessage;
     connectSockets(receiverModel.id, receiverModelOutputId, receiverTransform.id, receiverTransformInputId, errorMessage);
     connectSockets(receiverTransform.id, receiverTransformOutputId, receiverRemesh.id, receiverRemeshInputId, errorMessage);
-    connectSockets(receiverRemesh.id, receiverRemeshOutputId, voronoi.id, voronoiGeometryInputId, errorMessage);
-    connectSockets(receiverRemesh.id, receiverRemeshOutputId, heatReceiver.id, heatReceiverInputId, errorMessage);
+    connectSockets(receiverRemesh.id, receiverRemeshOutputId, receiverHeatModel.id, receiverHeatModelInputId, errorMessage);
     connectSockets(sourceModel.id, sourceModelOutputId, sourceTransform.id, sourceTransformInputId, errorMessage);
     connectSockets(sourceTransform.id, sourceTransformOutputId, sourceRemesh.id, sourceRemeshInputId, errorMessage);
-    connectSockets(sourceRemesh.id, sourceRemeshOutputId, heatSource.id, heatSourceInputId, errorMessage);
-    connectSockets(heatSource.id, heatSourceOutputId, contact.id, contactEmitterInputId, errorMessage);
-    connectSockets(heatReceiver.id, heatReceiverOutputId, contact.id, contactReceiverInputId, errorMessage);
-    connectSockets(voronoi.id, voronoiOutputId, heatSolve.id, heatSolveVoronoiInputId, errorMessage);
+    connectSockets(sourceRemesh.id, sourceRemeshOutputId, sourceHeatModel.id, sourceHeatModelInputId, errorMessage);
+    connectSockets(receiverHeatModel.id, receiverHeatModelOutputId, receiverVoronoi.id, receiverVoronoiGeometryInputId, errorMessage);
+    connectSockets(sourceHeatModel.id, sourceHeatModelOutputId, sourceVoronoi.id, sourceVoronoiGeometryInputId, errorMessage);
+    connectSockets(receiverHeatModel.id, receiverHeatModelOutputId, contact.id, contactReceiverInputId, errorMessage);
+    connectSockets(sourceHeatModel.id, sourceHeatModelOutputId, contact.id, contactEmitterInputId, errorMessage);
+    connectSockets(receiverVoronoi.id, receiverVoronoiOutputId, heatSolve.id, heatSolveVoronoiInputId, errorMessage);
+    connectSockets(sourceVoronoi.id, sourceVoronoiOutputId, heatSolve.id, heatSolveVoronoiInputId, errorMessage);
     connectSockets(contact.id, contactOutputId, heatSolve.id, heatSolveContactInputId, errorMessage);
 }
 

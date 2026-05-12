@@ -1,6 +1,5 @@
 #include "VoronoiSystemComputeController.hpp"
 
-#include <iostream>
 #include "VoronoiSystem.hpp"
 #include "runtime/RuntimeProducts.hpp"
 #include "vulkan/MemoryAllocator.hpp"
@@ -47,6 +46,7 @@ void VoronoiSystemComputeController::configure(uint64_t socketKey, const Config&
 
     const auto configIt = configuredConfigs.find(socketKey);
     if (configIt != configuredConfigs.end() && configIt->second.computeHash == config.computeHash) {
+        // Hash match
         return;
     }
 
@@ -139,7 +139,7 @@ bool VoronoiSystemComputeController::exportProduct(uint64_t socketKey, VoronoiPr
     outProduct.nodeCount = voronoiSystem->getVoronoiNodeCount();
 
     const VoronoiResources& resources = voronoiSystem->resourcesRef();
-    outProduct.mappedVoronoiNodes = static_cast<const voronoi::Node*>(resources.mappedVoronoiNodeData);
+    outProduct.mappedVoronoiNodes = nullptr;
     outProduct.nodeBuffer = resources.voronoiNodeBuffer;
     outProduct.nodeBufferOffset = resources.voronoiNodeBufferOffset;
     outProduct.voronoiNeighborBuffer = resources.voronoiNeighborBuffer;
@@ -161,60 +161,50 @@ bool VoronoiSystemComputeController::exportProduct(uint64_t socketKey, VoronoiPr
     outProduct.occupancyPointCount = resources.occupancyPointCount;
 
     const auto& modelRuntimes = voronoiSystem->getModelRuntimes();
-    const auto& receiverDomains = voronoiSystem->getReceiverVoronoiDomains();
-    outProduct.surfaces.reserve(receiverDomains.size());
-    for (const VoronoiDomain& domain : receiverDomains) {
-        VoronoiSurfaceProduct surfaceProduct{};
-        surfaceProduct.runtimeModelId = domain.receiverModelId;
-        surfaceProduct.nodeOffset = domain.nodeOffset;
-        surfaceProduct.nodeCount = domain.nodeCount;
-        surfaceProduct.seedFlags = domain.seedFlags;
-        const auto& domainSeedPositions = domain.integrator->getSeedPositions();
-        surfaceProduct.seedPositions.reserve(domainSeedPositions.size());
-        for (const glm::vec4& seedPosition : domainSeedPositions) {
-            surfaceProduct.seedPositions.push_back(glm::vec3(seedPosition));
-        }
-
-        for (const auto& modelRuntime : modelRuntimes) {
-            if (!modelRuntime || modelRuntime->getRuntimeModelId() != domain.receiverModelId) {
-                continue;
-            }
-
-            surfaceProduct.vertexBuffer = modelRuntime->getVertexBuffer();
-            surfaceProduct.vertexBufferOffset = modelRuntime->getVertexBufferOffset();
-            surfaceProduct.indexBuffer = modelRuntime->getIndexBuffer();
-            surfaceProduct.indexBufferOffset = modelRuntime->getIndexBufferOffset();
-            surfaceProduct.indexCount = modelRuntime->getIndexCount();
-            surfaceProduct.modelMatrix = modelRuntime->getModelMatrix();
-            surfaceProduct.intrinsicVertexCount = static_cast<uint32_t>(modelRuntime->getIntrinsicVertexCount());
-            surfaceProduct.candidateBuffer = modelRuntime->getVoronoiCandidateBuffer();
-            surfaceProduct.candidateBufferOffset = modelRuntime->getVoronoiCandidateBufferOffset();
-            surfaceProduct.gmlsSurfaceStencilBuffer = modelRuntime->getGMLSSurfaceStencilBuffer();
-            surfaceProduct.gmlsSurfaceStencilBufferOffset = modelRuntime->getGMLSSurfaceStencilBufferOffset();
-            surfaceProduct.gmlsSurfaceWeightBuffer = modelRuntime->getGMLSSurfaceWeightBuffer();
-            surfaceProduct.gmlsSurfaceWeightBufferOffset = modelRuntime->getGMLSSurfaceWeightBufferOffset();
-            surfaceProduct.gmlsSurfaceGradientWeightBuffer = modelRuntime->getGMLSSurfaceGradientWeightBuffer();
-            surfaceProduct.gmlsSurfaceGradientWeightBufferOffset = modelRuntime->getGMLSSurfaceGradientWeightBufferOffset();
-            surfaceProduct.surfaceBuffer = modelRuntime->getSurfaceBuffer();
-            surfaceProduct.surfaceBufferOffset = modelRuntime->getSurfaceBufferOffset();
-            surfaceProduct.surfaceGradientBuffer = modelRuntime->getSurfaceGradientBuffer();
-            surfaceProduct.surfaceGradientBufferOffset = modelRuntime->getSurfaceGradientBufferOffset();
-            surfaceProduct.surfaceBufferView = modelRuntime->getSurfaceBufferView();
-            surfaceProduct.supportingHalfedgeView = modelRuntime->getSupportingHalfedgeView();
-            surfaceProduct.supportingAngleView = modelRuntime->getSupportingAngleView();
-            surfaceProduct.halfedgeView = modelRuntime->getHalfedgeView();
-            surfaceProduct.edgeView = modelRuntime->getEdgeView();
-            surfaceProduct.triangleView = modelRuntime->getTriangleView();
-            surfaceProduct.lengthView = modelRuntime->getLengthView();
-            surfaceProduct.inputHalfedgeView = modelRuntime->getInputHalfedgeView();
-            surfaceProduct.inputEdgeView = modelRuntime->getInputEdgeView();
-            surfaceProduct.inputTriangleView = modelRuntime->getInputTriangleView();
-            surfaceProduct.inputLengthView = modelRuntime->getInputLengthView();
-            break;
-        }
-
-        outProduct.surfaces.push_back(std::move(surfaceProduct));
+    VoronoiModelRuntime* modelRuntime = voronoiSystem->getModelRuntime();
+    if (!modelRuntime) {
+        return false;
     }
+
+    outProduct.surfaces.reserve(1);
+    VoronoiSurfaceProduct surfaceProduct{};
+    surfaceProduct.runtimeModelId = modelRuntime->getRuntimeModelId();
+    surfaceProduct.nodeOffset = 0;
+    surfaceProduct.nodeCount = voronoiSystem->getVoronoiNodeCount();
+    surfaceProduct.seedFlags = voronoiSystem->runtimeRef().getSeedFlags();
+    const auto& domainSeedPositions = voronoiSystem->runtimeRef().getSeedPositions();
+    surfaceProduct.seedPositions.reserve(domainSeedPositions.size());
+    for (const glm::vec4& seedPosition : domainSeedPositions) {
+        surfaceProduct.seedPositions.push_back(glm::vec3(seedPosition));
+    }
+
+    surfaceProduct.vertexBuffer = modelRuntime->getVertexBuffer();
+    surfaceProduct.vertexBufferOffset = modelRuntime->getVertexBufferOffset();
+    surfaceProduct.indexBuffer = modelRuntime->getIndexBuffer();
+    surfaceProduct.indexBufferOffset = modelRuntime->getIndexBufferOffset();
+    surfaceProduct.indexCount = modelRuntime->getIndexCount();
+    surfaceProduct.modelMatrix = modelRuntime->getModelMatrix();
+    surfaceProduct.intrinsicVertexCount = static_cast<uint32_t>(modelRuntime->getIntrinsicVertexCount());
+    surfaceProduct.candidateBuffer = modelRuntime->getVoronoiCandidateBuffer();
+    surfaceProduct.candidateBufferOffset = modelRuntime->getVoronoiCandidateBufferOffset();
+    surfaceProduct.gmlsSurfaceStencilBuffer = modelRuntime->getGMLSSurfaceStencilBuffer();
+    surfaceProduct.gmlsSurfaceStencilBufferOffset = modelRuntime->getGMLSSurfaceStencilBufferOffset();
+    surfaceProduct.gmlsSurfaceWeightBuffer = modelRuntime->getGMLSSurfaceWeightBuffer();
+    surfaceProduct.gmlsSurfaceWeightBufferOffset = modelRuntime->getGMLSSurfaceWeightBufferOffset();
+    surfaceProduct.gmlsSurfaceGradientWeightBuffer = modelRuntime->getGMLSSurfaceGradientWeightBuffer();
+    surfaceProduct.gmlsSurfaceGradientWeightBufferOffset = modelRuntime->getGMLSSurfaceGradientWeightBufferOffset();
+    surfaceProduct.supportingHalfedgeView = modelRuntime->getSupportingHalfedgeView();
+    surfaceProduct.supportingAngleView = modelRuntime->getSupportingAngleView();
+    surfaceProduct.halfedgeView = modelRuntime->getHalfedgeView();
+    surfaceProduct.edgeView = modelRuntime->getEdgeView();
+    surfaceProduct.triangleView = modelRuntime->getTriangleView();
+    surfaceProduct.lengthView = modelRuntime->getLengthView();
+    surfaceProduct.inputHalfedgeView = modelRuntime->getInputHalfedgeView();
+    surfaceProduct.inputEdgeView = modelRuntime->getInputEdgeView();
+    surfaceProduct.inputTriangleView = modelRuntime->getInputTriangleView();
+    surfaceProduct.inputLengthView = modelRuntime->getInputLengthView();
+
+    outProduct.surfaces.push_back(std::move(surfaceProduct));
 
     outProduct.productHash = buildProductHash(outProduct);
 

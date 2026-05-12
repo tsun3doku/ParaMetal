@@ -4,6 +4,7 @@
 #include "nodegraph/NodePayloadRegistry.hpp"
 #include "runtime/RuntimeProducts.hpp"
 
+#include <iostream>
 #include <optional>
 
 std::optional<GeometryData> geometryFromHandle(

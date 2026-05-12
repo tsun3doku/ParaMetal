@@ -1,6 +1,7 @@
 #include "RuntimeVoronoiComputeTransport.hpp"
 #include "heat/VoronoiSystemComputeController.hpp"
 
+
 void RuntimeVoronoiComputeTransport::sync(const ECSRegistry& registry) {
     if (!controller) {
         return;
@@ -12,9 +13,15 @@ void RuntimeVoronoiComputeTransport::sync(const ECSRegistry& registry) {
     for (auto entity : view) {
         uint64_t socketKey = static_cast<uint64_t>(entity);
         const auto& package = registry.get<VoronoiPackage>(entity);
+
+        if (!package.authored.active || package.modelProducts.empty()) {
+            continue;
+        }
+        nextSocketKeys.insert(socketKey);
+
+        const VoronoiProduct* product = tryGetProduct<VoronoiProduct>(registry, socketKey);
         auto hashIt = appliedPackageHash.find(socketKey);
-        if (hashIt != appliedPackageHash.end() && hashIt->second == package.packageHash) {
-            nextSocketKeys.insert(socketKey);
+        if (product && hashIt != appliedPackageHash.end() && hashIt->second == package.packageHash) {
             continue;
         }
 
@@ -22,6 +29,7 @@ void RuntimeVoronoiComputeTransport::sync(const ECSRegistry& registry) {
         if (!tryBuildConfig(socketKey, package, config)) {
             continue;
         }
+
         controller->configure(socketKey, config);
         nextSocketKeys.insert(socketKey);
     }
@@ -43,13 +51,7 @@ bool RuntimeVoronoiComputeTransport::tryBuildConfig(
     if (socketKey == 0 || !ecsRegistry) {
         return false;
     }
-    if (!package.authored.active || package.receiverRemeshProducts.empty()) {
-        return false;
-    }
-
-    const size_t receiverCount = package.receiverRemeshProducts.size();
-    if (package.receiverLocalToWorlds.size() < receiverCount ||
-        package.receiverModelProducts.size() < receiverCount) {
+    if (!package.authored.active || package.modelProducts.empty()) {
         return false;
     }
 
@@ -57,85 +59,56 @@ bool RuntimeVoronoiComputeTransport::tryBuildConfig(
     outConfig.active = true;
     outConfig.cellSize = package.authored.cellSize;
     outConfig.voxelResolution = package.authored.voxelResolution;
-    outConfig.receiverRuntimeModelIds.resize(receiverCount, 0);
-    outConfig.receiverNodeModelIds.resize(receiverCount, 0);
-    outConfig.receiverGeometryPositions.resize(receiverCount);
-    outConfig.receiverGeometryTriangleIndices.resize(receiverCount);
-    outConfig.receiverIntrinsicMeshes.resize(receiverCount);
-    outConfig.receiverSurfaceVertices.resize(receiverCount);
-    outConfig.receiverIntrinsicTriangleIndices.resize(receiverCount);
-    outConfig.meshVertexBuffers.resize(receiverCount, VK_NULL_HANDLE);
-    outConfig.meshVertexBufferOffsets.resize(receiverCount, 0);
-    outConfig.meshIndexBuffers.resize(receiverCount, VK_NULL_HANDLE);
-    outConfig.meshIndexBufferOffsets.resize(receiverCount, 0);
-    outConfig.meshIndexCounts.resize(receiverCount, 0);
-    outConfig.meshModelMatrices.resize(receiverCount, glm::mat4(1.0f));
-    outConfig.supportingHalfedgeViews.resize(receiverCount, VK_NULL_HANDLE);
-    outConfig.supportingAngleViews.resize(receiverCount, VK_NULL_HANDLE);
-    outConfig.halfedgeViews.resize(receiverCount, VK_NULL_HANDLE);
-    outConfig.edgeViews.resize(receiverCount, VK_NULL_HANDLE);
-    outConfig.triangleViews.resize(receiverCount, VK_NULL_HANDLE);
-    outConfig.lengthViews.resize(receiverCount, VK_NULL_HANDLE);
-    outConfig.inputHalfedgeViews.resize(receiverCount, VK_NULL_HANDLE);
-    outConfig.inputEdgeViews.resize(receiverCount, VK_NULL_HANDLE);
-    outConfig.inputTriangleViews.resize(receiverCount, VK_NULL_HANDLE);
-    outConfig.inputLengthViews.resize(receiverCount, VK_NULL_HANDLE);
 
-    size_t remeshIndex = 0;
-    for (; remeshIndex < receiverCount; ++remeshIndex) {
-        const ProductHandle& remeshProductHandle = package.receiverRemeshProducts[remeshIndex];
-        const RemeshProduct* product =
+    for (size_t modelIndex = 0; modelIndex < package.modelProducts.size(); ++modelIndex) {
+        if (modelIndex >= package.modelRemeshProducts.size()) {
+            return false;
+        }
+
+        const ProductHandle& remeshProductHandle = package.modelRemeshProducts[modelIndex];
+        const RemeshProduct* remeshProduct =
             tryGetProduct<RemeshProduct>(*ecsRegistry, remeshProductHandle.outputSocketKey);
-        if (!product) {
-            break;
+        if (!remeshProduct) {
+            return false;
         }
 
-        outConfig.receiverRuntimeModelIds[remeshIndex] = product->runtimeModelId;
-        outConfig.receiverNodeModelIds[remeshIndex] = 0;
-        outConfig.receiverGeometryPositions[remeshIndex] = product->geometryPositions;
-        outConfig.receiverGeometryTriangleIndices[remeshIndex] = product->geometryTriangleIndices;
-        outConfig.receiverIntrinsicMeshes[remeshIndex] = product->intrinsicMesh;
-        outConfig.receiverIntrinsicTriangleIndices[remeshIndex] = product->intrinsicMesh.indices;
-        outConfig.receiverSurfaceVertices[remeshIndex].reserve(product->intrinsicMesh.vertices.size());
-        for (const SupportingHalfedge::IntrinsicVertex& intrinsicVertex : product->intrinsicMesh.vertices) {
-            VoronoiModelRuntime::SurfaceVertex vertex{};
-            vertex.position = intrinsicVertex.position;
-            vertex.normal = intrinsicVertex.normal;
-            outConfig.receiverSurfaceVertices[remeshIndex].push_back(vertex);
-        }
-        outConfig.supportingHalfedgeViews[remeshIndex] = product->supportingHalfedgeView;
-        outConfig.supportingAngleViews[remeshIndex] = product->supportingAngleView;
-        outConfig.halfedgeViews[remeshIndex] = product->halfedgeView;
-        outConfig.edgeViews[remeshIndex] = product->edgeView;
-        outConfig.triangleViews[remeshIndex] = product->triangleView;
-        outConfig.lengthViews[remeshIndex] = product->lengthView;
-        outConfig.inputHalfedgeViews[remeshIndex] = product->inputHalfedgeView;
-        outConfig.inputEdgeViews[remeshIndex] = product->inputEdgeView;
-        outConfig.inputTriangleViews[remeshIndex] = product->inputTriangleView;
-        outConfig.inputLengthViews[remeshIndex] = product->inputLengthView;
-    }
-    if (remeshIndex != receiverCount) {
-        return false;
-    }
-
-    size_t modelIndex = 0;
-    for (; modelIndex < receiverCount; ++modelIndex) {
-        const ProductHandle& modelProductHandle = package.receiverModelProducts[modelIndex];
+        const ProductHandle& modelProductHandle = package.modelProducts[modelIndex];
         const ModelProduct* modelProduct =
             tryGetProduct<ModelProduct>(*ecsRegistry, modelProductHandle.outputSocketKey);
         if (!modelProduct) {
-            break;
+            return false;
         }
 
-        outConfig.meshVertexBuffers[modelIndex] = modelProduct->vertexBuffer;
-        outConfig.meshVertexBufferOffsets[modelIndex] = modelProduct->vertexBufferOffset;
-        outConfig.meshIndexBuffers[modelIndex] = modelProduct->indexBuffer;
-        outConfig.meshIndexBufferOffsets[modelIndex] = modelProduct->indexBufferOffset;
-        outConfig.meshIndexCounts[modelIndex] = modelProduct->indexCount;
-        outConfig.meshModelMatrices[modelIndex] = NodeModelTransform::toMat4(package.receiverLocalToWorlds[modelIndex]);
-    }
-    if (modelIndex != receiverCount) {
-        return false;
+        outConfig.receiverRuntimeModelIds.push_back(remeshProduct->runtimeModelId);
+        outConfig.receiverNodeModelIds.push_back(0);
+        outConfig.receiverGeometryPositions.push_back(remeshProduct->geometryPositions);
+        outConfig.receiverGeometryTriangleIndices.push_back(remeshProduct->geometryTriangleIndices);
+        outConfig.receiverIntrinsicMeshes.push_back(remeshProduct->intrinsicMesh);
+        outConfig.receiverIntrinsicTriangleIndices.push_back(remeshProduct->intrinsicMesh.indices);
+        outConfig.receiverSurfaceVertices.emplace_back().reserve(remeshProduct->intrinsicMesh.vertices.size());
+        for (const SupportingHalfedge::IntrinsicVertex& intrinsicVertex : remeshProduct->intrinsicMesh.vertices) {
+            VoronoiModelRuntime::SurfaceVertex vertex{};
+            vertex.position = glm::vec4(intrinsicVertex.position, 1.0f);
+            vertex.normal = glm::vec4(intrinsicVertex.normal, 0.0f);
+            outConfig.receiverSurfaceVertices.back().push_back(vertex);
+        }
+        outConfig.supportingHalfedgeViews.push_back(remeshProduct->supportingHalfedgeView);
+        outConfig.supportingAngleViews.push_back(remeshProduct->supportingAngleView);
+        outConfig.halfedgeViews.push_back(remeshProduct->halfedgeView);
+        outConfig.edgeViews.push_back(remeshProduct->edgeView);
+        outConfig.triangleViews.push_back(remeshProduct->triangleView);
+        outConfig.lengthViews.push_back(remeshProduct->lengthView);
+        outConfig.inputHalfedgeViews.push_back(remeshProduct->inputHalfedgeView);
+        outConfig.inputEdgeViews.push_back(remeshProduct->inputEdgeView);
+        outConfig.inputTriangleViews.push_back(remeshProduct->inputTriangleView);
+        outConfig.inputLengthViews.push_back(remeshProduct->inputLengthView);
+
+        outConfig.meshVertexBuffers.push_back(modelProduct->vertexBuffer);
+        outConfig.meshVertexBufferOffsets.push_back(modelProduct->vertexBufferOffset);
+        outConfig.meshIndexBuffers.push_back(modelProduct->indexBuffer);
+        outConfig.meshIndexBufferOffsets.push_back(modelProduct->indexBufferOffset);
+        outConfig.meshIndexCounts.push_back(modelProduct->indexCount);
+        outConfig.meshModelMatrices.push_back(NodeModelTransform::toMat4(package.modelLocalToWorlds[modelIndex]));
     }
 
     outConfig.computeHash = buildComputeHash(outConfig);
@@ -160,6 +133,9 @@ void RuntimeVoronoiComputeTransport::finalizeSync() {
     }
     for (uint64_t socketKey : activeSocketKeys) {
         auto entity = static_cast<ECSEntity>(socketKey);
+        if (!ecsRegistry->valid(entity) || !ecsRegistry->all_of<VoronoiPackage>(entity)) {
+            continue;
+        }
         const auto& package = ecsRegistry->get<VoronoiPackage>(entity);
         auto hashIt = appliedPackageHash.find(socketKey);
         const VoronoiProduct* product = tryGetProduct<VoronoiProduct>(*ecsRegistry, socketKey);
@@ -191,7 +167,11 @@ void RuntimeVoronoiComputeTransport::publishProduct(uint64_t socketKey) {
     }
 
     auto entity = static_cast<ECSEntity>(socketKey);
+    if (!ecsRegistry->valid(entity) || !ecsRegistry->all_of<VoronoiPackage>(entity)) {
+        return;
+    }
     const auto& package = ecsRegistry->get<VoronoiPackage>(entity);
+
     ecsRegistry->emplace_or_replace<VoronoiProduct>(entity, product);
     appliedPackageHash[socketKey] = package.packageHash;
 }

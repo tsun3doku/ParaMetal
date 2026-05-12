@@ -23,11 +23,17 @@ struct GMLSSurfaceWeight
     uint _pad1;
 };
 
-[[vk::binding(0)]] StructuredBuffer<uint> nodeTemperatureReadBuffer;
+struct HeatModelPushConstant {
+    uint elementCount;
+};
+
+[[vk::binding(0)]] StructuredBuffer<float> nodeTemperatureReadBuffer;
 [[vk::binding(1)]] RWStructuredBuffer<SurfacePoint> surfaceBuffer;
 
 [[vk::binding(10)]] StructuredBuffer<GMLSSurfaceStencil> gmlsSurfaceStencilBuffer;
 [[vk::binding(11)]] StructuredBuffer<GMLSSurfaceWeight> gmlsSurfaceWeightBuffer;
+
+[[vk::push_constant]] ConstantBuffer<HeatModelPushConstant> pushConstants;
 
 [numthreads(256, 1, 1)]
 void main(uint3 dtid : SV_DispatchThreadID)
@@ -63,12 +69,7 @@ void main(uint3 dtid : SV_DispatchThreadID)
     for (uint i = 0; i < stencil.valueWeightCount; ++i)
     {
         GMLSSurfaceWeight weight = gmlsSurfaceWeightBuffer[stencil.valueWeightOffset + i];
-        if (weight.cellIndex >= nodeCount)
-        {
-            continue;
-        }
-
-        displayTemp += weight.weight * asfloat(nodeTemperatureReadBuffer[weight.cellIndex]);
+        displayTemp += weight.weight * nodeTemperatureReadBuffer[weight.cellIndex];
     }
 
     SurfacePoint p = surfaceBuffer[vertexID];

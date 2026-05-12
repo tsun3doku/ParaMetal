@@ -8,6 +8,7 @@
 #include "domain/GeometryData.hpp"
 #include "domain/ContactData.hpp"
 #include "domain/HeatData.hpp"
+#include "domain/HeatModelData.hpp"
 #include "domain/RemeshData.hpp"
 #include "domain/VoronoiData.hpp"
 #include "mesh/remesher/SupportingHalfedge.hpp"
@@ -80,9 +81,9 @@ struct VoronoiPackage {
     uint64_t packageHash = 0;
     VoronoiData authored;
     DisplaySettings display{};
-    std::vector<std::array<float, 16>> receiverLocalToWorlds;
-    std::vector<ProductHandle> receiverModelProducts;
-    std::vector<ProductHandle> receiverRemeshProducts;
+    std::vector<std::array<float, 16>> modelLocalToWorlds;
+    std::vector<ProductHandle> modelProducts;
+    std::vector<ProductHandle> modelRemeshProducts;
 
     bool matches(const VoronoiPackage& other) const {
         return packageHash == other.packageHash &&
@@ -105,13 +106,11 @@ struct HeatPackage {
     uint64_t packageHash = 0;
     HeatData authored;
     DisplaySettings display{};
-    ProductHandle voronoiProduct{};
-    ProductHandle contactProduct{};
-    std::vector<ProductHandle> sourceModelProducts;
-    std::vector<ProductHandle> sourceRemeshProducts;
-    std::vector<float> sourceTemperatures;
-    std::vector<ProductHandle> receiverModelProducts;
-    std::vector<ProductHandle> receiverRemeshProducts;
+    std::vector<ProductHandle> voronoiProducts;
+    std::vector<ProductHandle> contactProducts;
+    std::vector<ProductHandle> modelProducts;
+    std::vector<ProductHandle> remeshProducts;
+    std::vector<HeatModelData> models;
 
     bool matches(const HeatPackage& other) const {
         return packageHash == other.packageHash &&
@@ -133,22 +132,22 @@ struct ContactPackage {
     uint64_t packageHash = 0;
     ContactData authored;
     DisplaySettings display{};
-    std::array<float, 16> emitterLocalToWorld{
+    std::array<float, 16> modelALocalToWorld{
         1.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 1.0f, 0.0f, 0.0f,
         0.0f, 0.0f, 1.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f
     };
-    std::array<float, 16> receiverLocalToWorld{
+    std::array<float, 16> modelBLocalToWorld{
         1.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 1.0f, 0.0f, 0.0f,
         0.0f, 0.0f, 1.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f
     };
-    ProductHandle emitterModelProduct{};
-    ProductHandle receiverModelProduct{};
-    ProductHandle emitterRemeshProduct{};
-    ProductHandle receiverRemeshProduct{};
+    ProductHandle modelAModelProduct{};
+    ProductHandle modelBModelProduct{};
+    ProductHandle modelARemeshProduct{};
+    ProductHandle modelBRemeshProduct{};
 
     bool matches(const ContactPackage& other) const {
         return packageHash == other.packageHash &&

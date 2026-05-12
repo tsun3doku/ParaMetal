@@ -1,16 +1,19 @@
-#include "NodeHeatReceiver.hpp"
+#include "NodeHeatModel.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphDataTypes.hpp"
 #include "NodeGraphUtils.hpp"
 #include "NodeGraphHash.hpp"
-#include "NodeGraphPayloadTypes.hpp"
+#include "NodeHeatModelParams.hpp"
 #include "NodePayloadRegistry.hpp"
 
-const char* NodeHeatReceiver::typeId() const {
-    return nodegraphtypes::HeatReceiver;
+#include <iostream>
+
+const char* NodeHeatModel::typeId() const {
+    return nodegraphtypes::HeatModel;
 }
 
-void NodeHeatReceiver::execute(NodeGraphKernelContext& context) const {
+void NodeHeatModel::execute(NodeGraphKernelContext& context) const {
+    const HeatModelNodeParams params = readHeatModelNodeParams(context.node);
     const NodeGraphSocket* meshSocket = findInputSocket(context.node, NodeGraphValueType::Mesh);
     const EvaluatedSocketValue* inputMesh =
         meshSocket ? readEvaluatedInput(context.node, meshSocket->id, context.executionState) : nullptr;
@@ -33,22 +36,29 @@ void NodeHeatReceiver::execute(NodeGraphKernelContext& context) const {
         outputValue = {};
         outputValue.dataType = outputSocket.contract.producedPayloadType;
 
-        if (!payloadRegistry || outputValue.dataType != NodePayloadType::HeatReceiver ||
+        if (!payloadRegistry || outputValue.dataType != NodePayloadType::HeatModel ||
             !hasValidInput || meshHandle.key == 0) {
             populateMetadata(outputValue, payloadRegistry);
             continue;
         }
 
-        HeatReceiverData payload{};
+        HeatModelData payload{};
         payload.meshHandle = meshHandle;
         payload.meshPayloadHash = meshPayloadHash;
+        payload.density = static_cast<float>(params.density);
+        payload.specificHeat = static_cast<float>(params.specificHeat);
+        payload.conductivity = static_cast<float>(params.conductivity);
+        payload.initialTemperature = static_cast<float>(params.initialTemperature);
+        payload.boundaryCondition = params.boundaryCondition;
+        payload.fixedTemperatureValue = static_cast<float>(params.fixedTemperatureValue);
         const uint64_t payloadKey = makeSocketKey(context.node.id, outputSocket.id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(payload));
         populateMetadata(outputValue, payloadRegistry);
     }
 }
 
-bool NodeHeatReceiver::computeInputHash(const NodeGraphKernelHashContext& context, uint64_t& outHash) const {
+bool NodeHeatModel::computeInputHash(const NodeGraphKernelHashContext& context, uint64_t& outHash) const {
+    const HeatModelNodeParams params = readHeatModelNodeParams(context.node);
     const NodeGraphSocket* meshSocket = findInputSocket(context.node, NodeGraphValueType::Mesh);
     const EvaluatedSocketValue* inputMesh =
         meshSocket ? readEvaluatedInput(context.node, meshSocket->id, context.executionState) : nullptr;
@@ -60,5 +70,11 @@ bool NodeHeatReceiver::computeInputHash(const NodeGraphKernelHashContext& contex
     outHash = NodeGraphHash::start();
     NodeGraphHash::combine(outHash, static_cast<uint64_t>(context.node.id.value));
     NodeGraphHash::combineInputHash(outHash, inputMeshValue);
+    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.density));
+    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.specificHeat));
+    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.conductivity));
+    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.initialTemperature));
+    NodeGraphHash::combine(outHash, static_cast<uint64_t>(params.boundaryCondition));
+    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.fixedTemperatureValue));
     return true;
 }

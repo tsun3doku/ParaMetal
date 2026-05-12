@@ -69,6 +69,14 @@ std::string readStringParam(const NodeGraphNode& node, uint32_t parameterId) {
     return {};
 }
 
+int readEnumParam(const NodeGraphNode& node, uint32_t parameterId, int defaultValue) {
+    const NodeGraphParamValue* param = findNodeParamValue(node, parameterId);
+    if (!param) {
+        return defaultValue;
+    }
+    return static_cast<int>(param->intValue);
+}
+
 bool writeBoolParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uint32_t parameterId, bool value) {
     if (!nodeGraphBridge) {
         return false;
@@ -114,6 +122,18 @@ bool writeStringParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, 
     parameter.id = parameterId;
     parameter.type = NodeGraphParamType::String;
     parameter.stringValue = value;
+    return writeParam(nodeGraphBridge, nodeId, parameter);
+}
+
+bool writeEnumParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uint32_t parameterId, int value) {
+    if (!nodeGraphBridge) {
+        return false;
+    }
+
+    NodeGraphParamValue parameter{};
+    parameter.id = parameterId;
+    parameter.type = NodeGraphParamType::Enum;
+    parameter.intValue = value;
     return writeParam(nodeGraphBridge, nodeId, parameter);
 }
 

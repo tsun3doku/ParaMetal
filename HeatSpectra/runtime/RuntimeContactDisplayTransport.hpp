@@ -70,8 +70,8 @@ private:
         outConfig.showContactLines = package.display.showContactLines;
         outConfig.authoredActive = package.authored.active;
         outConfig.hasValidContact = package.authored.pair.hasValidContact;
-        outConfig.emitterRuntimeModelId = computeProduct->emitterRuntimeModelId;
-        outConfig.receiverRuntimeModelId = computeProduct->receiverRuntimeModelId;
+        outConfig.modelARuntimeModelId = computeProduct->modelARuntimeModelId;
+        outConfig.modelBRuntimeModelId = computeProduct->modelBRuntimeModelId;
         outConfig.outlineVertices = computeProduct->outlineVertices;
         outConfig.correspondenceVertices = computeProduct->correspondenceVertices;
         outConfig.displayHash = buildDisplayHash(outConfig, computeProduct->productHash);

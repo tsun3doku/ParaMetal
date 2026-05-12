@@ -21,7 +21,7 @@ class NodeModelPanel;
 class NodeTransformPanel;
 class NodeRemeshPanel;
 class NodeContactPanel;
-class NodeHeatSourcePanel;
+class NodeHeatModelPanel;
 class NodeVoronoiPanel;
 
 class NodePanel : public QWidget {
@@ -58,7 +58,7 @@ private:
     QWidget* groupPage = nullptr;
     QWidget* remeshPage = nullptr;
     QWidget* voronoiPage = nullptr;
-    QWidget* heatSourcePage = nullptr;
+    QWidget* heatModelPage = nullptr;
     QWidget* contactPage = nullptr;
     QWidget* heatPage = nullptr;
 
@@ -68,7 +68,7 @@ private:
     NodeRemeshPanel* remeshPanel = nullptr;
     NodeVoronoiPanel* voronoiPanel = nullptr;
     NodeContactPanel* contactPanel = nullptr;
-    NodeHeatSourcePanel* heatSourcePanel = nullptr;
+    NodeHeatModelPanel* heatModelPanel = nullptr;
     NodeHeatSolverPanel* heatSolverPanel = nullptr;
 
     QTabWidget* mainTabWidget = nullptr;

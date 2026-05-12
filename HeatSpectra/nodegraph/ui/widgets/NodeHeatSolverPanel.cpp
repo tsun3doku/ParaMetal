@@ -8,6 +8,8 @@
 #include "nodegraph/NodeGraphEditor.hpp"
 #include "nodegraph/NodeHeatSolveParams.hpp"
 #include "NodePanelUtils.hpp"
+
+#include <iostream>
 #include "NodeGraphSliderRow.hpp"
 #include "NodeGraphWidgetStyle.hpp"
 #include "runtime/RuntimeInterfaces.hpp"
@@ -145,12 +147,14 @@ NodeHeatSolverPanel::NodeHeatSolverPanel(QWidget* parent)
 
         HeatSolveNodeParams params{};
         if (!tryLoadNodeParams(params)) {
+            std::cerr << "[HeatSolverPanel] Failed to load node params for overlay toggle" << std::endl;
             setStatus("Cannot update heat overlay settings for this node.");
             return;
         }
 
         params.preview.showHeatOverlay = checked;
         if (!writeNodeParams(params)) {
+            std::cerr << "[HeatSolverPanel] Failed to write node params for overlay toggle" << std::endl;
             setStatus("Failed to update heat overlay settings.");
             return;
         }
@@ -264,7 +268,7 @@ void NodeHeatSolverPanel::refreshFromNode() {
     heatBindingsTable->setRowCount(static_cast<int>(bindingRows.size()));
     for (int row = 0; row < static_cast<int>(bindingRows.size()); ++row) {
         const HeatMaterialBindingRow& bindingRow = bindingRows[static_cast<std::size_t>(row)];
-        heatBindingsTable->setItem(row, 0, new QTableWidgetItem(QString::number(bindingRow.receiverModelNodeId)));
+        heatBindingsTable->setItem(row, 0, new QTableWidgetItem(QString::number(bindingRow.modelNodeId)));
         heatBindingsTable->setItem(row, 1, new QTableWidgetItem(QString::fromStdString(heatMaterialPresetName(bindingRow.presetId))));
     }
     setSyncing(false);

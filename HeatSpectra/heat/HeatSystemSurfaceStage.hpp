@@ -2,37 +2,40 @@
 
 #include <cstdint>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include <vulkan/vulkan.h>
 
 #include "HeatSystemStageContext.hpp"
 
-class HeatReceiverRuntime;
+class HeatModelRuntime;
 
 class HeatSystemSurfaceStage {
 public:
     explicit HeatSystemSurfaceStage(const HeatSystemStageContext& stageContext);
 
-    void refreshSurfaceDescriptors(uint32_t nodeCount);
     bool createDescriptorPool(uint32_t maxFramesInFlight);
     bool createDescriptorSetLayout();
     bool createPipeline();
     void dispatchSurfaceTemperatureUpdates(
         VkCommandBuffer commandBuffer,
-        uint32_t nodeCount,
-        const std::vector<std::unique_ptr<HeatReceiverRuntime>>& receivers,
-        const std::vector<VkDescriptorSet>& surfaceComputeSetsA,
-        const std::vector<VkDescriptorSet>& surfaceComputeSetsB,
+        const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
         bool finalWritesBufferB) const;
+
     void dispatchSurfaceGradientUpdates(
         VkCommandBuffer commandBuffer,
-        uint32_t nodeCount,
-        const std::vector<std::unique_ptr<HeatReceiverRuntime>>& receivers,
-        const std::vector<VkDescriptorSet>& surfaceGradientComputeSetsA,
-        const std::vector<VkDescriptorSet>& surfaceGradientComputeSetsB,
+        const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
         bool finalWritesBufferB) const;
 
 private:
+    void dispatchSurfacePass(
+        VkCommandBuffer commandBuffer,
+        VkPipeline pipeline,
+        VkPipelineLayout layout,
+        const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
+        bool finalWritesBufferB,
+        bool isGradientPass) const;
+
     HeatSystemStageContext context;
 };

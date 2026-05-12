@@ -19,11 +19,19 @@ struct SurfacePoint {
     glm::vec4 color;
 };
 
-struct SourcePushConstant {
-    uint32_t maxNodeNeighbors;
-    uint32_t substepIndex;
-    float heatSourceTemperature;
-    uint32_t hasContact;
+struct HeatModelPushConstant {
+    uint32_t elementCount;
+};
+
+struct MaterialNode {
+    float conductivityPerMass;
+    float thermalMass;
+    float density;
+    float specificHeat;
+    float conductivity;
+    float fixedTemperatureValue;  
+    uint32_t boundaryCondition; 
+    uint32_t _pad0;
 };
 
 struct BufferPushConstant {

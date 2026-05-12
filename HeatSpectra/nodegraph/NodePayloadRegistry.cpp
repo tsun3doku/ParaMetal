@@ -4,6 +4,7 @@
 #include "domain/ContactData.hpp"
 #include "domain/GeometryData.hpp"
 #include "domain/HeatData.hpp"
+#include "domain/HeatModelData.hpp"
 #include "domain/RemeshData.hpp"
 #include "domain/VoronoiData.hpp"
 
@@ -45,16 +46,16 @@ void RemeshData::sealPayload() {
     payloadHash = hash;
 }
 
-void HeatSourceData::sealPayload() {
-    uint64_t hash = NodeGraphHash::start();
-    NodeGraphHash::combine(hash, meshPayloadHash);
-    NodeGraphHash::combineFloat(hash, temperature);
-    payloadHash = hash;
-}
 
-void HeatReceiverData::sealPayload() {
+void HeatModelData::sealPayload() {
     uint64_t hash = NodeGraphHash::start();
     NodeGraphHash::combine(hash, meshPayloadHash);
+    NodeGraphHash::combineFloat(hash, density);
+    NodeGraphHash::combineFloat(hash, specificHeat);
+    NodeGraphHash::combineFloat(hash, conductivity);
+    NodeGraphHash::combineFloat(hash, initialTemperature);
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(boundaryCondition));
+    NodeGraphHash::combineFloat(hash, fixedTemperatureValue);
     payloadHash = hash;
 }
 
@@ -66,9 +67,13 @@ void HeatData::sealPayload() {
     NodeGraphHash::combine(hash, static_cast<uint64_t>(paused ? 1u : 0u));
     NodeGraphHash::combine(hash, static_cast<uint64_t>(resetRequested ? 1u : 0u));
     NodeGraphHash::combineFloat(hash, contactThermalConductance);
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(heatModelHandles.size()));
+    for (const NodeDataHandle& handle : heatModelHandles) {
+        NodeGraphHash::combine(hash, handle.key);
+    }
     NodeGraphHash::combine(hash, static_cast<uint64_t>(materialBindings.size()));
     for (const HeatMaterialBinding& binding : materialBindings) {
-        NodeGraphHash::combine(hash, static_cast<uint64_t>(binding.receiverModelNodeId));
+        NodeGraphHash::combine(hash, static_cast<uint64_t>(binding.modelNodeId));
         NodeGraphHash::combine(hash, static_cast<uint64_t>(binding.presetId));
     }
     payloadHash = hash;
@@ -79,7 +84,6 @@ void ContactData::sealPayload() {
     NodeGraphHash::combine(hash, static_cast<uint64_t>(active ? 1u : 0u));
     NodeGraphHash::combine(hash, emitterPayloadHash);
     NodeGraphHash::combine(hash, receiverPayloadHash);
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(pair.type));
     NodeGraphHash::combineFloat(hash, pair.minNormalDot);
     NodeGraphHash::combineFloat(hash, pair.contactRadius);
     NodeGraphHash::combine(hash, static_cast<uint64_t>(pair.hasValidContact ? 1u : 0u));
@@ -91,9 +95,9 @@ void VoronoiData::sealPayload() {
     NodeGraphHash::combine(hash, static_cast<uint64_t>(active ? 1u : 0u));
     NodeGraphHash::combineFloat(hash, cellSize);
     NodeGraphHash::combine(hash, static_cast<uint64_t>(voxelResolution));
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(receiverPayloadHashes.size()));
-    for (uint64_t receiverPayloadHash : receiverPayloadHashes) {
-        NodeGraphHash::combine(hash, receiverPayloadHash);
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(modelPayloadHashes.size()));
+    for (uint64_t modelPayloadHash : modelPayloadHashes) {
+        NodeGraphHash::combine(hash, modelPayloadHash);
     }
     payloadHash = hash;
 }
@@ -131,13 +135,9 @@ NodeDataHandle NodePayloadRegistry::resolveMeshHandle(NodePayloadType type, cons
     case NodePayloadType::Geometry:
     case NodePayloadType::Remesh:
         return handle;
-    case NodePayloadType::HeatReceiver: {
-        const HeatReceiverData* heatReceiver = get<HeatReceiverData>(handle);
-        return heatReceiver ? heatReceiver->meshHandle : NodeDataHandle{};
-    }
-    case NodePayloadType::HeatSource: {
-        const HeatSourceData* heatSource = get<HeatSourceData>(handle);
-        return heatSource ? heatSource->meshHandle : NodeDataHandle{};
+    case NodePayloadType::HeatModel: {
+        const HeatModelData* heatModel = get<HeatModelData>(handle);
+        return heatModel ? heatModel->meshHandle : NodeDataHandle{};
     }
     default:
         return {};
@@ -176,12 +176,8 @@ uint64_t NodePayloadRegistry::resolvePayloadHash(NodePayloadType type, const Nod
         const RemeshData* payload = get<RemeshData>(handle);
         return payload ? payload->payloadHash : 0;
     }
-    case NodePayloadType::HeatReceiver: {
-        const HeatReceiverData* payload = get<HeatReceiverData>(handle);
-        return payload ? payload->payloadHash : 0;
-    }
-    case NodePayloadType::HeatSource: {
-        const HeatSourceData* payload = get<HeatSourceData>(handle);
+    case NodePayloadType::HeatModel: {
+        const HeatModelData* payload = get<HeatModelData>(handle);
         return payload ? payload->payloadHash : 0;
     }
     case NodePayloadType::Contact: {

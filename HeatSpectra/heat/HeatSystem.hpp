@@ -1,21 +1,20 @@
 #pragma once
 
-#include "HeatContactRuntime.hpp"
+#include "heat/HeatContactRuntime.hpp"
 #include "contact/ContactTypes.hpp"
 #include "framegraph/ComputePass.hpp"
 #include "util/Structs.hpp"
 #include "HeatSystemSimRuntime.hpp"
-#include "HeatSystemSurfaceRuntime.hpp"
 #include "HeatSystemRuntime.hpp"
 #include "HeatSystemPresets.hpp"
 #include "mesh/remesher/SupportingHalfedge.hpp"
 #include "runtime/RuntimeProducts.hpp"
-#include "runtime/RuntimeThermalTypes.hpp"
 
 #include <memory>
 #include <unordered_map>
+#include <glm/glm.hpp>
 
-static constexpr int NUM_SUBSTEPS = 8;
+static constexpr int NUM_SUBSTEPS = 3;
 
 class ModelRegistry;
 class MemoryAllocator;
@@ -24,7 +23,9 @@ class CommandPool;
 class HeatSystemSimStage;
 class HeatSystemSurfaceStage;
 class HeatSystemVoronoiStage;
+class ContactSystemComputeStage;
 class HeatSystemResources;
+class HeatContactRuntime;
 
 class HeatSystem : public ComputePass {
 public:
@@ -37,8 +38,8 @@ public:
     void setActive(bool active);
     bool isInitialized() const { return initialized; }
 
-    void recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t currentFrame, VkQueryPool timingQueryPool, uint32_t timingQueryBase) override;
-    
+    void recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t currentFrame) override;
+
     bool createComputeCommandBuffers(uint32_t maxFramesInFlight);
 
     void cleanupResources();
@@ -47,52 +48,35 @@ public:
     const std::vector<VkCommandBuffer>& getComputeCommandBuffers() const override { return computeCommandBuffers; }
 
     bool getIsActive() const { return isActive; }
-    bool getIsPaused() const { return isPaused; } 
-    void setIsPaused(bool paused) { isPaused = paused; } 
-    const std::vector<HeatSystemRuntime::SourceBinding>& getSourceBindings() const { return heatSources; }
-    const std::vector<std::unique_ptr<HeatReceiverRuntime>>& getReceivers() const { return surfaceRuntime.getReceivers(); }
+    bool getIsPaused() const { return isPaused; }
+    void setIsPaused(bool paused) { isPaused = paused; }
+    const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& getActiveModels() const { return runtime.getActiveModels(); }
+    HeatModelRuntime* getModelByRuntimeId(uint32_t runtimeModelId) const { return runtime.getModelByRuntimeId(runtimeModelId); }
     bool hasDispatchableComputeWork() const override;
     bool voronoiReady() const;
-    void resetHeatState();
-    void setSourcePayloads(
-        const std::vector<SupportingHalfedge::IntrinsicMesh>& sourceIntrinsicMeshes,
-        const std::vector<uint32_t>& sourceRuntimeModelIds,
-        const std::unordered_map<uint32_t, float>& sourceTemperatureByRuntimeId);
-    void setReceiverPayloads(
-        const std::vector<SupportingHalfedge::IntrinsicMesh>& receiverIntrinsicMeshes,
-        const std::vector<uint32_t>& receiverRuntimeModelIds,
-        const std::vector<VkBufferView>& supportingHalfedgeViews,
-        const std::vector<VkBufferView>& supportingAngleViews,
-        const std::vector<VkBufferView>& halfedgeViews,
-        const std::vector<VkBufferView>& edgeViews,
-        const std::vector<VkBufferView>& triangleViews,
-        const std::vector<VkBufferView>& lengthViews,
-        const std::vector<VkBufferView>& inputHalfedgeViews,
-        const std::vector<VkBufferView>& inputEdgeViews,
-        const std::vector<VkBufferView>& inputTriangleViews,
-        const std::vector<VkBufferView>& inputLengthViews,
-        const std::vector<VkBuffer>& receiverSurfaceBuffers,
-        const std::vector<VkDeviceSize>& receiverSurfaceBufferOffsets,
-        const std::vector<VkBufferView>& receiverSurfaceBufferViews,
-        const std::vector<VkBuffer>& receiverSurfaceGradientBuffers,
-        const std::vector<VkDeviceSize>& receiverSurfaceGradientBufferOffsets);
-    void setThermalMaterials(const std::vector<RuntimeThermalMaterial>& runtimeThermalMaterials);
+    void resetHeatState(const std::unordered_map<uint32_t, float>& modelTemperatureByRuntimeId);
+    void setHeatModels(
+        const std::vector<SupportingHalfedge::IntrinsicMesh>& modelIntrinsicMeshes,
+        const std::vector<uint32_t>& modelRuntimeModelIds,
+        const std::unordered_map<uint32_t, float>& modelTemperatureByRuntimeId,
+        const std::unordered_map<uint32_t, uint32_t>& modelBoundaryConditions,
+        const std::unordered_map<uint32_t, float>& modelFixedTemperatureValues,
+        const std::unordered_map<uint32_t, float>& modelDensity,
+        const std::unordered_map<uint32_t, float>& modelSpecificHeat,
+        const std::unordered_map<uint32_t, float>& modelConductivity);
     void setParams(float contactThermalConductance);
     void setContactCouplings(const std::vector<ContactCoupling>& contactCouplings);
     void clearVoronoiInputs();
-    void setVoronoiBuffers(
+    void addVoronoiModelInput(
+        uint32_t runtimeModelId,
+        const voronoi::Node* nodes,
         uint32_t nodeCount,
-        const voronoi::Node* voronoiNodes,
         VkBuffer nodeBuffer,
         VkDeviceSize nodeBufferOffset,
         VkBuffer gmlsInterfaceBuffer,
         VkDeviceSize gmlsInterfaceBufferOffset,
         VkBuffer seedFlagsBuffer,
-        VkDeviceSize seedFlagsBufferOffset);
-    void addVoronoiReceiverInput(
-        uint32_t runtimeModelId,
-        uint32_t nodeOffset,
-        uint32_t nodeCount,
+        VkDeviceSize seedFlagsBufferOffset,
         VkBuffer gmlsSurfaceStencilBuffer,
         VkDeviceSize gmlsSurfaceStencilBufferOffset,
         VkBuffer gmlsSurfaceWeightBuffer,
@@ -102,54 +86,50 @@ public:
         const std::vector<uint32_t>& seedFlags,
         const std::vector<glm::vec3>& seedPositions);
 
-private:    
-    using SourceBinding = HeatSystemRuntime::SourceBinding;
-    using ContactCouplingType = ::ContactCouplingType;
+    void readbackTemperatures(uint32_t frameIndex);
 
+private:
     void failInitialization(const char* stage);
-    bool rebuildHeatStateRuntimes(bool forceDescriptorReallocate);
+    bool rebuildRuntimeResources(bool forceDescriptorReallocate);
     bool rebuildVoronoiRuntime();
     bool initializeVoronoiMaterialNodes();
-    void rebuildReceiverThermalMaterialMap();
-    void cleanupVoronoiRuntime();
+    void resetVoronoiTemperatures(const std::unordered_map<uint32_t, float>& modelTemperatureByRuntimeId);
 
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
     ModelRegistry& resourceManager;
     HeatSystemResources& resources;
-    CommandPool& renderCommandPool; 
+    CommandPool& renderCommandPool;
     HeatSystemRuntime runtime;
     HeatSystemSimRuntime simRuntime;
-    HeatSystemSurfaceRuntime surfaceRuntime;
-    std::vector<SourceBinding>& heatSources;
-    HeatContactRuntime heatContactRuntime;
-    uint32_t voronoiNodeCount = 0;
-    const voronoi::Node* voronoiNodes = nullptr;
-    VkBuffer voronoiNodeBuffer = VK_NULL_HANDLE;
-    VkDeviceSize voronoiNodeBufferOffset = 0;
-    VkBuffer gmlsInterfaceBuffer = VK_NULL_HANDLE;
-    VkDeviceSize gmlsInterfaceBufferOffset = 0;
-    VkBuffer seedFlagsBuffer = VK_NULL_HANDLE;
-    VkDeviceSize seedFlagsBufferOffset = 0;
-    std::vector<uint32_t> receiverRuntimeModelIds;
-    std::vector<RuntimeThermalMaterial> runtimeThermalMaterials;
+    std::vector<std::unique_ptr<HeatContactRuntime>> contactRuntimes;
+
+    std::vector<uint32_t> modelRuntimeModelIds;
+    std::vector<ContactCoupling> contactCouplings;
     float contactThermalConductance = 16000.0f;
-    
+    bool contactCouplingsDirty = true;
+
     std::unique_ptr<HeatSystemSimStage> simStage;
     std::unique_ptr<HeatSystemSurfaceStage> surfaceStage;
     std::unique_ptr<HeatSystemVoronoiStage> voronoiStage;
-    std::unordered_map<uint32_t, uint32_t> receiverVoronoiNodeOffsetByModelId;
-    std::unordered_map<uint32_t, uint32_t> receiverVoronoiNodeCountByModelId;
-    std::unordered_map<uint32_t, VkBuffer> receiverGMLSSurfaceStencilBufferByModelId;
-    std::unordered_map<uint32_t, VkDeviceSize> receiverGMLSSurfaceStencilBufferOffsetByModelId;
-    std::unordered_map<uint32_t, VkBuffer> receiverGMLSSurfaceWeightBufferByModelId;
-    std::unordered_map<uint32_t, VkDeviceSize> receiverGMLSSurfaceWeightBufferOffsetByModelId;
-    std::unordered_map<uint32_t, VkBuffer> receiverGMLSSurfaceGradientWeightBufferByModelId;
-    std::unordered_map<uint32_t, VkDeviceSize> receiverGMLSSurfaceGradientWeightBufferOffsetByModelId;
-    std::unordered_map<uint32_t, std::vector<uint32_t>> receiverVoronoiSeedFlagsByModelId;
-    std::unordered_map<uint32_t, std::vector<glm::vec3>> receiverVoronoiSeedPositionsByModelId;
-    std::unordered_map<uint32_t, RuntimeThermalMaterial> receiverThermalMaterialByModelId;
-    
+    std::unique_ptr<ContactSystemComputeStage> contactStage;
+    std::unordered_map<uint32_t, const voronoi::Node*> modelVoronoiNodesByModelId;
+    std::unordered_map<uint32_t, VkBuffer> modelVoronoiNodeBufferByModelId;
+    std::unordered_map<uint32_t, VkDeviceSize> modelVoronoiNodeBufferOffsetByModelId;
+    std::unordered_map<uint32_t, VkBuffer> modelGMLSInterfaceBufferByModelId;
+    std::unordered_map<uint32_t, VkDeviceSize> modelGMLSInterfaceBufferOffsetByModelId;
+    std::unordered_map<uint32_t, VkBuffer> modelSeedFlagsBufferByModelId;
+    std::unordered_map<uint32_t, VkDeviceSize> modelSeedFlagsBufferOffsetByModelId;
+    std::unordered_map<uint32_t, uint32_t> modelVoronoiNodeCountByModelId;
+    std::unordered_map<uint32_t, VkBuffer> modelGMLSSurfaceStencilBufferByModelId;
+    std::unordered_map<uint32_t, VkDeviceSize> modelGMLSSurfaceStencilBufferOffsetByModelId;
+    std::unordered_map<uint32_t, VkBuffer> modelGMLSSurfaceWeightBufferByModelId;
+    std::unordered_map<uint32_t, VkDeviceSize> modelGMLSSurfaceWeightBufferOffsetByModelId;
+    std::unordered_map<uint32_t, VkBuffer> modelGMLSSurfaceGradientWeightBufferByModelId;
+    std::unordered_map<uint32_t, VkDeviceSize> modelGMLSSurfaceGradientWeightBufferOffsetByModelId;
+    std::unordered_map<uint32_t, std::vector<uint32_t>> modelVoronoiSeedFlagsByModelId;
+    std::unordered_map<uint32_t, std::vector<glm::vec3>> modelVoronoiSeedPositionsByModelId;
+
     uint32_t maxFramesInFlight;
     std::vector<VkCommandBuffer> computeCommandBuffers;
 
@@ -157,7 +137,6 @@ private:
     bool isPaused = false;
     bool initialized = false;
     bool voronoiConfigDirty = true;
-    bool thermalMaterialsDirty = true;
     bool heatParamsDirty = true;
     static constexpr uint32_t MAX_NODE_NEIGHBORS = 50;
 };

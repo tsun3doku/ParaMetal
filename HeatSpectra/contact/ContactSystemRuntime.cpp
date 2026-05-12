@@ -15,48 +15,43 @@ bool hasUsableContactPairs(const std::vector<ContactPair>& pairs) {
             return true;
         }
     }
-
     return false;
 }
 
 }
 
-void ContactSystemRuntime::setParams(
-    ContactCouplingType updatedCouplingType,
-    float updatedMinNormalDot,
-    float updatedContactRadius) {
-    couplingType = updatedCouplingType;
+void ContactSystemRuntime::setParams(float updatedMinNormalDot, float updatedContactRadius) {
     minNormalDot = updatedMinNormalDot;
     contactRadius = updatedContactRadius;
     bindingDirty = true;
 }
 
-void ContactSystemRuntime::setEmitterState(
+void ContactSystemRuntime::setModelAState(
     uint32_t modelId,
     const std::array<float, 16>& localToWorld,
     const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
     uint32_t runtimeModelId) {
-    emitterModelId = modelId;
-    emitterLocalToWorld = localToWorld;
-    emitterIntrinsicMesh = intrinsicMesh;
-    emitterRuntimeModelId = runtimeModelId;
+    modelAId = modelId;
+    modelALocalToWorld = localToWorld;
+    modelAIntrinsicMesh = intrinsicMesh;
+    modelARuntimeModelId = runtimeModelId;
     bindingDirty = true;
 }
 
-void ContactSystemRuntime::setReceiverState(
+void ContactSystemRuntime::setModelBState(
     uint32_t modelId,
     const std::array<float, 16>& localToWorld,
     const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
     uint32_t runtimeModelId) {
-    receiverModelId = modelId;
-    receiverLocalToWorld = localToWorld;
-    receiverIntrinsicMesh = intrinsicMesh;
-    receiverRuntimeModelId = runtimeModelId;
+    modelBId = modelId;
+    modelBLocalToWorld = localToWorld;
+    modelBIntrinsicMesh = intrinsicMesh;
+    modelBRuntimeModelId = runtimeModelId;
     bindingDirty = true;
 }
 
-void ContactSystemRuntime::setReceiverTriangleIndices(const std::vector<uint32_t>& triangleIndices) {
-    receiverTriangleIndices = triangleIndices;
+void ContactSystemRuntime::setModelBTriangleIndices(const std::vector<uint32_t>& triangleIndices) {
+    modelBTriangleIndices = triangleIndices;
     bindingDirty = true;
 }
 
@@ -67,12 +62,13 @@ void ContactSystemRuntime::clearPairBuffer(MemoryAllocator& memoryAllocator) {
         contactPairBufferOffset = 0;
     }
     coupling.contactPairCount = 0;
-    coupling.mappedContactPairs = nullptr;
+    coupling.contactPairs.clear();
 }
 
 bool ContactSystemRuntime::recreateContactPairBuffer(
     MemoryAllocator& memoryAllocator,
     VulkanDevice& vulkanDevice,
+    CommandPool& commandPool,
     VkBuffer& buffer,
     VkDeviceSize& offset,
     void** mappedData,
@@ -91,16 +87,19 @@ bool ContactSystemRuntime::recreateContactPairBuffer(
         return false;
     }
 
-    return createStorageBuffer(
-               memoryAllocator,
-               vulkanDevice,
-               data,
-               size,
-               buffer,
-               offset,
-               mappedData,
-               true) == VK_SUCCESS &&
-        buffer != VK_NULL_HANDLE;
+    VkDeviceSize alignment = vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
+    if (uploadDeviceBuffer(memoryAllocator, commandPool, data, size,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, alignment, buffer, offset) != VK_SUCCESS) {
+        if (mappedData) {
+            *mappedData = nullptr;
+        }
+        return false;
+    }
+
+    if (mappedData) {
+        *mappedData = nullptr;
+    }
+    return buffer != VK_NULL_HANDLE;
 }
 
 void ContactSystemRuntime::clearComputedState(MemoryAllocator& memoryAllocator) {
@@ -114,66 +113,65 @@ void ContactSystemRuntime::clearComputedState(MemoryAllocator& memoryAllocator) 
 
 void ContactSystemRuntime::clear(MemoryAllocator& memoryAllocator) {
     clearComputedState(memoryAllocator);
-    couplingType = ContactCouplingType::SourceToReceiver;
-    minNormalDot = -0.65f;
-    contactRadius = 0.01f;
-    emitterModelId = 0;
-    emitterLocalToWorld = {
+    minNormalDot = 0.0f;
+    contactRadius = 0.0f;
+    modelAId = 0;
+    modelALocalToWorld = {
         1.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 1.0f, 0.0f, 0.0f,
         0.0f, 0.0f, 1.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f
     };
-    emitterIntrinsicMesh = {};
-    emitterRuntimeModelId = 0;
-    receiverModelId = 0;
-    receiverLocalToWorld = {
+    modelAIntrinsicMesh = {};
+    modelARuntimeModelId = 0;
+    modelBId = 0;
+    modelBLocalToWorld = {
         1.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 1.0f, 0.0f, 0.0f,
         0.0f, 0.0f, 1.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f
     };
-    receiverIntrinsicMesh = {};
-    receiverRuntimeModelId = 0;
-    receiverTriangleIndices.clear();
+    modelBIntrinsicMesh = {};
+    modelBRuntimeModelId = 0;
+    modelBTriangleIndices.clear();
     bindingDirty = false;
 }
 
 bool ContactSystemRuntime::hasValidBinding() const {
-    return emitterRuntimeModelId != 0 &&
-        receiverRuntimeModelId != 0 &&
-        emitterRuntimeModelId != receiverRuntimeModelId &&
-        emitterModelId != 0 &&
-        receiverModelId != 0 &&
-        !emitterIntrinsicMesh.vertices.empty() &&
-        !receiverIntrinsicMesh.vertices.empty() &&
-        !receiverTriangleIndices.empty();
+    return modelARuntimeModelId != 0 &&
+        modelBRuntimeModelId != 0 &&
+        modelARuntimeModelId != modelBRuntimeModelId &&
+        modelAId != 0 &&
+        modelBId != 0 &&
+        !modelAIntrinsicMesh.vertices.empty() &&
+        !modelBIntrinsicMesh.vertices.empty() &&
+        !modelBTriangleIndices.empty();
 }
 
 bool ContactSystemRuntime::computeContactPairs(std::vector<ContactPair>& outPairs) {
     outPairs.clear();
-    if (emitterModelId == 0 ||
-        receiverModelId == 0 ||
-        emitterIntrinsicMesh.vertices.empty() ||
-        receiverIntrinsicMesh.vertices.empty()) {
+    if (modelAId == 0 ||
+        modelBId == 0 ||
+        modelAIntrinsicMesh.vertices.empty() ||
+        modelBIntrinsicMesh.vertices.empty()) {
         return false;
     }
 
-    std::vector<std::vector<ContactPair>> receiverContactPairs;
-    std::vector<const SupportingHalfedge::IntrinsicMesh*> receiverIntrinsicMeshes;
-    std::vector<std::array<float, 16>> receiverLocalToWorlds;
-    receiverIntrinsicMeshes.push_back(&receiverIntrinsicMesh);
-    receiverLocalToWorlds.push_back(receiverLocalToWorld);
+    std::vector<std::vector<ContactPair>> modelBContactPairs;
+    std::vector<const SupportingHalfedge::IntrinsicMesh*> modelBIntrinsicMeshes;
+    std::vector<std::array<float, 16>> modelBLocalToWorlds;
+    modelBIntrinsicMeshes.push_back(&modelBIntrinsicMesh);
+    modelBLocalToWorlds.push_back(modelBLocalToWorld);
 
     std::vector<ContactLineVertex> computedOutlineVertices;
     std::vector<ContactLineVertex> computedCorrespondenceVertices;
 
     mapSurfacePoints(
-        emitterIntrinsicMesh,
-        emitterLocalToWorld,
-        receiverIntrinsicMeshes,
-        receiverLocalToWorlds,
-        receiverContactPairs,
+        modelAIntrinsicMesh,
+        modelALocalToWorld,
+        modelBIntrinsicMeshes,
+        modelBLocalToWorlds,
+        modelBContactPairs,
         computedOutlineVertices,
         computedCorrespondenceVertices,
         contactRadius,
@@ -182,15 +180,13 @@ bool ContactSystemRuntime::computeContactPairs(std::vector<ContactPair>& outPair
     outlineVertices = std::move(computedOutlineVertices);
     correspondenceVertices = std::move(computedCorrespondenceVertices);
 
-    if (!receiverContactPairs.empty()) {
-        outPairs = std::move(receiverContactPairs.front());
+    if (!modelBContactPairs.empty()) {
+        outPairs = std::move(modelBContactPairs.front());
     }
     return hasUsableContactPairs(outPairs);
 }
 
-bool ContactSystemRuntime::buildCoupling(
-    VulkanDevice& vulkanDevice,
-    MemoryAllocator& memoryAllocator) {
+bool ContactSystemRuntime::buildCoupling(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, CommandPool& commandPool) {
     clearComputedState(memoryAllocator);
 
     if (!hasValidBinding()) {
@@ -202,11 +198,10 @@ bool ContactSystemRuntime::buildCoupling(
         return false;
     }
 
-    coupling.couplingType = couplingType;
-    coupling.emitterRuntimeModelId = emitterRuntimeModelId;
-    coupling.receiverRuntimeModelId = receiverRuntimeModelId;
-    coupling.receiverTriangleIndices = receiverTriangleIndices;
-    if (coupling.receiverTriangleIndices.empty()) {
+    coupling.modelARuntimeModelId = modelARuntimeModelId;
+    coupling.modelBRuntimeModelId = modelBRuntimeModelId;
+    coupling.modelBTriangleIndices = modelBTriangleIndices;
+    if (coupling.modelBTriangleIndices.empty()) {
         clearComputedState(memoryAllocator);
         return false;
     }
@@ -215,6 +210,7 @@ bool ContactSystemRuntime::buildCoupling(
     if (!recreateContactPairBuffer(
             memoryAllocator,
             vulkanDevice,
+            commandPool,
             contactPairBuffer,
             contactPairBufferOffset,
             &mappedPairData,
@@ -225,7 +221,7 @@ bool ContactSystemRuntime::buildCoupling(
     }
 
     coupling.contactPairCount = static_cast<uint32_t>(pairs.size());
-    coupling.mappedContactPairs = static_cast<const ContactPair*>(mappedPairData);
+    coupling.contactPairs = std::move(pairs);
     couplingValid = coupling.isValid();
     hasContactFlag = couplingValid;
     if (couplingValid) {

@@ -95,11 +95,6 @@ struct VoronoiSurfaceProduct {
     VkDeviceSize gmlsSurfaceWeightBufferOffset = 0;
     VkBuffer gmlsSurfaceGradientWeightBuffer = VK_NULL_HANDLE;
     VkDeviceSize gmlsSurfaceGradientWeightBufferOffset = 0;
-    VkBuffer surfaceBuffer = VK_NULL_HANDLE;
-    VkDeviceSize surfaceBufferOffset = 0;
-    VkBuffer surfaceGradientBuffer = VK_NULL_HANDLE;
-    VkDeviceSize surfaceGradientBufferOffset = 0;
-    VkBufferView surfaceBufferView = VK_NULL_HANDLE;
     VkBufferView supportingHalfedgeView = VK_NULL_HANDLE;
     VkBufferView supportingAngleView = VK_NULL_HANDLE;
     VkBufferView halfedgeView = VK_NULL_HANDLE;
@@ -121,9 +116,6 @@ struct VoronoiSurfaceProduct {
             indexCount != 0 &&
             intrinsicVertexCount != 0 &&
             candidateBuffer != VK_NULL_HANDLE &&
-            surfaceBuffer != VK_NULL_HANDLE &&
-            surfaceGradientBuffer != VK_NULL_HANDLE &&
-            surfaceBufferView != VK_NULL_HANDLE &&
             supportingHalfedgeView != VK_NULL_HANDLE &&
             supportingAngleView != VK_NULL_HANDLE &&
             halfedgeView != VK_NULL_HANDLE &&
@@ -217,7 +209,6 @@ struct VoronoiProduct {
 
     bool isValid() const {
         return nodeCount != 0 &&
-            mappedVoronoiNodes != nullptr &&
             nodeBuffer != VK_NULL_HANDLE &&
             neighborIndicesBuffer != VK_NULL_HANDLE &&
             seedPositionBuffer != VK_NULL_HANDLE;
@@ -231,8 +222,8 @@ struct ContactProduct {
     VkBuffer contactPairBuffer = VK_NULL_HANDLE;
     VkDeviceSize contactPairBufferOffset = 0;
 
-    uint32_t emitterRuntimeModelId = 0;
-    uint32_t receiverRuntimeModelId = 0;
+    uint32_t modelARuntimeModelId = 0;
+    uint32_t modelBRuntimeModelId = 0;
     std::vector<ContactLineVertex> outlineVertices;
     std::vector<ContactLineVertex> correspondenceVertices;
 
@@ -248,24 +239,21 @@ struct ContactProduct {
 struct HeatProduct {
     bool active = false;
     bool paused = false;
-    std::vector<uint32_t> sourceRuntimeModelIds;
-    std::vector<uint32_t> receiverRuntimeModelIds;
-    std::vector<VkBuffer> receiverSurfaceBuffers;
-    std::vector<VkDeviceSize> receiverSurfaceBufferOffsets;
-    std::vector<uint32_t> receiverSurfacePointCounts;
-    std::vector<VkBufferView> receiverSurfaceBufferViews;
-    std::vector<VkBuffer> receiverSurfaceGradientBuffers;
-    std::vector<VkDeviceSize> receiverSurfaceGradientBufferOffsets;
+    std::vector<uint32_t> modelRuntimeModelIds;
+    std::vector<VkBuffer> modelSurfaceBuffers;
+    std::vector<VkDeviceSize> modelSurfaceBufferOffsets;
+    std::vector<uint32_t> modelSurfacePointCounts;
+    std::vector<VkBuffer> modelSurfaceGradientBuffers;
+    std::vector<VkDeviceSize> modelSurfaceGradientBufferOffsets;
     uint64_t productHash = 0;
 
     bool isValid() const {
-        return !receiverRuntimeModelIds.empty() &&
-            receiverRuntimeModelIds.size() == receiverSurfaceBuffers.size() &&
-            receiverRuntimeModelIds.size() == receiverSurfaceBufferOffsets.size() &&
-            receiverRuntimeModelIds.size() == receiverSurfacePointCounts.size() &&
-            receiverRuntimeModelIds.size() == receiverSurfaceBufferViews.size() &&
-            receiverRuntimeModelIds.size() == receiverSurfaceGradientBuffers.size() &&
-            receiverRuntimeModelIds.size() == receiverSurfaceGradientBufferOffsets.size();
+        return !modelRuntimeModelIds.empty() &&
+            modelRuntimeModelIds.size() == modelSurfaceBuffers.size() &&
+            modelRuntimeModelIds.size() == modelSurfaceBufferOffsets.size() &&
+            modelRuntimeModelIds.size() == modelSurfacePointCounts.size() &&
+            modelRuntimeModelIds.size() == modelSurfaceGradientBuffers.size() &&
+            modelRuntimeModelIds.size() == modelSurfaceGradientBufferOffsets.size();
     }
 
 };
@@ -305,11 +293,8 @@ inline uint64_t buildProductHash(const RemeshProduct& product) {
 inline uint64_t buildProductHash(const VoronoiProduct& product) {
     uint64_t hash = 1469598103934665603ull;
     hash = RuntimeProductHash::mixPod(hash, product.nodeCount);
-    if (product.nodeCount != 0 && product.mappedVoronoiNodes != nullptr) {
-        hash = RuntimeProductHash::mixBytes(
-            hash,
-            product.mappedVoronoiNodes,
-            sizeof(voronoi::Node) * product.nodeCount);
+    if (product.nodeCount != 0 && product.nodeBuffer != VK_NULL_HANDLE) {
+        hash = RuntimeProductHash::mixPod(hash, product.nodeBuffer);
     }
 
     hash = RuntimeProductHash::mix(hash, static_cast<uint64_t>(product.surfaces.size()));
@@ -332,10 +317,6 @@ inline uint64_t buildProductHash(const VoronoiProduct& product) {
         hash = RuntimeProductHash::mixPod(hash, surfaceProduct.gmlsSurfaceWeightBufferOffset);
         hash = RuntimeProductHash::mixPod(hash, surfaceProduct.gmlsSurfaceGradientWeightBuffer);
         hash = RuntimeProductHash::mixPod(hash, surfaceProduct.gmlsSurfaceGradientWeightBufferOffset);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.surfaceBuffer);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.surfaceBufferOffset);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.surfaceGradientBuffer);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.surfaceGradientBufferOffset);
         hash = RuntimeProductHash::mixPod(hash, surfaceProduct.supportingHalfedgeView);
         hash = RuntimeProductHash::mixPod(hash, surfaceProduct.supportingAngleView);
         hash = RuntimeProductHash::mixPod(hash, surfaceProduct.halfedgeView);
@@ -361,19 +342,15 @@ inline uint64_t buildProductHash(const VoronoiProduct& product) {
 
 inline uint64_t buildProductHash(const ContactProduct& product) {
     uint64_t hash = 1469598103934665603ull;
-    hash = RuntimeProductHash::mixPod(hash, static_cast<uint32_t>(product.coupling.couplingType));
-    hash = RuntimeProductHash::mixPod(hash, product.coupling.emitterRuntimeModelId);
-    hash = RuntimeProductHash::mixPod(hash, product.coupling.receiverRuntimeModelId);
-    hash = RuntimeProductHash::mixPodVector(hash, product.coupling.receiverTriangleIndices);
+    hash = RuntimeProductHash::mixPod(hash, product.coupling.modelARuntimeModelId);
+    hash = RuntimeProductHash::mixPod(hash, product.coupling.modelBRuntimeModelId);
+    hash = RuntimeProductHash::mixPodVector(hash, product.coupling.modelBTriangleIndices);
     hash = RuntimeProductHash::mixPod(hash, product.coupling.contactPairCount);
-    if (product.coupling.contactPairCount != 0 && product.coupling.mappedContactPairs != nullptr) {
-        hash = RuntimeProductHash::mixBytes(
-            hash,
-            product.coupling.mappedContactPairs,
-            sizeof(ContactPair) * product.coupling.contactPairCount);
+    if (product.coupling.contactPairCount != 0 && !product.coupling.contactPairs.empty()) {
+        hash = RuntimeProductHash::mixPod(hash, product.coupling.contactPairCount);
     }
-    hash = RuntimeProductHash::mixPod(hash, product.emitterRuntimeModelId);
-    hash = RuntimeProductHash::mixPod(hash, product.receiverRuntimeModelId);
+    hash = RuntimeProductHash::mixPod(hash, product.modelARuntimeModelId);
+    hash = RuntimeProductHash::mixPod(hash, product.modelBRuntimeModelId);
     hash = RuntimeProductHash::mixPodVector(hash, product.outlineVertices);
     hash = RuntimeProductHash::mixPodVector(hash, product.correspondenceVertices);
     return hash;
@@ -383,11 +360,11 @@ inline uint64_t buildProductHash(const HeatProduct& product) {
     uint64_t hash = 1469598103934665603ull;
     hash = RuntimeProductHash::mixPod(hash, static_cast<uint64_t>(product.active ? 1u : 0u));
     hash = RuntimeProductHash::mixPod(hash, static_cast<uint64_t>(product.paused ? 1u : 0u));
-    hash = RuntimeProductHash::mixPodVector(hash, product.sourceRuntimeModelIds);
-    hash = RuntimeProductHash::mixPodVector(hash, product.receiverRuntimeModelIds);
-    hash = RuntimeProductHash::mixPodVector(hash, product.receiverSurfaceBuffers);
-    hash = RuntimeProductHash::mixPodVector(hash, product.receiverSurfaceBufferOffsets);
-    hash = RuntimeProductHash::mixPodVector(hash, product.receiverSurfacePointCounts);
-    hash = RuntimeProductHash::mixPodVector(hash, product.receiverSurfaceBufferViews);
+    hash = RuntimeProductHash::mixPodVector(hash, product.modelRuntimeModelIds);
+    hash = RuntimeProductHash::mixPodVector(hash, product.modelSurfaceBuffers);
+    hash = RuntimeProductHash::mixPodVector(hash, product.modelSurfaceBufferOffsets);
+    hash = RuntimeProductHash::mixPodVector(hash, product.modelSurfacePointCounts);
+    hash = RuntimeProductHash::mixPodVector(hash, product.modelSurfaceGradientBuffers);
+    hash = RuntimeProductHash::mixPodVector(hash, product.modelSurfaceGradientBufferOffsets);
     return hash;
 }

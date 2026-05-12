@@ -13,7 +13,7 @@
 //                                                        - They may contain authored values and NodeDataHandle values
 //                                                        - They must not contain runtime objects/ids, scene objects, 
 //                                                          backend/controller objects or GPU resources 
-//                                                        - They must not be used directly by any backends ]
+//                                                        - This header must not be included in any backend ]
 
 struct GeometryGroup {
     uint32_t id = 0;

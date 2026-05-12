@@ -68,11 +68,13 @@ enum class NodePayloadType : uint8_t {
     None = 0,
     Geometry = 1,
     Remesh = 2,
-    HeatReceiver = 3,
-    HeatSource = 4,
-    Heat = 5,
-    Voronoi = 6,
-    Contact = 7
+    HeatModel = 3,
+    Heat = 4,
+    Voronoi = 5,
+    Contact = 6,
+    // Deprecated aliases - use HeatModel instead
+    HeatReceiver = HeatModel,
+    HeatSource = HeatModel
 };
 
 enum class NodeGraphSocketDirection {
@@ -99,6 +101,7 @@ struct NodeSocketSignature {
     NodeGraphSocketDirection direction = NodeGraphSocketDirection::Input;
     NodeGraphValueType valueType = NodeGraphValueType::None;
     NodeGraphSocketContract contract;
+    bool variadic = false;
 };
 
 enum class NodeGraphParamType {
@@ -165,6 +168,7 @@ struct NodeGraphSocket {
     NodeGraphValueType valueType = NodeGraphValueType::None;
     NodeGraphSocketDirection direction = NodeGraphSocketDirection::Input;
     NodeGraphSocketContract contract;
+    bool variadic = false;
 };
 
 struct NodeGraphNode {

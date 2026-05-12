@@ -1,15 +1,14 @@
 #pragma once
 
-#include "contact/ContactTypes.hpp"
 #include "nodegraph/NodeGraphCoreTypes.hpp"
 
 #include <cstdint>
 //                                                      [ Invariant:
 //                                                        - Payloads are node graph authored data
 //                                                        - They may contain authored values and NodeDataHandle values
-//                                                        - They must not contain runtime objects/ids, scene objects, 
-//                                                          backend/controller objects or GPU resources 
-//                                                        - They must not be used directly by any backends ]
+//                                                        - They must not contain runtime objects/ids, scene objects,
+//                                                          backend/controller objects or GPU resources
+//                                                        - This header must not be included in any backend ]
 
 struct ContactPairEndpoint {
     NodeDataHandle payloadHandle{};
@@ -18,7 +17,6 @@ struct ContactPairEndpoint {
 
 struct ContactPairData {
     bool hasValidContact = false;
-    ContactCouplingType type = ContactCouplingType::SourceToReceiver;
     ContactPairEndpoint endpointA{};
     ContactPairEndpoint endpointB{};
 

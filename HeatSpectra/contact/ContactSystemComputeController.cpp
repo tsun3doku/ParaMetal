@@ -6,9 +6,11 @@
 
 ContactSystemComputeController::ContactSystemComputeController(
     VulkanDevice& device,
-    MemoryAllocator& allocator)
+    MemoryAllocator& allocator,
+    CommandPool& renderCommandPoolRef)
     : vulkanDevice(device),
-      memoryAllocator(allocator) {
+      memoryAllocator(allocator),
+      renderCommandPool(renderCommandPoolRef) {
 }
 
 ContactSystemComputeController::~ContactSystemComputeController() {
@@ -22,7 +24,7 @@ void ContactSystemComputeController::configure(uint64_t socketKey, const Config&
 
     auto& system = activeSystems[socketKey];
     if (!system) {
-        system = std::make_unique<ContactSystem>(vulkanDevice, memoryAllocator);
+        system = std::make_unique<ContactSystem>(vulkanDevice, memoryAllocator, renderCommandPool);
     }
 
     const auto configIt = configuredConfigs.find(socketKey);
@@ -33,20 +35,19 @@ void ContactSystemComputeController::configure(uint64_t socketKey, const Config&
     configuredConfigs[socketKey] = config;
 
     system->setParams(
-        config.couplingType,
         config.minNormalDot,
         config.contactRadius);
-    system->setEmitterState(
-        config.emitterModelId,
-        config.emitterLocalToWorld,
-        config.emitterIntrinsicMesh,
-        config.emitterRuntimeModelId);
-    system->setReceiverState(
-        config.receiverModelId,
-        config.receiverLocalToWorld,
-        config.receiverIntrinsicMesh,
-        config.receiverRuntimeModelId);
-    system->setReceiverTriangleIndices(config.receiverTriangleIndices);
+    system->setModelAState(
+        config.modelAId,
+        config.modelALocalToWorld,
+        config.modelAIntrinsicMesh,
+        config.modelARuntimeModelId);
+    system->setModelBState(
+        config.modelBId,
+        config.modelBLocalToWorld,
+        config.modelBIntrinsicMesh,
+        config.modelBRuntimeModelId);
+    system->setModelBTriangleIndices(config.modelBTriangleIndices);
     system->ensureConfigured();
 }
 
@@ -92,8 +93,8 @@ bool ContactSystemComputeController::exportProduct(uint64_t socketKey, ContactPr
     outProduct.coupling = *coupling;
     outProduct.contactPairBuffer = system.getContactPairBuffer();
     outProduct.contactPairBufferOffset = system.getContactPairBufferOffset();
-    outProduct.emitterRuntimeModelId = coupling->emitterRuntimeModelId;
-    outProduct.receiverRuntimeModelId = coupling->receiverRuntimeModelId;
+    outProduct.modelARuntimeModelId = coupling->modelARuntimeModelId;
+    outProduct.modelBRuntimeModelId = coupling->modelBRuntimeModelId;
     outProduct.outlineVertices = system.getOutlineVertices();
     outProduct.correspondenceVertices = system.getCorrespondenceVertices();
     outProduct.productHash = buildProductHash(outProduct);

@@ -239,6 +239,22 @@ bool NodeGraphBridge::connectSockets(
         return false;
     }
 
+    // Check if the target socket is variadic - if so, allow multiple connections
+    const NodeGraphNode* toNodePtr = document.findNode(toNode);
+    if (!toNodePtr) {
+        return false;
+    }
+    const NodeGraphSocket* targetSocket = nullptr;
+    for (const auto& input : toNodePtr->inputs) {
+        if (input.id == toSocket) {
+            targetSocket = &input;
+            break;
+        }
+    }
+    if (targetSocket && targetSocket->variadic) {
+        return false;
+    }
+
     const NodeGraphEdgeId existingIncomingEdgeId = findIncomingEdgeId(document, toNode, toSocket);
     if (!existingIncomingEdgeId.isValid()) {
         return false;

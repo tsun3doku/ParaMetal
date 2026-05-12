@@ -6,8 +6,7 @@ NodeGraphValueType valueTypeOf(NodePayloadType payloadType) {
     switch (payloadType) {
     case NodePayloadType::Geometry:
     case NodePayloadType::Remesh:
-    case NodePayloadType::HeatSource:
-    case NodePayloadType::HeatReceiver:
+    case NodePayloadType::HeatModel:
         return NodeGraphValueType::Mesh;
     case NodePayloadType::Voronoi:
         return NodeGraphValueType::Volume;
@@ -42,10 +41,8 @@ const char* nodePayloadTypeName(NodePayloadType payloadType) {
         return "geometry";
     case NodePayloadType::Remesh:
         return "remesh";
-    case NodePayloadType::HeatReceiver:
-        return "heat_receiver";
-    case NodePayloadType::HeatSource:
-        return "heat_source";
+    case NodePayloadType::HeatModel:
+        return "heat_model";
     case NodePayloadType::Contact:
         return "contact";
     case NodePayloadType::Heat:

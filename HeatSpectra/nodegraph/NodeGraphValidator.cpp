@@ -67,7 +67,7 @@ bool NodeGraphValidator::canCreateConnection(
         }
         return edge.toNode == toNode && edge.toSocket == toSocket;
     });
-    if (inputAlreadyConnectedIt != document.getEdges().end()) {
+    if (inputAlreadyConnectedIt != document.getEdges().end() && !dstSocket->variadic) {
         errorMessage = "Input socket already has a connection.";
         return false;
     }

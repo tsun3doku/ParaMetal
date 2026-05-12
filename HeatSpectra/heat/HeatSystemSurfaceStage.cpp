@@ -1,6 +1,6 @@
 #include "HeatSystemSurfaceStage.hpp"
 
-#include "HeatReceiverRuntime.hpp"
+#include "heat/HeatModelRuntime.hpp"
 #include "HeatSystemResources.hpp"
 #include "heat/HeatGpuStructs.hpp"
 #include "scene/Model.hpp"
@@ -18,10 +18,6 @@ HeatSystemSurfaceStage::HeatSystemSurfaceStage(const HeatSystemStageContext& sta
     : context(stageContext) {
 }
 
-void HeatSystemSurfaceStage::refreshSurfaceDescriptors(uint32_t nodeCount) {
-    (void)nodeCount;
-}
-
 bool HeatSystemSurfaceStage::createDescriptorPool(uint32_t maxFramesInFlight) {
     (void)maxFramesInFlight;
     const uint32_t maxHeatModels = 10;
@@ -35,21 +31,19 @@ bool HeatSystemSurfaceStage::createDescriptorPool(uint32_t maxFramesInFlight) {
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+    poolInfo.flags = 0;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
     poolInfo.maxSets = totalSets;
 
     if (vkCreateDescriptorPool(context.vulkanDevice.getDevice(), &poolInfo, nullptr,
         &context.resources.surfaceDescriptorPool) != VK_SUCCESS) {
-        std::cerr << "[HeatSystem] Failed to create surface descriptor pool" << std::endl;
         return false;
     }
     return true;
 }
 
 bool HeatSystemSurfaceStage::createDescriptorSetLayout() {
-    // Layout for temperature pass (bindings 0, 1, 10, 11)
     std::vector<VkDescriptorSetLayoutBinding> tempBindings = {
         {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
         {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
@@ -64,15 +58,15 @@ bool HeatSystemSurfaceStage::createDescriptorSetLayout() {
         VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
         VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT);
 
-    tempBindingFlags.bindingCount = static_cast<uint32_t>(tempFlags.size());
-    tempBindingFlags.pBindingFlags = tempFlags.data();
+    tempBindingFlags.bindingCount = 0;
+    tempBindingFlags.pBindingFlags = nullptr;
 
     VkDescriptorSetLayoutCreateInfo tempLayoutInfo{};
     tempLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    tempLayoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+    tempLayoutInfo.flags = 0;
     tempLayoutInfo.bindingCount = static_cast<uint32_t>(tempBindings.size());
     tempLayoutInfo.pBindings = tempBindings.data();
-    tempLayoutInfo.pNext = &tempBindingFlags;
+    tempLayoutInfo.pNext = nullptr;
 
     if (vkCreateDescriptorSetLayout(context.vulkanDevice.getDevice(), &tempLayoutInfo, nullptr,
         &context.resources.surfaceDescriptorSetLayout) != VK_SUCCESS) {
@@ -80,7 +74,6 @@ bool HeatSystemSurfaceStage::createDescriptorSetLayout() {
         return false;
     }
 
-    // Layout for gradient pass (bindings 0, 1, 2, 10, 12)
     std::vector<VkDescriptorSetLayoutBinding> gradientBindings = {
         {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
         {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
@@ -133,7 +126,7 @@ bool HeatSystemSurfaceStage::createPipeline() {
     VkPushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(heat::SourcePushConstant);
+    pushConstantRange.size = sizeof(heat::HeatModelPushConstant);
 
     VkPipelineLayoutCreateInfo tempPipelineLayoutInfo{};
     tempPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -213,110 +206,49 @@ bool HeatSystemSurfaceStage::createPipeline() {
 
 void HeatSystemSurfaceStage::dispatchSurfaceTemperatureUpdates(
     VkCommandBuffer commandBuffer,
-    uint32_t nodeCount,
-    const std::vector<std::unique_ptr<HeatReceiverRuntime>>& receivers,
-    const std::vector<VkDescriptorSet>& surfaceComputeSetsA,
-    const std::vector<VkDescriptorSet>& surfaceComputeSetsB,
+    const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
     bool finalWritesBufferB) const {
-    if (nodeCount == 0 ||
-        context.resources.surfacePipeline == VK_NULL_HANDLE ||
-        context.resources.surfacePipelineLayout == VK_NULL_HANDLE) {
-        return;
-    }
-
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, context.resources.surfacePipeline);
-
-    heat::SourcePushConstant surfacePushConstant{};
-    surfacePushConstant.substepIndex = 0;
-
-    for (size_t i = 0; i < receivers.size(); ++i) {
-        const auto& receiver = receivers[i];
-        if (!receiver || receiver->getIntrinsicVertexCount() == 0) {
-            continue;
-        }
-
-        const VkDescriptorSet surfaceSet = finalWritesBufferB
-            ? (i < surfaceComputeSetsB.size() ? surfaceComputeSetsB[i] : VK_NULL_HANDLE)
-            : (i < surfaceComputeSetsA.size() ? surfaceComputeSetsA[i] : VK_NULL_HANDLE);
-        if (surfaceSet == VK_NULL_HANDLE) {
-            continue;
-        }
-
-        const uint32_t workGroupSize = 256;
-        const uint32_t vertexCount = static_cast<uint32_t>(receiver->getIntrinsicVertexCount());
-        const uint32_t workGroupCount = (vertexCount + workGroupSize - 1) / workGroupSize;
-
-        vkCmdPushConstants(
-            commandBuffer,
-            context.resources.surfacePipelineLayout,
-            VK_SHADER_STAGE_COMPUTE_BIT,
-            0,
-            sizeof(heat::SourcePushConstant),
-            &surfacePushConstant);
-        vkCmdBindDescriptorSets(
-            commandBuffer,
-            VK_PIPELINE_BIND_POINT_COMPUTE,
-            context.resources.surfacePipelineLayout,
-            0,
-            1,
-            &surfaceSet,
-            0,
-            nullptr);
-        vkCmdDispatch(commandBuffer, workGroupCount, 1, 1);
-    }
+    dispatchSurfacePass(commandBuffer, context.resources.surfacePipeline, context.resources.surfacePipelineLayout, activeModels, finalWritesBufferB, false);
 }
 
 void HeatSystemSurfaceStage::dispatchSurfaceGradientUpdates(
     VkCommandBuffer commandBuffer,
-    uint32_t nodeCount,
-    const std::vector<std::unique_ptr<HeatReceiverRuntime>>& receivers,
-    const std::vector<VkDescriptorSet>& surfaceGradientComputeSetsA,
-    const std::vector<VkDescriptorSet>& surfaceGradientComputeSetsB,
+    const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
     bool finalWritesBufferB) const {
-    if (nodeCount == 0 ||
-        context.resources.surfaceGradientPipeline == VK_NULL_HANDLE ||
-        context.resources.surfaceGradientPipelineLayout == VK_NULL_HANDLE) {
-        return;
-    }
+    dispatchSurfacePass(commandBuffer, context.resources.surfaceGradientPipeline, context.resources.surfaceGradientPipelineLayout, activeModels, finalWritesBufferB, true);
+}
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, context.resources.surfaceGradientPipeline);
+void HeatSystemSurfaceStage::dispatchSurfacePass(
+    VkCommandBuffer commandBuffer,
+    VkPipeline pipeline,
+    VkPipelineLayout layout,
+    const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
+    bool finalWritesBufferB,
+    bool isGradientPass) const {
+    if (pipeline == VK_NULL_HANDLE || layout == VK_NULL_HANDLE) return;
 
-    heat::SourcePushConstant surfacePushConstant{};
-    surfacePushConstant.substepIndex = 0;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
 
-    for (size_t i = 0; i < receivers.size(); ++i) {
-        const auto& receiver = receivers[i];
-        if (!receiver || receiver->getIntrinsicVertexCount() == 0) {
-            continue;
+    heat::HeatModelPushConstant surfacePushConstant{};
+    surfacePushConstant.elementCount = 0;
+
+    for (const auto& [runtimeModelId, heatModel] : activeModels) {
+        if (!heatModel || heatModel->getIntrinsicVertexCount() == 0) continue;
+
+        VkDescriptorSet set = VK_NULL_HANDLE;
+        if (isGradientPass) {
+            set = finalWritesBufferB ? heatModel->getSurfaceGradientComputeSetB() : heatModel->getSurfaceGradientComputeSetA();
+        } else {
+            set = finalWritesBufferB ? heatModel->getSurfaceComputeSetB() : heatModel->getSurfaceComputeSetA();
         }
 
-        const VkDescriptorSet gradientSet = finalWritesBufferB
-            ? (i < surfaceGradientComputeSetsB.size() ? surfaceGradientComputeSetsB[i] : VK_NULL_HANDLE)
-            : (i < surfaceGradientComputeSetsA.size() ? surfaceGradientComputeSetsA[i] : VK_NULL_HANDLE);
-        if (gradientSet == VK_NULL_HANDLE) {
-            continue;
+        if (set != VK_NULL_HANDLE) {
+            const uint32_t vertexCount = static_cast<uint32_t>(heatModel->getIntrinsicVertexCount());
+            const uint32_t workGroupCount = (vertexCount + 255) / 256;
+
+            vkCmdPushConstants(commandBuffer, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(heat::HeatModelPushConstant), &surfacePushConstant);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, nullptr);
+            vkCmdDispatch(commandBuffer, workGroupCount, 1, 1);
         }
-
-        const uint32_t workGroupSize = 256;
-        const uint32_t vertexCount = static_cast<uint32_t>(receiver->getIntrinsicVertexCount());
-        const uint32_t workGroupCount = (vertexCount + workGroupSize - 1) / workGroupSize;
-
-        vkCmdPushConstants(
-            commandBuffer,
-            context.resources.surfaceGradientPipelineLayout,
-            VK_SHADER_STAGE_COMPUTE_BIT,
-            0,
-            sizeof(heat::SourcePushConstant),
-            &surfacePushConstant);
-        vkCmdBindDescriptorSets(
-            commandBuffer,
-            VK_PIPELINE_BIND_POINT_COMPUTE,
-            context.resources.surfaceGradientPipelineLayout,
-            0,
-            1,
-            &gradientSet,
-            0,
-            nullptr);
-        vkCmdDispatch(commandBuffer, workGroupCount, 1, 1);
     }
 }
