@@ -1,7 +1,7 @@
 #pragma once
 
 #include "VoronoiSystemRuntime.hpp"
-#include "voronoi/VoronoiBuilder.hpp"
+#include "voronoi/VoronoiSystemBuildStage.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -15,7 +15,6 @@ class MemoryAllocator;
 class ModelRegistry;
 class VulkanDevice;
 class CommandPool;
-class VoronoiGeoCompute;
 class VoronoiCandidateCompute;
 
 class VoronoiSystem {
@@ -60,8 +59,7 @@ public:
     bool ensureConfigured();
 
     const std::vector<std::unique_ptr<VoronoiModelRuntime>>& getModelRuntimes() const { return runtime.getModelRuntimes(); }
-    const std::vector<VoronoiDomain>& getReceiverVoronoiDomains() const { return runtime.getReceiverVoronoiDomains(); }
-    const VoronoiDomain* findReceiverDomain(uint32_t receiverModelId) const { return runtime.findReceiverDomain(receiverModelId); }
+    VoronoiModelRuntime* getModelRuntime() const { return runtime.getModelRuntime(); }
     uint32_t getVoronoiNodeCount() const { return runtime.getVoronoiNodeCount(); }
 
     VoronoiResources& resourcesRef() { return runtime.resourcesRef(); }
@@ -74,7 +72,6 @@ public:
 
 private:
     void failInitialization(const char* stage);
-    void initializeVoronoiGeoCompute();
     void initializeVoronoiCandidateCompute();
     bool rebuildVoronoiRuntime();
     void executeBufferTransfers();
@@ -86,9 +83,8 @@ private:
     CommandPool& renderCommandPool;
     VoronoiSystemRuntime runtime;
 
-    std::unique_ptr<VoronoiGeoCompute> voronoiGeoCompute;
+    std::unique_ptr<VoronoiSystemBuildStage> voronoiSystemBuildStage;
     std::unique_ptr<VoronoiCandidateCompute> voronoiCandidateCompute;
-    VoronoiBuilder voronoiBuilder;
 
     uint32_t maxFramesInFlight;
     bool initialized = false;

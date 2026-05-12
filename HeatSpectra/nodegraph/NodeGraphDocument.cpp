@@ -122,15 +122,18 @@ bool NodeGraphDocument::setNodeParameter(NodeGraphNodeId nodeId, const NodeGraph
     }
 
     const NodeGraphParamDefinition* parameterDefinition = findNodeParamDefinition(*definition, parameter.id);
-    if (!parameterDefinition || !validateNodeGraphParamValue(*parameterDefinition, parameter)) {
+    NodeGraphParamValue normalizedParameter = parameter;
+    if (!parameterDefinition ||
+        !normalizeNodeGraphParamValue(*parameterDefinition, normalizedParameter) ||
+        !validateNodeGraphParamValue(*parameterDefinition, normalizedParameter)) {
         return false;
     }
 
     NodeGraphParamValue* existingParameter = findNodeParamValue(*node, parameter.id);
     if (existingParameter) {
-        *existingParameter = parameter;
+        *existingParameter = std::move(normalizedParameter);
     } else {
-        node->parameters.push_back(parameter);
+        node->parameters.push_back(std::move(normalizedParameter));
     }
 
     bumpRevision();
@@ -272,6 +275,7 @@ std::vector<NodeGraphSocket> NodeGraphDocument::buildSocketsFromInterface(
                 socketSignature.valueType,
                 socketSignature.direction,
                 socketSignature.contract,
+                socketSignature.variadic,
             });
     }
 

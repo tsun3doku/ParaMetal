@@ -6,9 +6,10 @@
 #include <memory>
 #include <unordered_map>
 #include <vector>
+#include <vulkan/vulkan.h>
 
 class CommandPool;
-class HeatSourceRuntime;
+class HeatModelRuntime;
 class MemoryAllocator;
 class VulkanDevice;
 
@@ -17,31 +18,35 @@ public:
     HeatSystemRuntime() = default;
     ~HeatSystemRuntime() = default;
 
-    struct SourceBinding {
-        uint32_t runtimeModelId = 0;
-        std::unique_ptr<HeatSourceRuntime> heatSource;
-    };
-
-    const SourceBinding* findBaseSourceBinding() const;
-
-    void setSourcePayloads(
-        const std::vector<SupportingHalfedge::IntrinsicMesh>& sourceIntrinsicMeshes,
-        const std::vector<uint32_t>& sourceRuntimeModelIds,
-        const std::unordered_map<uint32_t, float>& sourceTemperatureByRuntimeId);
+    void setHeatModels(
+        const std::vector<SupportingHalfedge::IntrinsicMesh>& modelIntrinsicMeshes,
+        const std::vector<uint32_t>& modelRuntimeModelIds,
+        const std::unordered_map<uint32_t, float>& modelTemperatureByRuntimeId,
+        const std::unordered_map<uint32_t, uint32_t>& modelBoundaryConditions,
+        const std::unordered_map<uint32_t, float>& modelFixedTemperatureValues,
+        const std::unordered_map<uint32_t, float>& modelDensity,
+        const std::unordered_map<uint32_t, float>& modelSpecificHeat,
+        const std::unordered_map<uint32_t, float>& modelConductivity);
     bool ensureModelBindings(
         VulkanDevice& vulkanDevice,
         MemoryAllocator& memoryAllocator,
         CommandPool& renderCommandPool);
-    bool needsRebuild() const { return modelBindingsDirty; }
+    bool needsRebuild() const { return modelsDirty; }
 
-    std::vector<SourceBinding>& getSourceBindingsMutable() { return sourceBindings; }
+    const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& getActiveModels() const { return activeModels; }
+    HeatModelRuntime* getModelByRuntimeId(uint32_t runtimeModelId) const;
 
-    void cleanupModelBindings();
+    void cleanup();
 
 private:
-    std::vector<SupportingHalfedge::IntrinsicMesh> activeSourceIntrinsicMeshes;
-    std::vector<uint32_t> activeSourceRuntimeModelIds;
-    std::unordered_map<uint32_t, float> activeSourceTemperatureByRuntimeId;
-    std::vector<SourceBinding> sourceBindings;
-    bool modelBindingsDirty = true;
+    std::vector<SupportingHalfedge::IntrinsicMesh> activeModelIntrinsicMeshes;
+    std::vector<uint32_t> activeModelRuntimeModelIds;
+    std::unordered_map<uint32_t, float> activeModelTemperatureByRuntimeId;
+    std::unordered_map<uint32_t, uint32_t> activeModelBoundaryConditions;
+    std::unordered_map<uint32_t, float> activeModelFixedTemperatureValues;
+    std::unordered_map<uint32_t, float> activeModelDensity;
+    std::unordered_map<uint32_t, float> activeModelSpecificHeat;
+    std::unordered_map<uint32_t, float> activeModelConductivity;
+    std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>> activeModels;
+    bool modelsDirty = true;
 };

@@ -17,8 +17,8 @@ public:
         bool showContactLines = false;
         bool authoredActive = false;
         bool hasValidContact = false;
-        uint32_t emitterRuntimeModelId = 0;
-        uint32_t receiverRuntimeModelId = 0;
+        uint32_t modelARuntimeModelId = 0;
+        uint32_t modelBRuntimeModelId = 0;
         std::vector<ContactLineVertex> outlineVertices;
         std::vector<ContactLineVertex> correspondenceVertices;
         uint64_t displayHash = 0;
@@ -28,8 +28,8 @@ public:
         }
 
         bool isValid() const {
-            return emitterRuntimeModelId != 0 &&
-                receiverRuntimeModelId != 0 &&
+            return modelARuntimeModelId != 0 &&
+                modelBRuntimeModelId != 0 &&
                 (!outlineVertices.empty() || !correspondenceVertices.empty());
         }
 

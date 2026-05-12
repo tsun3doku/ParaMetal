@@ -7,27 +7,25 @@
 
 class MemoryAllocator;
 class VulkanDevice;
+class CommandPool;
 
 class ContactSystemRuntime {
 public:
     bool needsRebuild() const { return bindingDirty; }
 
-    void setParams(
-        ContactCouplingType couplingType,
-        float minNormalDot,
-        float contactRadius);
-    void setEmitterState(
+    void setParams(float minNormalDot, float contactRadius);
+    void setModelAState(
         uint32_t modelId,
         const std::array<float, 16>& localToWorld,
         const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
         uint32_t runtimeModelId);
-    void setReceiverState(
+    void setModelBState(
         uint32_t modelId,
         const std::array<float, 16>& localToWorld,
         const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
         uint32_t runtimeModelId);
-    void setReceiverTriangleIndices(const std::vector<uint32_t>& triangleIndices);
-    bool buildCoupling(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator);
+    void setModelBTriangleIndices(const std::vector<uint32_t>& triangleIndices);
+    bool buildCoupling(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, CommandPool& commandPool);
 
     void clear(MemoryAllocator& memoryAllocator);
     bool hasValidBinding() const;
@@ -43,6 +41,7 @@ private:
     bool recreateContactPairBuffer(
         MemoryAllocator& memoryAllocator,
         VulkanDevice& vulkanDevice,
+        CommandPool& commandPool,
         VkBuffer& buffer,
         VkDeviceSize& offset,
         void** mappedData,
@@ -51,28 +50,27 @@ private:
     void clearComputedState(MemoryAllocator& memoryAllocator);
     bool computeContactPairs(std::vector<ContactPair>& outPairs);
 
-    ContactCouplingType couplingType = ContactCouplingType::SourceToReceiver;
     float minNormalDot = -0.65f;
     float contactRadius = 0.01f;
-    uint32_t emitterModelId = 0;
-    std::array<float, 16> emitterLocalToWorld{
+    uint32_t modelAId = 0;
+    std::array<float, 16> modelALocalToWorld{
         1.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 1.0f, 0.0f, 0.0f,
         0.0f, 0.0f, 1.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f
     };
-    SupportingHalfedge::IntrinsicMesh emitterIntrinsicMesh;
-    uint32_t emitterRuntimeModelId = 0;
-    uint32_t receiverModelId = 0;
-    std::array<float, 16> receiverLocalToWorld{
+    SupportingHalfedge::IntrinsicMesh modelAIntrinsicMesh;
+    uint32_t modelARuntimeModelId = 0;
+    uint32_t modelBId = 0;
+    std::array<float, 16> modelBLocalToWorld{
         1.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 1.0f, 0.0f, 0.0f,
         0.0f, 0.0f, 1.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f
     };
-    SupportingHalfedge::IntrinsicMesh receiverIntrinsicMesh;
-    uint32_t receiverRuntimeModelId = 0;
-    std::vector<uint32_t> receiverTriangleIndices;
+    SupportingHalfedge::IntrinsicMesh modelBIntrinsicMesh;
+    uint32_t modelBRuntimeModelId = 0;
+    std::vector<uint32_t> modelBTriangleIndices;
     ContactCoupling coupling{};
     VkBuffer contactPairBuffer = VK_NULL_HANDLE;
     VkDeviceSize contactPairBufferOffset = 0;

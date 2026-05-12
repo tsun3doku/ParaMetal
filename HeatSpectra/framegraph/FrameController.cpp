@@ -1,7 +1,6 @@
 #include "FrameController.hpp"
 
 #include "scene/CameraController.hpp"
-#include "util/ComputeTiming.hpp"
 #include "FrameStats.hpp"
 #include "FrameSync.hpp"
 #include "render/SceneRenderer.hpp"
@@ -13,6 +12,7 @@
 
 #include <optional>
 #include <utility>
+#include <iostream>
 
 FrameController::FrameController(
     const WindowRuntimeState& windowState,
@@ -22,7 +22,6 @@ FrameController::FrameController(
     VkFrameGraphBackend& frameGraphBackend,
     SceneRenderer& sceneRenderer,
     FrameSync& frameSync,
-    ComputeTiming& computeTiming,
     FrameStats& frameStats,
     CameraController& cameraController,
     FrameControllerServices services,
@@ -32,7 +31,6 @@ FrameController::FrameController(
       swapchainManager(swapchainManager),
       sceneRenderer(sceneRenderer),
       frameSync(frameSync),
-      computeTiming(computeTiming),
       frameStats(frameStats),
       cameraController(cameraController),
       isOperating(isOperating),
@@ -57,8 +55,7 @@ FrameController::FrameController(
       frameComputeStage(
           vulkanDevice,
           frameGraphBackend.getRuntime(),
-          frameSync,
-          computeTiming),
+          frameSync),
       frameGraphicsStage(
           vulkanDevice,
           frameSync,
@@ -151,8 +148,7 @@ std::vector<std::string> FrameController::buildFrameTimingLines(uint32_t frameIn
         graphicsTiming = &gpuTiming;
     }
 
-    const std::optional<float> computeGpuMs = computeTiming.getGpuTimeMs(frameIndex);
-    return frameStats.buildTimingLines(graphicsTiming, computeGpuMs);
+    return frameStats.buildTimingLines(graphicsTiming, std::nullopt);
 }
 
 void FrameController::updateTimingOverlay(std::vector<std::string>& timingLines, const render::RenderFlags& flags) {

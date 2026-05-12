@@ -48,9 +48,6 @@
     <ClCompile Include="vulkan\CommandBufferManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="util\ComputeTiming.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="framegraph\FrameController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -204,16 +201,10 @@
     <ClCompile Include="heat\HeatSystemSimRuntime.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="heat\HeatSystemSurfaceRuntime.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="heat\HeatSystemVoronoiStage.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="contact\ContactSystemRuntime.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="heat\HeatContactRuntime.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="heat\HeatSystemSimStage.cpp">
@@ -223,9 +214,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="heat\HeatSystemDebugStage.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="heat\HeatSourceRuntime.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="heat\HeatSystemComputeController.cpp">
@@ -312,10 +300,7 @@
     <ClCompile Include="spatial\HashGrid.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="heat\HeatReceiverRuntime.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="voronoi\VoronoiBuilder.cpp">
+    <ClCompile Include="voronoi\VoronoiSystemBuildStage.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="voronoi\VoronoiModelRuntime.cpp">
@@ -396,10 +381,7 @@
     <ClCompile Include="scene\MaterialSystem.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="renderers\HeatReceiverRenderer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="renderers\HeatSourceRenderer.cpp">
+    <ClCompile Include="renderers\HeatSurfaceRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="renderers\VectorArrowRenderer.cpp">
@@ -471,13 +453,10 @@
     <ClCompile Include="nodegraph\ui\widgets\NodeVoronoiPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="nodegraph\NodeHeatReceiver.cpp">
+    <ClCompile Include="nodegraph\NodeHeatModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="nodegraph\NodeHeatSource.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="nodegraph\ui\widgets\NodeHeatSourcePanel.cpp">
+    <ClCompile Include="nodegraph\ui\widgets\NodeHeatModelPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="nodegraph\NodeContact.cpp">
@@ -573,13 +552,25 @@
     <ClCompile Include="nodegraph\NodeVoronoiParams.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="nodegraph\NodeHeatSourceParams.cpp">
+    <ClCompile Include="nodegraph\NodeHeatModelParams.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="nodegraph\NodeHeatSolveParams.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="runtime\RuntimeHandleResolver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="vulkan\MemoryPool.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="heat\HeatModelRuntime.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="contact\ContactSystemComputeStage.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="heat\HeatContactRuntime.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -725,6 +716,13 @@
       <Filter>Shaders</Filter>
     </None>
     <None Include="shaders\voronoi_candidates_intrinsic.slang" />
+    <None Include="shaders\contact.slang" />
+    <None Include="shaders\heat_surface_gradient.slang">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\heat_surface_temp.slang">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="util\file_utils.h">
@@ -758,9 +756,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="vulkan\CommandBufferManager.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="util\ComputeTiming.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="framegraph\FrameController.hpp">
@@ -889,9 +884,6 @@
     <ClInclude Include="contact\ContactSystemRuntime.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="heat\HeatContactRuntime.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="heat\HeatSystemSimStage.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -920,9 +912,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="voronoi\VoronoiGeoCompute.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="heat\HeatSourceRuntime.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="vulkan\MemoryAllocator.hpp">
@@ -1006,13 +995,10 @@
     <ClInclude Include="spatial\HashGrid.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="heat\HeatReceiverRuntime.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="voronoi\VoronoiStageContext.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="voronoi\VoronoiBuilder.hpp">
+    <ClInclude Include="voronoi\VoronoiSystemBuildStage.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="voronoi\VoronoiDomain.hpp">
@@ -1060,6 +1046,9 @@
     <ClInclude Include="libs\nanoflann\include\nanoflann.hpp">
       <Filter>Libs</Filter>
     </ClInclude>
+    <ClInclude Include="voronoi\VoronoiAdapters.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="voronoi\VoronoiIntegrator.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1102,17 +1091,11 @@
     <ClInclude Include="scene\MaterialSystem.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="renderers\HeatReceiverRenderer.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="renderers\HeatSourceRenderer.hpp">
+    <ClInclude Include="renderers\HeatSurfaceRenderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="renderers\VectorArrowRenderer.hpp">
       <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="vulkan\VulkanBuffer.hpp">
-      <Filter>Shaders</Filter>
     </ClInclude>
     <ClInclude Include="util\GlyphText.hpp">
       <Filter>Header Files</Filter>
@@ -1177,13 +1160,10 @@
     <ClInclude Include="nodegraph\ui\widgets\NodeVoronoiPanel.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="nodegraph\NodeHeatReceiver.hpp">
+    <ClInclude Include="nodegraph\NodeHeatModel.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="nodegraph\NodeHeatSource.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="nodegraph\ui\widgets\NodeHeatSourcePanel.hpp">
+    <ClInclude Include="nodegraph\ui\widgets\NodeHeatModelPanel.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\NodeContact.hpp">
@@ -1345,7 +1325,7 @@
     <ClInclude Include="nodegraph\NodeVoronoiParams.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="nodegraph\NodeHeatSourceParams.hpp">
+    <ClInclude Include="nodegraph\NodeHeatModelParams.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\NodeHeatSolveParams.hpp">
@@ -1355,6 +1335,24 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\ui\widgets\NodeGraphWidgetStyle.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vulkan\MemoryPool.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="domain\HeatModelData.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="heat\HeatModelRuntime.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="contact\ContactSystemComputeStage.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="heat\HeatContactRuntime.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vulkan\VulkanBuffer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

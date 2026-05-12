@@ -6,7 +6,6 @@
 #include "vulkan/VulkanBuffer.hpp"
 #include "vulkan/VulkanDevice.hpp"
 #include "voronoi/VoronoiCandidateCompute.hpp"
-#include "voronoi/VoronoiGeoCompute.hpp"
 #include "voronoi/VoronoiModelRuntime.hpp"
 
 #include <glm/mat4x4.hpp>
@@ -22,10 +21,9 @@ VoronoiSystem::VoronoiSystem(
       memoryAllocator(memoryAllocator),
       resourceManager(resourceManager),
       renderCommandPool(renderCommandPool),
-      maxFramesInFlight(maxFramesInFlight),
-      voronoiBuilder(vulkanDevice, memoryAllocator, runtime.resourcesRef()) {
+      maxFramesInFlight(maxFramesInFlight) {
 
-    initializeVoronoiGeoCompute();
+    voronoiSystemBuildStage = std::make_unique<VoronoiSystemBuildStage>(vulkanDevice, memoryAllocator, runtime.resourcesRef(), renderCommandPool);
     initializeVoronoiCandidateCompute();
 
     initialized = true;
@@ -45,7 +43,7 @@ void VoronoiSystem::setReceiverGeometry(
     const std::vector<std::vector<glm::vec3>>& receiverGeometryPositions,
     const std::vector<std::vector<uint32_t>>& receiverGeometryTriangleIndices,
     const std::vector<SupportingHalfedge::IntrinsicMesh>& receiverIntrinsicMeshes,
-        const std::vector<std::vector<VoronoiModelRuntime::SurfaceVertex>>& receiverSurfaceVertices,
+    const std::vector<std::vector<VoronoiModelRuntime::SurfaceVertex>>& receiverSurfaceVertices,
     const std::vector<std::vector<uint32_t>>& receiverIntrinsicTriangleIndices,
     const std::vector<uint32_t>& receiverModelIds,
     const std::vector<VkBuffer>& meshVertexBuffers,
@@ -109,16 +107,11 @@ bool VoronoiSystem::ensureConfigured() {
     }
 
     if (!rebuildVoronoiRuntime()) {
-        std::cerr << "[VoronoiSystem] rebuildVoronoiRuntime failed" << std::endl;
         return false;
     }
 
     executeBufferTransfers();
     return true;
-}
-
-void VoronoiSystem::initializeVoronoiGeoCompute() {
-    voronoiGeoCompute = std::make_unique<VoronoiGeoCompute>(vulkanDevice, renderCommandPool);
 }
 
 void VoronoiSystem::initializeVoronoiCandidateCompute() {
@@ -129,36 +122,29 @@ void VoronoiSystem::initializeVoronoiCandidateCompute() {
 }
 
 bool VoronoiSystem::rebuildVoronoiRuntime() {
-    std::vector<VoronoiDomain>& receiverVoronoiDomains = runtime.receiverVoronoiDomainsRef();
-    if (!voronoiBuilder.buildDomains(
-            runtime.getModelRuntimes(),
-            receiverVoronoiDomains,
+    if (!voronoiSystemBuildStage->buildVoronoiDiagram(
+            runtime,
             runtime.getCellSize(),
             runtime.getVoxelResolution(),
             K_NEIGHBORS)) {
-        std::cerr << "[VoronoiSystem] Failed to build Voronoi domains" << std::endl;
+        std::cerr << "[VoronoiSystem] Failed to build Voronoi diagram" << std::endl;
         return false;
     }
 
-    voronoiBuilder.setGhost(receiverVoronoiDomains, false);
+    voronoiSystemBuildStage->setGhostFromVoxelGrid(runtime);
+    runtime.reorderNodes();
 
     runtime.markSeederReady();
 
-    if (!voronoiBuilder.generateDiagram(
-            receiverVoronoiDomains,
-            debugEnable,
-            K_NEIGHBORS,
-            voronoiGeoCompute.get())) {
-        std::cerr << "[VoronoiSystem] Voronoi generation failed" << std::endl;
+    if (!voronoiSystemBuildStage->dispatchVoronoiCompute(runtime, debugEnable, K_NEIGHBORS)) {
         return false;
     }
 
     if (runtime.resourcesRef().voronoiNodeCount == 0) {
-        std::cerr << "[VoronoiSystem] Voronoi generation produced zero nodes" << std::endl;
         return false;
     }
 
-    if (!voronoiBuilder.stageSurfaceMappings(receiverVoronoiDomains)) {
+    if (!voronoiSystemBuildStage->stageSurfaceMappings(runtime)) {
         return false;
     }
 
@@ -173,27 +159,17 @@ void VoronoiSystem::executeBufferTransfers() {
 
 void VoronoiSystem::dispatchVoronoiCandidateUpdates() {
     if (!voronoiCandidateCompute || runtime.resourcesRef().voronoiNodeCount == 0) {
-        std::cerr << "[VoronoiSystem] Skipping Voronoi candidate updates"
-                  << " compute=" << (voronoiCandidateCompute ? "present" : "missing")
-                  << " nodeCount=" << runtime.resourcesRef().voronoiNodeCount
-                  << std::endl;
         return;
     }
 
     const VoronoiResources& resources = runtime.resourcesRef();
     size_t dispatchedCount = 0;
-    size_t skippedMissingDomain = 0;
     size_t skippedMissingGeometryRuntime = 0;
     size_t skippedZeroFaces = 0;
     size_t skippedMissingCandidateBuffer = 0;
+
     for (const auto& modelRuntime : runtime.getModelRuntimes()) {
         const uint32_t receiverModelId = modelRuntime->getRuntimeModelId();
-        const VoronoiDomain* receiverDomain = runtime.findReceiverDomain(receiverModelId);
-        if (!receiverDomain || receiverDomain->nodeCount == 0) {
-            ++skippedMissingDomain;
-            continue;
-        }
-
         uint32_t faceCount = static_cast<uint32_t>(modelRuntime->getIntrinsicTriangleCount());
         if (modelRuntime->getSurfaceBuffer() == VK_NULL_HANDLE) {
             ++skippedMissingGeometryRuntime;
@@ -219,29 +195,17 @@ void VoronoiSystem::dispatchVoronoiCandidateUpdates() {
         bindings.candidateBufferOffset = modelRuntime->getVoronoiCandidateBufferOffset();
 
         voronoiCandidateCompute->updateDescriptors(bindings);
-        voronoiCandidateCompute->dispatch(faceCount, receiverDomain->nodeCount, receiverDomain->nodeOffset);
+        voronoiCandidateCompute->dispatch(faceCount, runtime.getVoronoiNodeCount());
         ++dispatchedCount;
     }
 
-    if (skippedMissingDomain > 0 ||
-        skippedMissingGeometryRuntime > 0 ||
-        skippedZeroFaces > 0 ||
-        skippedMissingCandidateBuffer > 0) {
-        std::cerr << "[VoronoiSystem] Voronoi candidate update skipped some receivers"
-                  << " dispatched=" << dispatchedCount
-                  << " skippedMissingDomain=" << skippedMissingDomain
-                  << " skippedMissingGeometryRuntime=" << skippedMissingGeometryRuntime
-                  << " skippedZeroFaces=" << skippedZeroFaces
-                  << " skippedMissingCandidateBuffer=" << skippedMissingCandidateBuffer
-                  << std::endl;
-    }
 }
 
 void VoronoiSystem::cleanupResources() {
     runtime.cleanupResources(vulkanDevice);
 
-    if (voronoiGeoCompute) {
-        voronoiGeoCompute->cleanupResources();
+    if (voronoiSystemBuildStage) {
+        voronoiSystemBuildStage->cleanupResources();
     }
     if (voronoiCandidateCompute) {
         voronoiCandidateCompute->cleanupResources();

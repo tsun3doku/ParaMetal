@@ -1,10 +1,12 @@
 #pragma once
 
 #include "mesh/remesher/SupportingHalfedge.hpp"
-#include "voronoi/VoronoiBuilder.hpp"
-#include "voronoi/VoronoiDomain.hpp"
 #include "voronoi/VoronoiModelRuntime.hpp"
 #include "voronoi/VoronoiResources.hpp"
+#include "voronoi/VoronoiSeeder.hpp"
+#include "voronoi/VoronoiIntegrator.hpp"
+#include "spatial/SpatialOrder.hpp"
+#include "spatial/VoxelGrid.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -26,14 +28,33 @@ public:
     bool isSeederReady() const { return voronoiSeederReady; }
 
     const std::vector<std::unique_ptr<VoronoiModelRuntime>>& getModelRuntimes() const { return modelRuntimes; }
-    const std::vector<VoronoiDomain>& getReceiverVoronoiDomains() const { return receiverVoronoiDomains; }
-    std::vector<VoronoiDomain>& receiverVoronoiDomainsRef() { return receiverVoronoiDomains; }
-    const VoronoiDomain* findReceiverDomain(uint32_t receiverModelId) const;
+    VoronoiModelRuntime* getModelRuntime() const { return modelRuntimes.empty() ? nullptr : modelRuntimes.front().get(); }
 
     uint32_t getVoronoiNodeCount() const { return resources.voronoiNodeCount; }
 
     VoronoiResources& resourcesRef() { return resources; }
     const VoronoiResources& resourcesRef() const { return resources; }
+
+    // VoronoiDomain fields moved here
+    VoronoiSeeder* getSeeder() const { return seeder.get(); }
+    VoronoiIntegrator* getIntegrator() const { return integrator.get(); }
+    void resetSeeder() { seeder = std::make_unique<VoronoiSeeder>(); }
+    void resetIntegrator() { integrator = std::make_unique<VoronoiIntegrator>(); }
+    VoxelGrid& getVoxelGrid() { return voxelGrid; }
+    const VoxelGrid& getVoxelGrid() const { return voxelGrid; }
+    bool isVoxelGridBuilt() const { return voxelGridBuilt; }
+    void setVoxelGridBuilt(bool built) { voxelGridBuilt = built; }
+    std::vector<uint32_t>& getSeedFlags() { return seedFlags; }
+    const std::vector<uint32_t>& getSeedFlags() const { return seedFlags; }
+
+    std::vector<glm::vec4>& getSeedPositions() { return seedPositions; }
+    const std::vector<glm::vec4>& getSeedPositions() const { return seedPositions; }
+    std::vector<uint32_t>& getNeighborIndices() { return neighborIndices; }
+    const std::vector<uint32_t>& getNeighborIndices() const { return neighborIndices; }
+    std::vector<std::array<glm::vec4, 3>>& getMeshTriangles() { return meshTriangles; }
+    const std::vector<std::array<glm::vec4, 3>>& getMeshTriangles() const { return meshTriangles; }
+
+    void reorderNodes();
 
     void setReceiverGeometry(
         VulkanDevice& vulkanDevice,
@@ -75,13 +96,21 @@ public:
 
 private:
     void invalidateMaterialization();
-    void clearReceiverDomains();
 
     std::vector<std::unique_ptr<VoronoiModelRuntime>> modelRuntimes;
-    std::vector<uint32_t> activeReceiverModelIds;
     float cellSize = 0.005f;
     int voxelResolution = 128;
-    std::vector<VoronoiDomain> receiverVoronoiDomains;
+
+    // VoronoiDomain fields moved here
+    std::unique_ptr<VoronoiSeeder> seeder;
+    std::unique_ptr<VoronoiIntegrator> integrator;
+    VoxelGrid voxelGrid;
+    bool voxelGridBuilt = false;
+    std::vector<uint32_t> seedFlags;
+    std::vector<glm::vec4> seedPositions;
+    std::vector<uint32_t> neighborIndices;
+    std::vector<std::array<glm::vec4, 3>> meshTriangles;
+
     VoronoiResources resources;
     bool voronoiSeederReady = false;
     bool voronoiReady = false;

@@ -111,7 +111,8 @@ bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, Win
     runtimeContactComputeTransportState = std::make_unique<RuntimeContactComputeTransport>();
     contactSystemComputeControllerState = std::make_unique<ContactSystemComputeController>(
         core.device(),
-        *allocator);
+        *allocator,
+        *core.commandPool());
     runtimeContactComputeTransportState->setController(contactSystemComputeControllerState.get());
     contactDisplayControllerState->setOverlayRenderer(renderRuntime->getSceneRenderer().getContactOverlayRenderer());
     runtimeContactDisplayTransportState->setController(contactDisplayControllerState.get());

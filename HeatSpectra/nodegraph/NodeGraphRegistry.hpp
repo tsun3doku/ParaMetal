@@ -8,8 +8,7 @@ inline constexpr const char* Model = "model";
 inline constexpr const char* Transform = "transform";
 inline constexpr const char* Group = "group";
 inline constexpr const char* Remesh = "remesh";
-inline constexpr const char* HeatReceiver = "heat_receiver";
-inline constexpr const char* HeatSource = "heat_source";
+inline constexpr const char* HeatModel = "heat_model";
 inline constexpr const char* Contact = "contact";
 inline constexpr const char* Voronoi = "voronoi";
 inline constexpr const char* HeatSolve = "heat_solve";
@@ -87,6 +86,15 @@ constexpr uint32_t ShowContactLines = 3;
 namespace heatsource {
 constexpr uint32_t Temperature = 1;
 }
+
+namespace heatmodel {
+constexpr uint32_t Density = 1;
+constexpr uint32_t SpecificHeat = 2;
+constexpr uint32_t Conductivity = 3;
+constexpr uint32_t InitialTemperature = 4;
+constexpr uint32_t BoundaryCondition = 5;
+constexpr uint32_t FixedTemperatureValue = 6;
+}
 }
 
 class NodeGraphRegistry {
@@ -97,7 +105,8 @@ public:
 private:
     static NodeSocketSignature makeInputSocket(
         const char* name,
-        NodeGraphValueType valueType);
+        NodeGraphValueType valueType,
+        bool variadic = false);
 
     static NodeSocketSignature makeOutputSocket(
         const char* name,
@@ -107,8 +116,7 @@ private:
     static NodeTypeDefinition buildTransformNode();
     static NodeTypeDefinition buildGroupNode();
     static NodeTypeDefinition buildRemeshNode();
-    static NodeTypeDefinition buildHeatReceiverNode();
-    static NodeTypeDefinition buildHeatSourceNode();
+    static NodeTypeDefinition buildHeatModelNode();
     static NodeTypeDefinition buildContactNode();
     static NodeTypeDefinition buildVoronoiNode();
     static NodeTypeDefinition buildHeatSolveNode();

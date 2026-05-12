@@ -216,13 +216,18 @@ void NodeGraphRuntime::executeDataflow(NodeGraphEvaluationState* outState, const
     const std::vector<NodeGraphNodeId>& executionOrder = compiled.executionOrder;
     std::unordered_map<uint64_t, const NodeGraphEdge*> incomingEdgeByInputSocket;
     incomingEdgeByInputSocket.reserve(graphState.edges.size() * 2);
+    std::unordered_map<uint64_t, std::vector<const NodeGraphEdge*>> incomingEdgesByInputSocket;
+    incomingEdgesByInputSocket.reserve(graphState.edges.size() * 2);
     NodeGraphEvaluationState state{};
     state.sourceSocketByInputSocket.reserve(graphState.edges.size() * 2);
     state.outputBySocket.reserve(graphState.edges.size() * 2);
     for (const NodeGraphEdge& edge : graphState.edges) {
         const uint64_t inputKey = makeSocketKey(edge.toNode, edge.toSocket);
         incomingEdgeByInputSocket[inputKey] = &edge;
-        state.sourceSocketByInputSocket[inputKey] = makeSocketKey(edge.fromNode, edge.fromSocket);
+        incomingEdgesByInputSocket[inputKey].push_back(&edge);
+        const uint64_t sourceKey = makeSocketKey(edge.fromNode, edge.fromSocket);
+        state.sourceSocketByInputSocket[inputKey] = sourceKey;
+        state.sourceSocketsByInputSocket[inputKey].push_back(sourceKey);
     }
 
     for (NodeGraphNodeId nodeId : executionOrder) {
@@ -257,6 +262,7 @@ void NodeGraphRuntime::executeDataflow(NodeGraphEvaluationState* outState, const
                 *bridge,
                 runtimeServices,
                 incomingEdgeByInputSocket,
+                incomingEdgesByInputSocket,
                 state.outputBySocket};
 
             uint64_t inputHash = 0;
@@ -301,6 +307,7 @@ void NodeGraphRuntime::executeDataflow(NodeGraphEvaluationState* outState, const
 
     if (outState) {
         outState->sourceSocketByInputSocket = std::move(state.sourceSocketByInputSocket);
+        outState->sourceSocketsByInputSocket = std::move(state.sourceSocketsByInputSocket);
         outState->outputBySocket = std::move(state.outputBySocket);
     }
 }

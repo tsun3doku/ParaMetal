@@ -1,4 +1,4 @@
-#include "HeatReceiverRenderer.hpp"
+#include "HeatSurfaceRenderer.hpp"
 
 #include "heat/HeatGpuStructs.hpp"
 #include "vulkan/VulkanDevice.hpp"
@@ -13,15 +13,15 @@
 #include <iostream>
 #include <unordered_set>
 
-HeatReceiverRenderer::HeatReceiverRenderer(VulkanDevice& device, UniformBufferManager& uboManager)
+HeatSurfaceRenderer::HeatSurfaceRenderer(VulkanDevice& device, UniformBufferManager& uboManager)
     : vulkanDevice(device), uniformBufferManager(uboManager) {
 }
 
-HeatReceiverRenderer::~HeatReceiverRenderer() {
+HeatSurfaceRenderer::~HeatSurfaceRenderer() {
     cleanup();
 }
 
-void HeatReceiverRenderer::initialize(VkRenderPass renderPass, uint32_t maxFramesInFlight) {
+void HeatSurfaceRenderer::initialize(VkRenderPass renderPass, uint32_t maxFramesInFlight) {
     if (initialized) {
         cleanup();
     }
@@ -36,15 +36,17 @@ void HeatReceiverRenderer::initialize(VkRenderPass renderPass, uint32_t maxFrame
     initialized = true;
 }
 
-bool HeatReceiverRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
+bool HeatSurfaceRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
     const uint32_t maxRenderableHeatModels = 64;
     const uint32_t totalSets = maxFramesInFlight * maxRenderableHeatModels;
 
-    std::array<VkDescriptorPoolSize, 2> poolSizes{};
+    std::array<VkDescriptorPoolSize, 3> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = totalSets;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
-    poolSizes[1].descriptorCount = totalSets * 11;
+    poolSizes[1].descriptorCount = totalSets * 10;
+    poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolSizes[2].descriptorCount = totalSets;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -53,14 +55,14 @@ bool HeatReceiverRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
     poolInfo.maxSets = totalSets;
 
     if (vkCreateDescriptorPool(vulkanDevice.getDevice(), &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
-        std::cerr << "HeatReceiverRenderer: Failed to create descriptor pool" << std::endl;
+        std::cerr << "HeatSurfaceRenderer: Failed to create descriptor pool" << std::endl;
         return false;
     }
 
     return true;
 }
 
-bool HeatReceiverRenderer::createDescriptorSetLayout() {
+bool HeatSurfaceRenderer::createDescriptorSetLayout() {
     std::array<VkDescriptorSetLayoutBinding, 12> bindings{};
 
     bindings[0].binding = 0;
@@ -76,7 +78,7 @@ bool HeatReceiverRenderer::createDescriptorSetLayout() {
     }
 
     bindings[11].binding = 11;
-    bindings[11].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
+    bindings[11].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     bindings[11].descriptorCount = 1;
     bindings[11].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
@@ -86,21 +88,21 @@ bool HeatReceiverRenderer::createDescriptorSetLayout() {
     layoutInfo.pBindings = bindings.data();
 
     if (vkCreateDescriptorSetLayout(vulkanDevice.getDevice(), &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
-        std::cerr << "HeatReceiverRenderer: Failed to create descriptor set layout" << std::endl;
+        std::cerr << "HeatSurfaceRenderer: Failed to create descriptor set layout" << std::endl;
         return false;
     }
 
     return true;
 }
 
-bool HeatReceiverRenderer::createPipeline(VkRenderPass renderPass) {
+bool HeatSurfaceRenderer::createPipeline(VkRenderPass renderPass) {
     std::vector<char> vertShaderCode;
     std::vector<char> geomShaderCode;
     std::vector<char> fragShaderCode;
     if (!readFile("shaders/intrinsic_supporting_vert.spv", vertShaderCode) ||
         !readFile("shaders/intrinsic_supporting_geom.spv", geomShaderCode) ||
         !readFile("shaders/heat_buffer_frag.spv", fragShaderCode)) {
-        std::cerr << "HeatReceiverRenderer: Failed to read shader files" << std::endl;
+        std::cerr << "HeatSurfaceRenderer: Failed to read shader files" << std::endl;
         return false;
     }
 
@@ -119,7 +121,7 @@ bool HeatReceiverRenderer::createPipeline(VkRenderPass renderPass) {
         if (fragShaderModule != VK_NULL_HANDLE) {
             vkDestroyShaderModule(vulkanDevice.getDevice(), fragShaderModule, nullptr);
         }
-        std::cerr << "HeatReceiverRenderer: Failed to create shader modules" << std::endl;
+        std::cerr << "HeatSurfaceRenderer: Failed to create shader modules" << std::endl;
         return false;
     }
 
@@ -244,7 +246,7 @@ bool HeatReceiverRenderer::createPipeline(VkRenderPass renderPass) {
         vkDestroyShaderModule(vulkanDevice.getDevice(), vertShaderModule, nullptr);
         vkDestroyShaderModule(vulkanDevice.getDevice(), geomShaderModule, nullptr);
         vkDestroyShaderModule(vulkanDevice.getDevice(), fragShaderModule, nullptr);
-        std::cerr << "HeatReceiverRenderer: Failed to create pipeline layout" << std::endl;
+        std::cerr << "HeatSurfaceRenderer: Failed to create pipeline layout" << std::endl;
         return false;
     }
 
@@ -270,7 +272,7 @@ bool HeatReceiverRenderer::createPipeline(VkRenderPass renderPass) {
         vkDestroyShaderModule(vulkanDevice.getDevice(), vertShaderModule, nullptr);
         vkDestroyShaderModule(vulkanDevice.getDevice(), geomShaderModule, nullptr);
         vkDestroyShaderModule(vulkanDevice.getDevice(), fragShaderModule, nullptr);
-        std::cerr << "HeatReceiverRenderer: Failed to create graphics pipeline" << std::endl;
+        std::cerr << "HeatSurfaceRenderer: Failed to create graphics pipeline" << std::endl;
         return false;
     }
 
@@ -280,11 +282,11 @@ bool HeatReceiverRenderer::createPipeline(VkRenderPass renderPass) {
     return true;
 }
 
-void HeatReceiverRenderer::drawModel(VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet, const ModelProduct& product) const {
+void HeatSurfaceRenderer::drawModel(VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet, const SurfaceRenderBinding& binding) const {
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
 
     heat::BufferPushConstant pushConstants{};
-    pushConstants.modelMatrix = product.modelMatrix;
+    pushConstants.modelMatrix = binding.modelMatrix;
     pushConstants.sourceParams = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
     vkCmdPushConstants(
         commandBuffer,
@@ -294,16 +296,18 @@ void HeatReceiverRenderer::drawModel(VkCommandBuffer commandBuffer, VkDescriptor
         sizeof(heat::BufferPushConstant),
         &pushConstants);
 
-    VkBuffer modelVertexBuffer = product.renderVertexBuffer;
-    VkDeviceSize modelVertexOffset = product.renderVertexBufferOffset;
-
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &modelVertexBuffer, &modelVertexOffset);
-    vkCmdBindIndexBuffer(commandBuffer, product.renderIndexBuffer, product.renderIndexBufferOffset, VK_INDEX_TYPE_UINT32);
-    vkCmdDrawIndexed(commandBuffer, product.renderIndexCount, 1, 0, 0, 0);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &binding.vertexBuffer, &binding.vertexBufferOffset);
+    vkCmdBindIndexBuffer(commandBuffer, binding.indexBuffer, binding.indexBufferOffset, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(commandBuffer, binding.indexCount, 1, 0, 0, 0);
 }
 
-bool HeatReceiverRenderer::updateDescriptorSetVector(const std::array<VkBufferView, 11>& bufferViews, uint32_t maxFramesInFlight,
-    std::vector<VkDescriptorSet>& targetSets, bool forceReallocate) {
+bool HeatSurfaceRenderer::updateDescriptorSetVector(
+    const std::array<VkBufferView, 11>& bufferViews,
+    VkBuffer surfaceBuffer,
+    VkDeviceSize surfaceBufferOffset,
+    uint32_t maxFramesInFlight,
+    std::vector<VkDescriptorSet>& targetSets,
+    bool forceReallocate) {
     if (forceReallocate || targetSets.empty() || targetSets.size() != maxFramesInFlight) {
         targetSets.clear();
         targetSets.resize(maxFramesInFlight);
@@ -337,7 +341,7 @@ bool HeatReceiverRenderer::updateDescriptorSetVector(const std::array<VkBufferVi
         descriptorWrites[0].descriptorCount = 1;
         descriptorWrites[0].pBufferInfo = &uboBufferInfo;
 
-        for (int j = 0; j < 11; j++) {
+        for (int j = 0; j < 10; j++) {
             descriptorWrites[j + 1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             descriptorWrites[j + 1].dstSet = targetSets[i];
             descriptorWrites[j + 1].dstBinding = 1 + j;
@@ -347,14 +351,27 @@ bool HeatReceiverRenderer::updateDescriptorSetVector(const std::array<VkBufferVi
             descriptorWrites[j + 1].pTexelBufferView = &bufferViews[j];
         }
 
+        VkDescriptorBufferInfo surfaceInfo{};
+        surfaceInfo.buffer = surfaceBuffer;
+        surfaceInfo.offset = surfaceBufferOffset;
+        surfaceInfo.range = VK_WHOLE_SIZE; 
+
+        descriptorWrites[11].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[11].dstSet = targetSets[i];
+        descriptorWrites[11].dstBinding = 11;
+        descriptorWrites[11].dstArrayElement = 0;
+        descriptorWrites[11].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorWrites[11].descriptorCount = 1;
+        descriptorWrites[11].pBufferInfo = &surfaceInfo;
+
         vkUpdateDescriptorSets(vulkanDevice.getDevice(), 12, descriptorWrites.data(), 0, nullptr);
     }
 
     return true;
 }
 
-void HeatReceiverRenderer::updateDescriptors(
-    const std::vector<ReceiverRenderBinding>& receivers,
+void HeatSurfaceRenderer::updateDescriptors(
+    const std::vector<SurfaceRenderBinding>& surfaces,
     uint32_t maxFramesInFlight,
     bool forceReallocate) {
     if (!initialized) {
@@ -363,69 +380,65 @@ void HeatReceiverRenderer::updateDescriptors(
 
     if (forceReallocate && descriptorPool != VK_NULL_HANDLE) {
         vkResetDescriptorPool(vulkanDevice.getDevice(), descriptorPool, 0);
-        receiverDescriptorSets.clear();
+        surfaceDescriptorSets.clear();
     }
 
-    std::unordered_set<uint32_t> liveReceivers;
-    liveReceivers.reserve(receivers.size());
+    std::unordered_set<uint32_t> liveSurfaces;
+    liveSurfaces.reserve(surfaces.size());
 
-    for (const ReceiverRenderBinding& receiver : receivers) {
-        if (receiver.model.runtimeModelId == 0) {
+    for (const SurfaceRenderBinding& surface : surfaces) {
+        if (surface.runtimeModelId == 0) {
             continue;
         }
 
-        const uint32_t runtimeModelId = receiver.model.runtimeModelId;
-        liveReceivers.insert(runtimeModelId);
-        if (receiver.bufferViews[10] == VK_NULL_HANDLE) {
-            receiverDescriptorSets.erase(runtimeModelId);
-            continue;
-        }
-
-        auto& receiverSets = receiverDescriptorSets[runtimeModelId];
-        if (!updateDescriptorSetVector(receiver.bufferViews, maxFramesInFlight, receiverSets, forceReallocate)) {
-            receiverDescriptorSets.erase(runtimeModelId);
-            std::cerr << "HeatReceiverRenderer: Failed to allocate/update receiver descriptor sets"
+        const uint32_t runtimeModelId = surface.runtimeModelId;
+        liveSurfaces.insert(runtimeModelId);
+        
+        auto& surfaceSets = surfaceDescriptorSets[runtimeModelId];
+        if (!updateDescriptorSetVector(surface.bufferViews, surface.surfaceBuffer, surface.surfaceBufferOffset, maxFramesInFlight, surfaceSets, forceReallocate)) {
+            surfaceDescriptorSets.erase(runtimeModelId);
+            std::cerr << "HeatSurfaceRenderer: Failed to allocate/update surface descriptor sets"
                       << " runtimeModelId=" << runtimeModelId
                       << std::endl;
             continue;
         }
     }
 
-    for (auto it = receiverDescriptorSets.begin(); it != receiverDescriptorSets.end();) {
-        if (liveReceivers.find(it->first) == liveReceivers.end()) {
-            it = receiverDescriptorSets.erase(it);
+    for (auto it = surfaceDescriptorSets.begin(); it != surfaceDescriptorSets.end();) {
+        if (liveSurfaces.find(it->first) == liveSurfaces.end()) {
+            it = surfaceDescriptorSets.erase(it);
         } else {
             ++it;
         }
     }
 }
 
-void HeatReceiverRenderer::render(VkCommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<ReceiverRenderBinding>& receivers) const {
+void HeatSurfaceRenderer::render(VkCommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<SurfaceRenderBinding>& surfaces) const {
     if (!initialized || pipeline == VK_NULL_HANDLE || pipelineLayout == VK_NULL_HANDLE) {
         return;
     }
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
-    for (const ReceiverRenderBinding& receiverBinding : receivers) {
-        if (!receiverBinding.model.isValid()) {
+    for (const SurfaceRenderBinding& surfaceBinding : surfaces) {
+        if (surfaceBinding.runtimeModelId == 0) {
             continue;
         }
 
-        auto it = receiverDescriptorSets.find(receiverBinding.model.runtimeModelId);
-        if (it == receiverDescriptorSets.end()) {
+        auto it = surfaceDescriptorSets.find(surfaceBinding.runtimeModelId);
+        if (it == surfaceDescriptorSets.end()) {
             continue;
         }
-        const auto& receiverHeatSets = it->second;
-        if (frameIndex >= receiverHeatSets.size()) {
+        const auto& surfaceHeatSets = it->second;
+        if (frameIndex >= surfaceHeatSets.size()) {
             continue;
         }
 
-        drawModel(commandBuffer, receiverHeatSets[frameIndex], receiverBinding.model);
+        drawModel(commandBuffer, surfaceHeatSets[frameIndex], surfaceBinding);
     }
 }
 
-void HeatReceiverRenderer::cleanup() {
+void HeatSurfaceRenderer::cleanup() {
     VkDevice device = vulkanDevice.getDevice();
 
     if (pipeline != VK_NULL_HANDLE) {
@@ -445,7 +458,7 @@ void HeatReceiverRenderer::cleanup() {
         descriptorSetLayout = VK_NULL_HANDLE;
     }
 
-    receiverDescriptorSets.clear();
+    surfaceDescriptorSets.clear();
     initialized = false;
 }
 

@@ -7,7 +7,6 @@
 #include <memory>
 #include <vector>
 
-#include "util/ComputeTiming.hpp"
 #include "framegraph/ComputePass.hpp"
 #include "framegraph/FrameStats.hpp"
 #include "framegraph/FramePass.hpp"
@@ -81,7 +80,6 @@ private:
     std::atomic<bool>& isShuttingDown;
 
     FrameStats frameStats;
-    ComputeTiming computeTiming;
 
     std::unique_ptr<FrameGraph> frameGraph;
     std::unique_ptr<VkFrameGraphBackend> frameGraphBackend;

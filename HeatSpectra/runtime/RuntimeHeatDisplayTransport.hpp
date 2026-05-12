@@ -4,6 +4,7 @@
 #include "runtime/HeatDisplayController.hpp"
 #include "runtime/RuntimeECS.hpp"
 
+#include <iostream>
 #include <unordered_set>
 #include <vector>
 
@@ -60,10 +61,10 @@ private:
         if (!package.display.anyVisible()) {
             return false;
         }
-        if (package.sourceModelProducts.size() != package.sourceTemperatures.size()) {
+        if (package.modelProducts.size() != package.models.size()) {
             return false;
         }
-        if (package.receiverModelProducts.size() != package.receiverRemeshProducts.size()) {
+        if (package.modelProducts.size() != package.remeshProducts.size()) {
             return false;
         }
 
@@ -79,40 +80,17 @@ private:
         outConfig.authoredActive = package.authored.active;
         outConfig.active = computeProduct->active;
         outConfig.paused = computeProduct->paused;
-        // Get surfaceBufferView from VoronoiProduct (Voronoi owns the surface buffers and views)
-        std::unordered_map<uint32_t, VkBufferView> surfaceBufferViewByRuntimeModelId;
-        if (package.voronoiProduct.isValid()) {
-            const VoronoiProduct* voronoiProduct = tryGetProduct<VoronoiProduct>(*ecsRegistry, package.voronoiProduct.outputSocketKey);
-            if (voronoiProduct) {
-                surfaceBufferViewByRuntimeModelId.reserve(voronoiProduct->surfaces.size());
-                for (const VoronoiSurfaceProduct& surfaceProduct : voronoiProduct->surfaces) {
-                    surfaceBufferViewByRuntimeModelId[surfaceProduct.runtimeModelId] = surfaceProduct.surfaceBufferView;
-                }
-            }
-        }
 
-        for (size_t index = 0; index < package.sourceModelProducts.size(); ++index) {
-            const ProductHandle& modelHandle = package.sourceModelProducts[index];
-            const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, modelHandle.outputSocketKey);
-            if (!modelProduct || modelProduct->runtimeModelId == 0) {
-                return false;
-            }
-
-            outConfig.sourceModels.push_back(*modelProduct);
-            outConfig.sourceTemperatures.push_back(package.sourceTemperatures[index]);
-        }
-
-        for (size_t index = 0; index < package.receiverModelProducts.size(); ++index) {
-            const ProductHandle& modelHandle = package.receiverModelProducts[index];
-            const ProductHandle& remeshHandle = package.receiverRemeshProducts[index];
+        for (size_t index = 0; index < package.modelProducts.size(); ++index) {
+            const ProductHandle& modelHandle = package.modelProducts[index];
+            const ProductHandle& remeshHandle = package.remeshProducts[index];
             const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, modelHandle.outputSocketKey);
             const RemeshProduct* remeshProduct = tryGetProduct<RemeshProduct>(*ecsRegistry, remeshHandle.outputSocketKey);
             if (!remeshProduct || !modelProduct || modelProduct->runtimeModelId == 0) {
                 return false;
             }
 
-            const auto surfaceBufferViewIt = surfaceBufferViewByRuntimeModelId.find(modelProduct->runtimeModelId);
-            std::array<VkBufferView, 11> receiverBufferViews = {
+            std::array<VkBufferView, 11> modelBufferViews = {
                 remeshProduct->supportingHalfedgeView,
                 remeshProduct->supportingAngleView,
                 remeshProduct->halfedgeView,
@@ -123,45 +101,46 @@ private:
                 remeshProduct->inputEdgeView,
                 remeshProduct->inputTriangleView,
                 remeshProduct->inputLengthView,
-                surfaceBufferViewIt != surfaceBufferViewByRuntimeModelId.end()
-                    ? surfaceBufferViewIt->second
-                    : VK_NULL_HANDLE
+                VK_NULL_HANDLE
             };
-            bool receiverValid = true;
-            for (VkBufferView bufferView : receiverBufferViews) {
-                if (bufferView == VK_NULL_HANDLE) {
-                    receiverValid = false;
+            bool modelValid = true;
+            for (int vIdx = 0; vIdx < 10; ++vIdx) {
+                if (modelBufferViews[vIdx] == VK_NULL_HANDLE) {
+                    modelValid = false;
                     break;
                 }
             }
-            if (!receiverValid) {
+            if (!modelValid) {
                 return false;
             }
 
-            outConfig.receiverModels.push_back(*modelProduct);
-            outConfig.receiverBufferViews.push_back(receiverBufferViews);
+            outConfig.models.push_back(*modelProduct);
+            outConfig.modelTemperatures.push_back(package.models[index].initialTemperature);
+            outConfig.modelFixedTemperatures.push_back(package.models[index].fixedTemperatureValue);
+            outConfig.modelBoundaryConditions.push_back(package.models[index].boundaryCondition);
+            outConfig.modelBufferViews.push_back(modelBufferViews);
 
             if (modelProduct->runtimeModelId != 0 &&
-                index < computeProduct->receiverSurfaceBuffers.size() &&
-                index < computeProduct->receiverSurfaceBufferOffsets.size() &&
-                index < computeProduct->receiverSurfacePointCounts.size()) {
-                outConfig.receiverSurfaceBuffers.push_back(computeProduct->receiverSurfaceBuffers[index]);
-                outConfig.receiverSurfaceBufferOffsets.push_back(computeProduct->receiverSurfaceBufferOffsets[index]);
-                outConfig.receiverSurfacePointCounts.push_back(computeProduct->receiverSurfacePointCounts[index]);
+                index < computeProduct->modelSurfaceBuffers.size() &&
+                index < computeProduct->modelSurfaceBufferOffsets.size() &&
+                index < computeProduct->modelSurfacePointCounts.size()) {
+                outConfig.modelSurfaceBuffers.push_back(computeProduct->modelSurfaceBuffers[index]);
+                outConfig.modelSurfaceBufferOffsets.push_back(computeProduct->modelSurfaceBufferOffsets[index]);
+                outConfig.modelSurfacePointCounts.push_back(computeProduct->modelSurfacePointCounts[index]);
             } else {
-                outConfig.receiverSurfaceBuffers.push_back(VK_NULL_HANDLE);
-                outConfig.receiverSurfaceBufferOffsets.push_back(0);
-                outConfig.receiverSurfacePointCounts.push_back(0);
+                outConfig.modelSurfaceBuffers.push_back(VK_NULL_HANDLE);
+                outConfig.modelSurfaceBufferOffsets.push_back(0);
+                outConfig.modelSurfacePointCounts.push_back(0);
             }
 
             if (modelProduct->runtimeModelId != 0 &&
-                index < computeProduct->receiverSurfaceGradientBuffers.size() &&
-                index < computeProduct->receiverSurfaceGradientBufferOffsets.size()) {
-                outConfig.receiverSurfaceGradientBuffers.push_back(computeProduct->receiverSurfaceGradientBuffers[index]);
-                outConfig.receiverSurfaceGradientBufferOffsets.push_back(computeProduct->receiverSurfaceGradientBufferOffsets[index]);
+                index < computeProduct->modelSurfaceGradientBuffers.size() &&
+                index < computeProduct->modelSurfaceGradientBufferOffsets.size()) {
+                outConfig.modelSurfaceGradientBuffers.push_back(computeProduct->modelSurfaceGradientBuffers[index]);
+                outConfig.modelSurfaceGradientBufferOffsets.push_back(computeProduct->modelSurfaceGradientBufferOffsets[index]);
             } else {
-                outConfig.receiverSurfaceGradientBuffers.push_back(VK_NULL_HANDLE);
-                outConfig.receiverSurfaceGradientBufferOffsets.push_back(0);
+                outConfig.modelSurfaceGradientBuffers.push_back(VK_NULL_HANDLE);
+                outConfig.modelSurfaceGradientBufferOffsets.push_back(0);
             }
         }
 

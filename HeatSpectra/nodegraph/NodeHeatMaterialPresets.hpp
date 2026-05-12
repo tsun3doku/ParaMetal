@@ -8,7 +8,7 @@
 #include "heat/HeatSystemPresets.hpp"
 
 struct HeatMaterialBindingRow {
-    uint32_t receiverModelNodeId = 0;
+    uint32_t modelNodeId = 0;
     HeatMaterialPresetId presetId = HeatMaterialPresetId::Aluminum;
 };
 

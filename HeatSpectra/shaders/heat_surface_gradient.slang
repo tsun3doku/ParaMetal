@@ -23,12 +23,18 @@ struct GMLSSurfaceGradientWeight
     float dTdzWeight;
 };
 
-[[vk::binding(0)]] StructuredBuffer<uint> nodeTemperatureReadBuffer;
-[[vk::binding(1)]] StructuredBuffer<SurfacePoint> surfaceBuffer;  // read positions/normals
-[[vk::binding(2)]] RWStructuredBuffer<float4> surfaceGradientBuffer;  // write gradient colors here
+struct HeatModelPushConstant {
+    uint elementCount;
+};
+
+[[vk::binding(0)]] StructuredBuffer<float> nodeTemperatureReadBuffer;
+[[vk::binding(1)]] StructuredBuffer<SurfacePoint> surfaceBuffer;        // read positions/normals
+[[vk::binding(2)]] RWStructuredBuffer<float4> surfaceGradientBuffer;    // write gradient colors here
 
 [[vk::binding(10)]] StructuredBuffer<GMLSSurfaceStencil> gmlsSurfaceStencilBuffer;
 [[vk::binding(12)]] StructuredBuffer<GMLSSurfaceGradientWeight> gmlsSurfaceGradientWeightBuffer;
+
+[[vk::push_constant]] ConstantBuffer<HeatModelPushConstant> pushConstants;
 
 [numthreads(256, 1, 1)]
 void main(uint3 dtid : SV_DispatchThreadID)
@@ -64,12 +70,7 @@ void main(uint3 dtid : SV_DispatchThreadID)
     for (uint i = 0; i < stencil.gradientWeightCount; ++i)
     {
         GMLSSurfaceGradientWeight weight = gmlsSurfaceGradientWeightBuffer[stencil.gradientWeightOffset + i];
-        if (weight.cellIndex >= nodeCount)
-        {
-            continue;
-        }
-
-        float cellTemp = asfloat(nodeTemperatureReadBuffer[weight.cellIndex]);
+        float cellTemp = nodeTemperatureReadBuffer[weight.cellIndex];
         gradientT += float3(weight.dTdxWeight, weight.dTdyWeight, weight.dTdzWeight) * cellTemp;
     }
 

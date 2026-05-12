@@ -316,3 +316,7 @@ inline bool intersectRayAabb(const glm::vec3& origin, const glm::vec3& direction
 
 	return true;
 }
+
+inline glm::vec3 barycentricToPosition(const glm::vec3& p0, const glm::vec3& p1, const glm::vec3& p2, const glm::vec3& bary) {
+	return (p0 * bary.x) + (p1 * bary.y) + (p2 * bary.z);
+}

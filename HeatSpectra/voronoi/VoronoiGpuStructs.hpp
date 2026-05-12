@@ -18,23 +18,12 @@ struct Node {
     uint32_t interfaceNeighborCount;
 };
 
-struct MaterialNode {
-    float temperature;
-    float conductivityPerMass;
-    float thermalMass;
-    float density;
-    float specificHeat;
-    float conductivity;
-};
-
 struct GMLSInterface {
     uint32_t neighborIdx;
     float conductance;
-    uint32_t _pad0 = 0;
-    uint32_t _pad1 = 0;
 };
 
-static_assert(sizeof(GMLSInterface) == 16, "GMLSInterface must match GPU stride");
+static_assert(sizeof(GMLSInterface) == 8, "GMLSInterface must match GPU stride");
 
 struct GMLSSurfaceStencil {
     uint32_t valueWeightOffset;

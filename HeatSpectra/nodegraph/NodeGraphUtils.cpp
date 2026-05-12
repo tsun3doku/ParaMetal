@@ -3,6 +3,7 @@
 #include "NodeGraphParamUtils.hpp"
 #include "NodeGraphRegistry.hpp"
 #include <algorithm>
+#include <iterator>
 #include <unordered_set>
 #include <sstream>
 
@@ -144,6 +145,28 @@ const EvaluatedSocketValue* readEvaluatedInput(
     return &valueIt->second;
 }
 
+std::vector<const EvaluatedSocketValue*> readEvaluatedInputs(
+    const NodeGraphNode& node,
+    NodeGraphSocketId inputSocketId,
+    const NodeGraphKernelExecutionState& executionState) {
+    std::vector<const EvaluatedSocketValue*> results;
+    const auto edgesIt = executionState.incomingEdgesByInputSocket.find(makeSocketKey(node.id, inputSocketId));
+    if (edgesIt == executionState.incomingEdgesByInputSocket.end() || edgesIt->second.empty()) {
+        return results;
+    }
+
+    results.reserve(edgesIt->second.size());
+    for (const NodeGraphEdge* edge : edgesIt->second) {
+        if (!edge) continue;
+        const auto valueIt = executionState.outputBySocket.find(makeSocketKey(edge->fromNode, edge->fromSocket));
+        if (valueIt != executionState.outputBySocket.end()) {
+            results.push_back(&valueIt->second);
+        }
+    }
+
+    return results;
+}
+
 const NodeDataBlock* readInputValue(const EvaluatedSocketValue* input) {
     if (!input || input->status != EvaluatedSocketStatus::Value) {
         return nullptr;
@@ -194,6 +217,7 @@ NodeGraphParamValue makeNodeGraphParamValue(const NodeGraphParamDefinition& defi
     if (value.type == NodeGraphParamType::Enum && value.enumValue.empty() && !definition.enumOptions.empty()) {
         value.enumValue = definition.enumOptions.front();
     }
+    normalizeNodeGraphParamValue(definition, value);
     if (value.type == NodeGraphParamType::Struct) {
         for (const NodeGraphParamField& field : definition.fields) {
             if (!field.definition) {
@@ -221,6 +245,40 @@ NodeGraphParamValue* findNodeParamValue(NodeGraphNode& node, uint32_t paramId) {
         }
     }
     return nullptr;
+}
+
+bool normalizeNodeGraphParamValue(const NodeGraphParamDefinition& definition, NodeGraphParamValue& value) {
+    if (definition.type != value.type) {
+        return false;
+    }
+
+    if (definition.type != NodeGraphParamType::Enum) {
+        return true;
+    }
+
+    if (definition.enumOptions.empty()) {
+        return false;
+    }
+
+    if (!value.enumValue.empty()) {
+        const auto optionIt = std::find(
+            definition.enumOptions.begin(),
+            definition.enumOptions.end(),
+            value.enumValue);
+        if (optionIt == definition.enumOptions.end()) {
+            return false;
+        }
+
+        value.intValue = std::distance(definition.enumOptions.begin(), optionIt);
+        return true;
+    }
+
+    if (value.intValue < 0 || value.intValue >= static_cast<int64_t>(definition.enumOptions.size())) {
+        return false;
+    }
+
+    value.enumValue = definition.enumOptions[static_cast<std::size_t>(value.intValue)];
+    return true;
 }
 
 bool validateNodeGraphParamValue(const NodeGraphParamDefinition& definition, const NodeGraphParamValue& value) {

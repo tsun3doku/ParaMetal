@@ -33,8 +33,8 @@ public:
         const NodePayloadRegistry* payloadRegistry,
         const ECSRegistry& registry,
         const HeatData& heat,
-        const ProductHandle& voronoiProduct,
-        const ProductHandle& contactProduct) const;
+        const std::vector<ProductHandle>& voronoiProducts,
+        const std::vector<ProductHandle>& contactProducts) const;
     ContactPackage buildContactPackage(
         const NodeGraphNode& node,
         const NodePayloadRegistry* payloadRegistry,

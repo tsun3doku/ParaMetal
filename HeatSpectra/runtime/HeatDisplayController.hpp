@@ -2,6 +2,7 @@
 
 #include "runtime/RuntimePackages.hpp"
 #include "runtime/RuntimeProducts.hpp"
+#include "domain/HeatModelData.hpp"
 
 #include <cstdint>
 #include <unordered_map>
@@ -20,15 +21,16 @@ public:
         bool authoredActive = false;
         bool active = false;
         bool paused = false;
-        std::vector<ModelProduct> sourceModels;
-        std::vector<float> sourceTemperatures;
-        std::vector<ModelProduct> receiverModels;
-        std::vector<VkBuffer> receiverSurfaceBuffers;
-        std::vector<VkDeviceSize> receiverSurfaceBufferOffsets;
-        std::vector<uint32_t> receiverSurfacePointCounts;
-        std::vector<std::array<VkBufferView, 11>> receiverBufferViews;
-        std::vector<VkBuffer> receiverSurfaceGradientBuffers;
-        std::vector<VkDeviceSize> receiverSurfaceGradientBufferOffsets;
+        std::vector<ModelProduct> models;
+        std::vector<float> modelTemperatures;
+        std::vector<float> modelFixedTemperatures;
+        std::vector<HeatBoundaryCondition> modelBoundaryConditions;
+        std::vector<VkBuffer> modelSurfaceBuffers;
+        std::vector<VkDeviceSize> modelSurfaceBufferOffsets;
+        std::vector<uint32_t> modelSurfacePointCounts;
+        std::vector<std::array<VkBufferView, 11>> modelBufferViews;
+        std::vector<VkBuffer> modelSurfaceGradientBuffers;
+        std::vector<VkDeviceSize> modelSurfaceGradientBufferOffsets;
         uint64_t displayHash = 0;
 
         bool anyVisible() const {
@@ -36,14 +38,16 @@ public:
         }
 
         bool isValid() const {
-            return !receiverModels.empty() &&
-                sourceModels.size() == sourceTemperatures.size() &&
-                receiverModels.size() == receiverSurfaceBuffers.size() &&
-                receiverModels.size() == receiverSurfaceBufferOffsets.size() &&
-                receiverModels.size() == receiverSurfacePointCounts.size() &&
-                receiverModels.size() == receiverBufferViews.size() &&
-                receiverModels.size() == receiverSurfaceGradientBuffers.size() &&
-                receiverModels.size() == receiverSurfaceGradientBufferOffsets.size();
+            return !models.empty() &&
+                models.size() == modelTemperatures.size() &&
+                models.size() == modelFixedTemperatures.size() &&
+                models.size() == modelBoundaryConditions.size() &&
+                models.size() == modelSurfaceBuffers.size() &&
+                models.size() == modelSurfaceBufferOffsets.size() &&
+                models.size() == modelSurfacePointCounts.size() &&
+                models.size() == modelBufferViews.size() &&
+                models.size() == modelSurfaceGradientBuffers.size() &&
+                models.size() == modelSurfaceGradientBufferOffsets.size();
         }
 
     };

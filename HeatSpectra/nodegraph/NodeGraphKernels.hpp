@@ -53,6 +53,7 @@ struct NodeGraphKernelExecutionState {
     NodeGraphBridge& bridge;
     const NodeRuntimeServices& services;
     const std::unordered_map<uint64_t, const NodeGraphEdge*>& incomingEdgeByInputSocket;
+    const std::unordered_map<uint64_t, std::vector<const NodeGraphEdge*>>& incomingEdgesByInputSocket;
     const std::unordered_map<uint64_t, EvaluatedSocketValue>& outputBySocket;
 };
 

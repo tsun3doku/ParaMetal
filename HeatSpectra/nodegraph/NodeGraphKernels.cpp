@@ -3,9 +3,8 @@
 #include "NodeGraphUtils.hpp"
 
 #include "NodeContact.hpp"
-#include "NodeHeatReceiver.hpp"
+#include "NodeHeatModel.hpp"
 #include "NodeHeatSolve.hpp"
-#include "NodeHeatSource.hpp"
 #include "NodeVoronoi.hpp"
 #include "NodeGroup.hpp"
 #include "NodeModel.hpp"
@@ -58,8 +57,7 @@ void NodeGraphKernels::registerDefaultKernels() {
     registerKernel(std::make_unique<NodeTransform>());
     registerKernel(std::make_unique<NodeGroup>());
     registerKernel(std::make_unique<NodeRemesh>());
-    registerKernel(std::make_unique<NodeHeatReceiver>());
-    registerKernel(std::make_unique<NodeHeatSource>());
+    registerKernel(std::make_unique<NodeHeatModel>());
     registerKernel(std::make_unique<NodeContact>());
     registerKernel(std::make_unique<NodeVoronoi>());
     registerKernel(std::make_unique<NodeHeatSolve>());

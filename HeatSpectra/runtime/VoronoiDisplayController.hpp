@@ -36,7 +36,6 @@ public:
 
         bool isValid() const {
             return nodeCount != 0 &&
-                mappedVoronoiNodes != nullptr &&
                 nodeBuffer != VK_NULL_HANDLE &&
                 seedPositionBuffer != VK_NULL_HANDLE &&
                 neighborIndicesBuffer != VK_NULL_HANDLE;

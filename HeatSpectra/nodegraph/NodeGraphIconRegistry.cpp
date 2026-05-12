@@ -13,8 +13,7 @@ static const char* iconFolderForType(const NodeTypeId& typeId) {
     if (typeId == "contact") return "Contact";
     if (typeId == "heat_solve") return "HeatSystem";
     if (typeId == "model") return "Model";
-    if (typeId == "heat_receiver") return "HeatReceiver";
-    if (typeId == "heat_source") return "HeatSource";
+    if (typeId == "heat_model") return "HeatModel";
     if (typeId == "remesh") return "Remesh";
     if (typeId == "transform") return "Transform";
     if (typeId == "voronoi") return "VoronoiSystem";

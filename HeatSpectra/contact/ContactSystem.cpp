@@ -6,9 +6,11 @@
 
 ContactSystem::ContactSystem(
     VulkanDevice& vulkanDeviceRef,
-    MemoryAllocator& memoryAllocatorRef)
+    MemoryAllocator& memoryAllocatorRef,
+    CommandPool& renderCommandPoolRef)
     : vulkanDevice(vulkanDeviceRef),
       memoryAllocator(memoryAllocatorRef),
+      renderCommandPool(renderCommandPoolRef),
       runtime(std::make_unique<ContactSystemRuntime>()) {
 }
 
@@ -16,18 +18,15 @@ ContactSystem::~ContactSystem() {
     disable();
 }
 
-void ContactSystem::setParams(
-    ContactCouplingType couplingType,
-    float minNormalDot,
-    float contactRadius) {
+void ContactSystem::setParams(float minNormalDot, float contactRadius) {
     if (!runtime) {
         return;
     }
 
-    runtime->setParams(couplingType, minNormalDot, contactRadius);
+    runtime->setParams(minNormalDot, contactRadius);
 }
 
-void ContactSystem::setEmitterState(
+void ContactSystem::setModelAState(
     uint32_t modelId,
     const std::array<float, 16>& localToWorld,
     const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
@@ -36,10 +35,10 @@ void ContactSystem::setEmitterState(
         return;
     }
 
-    runtime->setEmitterState(modelId, localToWorld, intrinsicMesh, runtimeModelId);
+    runtime->setModelAState(modelId, localToWorld, intrinsicMesh, runtimeModelId);
 }
 
-void ContactSystem::setReceiverState(
+void ContactSystem::setModelBState(
     uint32_t modelId,
     const std::array<float, 16>& localToWorld,
     const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
@@ -48,15 +47,15 @@ void ContactSystem::setReceiverState(
         return;
     }
 
-    runtime->setReceiverState(modelId, localToWorld, intrinsicMesh, runtimeModelId);
+    runtime->setModelBState(modelId, localToWorld, intrinsicMesh, runtimeModelId);
 }
 
-void ContactSystem::setReceiverTriangleIndices(const std::vector<uint32_t>& triangleIndices) {
+void ContactSystem::setModelBTriangleIndices(const std::vector<uint32_t>& triangleIndices) {
     if (!runtime) {
         return;
     }
 
-    runtime->setReceiverTriangleIndices(triangleIndices);
+    runtime->setModelBTriangleIndices(triangleIndices);
 }
 
 void ContactSystem::ensureConfigured() {
@@ -64,7 +63,7 @@ void ContactSystem::ensureConfigured() {
         return;
     }
 
-    runtime->buildCoupling(vulkanDevice, memoryAllocator);
+    runtime->buildCoupling(vulkanDevice, memoryAllocator, renderCommandPool);
 }
 
 void ContactSystem::disable() {

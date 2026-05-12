@@ -18,11 +18,13 @@ bool readBoolParam(const NodeGraphNode& node, uint32_t parameterId, bool default
 double readFloatParam(const NodeGraphNode& node, uint32_t parameterId, double defaultValue);
 int readIntParam(const NodeGraphNode& node, uint32_t parameterId, int defaultValue);
 std::string readStringParam(const NodeGraphNode& node, uint32_t parameterId);
+int readEnumParam(const NodeGraphNode& node, uint32_t parameterId, int defaultValue);
 
 bool writeBoolParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uint32_t parameterId, bool value);
 bool writeFloatParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uint32_t parameterId, double value);
 bool writeIntParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uint32_t parameterId, int64_t value);
 bool writeStringParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uint32_t parameterId, const std::string& value);
+bool writeEnumParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uint32_t parameterId, int value);
 
 std::string trimCopy(const std::string& value);
 std::string toLowerCopy(std::string value);

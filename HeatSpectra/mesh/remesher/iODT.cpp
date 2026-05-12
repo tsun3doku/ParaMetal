@@ -635,7 +635,7 @@ bool iODT::delaunayRefinement(int maxIters, float minAngleDegrees) {
         }
     }
 
-    std::cerr << "[iODT] Reached max refinement insertions" << std::endl;
+    // std::cerr << "[iODT] Reached max refinement insertions" << std::endl;
     return true;
 }
 

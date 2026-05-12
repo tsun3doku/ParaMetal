@@ -30,11 +30,11 @@ bool tryResolveHeatPresetId(const std::string& value, HeatMaterialPresetId& outI
 }
 
 bool tryMakeMaterialBindingRow(
-    const std::string& receiverText,
+    const std::string& modelNodeIdText,
     const std::string& presetText,
     HeatMaterialBindingRow& outRow) {
-    uint32_t receiverModelNodeId = 0;
-    if (!NodePanelUtils::tryParseUint32Id(receiverText, receiverModelNodeId) || receiverModelNodeId == 0) {
+    uint32_t modelNodeId = 0;
+    if (!NodePanelUtils::tryParseUint32Id(modelNodeIdText, modelNodeId) || modelNodeId == 0) {
         return false;
     }
 
@@ -43,7 +43,7 @@ bool tryMakeMaterialBindingRow(
         return false;
     }
 
-    outRow.receiverModelNodeId = receiverModelNodeId;
+    outRow.modelNodeId = modelNodeId;
     outRow.presetId = presetId;
     return true;
 }
@@ -59,14 +59,14 @@ std::vector<HeatMaterialBindingRow> readMaterialBindingRows(const NodeGraphParam
             continue;
         }
 
-        const NodeGraphParamValue* receiverModelField = findParamFieldValue(elementValue, "receiverModelNodeId");
+        const NodeGraphParamValue* receiverModelField = findParamFieldValue(elementValue, "modelNodeId");
         const NodeGraphParamValue* presetField = findParamFieldValue(elementValue, "preset");
         if (!receiverModelField || !presetField) {
             continue;
         }
 
-        int64_t receiverModelNodeId = 0;
-        if (!tryGetParamInt(*receiverModelField, receiverModelNodeId) || receiverModelNodeId <= 0) {
+        int64_t modelNodeId = 0;
+        if (!tryGetParamInt(*receiverModelField, modelNodeId) || modelNodeId <= 0) {
             continue;
         }
         std::string presetName;
@@ -75,7 +75,7 @@ std::vector<HeatMaterialBindingRow> readMaterialBindingRows(const NodeGraphParam
         }
 
         HeatMaterialBindingRow row{};
-        if (!tryMakeMaterialBindingRow(std::to_string(receiverModelNodeId), presetName, row)) {
+        if (!tryMakeMaterialBindingRow(std::to_string(modelNodeId), presetName, row)) {
             continue;
         }
         rows.push_back(std::move(row));
@@ -96,8 +96,8 @@ bool writeMaterialBindingRows(NodeGraphParamValue& value, const std::vector<Heat
                 value,
                 makeStructParamValue({
                     makeParamFieldValue(
-                        "receiverModelNodeId",
-                        makeIntParamValue(static_cast<int64_t>(row.receiverModelNodeId))),
+                        "modelNodeId",
+                        makeIntParamValue(static_cast<int64_t>(row.modelNodeId))),
                     makeParamFieldValue(
                         "preset",
                         makeEnumParamValue(heatMaterialPresetName(row.presetId))),
@@ -111,7 +111,7 @@ bool writeMaterialBindingRows(NodeGraphParamValue& value, const std::vector<Heat
 
 HeatMaterialBinding makeHeatMaterialBinding(const HeatMaterialBindingRow& row) {
     HeatMaterialBinding binding{};
-    binding.receiverModelNodeId = row.receiverModelNodeId;
+    binding.modelNodeId = row.modelNodeId;
     binding.presetId = row.presetId;
     return binding;
 }

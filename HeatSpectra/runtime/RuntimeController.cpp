@@ -8,6 +8,8 @@
 #include "render/WindowRuntimeState.hpp"
 #include "scene/CameraController.hpp"
 
+#include <chrono>
+
 RuntimeController::~RuntimeController() {
     shutdown();
 }
@@ -88,12 +90,17 @@ void RuntimeController::tick(float deltaTime, uint32_t& frameCounter) {
     hasFrameSlot = false;
 
     runtimeInputController->tick(deltaTime);
+
+    auto frameStart = std::chrono::high_resolution_clock::now();
     render->nodeGraphController()->applyPendingChanges();
     if (renderPaused && renderPaused->load(std::memory_order_acquire)) {
         return;
     }
 
+    auto graphTickStart = std::chrono::high_resolution_clock::now();
     render->nodeGraphController()->tick();
+    auto graphTickEnd = std::chrono::high_resolution_clock::now();
+
     scene->cameraController().tick(deltaTime);
     const bool allowHeatSolve = render->nodeGraphController()->canExecuteHeatSolve();
     const RuntimeRenderFrameResult renderResult = runtimeRenderController->renderFrame(allowHeatSolve, frameCounter);

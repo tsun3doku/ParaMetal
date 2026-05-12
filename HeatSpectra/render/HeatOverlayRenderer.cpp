@@ -3,6 +3,9 @@
 #include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/UniformBufferManager.hpp"
 #include "vulkan/VulkanDevice.hpp"
+#include "domain/HeatModelData.hpp"
+
+#include <iostream>
 
 namespace render {
 
@@ -11,8 +14,7 @@ HeatOverlayRenderer::HeatOverlayRenderer(
     MemoryAllocator& allocator,
     UniformBufferManager& uniformBufferManager)
     : memoryAllocator(allocator),
-      sourceRenderer(std::make_unique<HeatSourceRenderer>(device, uniformBufferManager)),
-      receiverRenderer(std::make_unique<HeatReceiverRenderer>(device, uniformBufferManager)),
+      surfaceRenderer(std::make_unique<HeatSurfaceRenderer>(device, uniformBufferManager)),
       vectorArrowRenderer(std::make_unique<VectorArrowRenderer>(device, allocator, uniformBufferManager)) {
 }
 
@@ -21,13 +23,12 @@ HeatOverlayRenderer::~HeatOverlayRenderer() {
 }
 
 void HeatOverlayRenderer::initialize(VkRenderPass renderPass, uint32_t updatedMaxFramesInFlight) {
-    if (!sourceRenderer || !receiverRenderer || !vectorArrowRenderer || initialized) {
+    if (!surfaceRenderer || !vectorArrowRenderer || initialized) {
         return;
     }
 
     maxFramesInFlight = updatedMaxFramesInFlight;
-    sourceRenderer->initialize(renderPass);
-    receiverRenderer->initialize(renderPass, maxFramesInFlight);
+    surfaceRenderer->initialize(renderPass, maxFramesInFlight);
     vectorArrowRenderer->initialize(renderPass, maxFramesInFlight);
     initialized = true;
 }
@@ -52,12 +53,11 @@ void HeatOverlayRenderer::remove(uint64_t socketKey) {
 }
 
 void HeatOverlayRenderer::rebuildBindings() {
-    if (!initialized || !sourceRenderer || !receiverRenderer || !vectorArrowRenderer) {
+    if (!initialized || !surfaceRenderer || !vectorArrowRenderer) {
         return;
     }
 
-    sourceBindings.clear();
-    receiverBindings.clear();
+    surfaceBindings.clear();
     fluxVectorBindings.clear();
 
     for (const auto& [socketKey, config] : configsBySocket) {
@@ -67,50 +67,46 @@ void HeatOverlayRenderer::rebuildBindings() {
         }
 
         if (config.showHeatOverlay) {
-            sourceBindings.reserve(sourceBindings.size() + config.sourceModels.size());
-            for (size_t index = 0; index < config.sourceModels.size(); ++index) {
-                const ModelProduct& sourceModel = config.sourceModels[index];
-                if (!sourceModel.isValid()) {
+            surfaceBindings.reserve(surfaceBindings.size() + config.models.size());
+            for (size_t index = 0; index < config.models.size(); ++index) {
+                const auto& modelProduct = config.models[index];
+                if (!modelProduct.isValid()) {
                     continue;
                 }
 
-                HeatSourceRenderer::SourceRenderBinding binding{};
-                binding.model = sourceModel;
-                binding.sourceTemperature = config.sourceTemperatures[index];
-                sourceBindings.push_back(binding);
-            }
-
-            receiverBindings.reserve(receiverBindings.size() + config.receiverModels.size());
-            for (size_t index = 0; index < config.receiverModels.size(); ++index) {
-                if (!config.receiverModels[index].isValid()) {
-                    continue;
-                }
-
-                HeatReceiverRenderer::ReceiverRenderBinding binding{};
-                binding.model = config.receiverModels[index];
-                binding.bufferViews = config.receiverBufferViews[index];
-                receiverBindings.push_back(binding);
+                HeatSurfaceRenderer::SurfaceRenderBinding binding{};
+                binding.runtimeModelId = modelProduct.runtimeModelId;
+                binding.vertexBuffer = modelProduct.renderVertexBuffer;
+                binding.vertexBufferOffset = modelProduct.renderVertexBufferOffset;
+                binding.indexBuffer = modelProduct.renderIndexBuffer;
+                binding.indexBufferOffset = modelProduct.renderIndexBufferOffset;
+                binding.indexCount = modelProduct.renderIndexCount;
+                binding.modelMatrix = modelProduct.modelMatrix;
+                binding.bufferViews = config.modelBufferViews[index];
+                binding.surfaceBuffer = config.modelSurfaceBuffers[index];
+                binding.surfaceBufferOffset = config.modelSurfaceBufferOffsets[index];
+                surfaceBindings.push_back(binding);
             }
         }
 
         if (config.showFluxVectors) {
-            for (size_t index = 0; index < config.receiverModels.size(); ++index) {
-                if (config.receiverModels[index].isValid() &&
-                    index < config.receiverSurfaceBuffers.size() &&
-                    index < config.receiverSurfaceBufferOffsets.size() &&
-                    index < config.receiverSurfaceGradientBuffers.size() &&
-                    index < config.receiverSurfaceGradientBufferOffsets.size() &&
-                    index < config.receiverSurfacePointCounts.size() &&
-                    config.receiverSurfaceGradientBuffers[index] != VK_NULL_HANDLE &&
-                    config.receiverSurfacePointCounts[index] != 0) {
+            for (size_t index = 0; index < config.models.size(); ++index) {
+                if (config.models[index].isValid() &&
+                    index < config.modelSurfaceBuffers.size() &&
+                    index < config.modelSurfaceBufferOffsets.size() &&
+                    index < config.modelSurfaceGradientBuffers.size() &&
+                    index < config.modelSurfaceGradientBufferOffsets.size() &&
+                    index < config.modelSurfacePointCounts.size() &&
+                    config.modelSurfaceGradientBuffers[index] != VK_NULL_HANDLE &&
+                    config.modelSurfacePointCounts[index] != 0) {
                     VectorArrowRenderer::VectorRenderBinding vectorBinding{};
-                    vectorBinding.bindingKey = config.receiverModels[index].runtimeModelId;
-                    vectorBinding.surfaceBuffer = config.receiverSurfaceBuffers[index];
-                    vectorBinding.surfaceBufferOffset = config.receiverSurfaceBufferOffsets[index];
-                    vectorBinding.gradientBuffer = config.receiverSurfaceGradientBuffers[index];
-                    vectorBinding.gradientBufferOffset = config.receiverSurfaceGradientBufferOffsets[index];
-                    vectorBinding.sampleCount = config.receiverSurfacePointCounts[index];
-                    vectorBinding.modelMatrix = config.receiverModels[index].modelMatrix;
+                    vectorBinding.bindingKey = config.models[index].runtimeModelId;
+                    vectorBinding.surfaceBuffer = config.modelSurfaceBuffers[index];
+                    vectorBinding.surfaceBufferOffset = config.modelSurfaceBufferOffsets[index];
+                    vectorBinding.gradientBuffer = config.modelSurfaceGradientBuffers[index];
+                    vectorBinding.gradientBufferOffset = config.modelSurfaceGradientBufferOffsets[index];
+                    vectorBinding.sampleCount = config.modelSurfacePointCounts[index];
+                    vectorBinding.modelMatrix = config.models[index].modelMatrix;
                     vectorBinding.scale = config.fluxVectorScale;
                     fluxVectorBindings.push_back(vectorBinding);
                 }
@@ -118,32 +114,27 @@ void HeatOverlayRenderer::rebuildBindings() {
         }
     }
 
-    receiverRenderer->updateDescriptors(receiverBindings, maxFramesInFlight, false);
+    surfaceRenderer->updateDescriptors(surfaceBindings, maxFramesInFlight, false);
     vectorArrowRenderer->updateDescriptors(fluxVectorBindings, maxFramesInFlight, false);
 }
 
 void HeatOverlayRenderer::render(VkCommandBuffer commandBuffer, uint32_t frameIndex) {
-    if (!initialized || !sourceRenderer || !receiverRenderer || !vectorArrowRenderer) {
+    if (!initialized || !surfaceRenderer || !vectorArrowRenderer) {
         return;
     }
 
-    sourceRenderer->render(commandBuffer, frameIndex, sourceBindings);
-    receiverRenderer->render(commandBuffer, frameIndex, receiverBindings);
+    surfaceRenderer->render(commandBuffer, frameIndex, surfaceBindings);
     vectorArrowRenderer->render(commandBuffer, frameIndex, fluxVectorBindings);
 }
 
 void HeatOverlayRenderer::cleanup() {
     configsBySocket.clear();
-    sourceBindings.clear();
-    receiverBindings.clear();
+    surfaceBindings.clear();
     fluxVectorBindings.clear();
     maxFramesInFlight = 0;
     initialized = false;
-    if (sourceRenderer) {
-        sourceRenderer->cleanup();
-    }
-    if (receiverRenderer) {
-        receiverRenderer->cleanup();
+    if (surfaceRenderer) {
+        surfaceRenderer->cleanup();
     }
     if (vectorArrowRenderer) {
         vectorArrowRenderer->cleanup();

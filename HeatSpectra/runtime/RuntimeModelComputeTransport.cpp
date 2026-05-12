@@ -3,6 +3,8 @@
 #include "nodegraph/NodeModelTransform.hpp"
 #include "runtime/ModelComputeRuntime.hpp"
 
+#include <iostream>
+
 void RuntimeModelComputeTransport::sync(const ECSRegistry& registry) {
     if (!modelRuntime) {
         return;
@@ -71,6 +73,8 @@ void RuntimeModelComputeTransport::finalizeSync() {
             if (modelRuntime->tryGetRuntimeModelId(socketKey, runtimeModelId) && runtimeModelId != 0) {
                 publishProduct(socketKey, runtimeModelId);
             } else {
+                std::cerr << "[ModelCompute] No runtime model ID for socketKey=" << socketKey
+                          << ", baseModelPath='" << package.geometry.baseModelPath << "'" << std::endl;
                 removePublishedProduct(socketKey);
             }
         }

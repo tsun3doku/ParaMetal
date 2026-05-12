@@ -2,6 +2,7 @@
 
 #include "contact/ContactTypes.hpp"
 #include "runtime/RuntimeProducts.hpp"
+#include "vulkan/CommandBufferManager.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -13,24 +14,21 @@ class VulkanDevice;
 
 class ContactSystem {
 public:
-    ContactSystem(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator);
+    ContactSystem(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, CommandPool& renderCommandPool);
     ~ContactSystem();
 
-    void setParams(
-        ContactCouplingType couplingType,
-        float minNormalDot,
-        float contactRadius);
-    void setEmitterState(
+    void setParams(float minNormalDot, float contactRadius);
+    void setModelAState(
         uint32_t modelId,
         const std::array<float, 16>& localToWorld,
         const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
         uint32_t runtimeModelId);
-    void setReceiverState(
+    void setModelBState(
         uint32_t modelId,
         const std::array<float, 16>& localToWorld,
         const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
         uint32_t runtimeModelId);
-    void setReceiverTriangleIndices(const std::vector<uint32_t>& triangleIndices);
+    void setModelBTriangleIndices(const std::vector<uint32_t>& triangleIndices);
     void ensureConfigured();
     void disable();
 
@@ -44,5 +42,6 @@ public:
 private:
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
+    CommandPool& renderCommandPool;
     std::unique_ptr<ContactSystemRuntime> runtime;
 };

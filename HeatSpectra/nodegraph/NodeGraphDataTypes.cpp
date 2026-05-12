@@ -4,6 +4,7 @@
 
 #include "NodeGraphPayloadTypes.hpp"
 #include "NodePayloadRegistry.hpp"
+#include "domain/HeatModelData.hpp"
 
 #include <cstddef>
 #include <unordered_map>
@@ -14,8 +15,7 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodePayloadRegistry* regis
 
     if (dataBlock.dataType == NodePayloadType::Geometry ||
         dataBlock.dataType == NodePayloadType::Remesh ||
-        dataBlock.dataType == NodePayloadType::HeatReceiver ||
-        dataBlock.dataType == NodePayloadType::HeatSource) {
+        dataBlock.dataType == NodePayloadType::HeatModel) {
         const GeometryData* geometry = registry ? registry->resolveGeometry(dataBlock.dataType, dataBlock.payloadHandle) : nullptr;
         if (!geometry || geometry->baseModelPath.empty()) {
             dataBlock.metadata.erase("geometry.model_path");
@@ -50,19 +50,18 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodePayloadRegistry* regis
     dataBlock.metadata.erase("remesh.triangle_count");
     dataBlock.metadata.erase("remesh.face_count");
 
-    if (dataBlock.dataType == NodePayloadType::HeatSource) {
-        const HeatSourceData* heatSource = registry ? registry->get<HeatSourceData>(dataBlock.payloadHandle) : nullptr;
-        dataBlock.metadata["heat_source.temperature"] =
-            heatSource ? std::to_string(heatSource->temperature) : std::string();
+    if (dataBlock.dataType == NodePayloadType::HeatModel) {
+        const HeatModelData* heatModel = registry ? registry->get<HeatModelData>(dataBlock.payloadHandle) : nullptr;
+        dataBlock.metadata["heat_model.boundary_condition"] =
+            heatModel ? std::to_string(static_cast<uint32_t>(heatModel->boundaryCondition)) : std::string();
+        dataBlock.metadata["heat_model.fixed_temperature"] =
+            heatModel ? std::to_string(heatModel->fixedTemperatureValue) : std::string();
+        dataBlock.metadata["heat_model.initial_temperature"] =
+            heatModel ? std::to_string(heatModel->initialTemperature) : std::string();
     } else {
-        dataBlock.metadata.erase("heat_source.temperature");
-    }
-
-    if (dataBlock.dataType == NodePayloadType::HeatReceiver) {
-        const HeatReceiverData* heatReceiver = registry ? registry->get<HeatReceiverData>(dataBlock.payloadHandle) : nullptr;
-        dataBlock.metadata["heat_receiver.active"] = heatReceiver ? "true" : "false";
-    } else {
-        dataBlock.metadata.erase("heat_receiver.active");
+        dataBlock.metadata.erase("heat_model.boundary_condition");
+        dataBlock.metadata.erase("heat_model.fixed_temperature");
+        dataBlock.metadata.erase("heat_model.initial_temperature");
     }
 
     if (dataBlock.dataType == NodePayloadType::Heat) {
@@ -70,18 +69,15 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodePayloadRegistry* regis
         dataBlock.metadata["heat.active"] = (heatData && heatData->active) ? "true" : "false";
         dataBlock.metadata["heat.paused"] = (heatData && heatData->paused) ? "true" : "false";
         dataBlock.metadata["heat.reset_requested"] = (heatData && heatData->resetRequested) ? "true" : "false";
-        dataBlock.metadata["heat.source_count"] =
-            std::to_string(heatData ? heatData->sourceHandles.size() : 0u);
-        dataBlock.metadata["heat.receiver_count"] =
-            std::to_string(heatData ? heatData->receiverMeshHandles.size() : 0u);
+        dataBlock.metadata["heat.model_count"] =
+            std::to_string(heatData ? heatData->heatModelHandles.size() : 0u);
         dataBlock.metadata["heat.material_binding_count"] =
             std::to_string(heatData ? heatData->materialBindings.size() : 0u);
     } else {
         dataBlock.metadata.erase("heat.active");
         dataBlock.metadata.erase("heat.paused");
         dataBlock.metadata.erase("heat.reset_requested");
-        dataBlock.metadata.erase("heat.source_count");
-        dataBlock.metadata.erase("heat.receiver_count");
+        dataBlock.metadata.erase("heat.model_count");
         dataBlock.metadata.erase("heat.material_binding_count");
     }
 
@@ -98,8 +94,8 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodePayloadRegistry* regis
     if (dataBlock.dataType == NodePayloadType::Voronoi) {
         const VoronoiData* voronoiData = registry ? registry->get<VoronoiData>(dataBlock.payloadHandle) : nullptr;
         dataBlock.metadata["voronoi.active"] = (voronoiData && voronoiData->active) ? "true" : "false";
-        dataBlock.metadata["voronoi.receiver_count"] =
-            std::to_string(voronoiData ? voronoiData->receiverMeshHandles.size() : 0u);
+        dataBlock.metadata["voronoi.model_count"] =
+            std::to_string(voronoiData ? voronoiData->modelMeshHandles.size() : 0u);
         dataBlock.metadata["voronoi.cell_size"] =
             voronoiData ? std::to_string(voronoiData->cellSize) : std::string();
         dataBlock.metadata["voronoi.voxel_resolution"] =

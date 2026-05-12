@@ -13,11 +13,13 @@ const NodeGraphSocket* findInputSocket(const NodeGraphNode& node, const char* so
 const NodeGraphSocket* findInputSocket(const NodeGraphNode& node, NodeGraphValueType valueType);
 const NodeGraphSocket* findOutputSocketProducingPayload(const NodeGraphNode& node, NodePayloadType payloadType);
 const EvaluatedSocketValue* readEvaluatedInput(const NodeGraphNode& node, NodeGraphSocketId inputSocketId, const NodeGraphKernelExecutionState& executionState);
+std::vector<const EvaluatedSocketValue*> readEvaluatedInputs(const NodeGraphNode& node, NodeGraphSocketId inputSocketId, const NodeGraphKernelExecutionState& executionState);
 const NodeDataBlock* readInputValue(const EvaluatedSocketValue* input);
 
 NodeGraphParamValue makeNodeGraphParamValue(const NodeGraphParamDefinition& definition);
 const NodeGraphParamValue* findNodeParamValue(const NodeGraphNode& node, uint32_t paramId);
 NodeGraphParamValue* findNodeParamValue(NodeGraphNode& node, uint32_t paramId);
+bool normalizeNodeGraphParamValue(const NodeGraphParamDefinition& definition, NodeGraphParamValue& value);
 bool validateNodeGraphParamValue(const NodeGraphParamDefinition& definition, const NodeGraphParamValue& value);
 
 std::string displayNodeLabel(const NodeGraphNode& node);

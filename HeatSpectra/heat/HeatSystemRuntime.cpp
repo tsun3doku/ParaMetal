@@ -1,83 +1,119 @@
 #include "HeatSystemRuntime.hpp"
 
 #include "vulkan/CommandBufferManager.hpp"
-#include "HeatSourceRuntime.hpp"
+#include "heat/HeatModelRuntime.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/VulkanDevice.hpp"
 
 #include <iostream>
+#include <algorithm>
+#include <limits>
 #include <unordered_set>
 
-const HeatSystemRuntime::SourceBinding* HeatSystemRuntime::findBaseSourceBinding() const {
-    for (const SourceBinding& sourceBinding : sourceBindings) {
-        if (sourceBinding.runtimeModelId != 0 && sourceBinding.heatSource) {
-            return &sourceBinding;
-        }
-    }
-
-    return nullptr;
+void HeatSystemRuntime::setHeatModels(
+    const std::vector<SupportingHalfedge::IntrinsicMesh>& modelIntrinsicMeshes,
+    const std::vector<uint32_t>& modelRuntimeModelIds,
+    const std::unordered_map<uint32_t, float>& modelTemperatureByRuntimeId,
+    const std::unordered_map<uint32_t, uint32_t>& modelBoundaryConditions,
+    const std::unordered_map<uint32_t, float>& modelFixedTemperatureValues,
+    const std::unordered_map<uint32_t, float>& modelDensity,
+    const std::unordered_map<uint32_t, float>& modelSpecificHeat,
+    const std::unordered_map<uint32_t, float>& modelConductivity) {
+    activeModelIntrinsicMeshes = modelIntrinsicMeshes;
+    activeModelRuntimeModelIds = modelRuntimeModelIds;
+    activeModelTemperatureByRuntimeId = modelTemperatureByRuntimeId;
+    activeModelBoundaryConditions = modelBoundaryConditions;
+    activeModelFixedTemperatureValues = modelFixedTemperatureValues;
+    activeModelDensity = modelDensity;
+    activeModelSpecificHeat = modelSpecificHeat;
+    activeModelConductivity = modelConductivity;
+    modelsDirty = true;
 }
 
-void HeatSystemRuntime::setSourcePayloads(
-    const std::vector<SupportingHalfedge::IntrinsicMesh>& sourceIntrinsicMeshes,
-    const std::vector<uint32_t>& sourceRuntimeModelIds,
-    const std::unordered_map<uint32_t, float>& sourceTemperatureByRuntimeId) {
-    activeSourceIntrinsicMeshes = sourceIntrinsicMeshes;
-    activeSourceRuntimeModelIds = sourceRuntimeModelIds;
-    activeSourceTemperatureByRuntimeId = sourceTemperatureByRuntimeId;
-    modelBindingsDirty = true;
+
+HeatModelRuntime* HeatSystemRuntime::getModelByRuntimeId(uint32_t runtimeModelId) const {
+    auto it = activeModels.find(runtimeModelId);
+    return (it != activeModels.end()) ? it->second.get() : nullptr;
 }
 
 bool HeatSystemRuntime::ensureModelBindings(
     VulkanDevice& vulkanDevice,
     MemoryAllocator& memoryAllocator,
     CommandPool& renderCommandPool) {
-    if (!modelBindingsDirty) {
+    if (!modelsDirty) {
         return true;
     }
 
-    cleanupModelBindings();
+    cleanup();
 
     const std::size_t pairCount = std::min(
-        activeSourceRuntimeModelIds.size(),
-        activeSourceIntrinsicMeshes.size());
-    std::unordered_set<uint32_t> seenSourceIds;
+        activeModelRuntimeModelIds.size(),
+        activeModelIntrinsicMeshes.size()
+    );
+
+    std::unordered_set<uint32_t> seenModelIds;
     for (std::size_t index = 0; index < pairCount; ++index) {
-        const uint32_t sourceId = activeSourceRuntimeModelIds[index];
-        if (sourceId == 0 || !seenSourceIds.insert(sourceId).second) {
+        const uint32_t modelId = activeModelRuntimeModelIds[index];
+        if (modelId == 0 || !seenModelIds.insert(modelId).second) {
             continue;
         }
-        SourceBinding sourceBinding{};
-        sourceBinding.runtimeModelId = sourceId;
-        const auto tempIt = activeSourceTemperatureByRuntimeId.find(sourceId);
+
+
+        const auto tempIt = activeModelTemperatureByRuntimeId.find(modelId);
         const float initialTemperature =
-            (tempIt != activeSourceTemperatureByRuntimeId.end()) ? tempIt->second : 100.0f;
-        sourceBinding.heatSource = std::make_unique<HeatSourceRuntime>(
+            (tempIt != activeModelTemperatureByRuntimeId.end()) ? tempIt->second : 1.0f;
+
+        const auto bcIt = activeModelBoundaryConditions.find(modelId);
+        const uint32_t boundaryCondition =
+            (bcIt != activeModelBoundaryConditions.end()) ? bcIt->second : 0u;
+
+        const auto fixedTempIt = activeModelFixedTemperatureValues.find(modelId);
+        const float fixedTemperatureValue =
+            (fixedTempIt != activeModelFixedTemperatureValues.end()) ? fixedTempIt->second : 1.0f;
+
+        const auto densityIt = activeModelDensity.find(modelId);
+        const float density = (densityIt != activeModelDensity.end()) ? densityIt->second : 1000.0f;
+
+        const auto specificHeatIt = activeModelSpecificHeat.find(modelId);
+        const float specificHeat = (specificHeatIt != activeModelSpecificHeat.end()) ? specificHeatIt->second : 1000.0f;
+
+        const auto conductivityIt = activeModelConductivity.find(modelId);
+        const float conductivity = (conductivityIt != activeModelConductivity.end()) ? conductivityIt->second : 1.0f;
+
+        auto heatModel = std::make_unique<HeatModelRuntime>(
             vulkanDevice,
             memoryAllocator,
-            activeSourceIntrinsicMeshes[index],
+            activeModelIntrinsicMeshes[index],
             renderCommandPool,
             initialTemperature);
-        if (!sourceBinding.heatSource || !sourceBinding.heatSource->isInitialized()) {
-            std::cerr << "[HeatSystemRuntime] Failed to initialize heat source for model " << sourceId << std::endl;
-            if (sourceBinding.heatSource) {
-                sourceBinding.heatSource->cleanup();
+
+        if (heatModel) {
+            heatModel->setBoundaryCondition(boundaryCondition);
+            heatModel->setFixedTemperatureValue(fixedTemperatureValue);
+            heatModel->setMaterialProperties(density, specificHeat, conductivity);
+        }
+
+        if (!heatModel || !heatModel->isInitialized()) {
+            std::cerr << "[HeatSystemRuntime] Failed to initialize heat model for model " << modelId << std::endl;
+            if (heatModel) {
+                heatModel->cleanup();
             }
             continue;
         }
-        sourceBindings.push_back(std::move(sourceBinding));
+
+        activeModels.emplace(modelId, std::move(heatModel));
     }
 
-    modelBindingsDirty = false;
+    modelsDirty = false;
     return true;
 }
 
-void HeatSystemRuntime::cleanupModelBindings() {
-    for (SourceBinding& sourceBinding : sourceBindings) {
-        if (sourceBinding.heatSource) {
-            sourceBinding.heatSource->cleanup();
+void HeatSystemRuntime::cleanup() {
+    for (auto& [modelId, heatModel] : activeModels) {
+        if (heatModel) {
+            heatModel->cleanup();
         }
     }
-    sourceBindings.clear();
-    modelBindingsDirty = true;
+    activeModels.clear();
+    modelsDirty = true;
 }

@@ -19,33 +19,24 @@ HeatSystemVoronoiStage::HeatSystemVoronoiStage(const HeatSystemStageContext& sta
 
 void HeatSystemVoronoiStage::dispatchDiffusionSubstep(
     VkCommandBuffer commandBuffer,
-    uint32_t currentFrame,
-    const HeatSystemSimRuntime& simRuntime,
-    const heat::SourcePushConstant& basePushConstant,
-    int substepIndex,
+    VkDescriptorSet descriptorSet,
+    const heat::HeatModelPushConstant& pushConstant,
     uint32_t workGroupCount) const {
-    (void)simRuntime;
-    const bool isEven = (substepIndex % 2 == 0);
-    VkDescriptorSet voronoiSet = context.resources.voronoiDescriptorSetsB[currentFrame];
-    if (isEven) {
-        voronoiSet = context.resources.voronoiDescriptorSets[currentFrame];
-    }
-
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, context.resources.voronoiPipeline);
     vkCmdPushConstants(
         commandBuffer,
         context.resources.voronoiPipelineLayout,
         VK_SHADER_STAGE_COMPUTE_BIT,
         0,
-        sizeof(heat::SourcePushConstant),
-        &basePushConstant);
+        sizeof(heat::HeatModelPushConstant),
+        &pushConstant);
     vkCmdBindDescriptorSets(
         commandBuffer,
         VK_PIPELINE_BIND_POINT_COMPUTE,
         context.resources.voronoiPipelineLayout,
         0,
         1,
-        &voronoiSet,
+        &descriptorSet,
         0,
         nullptr);
     vkCmdDispatch(commandBuffer, workGroupCount, 1, 1);
@@ -53,49 +44,43 @@ void HeatSystemVoronoiStage::dispatchDiffusionSubstep(
 
 void HeatSystemVoronoiStage::insertInterSubstepBarrier(
     VkCommandBuffer commandBuffer,
-    const HeatSystemSimRuntime& simRuntime,
     int substepIndex,
     uint32_t numSubsteps) const {
     if (substepIndex >= (static_cast<int>(numSubsteps) - 1)) {
         return;
     }
 
-    const bool isEven = (substepIndex % 2 == 0);
-    VkBuffer writeBuffer = simRuntime.getTempBufferA();
-    VkDeviceSize writeOffset = simRuntime.getTempBufferAOffset();
-    if (isEven) {
-        writeBuffer = simRuntime.getTempBufferB();
-        writeOffset = simRuntime.getTempBufferBOffset();
-    }
-
-    VkBufferMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    VkMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-    barrier.buffer = writeBuffer;
-    barrier.offset = writeOffset;
-    barrier.size = VK_WHOLE_SIZE;
 
     vkCmdPipelineBarrier(
         commandBuffer,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         0,
-        0,
-        nullptr,
         1,
         &barrier,
+        0,
+        nullptr,
         0,
         nullptr);
 }
 
-void HeatSystemVoronoiStage::insertFinalTemperatureBarrier(VkCommandBuffer commandBuffer, const HeatSystemSimRuntime& simRuntime, uint32_t numSubsteps) const {
+void HeatSystemVoronoiStage::insertFinalTemperatureBarrier(
+    VkCommandBuffer commandBuffer,
+    uint32_t numSubsteps,
+    VkBuffer bufferA,
+    VkDeviceSize offsetA,
+    VkBuffer bufferB,
+    VkDeviceSize offsetB) const {
     const bool writesBufferB = finalSubstepWritesBufferB(numSubsteps);
-    VkBuffer finalTempBuffer = simRuntime.getTempBufferA();
-    VkDeviceSize finalTempOffset = simRuntime.getTempBufferAOffset();
+    VkBuffer finalTempBuffer = bufferA;
+    VkDeviceSize finalTempOffset = offsetA;
     if (writesBufferB) {
-        finalTempBuffer = simRuntime.getTempBufferB();
-        finalTempOffset = simRuntime.getTempBufferBOffset();
+        finalTempBuffer = bufferB;
+        finalTempOffset = offsetB;
     }
 
     VkBufferMemoryBarrier finalTempBarrier{};
@@ -126,21 +111,26 @@ bool HeatSystemVoronoiStage::finalSubstepWritesBufferB(uint32_t numSubsteps) con
     return ((numSubsteps - 1) % 2 == 0);
 }
 
-bool HeatSystemVoronoiStage::createDescriptorPool(uint32_t maxFramesInFlight) {
+bool HeatSystemVoronoiStage::createDescriptorPool(uint32_t numModels) {
+    // 2 descriptor sets per model 
+    uint32_t numSets = numModels * 2;
+    uint32_t storageBufferDescriptors = numSets * 7;
+    uint32_t uniformBufferDescriptors = numSets * 1;
+
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
 
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[0].descriptorCount = maxFramesInFlight * 2 * 7;
+    poolSizes[0].descriptorCount = storageBufferDescriptors;
 
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[1].descriptorCount = maxFramesInFlight * 2;
+    poolSizes[1].descriptorCount = uniformBufferDescriptors;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+    poolInfo.flags = 0;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = maxFramesInFlight * 2;
+    poolInfo.maxSets = numSets;
 
     if (vkCreateDescriptorPool(
             context.vulkanDevice.getDevice(),
@@ -155,185 +145,29 @@ bool HeatSystemVoronoiStage::createDescriptorPool(uint32_t maxFramesInFlight) {
 
 bool HeatSystemVoronoiStage::createDescriptorSetLayout() {
     std::vector<VkDescriptorSetLayoutBinding> bindings = {
-        {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        {3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        {4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        {5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        {6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        {7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+        {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // voronoiNodeBuffer
+        {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // gmlsInterfaceBuffer
+        {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // materialNodeBuffer
+        {3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // timeBuffer
+        {4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // tempRead
+        {5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // tempWrite
+        {6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // seedFlagsBuffer
+        {7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // couplingAccumulator
     };
-
-    VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlags{};
-    bindingFlags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-
-    std::vector<VkDescriptorBindingFlags> flags(
-        bindings.size(),
-        VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
-            VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT);
-
-    bindingFlags.bindingCount = static_cast<uint32_t>(flags.size());
-    bindingFlags.pBindingFlags = flags.data();
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+    layoutInfo.flags = 0;
     layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
     layoutInfo.pBindings = bindings.data();
-    layoutInfo.pNext = &bindingFlags;
+    layoutInfo.pNext = nullptr;
 
     if (vkCreateDescriptorSetLayout(
             context.vulkanDevice.getDevice(),
             &layoutInfo,
             nullptr,
             &context.resources.voronoiDescriptorSetLayout) != VK_SUCCESS) {
-        std::cerr << "[HeatSystem] Failed to create Voronoi descriptor set layout" << std::endl;
         return false;
-    }
-    return true;
-}
-
-bool HeatSystemVoronoiStage::createDescriptorSets(uint32_t maxFramesInFlight, const HeatSystemSimRuntime& simRuntime) {
-    if (context.resources.voronoiDescriptorPool != VK_NULL_HANDLE) {
-        vkResetDescriptorPool(context.vulkanDevice.getDevice(), context.resources.voronoiDescriptorPool, 0);
-    }
-
-    std::vector<VkDescriptorSetLayout> layouts(
-        maxFramesInFlight * 2,
-        context.resources.voronoiDescriptorSetLayout);
-
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = context.resources.voronoiDescriptorPool;
-    allocInfo.descriptorSetCount = maxFramesInFlight * 2;
-    allocInfo.pSetLayouts = layouts.data();
-
-    std::vector<VkDescriptorSet> allSets(maxFramesInFlight * 2);
-    if (vkAllocateDescriptorSets(context.vulkanDevice.getDevice(), &allocInfo, allSets.data()) != VK_SUCCESS) {
-        std::cerr << "[HeatSystem] Failed to allocate Voronoi descriptor sets" << std::endl;
-        return false;
-    }
-
-    context.resources.voronoiDescriptorSets.resize(maxFramesInFlight);
-    context.resources.voronoiDescriptorSetsB.resize(maxFramesInFlight);
-    for (uint32_t i = 0; i < maxFramesInFlight; ++i) {
-        context.resources.voronoiDescriptorSets[i] = allSets[i * 2];
-        context.resources.voronoiDescriptorSetsB[i] = allSets[i * 2 + 1];
-    }
-
-    const uint32_t nodeCount = context.resources.voronoiNodeCount;
-    for (uint32_t i = 0; i < maxFramesInFlight; ++i) {
-        const VkBuffer contactConductanceBuffer =
-            context.resources.contactConductanceBuffer != VK_NULL_HANDLE
-                ? context.resources.contactConductanceBuffer
-                : simRuntime.getTempBufferA();
-        const VkDeviceSize contactConductanceOffset =
-            context.resources.contactConductanceBuffer != VK_NULL_HANDLE
-                ? context.resources.contactConductanceBufferOffset
-                : simRuntime.getTempBufferAOffset();
-        {
-            std::vector<VkDescriptorBufferInfo> bufferInfos = {
-                VkDescriptorBufferInfo{
-                    context.resources.voronoiNodeBuffer,
-                    context.resources.voronoiNodeBufferOffset,
-                    sizeof(voronoi::Node) * nodeCount},
-                VkDescriptorBufferInfo{
-                    context.resources.gmlsInterfaceBuffer,
-                    context.resources.gmlsInterfaceBufferOffset,
-                    VK_WHOLE_SIZE},
-                VkDescriptorBufferInfo{
-                    context.resources.voronoiMaterialNodeBuffer,
-                    context.resources.voronoiMaterialNodeBufferOffset,
-                    sizeof(voronoi::MaterialNode) * nodeCount},
-                VkDescriptorBufferInfo{
-                    simRuntime.getTimeBuffer(),
-                    simRuntime.getTimeBufferOffset(),
-                    sizeof(heat::TimeUniform)},
-                VkDescriptorBufferInfo{
-                    simRuntime.getTempBufferA(),
-                    simRuntime.getTempBufferAOffset(),
-                    sizeof(float) * nodeCount},
-                VkDescriptorBufferInfo{
-                    simRuntime.getTempBufferB(),
-                    simRuntime.getTempBufferBOffset(),
-                    sizeof(float) * nodeCount},
-                VkDescriptorBufferInfo{
-                    context.resources.seedFlagsBuffer,
-                    context.resources.seedFlagsBufferOffset,
-                    sizeof(uint32_t) * nodeCount},
-                VkDescriptorBufferInfo{
-                    contactConductanceBuffer,
-                    contactConductanceOffset,
-                    VK_WHOLE_SIZE},
-            };
-
-            std::vector<VkWriteDescriptorSet> descriptorWrites(8);
-            for (int j = 0; j < 8; ++j) {
-                descriptorWrites[j].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                descriptorWrites[j].dstSet = context.resources.voronoiDescriptorSets[i];
-                descriptorWrites[j].dstBinding = j;
-                descriptorWrites[j].descriptorCount = 1;
-                descriptorWrites[j].descriptorType =
-                    (j == 3) ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-                descriptorWrites[j].pBufferInfo = &bufferInfos[j];
-            }
-            vkUpdateDescriptorSets(context.vulkanDevice.getDevice(), 8, descriptorWrites.data(), 0, nullptr);
-        }
-
-        {
-            std::vector<VkDescriptorBufferInfo> bufferInfos = {
-                VkDescriptorBufferInfo{
-                    context.resources.voronoiNodeBuffer,
-                    context.resources.voronoiNodeBufferOffset,
-                    sizeof(voronoi::Node) * nodeCount},
-                VkDescriptorBufferInfo{
-                    context.resources.gmlsInterfaceBuffer,
-                    context.resources.gmlsInterfaceBufferOffset,
-                    VK_WHOLE_SIZE},
-                VkDescriptorBufferInfo{
-                    context.resources.voronoiMaterialNodeBuffer,
-                    context.resources.voronoiMaterialNodeBufferOffset,
-                    sizeof(voronoi::MaterialNode) * nodeCount},
-                VkDescriptorBufferInfo{
-                    simRuntime.getTimeBuffer(),
-                    simRuntime.getTimeBufferOffset(),
-                    sizeof(heat::TimeUniform)},
-                VkDescriptorBufferInfo{
-                    simRuntime.getTempBufferB(),
-                    simRuntime.getTempBufferBOffset(),
-                    sizeof(float) * nodeCount},
-                VkDescriptorBufferInfo{
-                    simRuntime.getTempBufferA(),
-                    simRuntime.getTempBufferAOffset(),
-                    sizeof(float) * nodeCount},
-                VkDescriptorBufferInfo{
-                    context.resources.seedFlagsBuffer,
-                    context.resources.seedFlagsBufferOffset,
-                    sizeof(uint32_t) * nodeCount},
-                VkDescriptorBufferInfo{
-                    contactConductanceBuffer,
-                    contactConductanceOffset,
-                    VK_WHOLE_SIZE},
-            };
-
-            std::vector<VkWriteDescriptorSet> descriptorWrites(8);
-            for (int j = 0; j < 8; ++j) {
-                descriptorWrites[j].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                descriptorWrites[j].dstSet = context.resources.voronoiDescriptorSetsB[i];
-                descriptorWrites[j].dstBinding = j;
-                descriptorWrites[j].descriptorCount = 1;
-                descriptorWrites[j].descriptorType =
-                    (j == 3) ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-                descriptorWrites[j].pBufferInfo = &bufferInfos[j];
-            }
-            vkUpdateDescriptorSets(
-                context.vulkanDevice.getDevice(),
-                8,
-                descriptorWrites.data(),
-                0,
-                nullptr);
-        }
     }
     return true;
 }
@@ -355,7 +189,7 @@ bool HeatSystemVoronoiStage::createPipeline() {
     VkPushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(heat::SourcePushConstant);
+    pushConstantRange.size = sizeof(heat::HeatModelPushConstant);
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;

@@ -70,7 +70,7 @@ private:
         outConfig.showVoronoi = package.display.showVoronoi;
         outConfig.showPoints = package.display.showPoints;
         outConfig.nodeCount = computeProduct->nodeCount;
-        outConfig.mappedVoronoiNodes = computeProduct->mappedVoronoiNodes;
+        outConfig.mappedVoronoiNodes = nullptr;
         outConfig.nodeBuffer = computeProduct->nodeBuffer;
         outConfig.nodeBufferOffset = computeProduct->nodeBufferOffset;
         outConfig.seedPositionBuffer = computeProduct->seedPositionBuffer;
