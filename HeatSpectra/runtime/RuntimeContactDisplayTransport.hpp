@@ -26,7 +26,7 @@ public:
             return;
         }
 
-        auto view = registry.view<ContactPackage>();
+        auto view = registry.view<ContactPackage>(entt::exclude<Stale>);
         for (auto entity : view) {
             uint64_t socketKey = static_cast<uint64_t>(entity);
             if (visibleKeys && visibleKeys->find(socketKey) == visibleKeys->end()) {
@@ -41,7 +41,11 @@ public:
         }
 
         controller->apply(socketKey, config);
-    }
+        }
+
+        for (auto entity : registry.view<ContactPackage, Stale>()) {
+            controller->remove(static_cast<uint64_t>(entity));
+        }
     }
 
     void finalizeSync() {

@@ -2,7 +2,6 @@
 #include "NodeGraphRegistry.hpp"
 #include "NodeHeatSolveParams.hpp"
 #include "NodeGraphUtils.hpp"
-#include "nodegraph/ui/scene/NodeGraphSceneUtils.hpp"
 
 #include <sstream>
 #include <unordered_map>
@@ -13,8 +12,8 @@
 std::unordered_set<uint64_t> NodeGraphCompiler::buildConnectedInputSocketSet(const NodeGraphState& state) {
     std::unordered_set<uint64_t> connectedInputSockets;
     connectedInputSockets.reserve(state.edges.size() * 2);
-    for (const NodeGraphEdge& edge : state.edges) {
-        connectedInputSockets.insert(makeSocketKey(edge.toNode, edge.toSocket));
+    for (const auto& [id, edge] : state.edges) {
+        connectedInputSockets.insert(NodeSocketKey(edge.toNode, edge.toSocket));
     }
 
     return connectedInputSockets;
@@ -27,7 +26,7 @@ std::vector<std::string> NodeGraphCompiler::findMissingInputSocketNames(
         bool hasVoronoiConnection = false;
         bool hasContactConnection = false;
         for (const NodeGraphSocket& inputSocket : node.inputs) {
-            if (connectedInputSockets.find(makeSocketKey(node.id, inputSocket.id)) == connectedInputSockets.end()) {
+            if (connectedInputSockets.find(NodeSocketKey(node.id, inputSocket.id)) == connectedInputSockets.end()) {
                 continue;
             }
 
@@ -51,7 +50,7 @@ std::vector<std::string> NodeGraphCompiler::findMissingInputSocketNames(
 
     std::vector<std::string> missingSocketNames;
     for (const NodeGraphSocket& inputSocket : node.inputs) {
-        if (connectedInputSockets.find(makeSocketKey(node.id, inputSocket.id)) != connectedInputSockets.end()) {
+        if (connectedInputSockets.find(NodeSocketKey(node.id, inputSocket.id)) != connectedInputSockets.end()) {
             continue;
         }
 
@@ -90,7 +89,7 @@ std::string NodeGraphCompiler::makeInvariantReason(const char* code, const std::
 }
 
 bool NodeGraphCompiler::nodeHasAllRequiredInputs(const NodeGraphState& state, NodeGraphNodeId nodeId) {
-    const NodeGraphNode* node = nodegraphsceneutils::findStateNodeById(state, nodeId);
+    const NodeGraphNode* node = state.node(nodeId);
     if (!node) {
         return false;
     }
@@ -100,7 +99,7 @@ bool NodeGraphCompiler::nodeHasAllRequiredInputs(const NodeGraphState& state, No
         bool hasVoronoiConnection = false;
         bool hasContactConnection = false;
         for (const NodeGraphSocket& inputSocket : node->inputs) {
-            if (connectedInputSockets.find(makeSocketKey(node->id, inputSocket.id)) == connectedInputSockets.end()) {
+            if (connectedInputSockets.find(NodeSocketKey(node->id, inputSocket.id)) == connectedInputSockets.end()) {
                 continue;
             }
 
@@ -116,7 +115,7 @@ bool NodeGraphCompiler::nodeHasAllRequiredInputs(const NodeGraphState& state, No
     }
 
     for (const NodeGraphSocket& inputSocket : node->inputs) {
-        if (connectedInputSockets.find(makeSocketKey(node->id, inputSocket.id)) == connectedInputSockets.end()) {
+        if (connectedInputSockets.find(NodeSocketKey(node->id, inputSocket.id)) == connectedInputSockets.end()) {
             return false;
         }
     }
@@ -139,13 +138,14 @@ bool NodeGraphCompiler::buildTopologicalOrder(
 
     std::unordered_map<uint32_t, std::size_t> nodeIndexById;
     nodeIndexById.reserve(state.nodes.size() * 2);
-    for (std::size_t index = 0; index < state.nodes.size(); ++index) {
-        nodeIndexById[state.nodes[index].id.value] = index;
+    std::size_t index = 0;
+    for (const auto& [id, node] : state.nodes) {
+        nodeIndexById[id] = index++;
     }
 
     std::vector<std::vector<uint32_t>> adjacency(state.nodes.size());
     std::vector<uint32_t> inDegree(state.nodes.size(), 0);
-    for (const NodeGraphEdge& edge : state.edges) {
+    for (const auto& [id, edge] : state.edges) {
         const auto fromIt = nodeIndexById.find(edge.fromNode.value);
         const auto toIt = nodeIndexById.find(edge.toNode.value);
         if (fromIt == nodeIndexById.end() || toIt == nodeIndexById.end()) {
@@ -158,13 +158,13 @@ bool NodeGraphCompiler::buildTopologicalOrder(
 
     std::vector<uint32_t> readyNodeIds;
     readyNodeIds.reserve(state.nodes.size());
-    for (const NodeGraphNode& node : state.nodes) {
-        const auto nodeIt = nodeIndexById.find(node.id.value);
+    for (const auto& [id, node] : state.nodes) {
+        const auto nodeIt = nodeIndexById.find(id);
         if (nodeIt == nodeIndexById.end()) {
             continue;
         }
         if (inDegree[nodeIt->second] == 0) {
-            readyNodeIds.push_back(node.id.value);
+            readyNodeIds.push_back(id);
         }
     }
 
@@ -225,7 +225,7 @@ NodeGraphCompiled NodeGraphCompiler::compile(const NodeGraphState& state) {
 
     std::vector<const NodeGraphNode*> heatSolveNodes;
     heatSolveNodes.reserve(state.nodes.size());
-    for (const NodeGraphNode& node : state.nodes) {
+    for (const auto& [id, node] : state.nodes) {
         if (getNodeTypeId(node.typeId) == nodegraphtypes::HeatSolve) {
             heatSolveNodes.push_back(&node);
         }

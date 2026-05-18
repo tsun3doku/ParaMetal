@@ -7,12 +7,16 @@
 #include "runtime/RuntimeECS.hpp"
 #include "runtime/RuntimePackages.hpp"
 
-class ModelDisplayRuntime;
+class ModelDisplayController;
 
 class RuntimeModelDisplayTransport {
 public:
-    void setRuntime(ModelDisplayRuntime* updatedRuntime) {
-        modelRuntime = updatedRuntime;
+    void setController(ModelDisplayController* updatedController) {
+        controller = updatedController;
+    }
+
+    void setECSRegistry(ECSRegistry* updatedRegistry) {
+        ecsRegistry = updatedRegistry;
     }
 
     void setVisibleKeys(const std::unordered_set<uint64_t>* keys) {
@@ -23,7 +27,7 @@ public:
     void finalizeSync();
 
 private:
-    ModelDisplayRuntime* modelRuntime = nullptr;
+    ModelDisplayController* controller = nullptr;
+    ECSRegistry* ecsRegistry = nullptr;
     const std::unordered_set<uint64_t>* visibleKeys = nullptr;
-    std::unordered_set<uint64_t> activeSocketKeys;
 };

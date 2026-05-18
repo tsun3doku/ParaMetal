@@ -24,15 +24,16 @@ public:
 
         std::unordered_set<uint64_t> nextSocketKeys;
 
-        auto view = registry.view<RemeshPackage>();
+        auto view = registry.view<RemeshPackage>(entt::exclude<Stale>);
         for (auto entity : view) {
             uint64_t socketKey = static_cast<uint64_t>(entity);
             const auto& package = registry.get<RemeshPackage>(entity);
-            nextSocketKeys.insert(socketKey);
 
+            const uint64_t inputHash = buildConfigInputHash(socketKey, package);
             const RemeshProduct* product = tryGetProduct<RemeshProduct>(registry, socketKey);
-            auto hashIt = appliedPackageHash.find(socketKey);
-            if (product && hashIt != appliedPackageHash.end() && hashIt->second == package.packageHash) {
+            auto hashIt = appliedConfigInputHash.find(socketKey);
+            if (inputHash != 0 && product && hashIt != appliedConfigInputHash.end() && hashIt->second == inputHash) {
+                nextSocketKeys.insert(socketKey);
                 continue;
             }
 
@@ -45,11 +46,10 @@ public:
             nextSocketKeys.insert(socketKey);
         }
 
-        for (uint64_t socketKey : activeSocketKeys) {
-            if (nextSocketKeys.find(socketKey) == nextSocketKeys.end()) {
-                controller->disable(socketKey);
-                appliedPackageHash.erase(socketKey);
-            }
+        for (auto entity : registry.view<RemeshPackage, Stale>()) {
+            uint64_t socketKey = static_cast<uint64_t>(entity);
+            controller->disable(socketKey);
+            appliedConfigInputHash.erase(socketKey);
         }
 
         activeSocketKeys = std::move(nextSocketKeys);
@@ -60,23 +60,17 @@ public:
             return;
         }
 
-        std::vector<uint64_t> removals;
-        auto productView = ecsRegistry->view<RemeshProduct>();
-        for (auto entity : productView) {
-            const uint64_t socketKey = static_cast<uint64_t>(entity);
-            if (activeSocketKeys.find(socketKey) == activeSocketKeys.end()) {
-                removals.push_back(socketKey);
-            }
-        }
-        for (uint64_t socketKey : removals) {
-            removePublishedProduct(socketKey);
+        auto staleProductView = ecsRegistry->view<RemeshProduct, Stale>();
+        for (auto entity : staleProductView) {
+            removePublishedProduct(static_cast<uint64_t>(entity));
         }
         for (uint64_t socketKey : activeSocketKeys) {
             auto entity = static_cast<ECSEntity>(socketKey);
             const auto& package = ecsRegistry->get<RemeshPackage>(entity);
-            auto hashIt = appliedPackageHash.find(socketKey);
+            const uint64_t inputHash = buildConfigInputHash(socketKey, package);
+            auto hashIt = appliedConfigInputHash.find(socketKey);
             const RemeshProduct* product = tryGetProduct<RemeshProduct>(*ecsRegistry, socketKey);
-            if (!product || hashIt == appliedPackageHash.end() || hashIt->second != package.packageHash) {
+            if (!product || hashIt == appliedConfigInputHash.end() || hashIt->second != inputHash) {
                 publishProduct(socketKey);
             }
         }
@@ -97,10 +91,21 @@ private:
         outConfig.maxEdgeLength = package.maxEdgeLength;
         outConfig.stepSize = package.stepSize;
 
-        const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, package.modelProductHandle.outputSocketKey);
+        const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, package.sourceMeshHandle.key);
         outConfig.runtimeModelId = modelProduct ? modelProduct->runtimeModelId : 0;
         outConfig.computeHash = buildComputeHash(outConfig);
         return true;
+    }
+
+    uint64_t buildConfigInputHash(uint64_t socketKey, const RemeshPackage& package) const {
+        (void)socketKey;
+        uint64_t hash = package.packageHash;
+        const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, package.sourceMeshHandle.key);
+        if (!modelProduct) {
+            return 0;
+        }
+        NodeGraphHash::combine(hash, modelProduct->productHash);
+        return hash;
     }
 
     void removePublishedProduct(uint64_t socketKey) {
@@ -118,7 +123,7 @@ private:
         }
 
         RemeshProduct product{};
-        if (!controller->exportProduct(socketKey, product)) {
+        if (!buildProduct(socketKey, product)) {
             auto entity = static_cast<ECSEntity>(socketKey);
             ecsRegistry->remove<RemeshProduct>(entity);
             return;
@@ -127,11 +132,44 @@ private:
         auto entity = static_cast<ECSEntity>(socketKey);
         const auto& package = ecsRegistry->get<RemeshPackage>(entity);
         ecsRegistry->emplace_or_replace<RemeshProduct>(entity, product);
-        appliedPackageHash[socketKey] = package.packageHash;
+        appliedConfigInputHash[socketKey] = buildConfigInputHash(socketKey, package);
+    }
+
+    bool buildProduct(uint64_t socketKey, RemeshProduct& outProduct) const {
+        outProduct = {};
+        const RemeshSystem* system = controller ? controller->getSystem(socketKey) : nullptr;
+        if (!system || !system->isReady()) {
+            return false;
+        }
+
+        const SupportingHalfedge::GPUResources& gpu = system->getIntrinsicGpuResources();
+        outProduct.runtimeModelId = system->getRuntimeModelId();
+        outProduct.geometryPositions = system->getGeometryPositions();
+        outProduct.geometryTriangleIndices = system->getGeometryTriangleIndices();
+        outProduct.intrinsicMesh = system->getIntrinsicMesh();
+        outProduct.intrinsicTriangleBuffer = gpu.intrinsicTriangleBuffer;
+        outProduct.intrinsicTriangleBufferOffset = gpu.triangleGeometryOffset;
+        outProduct.intrinsicVertexBuffer = gpu.intrinsicVertexBuffer;
+        outProduct.intrinsicVertexBufferOffset = gpu.vertexGeometryOffset;
+        outProduct.intrinsicTriangleCount = gpu.triangleCount;
+        outProduct.intrinsicVertexCount = gpu.vertexCount;
+        outProduct.averageTriangleArea = gpu.averageTriangleArea;
+        outProduct.supportingHalfedgeView = gpu.viewS;
+        outProduct.supportingAngleView = gpu.viewA;
+        outProduct.halfedgeView = gpu.viewH;
+        outProduct.edgeView = gpu.viewE;
+        outProduct.triangleView = gpu.viewT;
+        outProduct.lengthView = gpu.viewL;
+        outProduct.inputHalfedgeView = gpu.viewHInput;
+        outProduct.inputEdgeView = gpu.viewEInput;
+        outProduct.inputTriangleView = gpu.viewTInput;
+        outProduct.inputLengthView = gpu.viewLInput;
+        outProduct.productHash = buildProductHash(outProduct);
+        return outProduct.isValid();
     }
 
     RemeshController* controller = nullptr;
     ECSRegistry* ecsRegistry = nullptr;
     std::unordered_set<uint64_t> activeSocketKeys;
-    std::unordered_map<uint64_t, uint64_t> appliedPackageHash;
+    std::unordered_map<uint64_t, uint64_t> appliedConfigInputHash;
 };

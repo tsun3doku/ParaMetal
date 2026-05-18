@@ -43,25 +43,20 @@ bool NodeGraphDebugCache::tryGetNode(NodeGraphNodeId nodeId, NodeGraphRuntimeNod
     }
 
     std::lock_guard<std::mutex> lock(mutex);
-    const auto nodeIt = std::find_if(
-        state.nodes.begin(),
-        state.nodes.end(),
-        [nodeId](const NodeGraphNode& candidate) {
-            return candidate.id == nodeId;
-        });
+    const auto nodeIt = state.nodes.find(nodeId.value);
     if (nodeIt == state.nodes.end()) {
         return false;
     }
 
     outInfo = {};
     outInfo.revision = revision;
-    outInfo.nodeId = nodeIt->id;
-    outInfo.nodeTypeId = getNodeTypeId(nodeIt->typeId);
+    outInfo.nodeId = nodeIt->second.id;
+    outInfo.nodeTypeId = getNodeTypeId(nodeIt->second.typeId);
 
-    outInfo.inputs.reserve(nodeIt->inputs.size());
-    for (const NodeGraphSocket& socket : nodeIt->inputs) {
+    outInfo.inputs.reserve(nodeIt->second.inputs.size());
+    for (const NodeGraphSocket& socket : nodeIt->second.inputs) {
         const EvaluatedSocketValue* value = nullptr;
-        const uint64_t inputKey = socketKey(nodeIt->id, socket.id);
+        const uint64_t inputKey = NodeSocketKey(nodeIt->second.id, socket.id);
         const auto srcIt = srcByInput.find(inputKey);
         if (srcIt != srcByInput.end()) {
             const auto dataIt = outBySocket.find(srcIt->second);
@@ -73,10 +68,10 @@ bool NodeGraphDebugCache::tryGetNode(NodeGraphNodeId nodeId, NodeGraphRuntimeNod
         outInfo.inputs.push_back(socketInfo(socket, value));
     }
 
-    outInfo.outputs.reserve(nodeIt->outputs.size());
-    for (const NodeGraphSocket& socket : nodeIt->outputs) {
+    outInfo.outputs.reserve(nodeIt->second.outputs.size());
+    for (const NodeGraphSocket& socket : nodeIt->second.outputs) {
         const EvaluatedSocketValue* value = nullptr;
-        const uint64_t outputKey = socketKey(nodeIt->id, socket.id);
+        const uint64_t outputKey = NodeSocketKey(nodeIt->second.id, socket.id);
         const auto outIt = outBySocket.find(outputKey);
         if (outIt != outBySocket.end()) {
             value = &outIt->second;
@@ -86,10 +81,6 @@ bool NodeGraphDebugCache::tryGetNode(NodeGraphNodeId nodeId, NodeGraphRuntimeNod
     }
 
     return true;
-}
-
-uint64_t NodeGraphDebugCache::socketKey(NodeGraphNodeId nodeId, NodeGraphSocketId socketId) {
-    return (static_cast<uint64_t>(nodeId.value) << 32) | static_cast<uint64_t>(socketId.value);
 }
 
 NodeGraphRuntimeSocketDebugInfo NodeGraphDebugCache::socketInfo(const NodeGraphSocket& socket, const EvaluatedSocketValue* value) const {
@@ -120,7 +111,7 @@ NodeGraphRuntimeSocketDebugInfo NodeGraphDebugCache::socketInfo(const NodeGraphS
 
     const NodeDataBlock* block = &value->data;
     info.hasValue = true;
-    info.dataType = nodePayloadTypeName(block->dataType);
+    info.dataType = "payload:" + std::to_string(block->dataType);
     info.metadata = block->metadata;
     info.lineageNodeIds = block->lineageNodeIds;
 

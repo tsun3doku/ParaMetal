@@ -1,6 +1,6 @@
 #include "MainQt.h"
 #include "App.h"
-#include "nodegraph/ui/scene/NodeGraphDock.hpp"
+#include "nodegraph/ui/scene/NodeGraphEditorWidget.hpp"
 #include "util/UiTheme.hpp"
 #include "VulkanWindow.hpp"
 
@@ -33,7 +33,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setStyleSheet(QString::fromStdString(ui::appStyleSheet()));
 
     createMenuBar();
-    createNodeGraphDock();
+    createNodeGraphEditorWidget();
 
     QWidget* centralHost = new QWidget(this);
     QHBoxLayout* hostLayout = new QHBoxLayout(centralHost);
@@ -47,10 +47,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     mainSplitter->setAttribute(Qt::WA_NativeWindow, true);
     hostLayout->addWidget(mainSplitter);
 
-    if (nodeGraphDock) {
-        nodeGraphDock->setMinimumWidth(160);
-        nodeGraphDock->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
-        mainSplitter->addWidget(nodeGraphDock);
+    if (nodeGraphEditor) {
+        nodeGraphEditor->setMinimumWidth(160);
+        nodeGraphEditor->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
+        mainSplitter->addWidget(nodeGraphEditor);
     }
 
     QWidget* viewportHost = new QWidget(mainSplitter);
@@ -67,7 +67,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     mainSplitter->setStretchFactor(0, 0);
     mainSplitter->setStretchFactor(1, 1);
-    mainSplitter->setSizes({430, 850});
+    mainSplitter->setSizes({520, 760});
 
     setCentralWidget(centralHost);
     connect(mainSplitter, &QSplitter::splitterMoved, this, [this](int, int) {
@@ -101,13 +101,13 @@ void MainWindow::setApp(App* application) {
     if (viewportWindow) {
         viewportWindow->setApp(app);
     }
-    if (nodeGraphDock) {
+    if (nodeGraphEditor) {
         boundRuntimeQuery = app ? app->runtimeQuery() : nullptr;
-        nodeGraphDock->setRuntimeQuery(boundRuntimeQuery);
+        nodeGraphEditor->setRuntimeQuery(boundRuntimeQuery);
         boundSceneController = app ? app->getSceneController() : nullptr;
-        nodeGraphDock->setSceneController(boundSceneController);
+        nodeGraphEditor->setSceneController(boundSceneController);
         boundModelSelection = app ? app->getModelSelection() : nullptr;
-        nodeGraphDock->setModelSelection(boundModelSelection);
+        nodeGraphEditor->setModelSelection(boundModelSelection);
     }
     syncNodeGraphBridge();
 }
@@ -171,10 +171,10 @@ void MainWindow::createMenuBar() {
     viewMenu->addAction(nodeGraphAction);
 }
 
-void MainWindow::createNodeGraphDock() {
-    nodeGraphDock = new NodeGraphDock(this);
-    nodeGraphDock->setObjectName("NodeGraphDock");
-    nodeGraphDock->setRuntimeQuery(app ? app->runtimeQuery() : nullptr);
+void MainWindow::createNodeGraphEditorWidget() {
+    nodeGraphEditor = new NodeGraphEditorWidget(this);
+    nodeGraphEditor->setObjectName("NodeGraphEditorWidget");
+    nodeGraphEditor->setRuntimeQuery(app ? app->runtimeQuery() : nullptr);
 
     syncNodeGraphBridge();
 }
@@ -190,46 +190,46 @@ void MainWindow::syncNodeGraphBridge() {
         }
     }
 
-    if (!nodeGraphDock) {
+    if (!nodeGraphEditor) {
         return;
     }
 
     const RuntimeQuery* runtimeQuery = app ? app->runtimeQuery() : nullptr;
     if (runtimeQuery != boundRuntimeQuery) {
-        nodeGraphDock->setRuntimeQuery(runtimeQuery);
+        nodeGraphEditor->setRuntimeQuery(runtimeQuery);
         boundRuntimeQuery = runtimeQuery;
     }
 
     const SceneController* sceneController = app ? app->getSceneController() : nullptr;
     if (sceneController != boundSceneController) {
-        nodeGraphDock->setSceneController(sceneController);
+        nodeGraphEditor->setSceneController(sceneController);
         boundSceneController = sceneController;
     }
 
     ModelSelection* modelSelection = app ? app->getModelSelection() : nullptr;
     if (modelSelection != boundModelSelection) {
-        nodeGraphDock->setModelSelection(modelSelection);
+        nodeGraphEditor->setModelSelection(modelSelection);
         boundModelSelection = modelSelection;
     }
 
     if (!app) {
-        nodeGraphDock->syncSelection();
+        nodeGraphEditor->syncSelection();
         return;
     }
 
     NodeGraphBridge* bridge = app->getNodeGraphBridge();
     if (bridge == boundNodeGraphBridge) {
-        nodeGraphDock->syncSelection();
+        nodeGraphEditor->syncSelection();
         return;
     }
 
-    nodeGraphDock->setBridge(bridge);
+    nodeGraphEditor->setBridge(bridge);
     boundNodeGraphBridge = bridge;
-    nodeGraphDock->syncSelection();
+    nodeGraphEditor->syncSelection();
 }
 
 void MainWindow::setNodeGraphVisible(bool visible) {
-    if (!mainSplitter || !nodeGraphDock) {
+    if (!mainSplitter || !nodeGraphEditor) {
         return;
     }
 
@@ -239,16 +239,16 @@ void MainWindow::setNodeGraphVisible(bool visible) {
     }
 
     if (visible) {
-        nodeGraphDock->show();
+        nodeGraphEditor->show();
         if (sizes[0] <= 1) {
-            sizes[0] = std::max(nodeGraphDock->minimumWidth(), lastNodeGraphWidth);
+            sizes[0] = std::max(nodeGraphEditor->minimumWidth(), lastNodeGraphWidth);
             mainSplitter->setSizes(sizes);
         }
         return;
     }
 
-    lastNodeGraphWidth = std::max(nodeGraphDock->minimumWidth(), sizes[0]);
-    nodeGraphDock->hide();
+    lastNodeGraphWidth = std::max(nodeGraphEditor->minimumWidth(), sizes[0]);
+    nodeGraphEditor->hide();
 }
 
 void MainWindow::onOpenModel() {

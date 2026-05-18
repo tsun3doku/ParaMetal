@@ -1,4 +1,5 @@
 #include "NodeGroup.hpp"
+#include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
 #include "NodeGraphHash.hpp"
@@ -22,7 +23,9 @@ void NodeGroup::execute(NodeGraphKernelContext& context) const {
         }
 
         const NodeDataBlock& inputValue = input->data;
-        if (valueTypeOf(inputValue.dataType) == NodeGraphValueType::Mesh) {
+        if (inputValue.dataType == payloadtypes::Geometry ||
+            inputValue.dataType == payloadtypes::Remesh ||
+            inputValue.dataType == payloadtypes::HeatModel) {
             inputMeshValue = &inputValue;
             break;
         }
@@ -35,8 +38,10 @@ void NodeGroup::execute(NodeGraphKernelContext& context) const {
 
     const GeometryData* inputGeometry = nullptr;
     if (payloadRegistry && inputMeshValue && inputMeshValue->payloadHandle.key != 0 &&
-        valueTypeOf(inputMeshValue->dataType) == NodeGraphValueType::Mesh) {
-        inputGeometry = payloadRegistry->resolveGeometry(inputMeshValue->dataType, inputMeshValue->payloadHandle);
+        (inputMeshValue->dataType == payloadtypes::Geometry ||
+         inputMeshValue->dataType == payloadtypes::Remesh ||
+         inputMeshValue->dataType == payloadtypes::HeatModel)) {
+        inputGeometry = payloadRegistry->resolveGeometry(inputMeshValue->payloadHandle);
     }
 
     const bool hasValidInput = inputGeometry != nullptr;
@@ -47,26 +52,26 @@ void NodeGroup::execute(NodeGraphKernelContext& context) const {
         outputValue = {};
         outputValue.dataType = outputSocket.contract.producedPayloadType;
 
-        if (!payloadRegistry || outputValue.dataType != NodePayloadType::Geometry || !hasValidInput) {
-            populateMetadata(outputValue, payloadRegistry);
+        if (!payloadRegistry || outputValue.dataType != payloadtypes::Geometry || !hasValidInput) {
+            populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
 
         if (!enabled || sourceGroupName.empty() || targetGroupName.empty()) {
             outputValue.payloadHandle = inputMeshValue->payloadHandle;
-            populateMetadata(outputValue, payloadRegistry);
+            populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
 
         GeometryData updatedGeometry = *inputGeometry;
         const bool changed = applyAssignment(updatedGeometry, sourceGroupName, targetGroupName);
         if (changed) {
-            const uint64_t payloadKey = makeSocketKey(context.node.id, outputSocket.id);
+            const uint64_t payloadKey = NodeSocketKey(context.node.id, outputSocket.id);
             outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(updatedGeometry));
         } else {
             outputValue.payloadHandle = inputMeshValue->payloadHandle;
         }
-        populateMetadata(outputValue, payloadRegistry);
+        populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 
@@ -170,7 +175,9 @@ bool NodeGroup::computeInputHash(const NodeGraphKernelHashContext& context, uint
         }
 
         const NodeDataBlock& inputValue = input->data;
-        if (valueTypeOf(inputValue.dataType) == NodeGraphValueType::Mesh) {
+        if (inputValue.dataType == payloadtypes::Geometry ||
+            inputValue.dataType == payloadtypes::Remesh ||
+            inputValue.dataType == payloadtypes::HeatModel) {
             inputMeshValue = &inputValue;
             break;
         }

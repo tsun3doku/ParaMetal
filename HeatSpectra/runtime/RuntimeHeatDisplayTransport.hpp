@@ -4,6 +4,7 @@
 #include "runtime/HeatDisplayController.hpp"
 #include "runtime/RuntimeECS.hpp"
 
+#include <algorithm>
 #include <iostream>
 #include <unordered_set>
 #include <vector>
@@ -27,7 +28,7 @@ public:
             return;
         }
 
-        auto view = registry.view<HeatPackage>();
+        auto view = registry.view<HeatPackage>(entt::exclude<Stale>);
         for (auto entity : view) {
             uint64_t socketKey = static_cast<uint64_t>(entity);
             if (visibleKeys && visibleKeys->find(socketKey) == visibleKeys->end()) {
@@ -42,7 +43,11 @@ public:
         }
 
         controller->apply(socketKey, config);
-    }
+        }
+
+        for (auto entity : registry.view<HeatPackage, Stale>()) {
+            controller->remove(static_cast<uint64_t>(entity));
+        }
     }
 
     void finalizeSync() {
@@ -61,12 +66,6 @@ private:
         if (!package.display.anyVisible()) {
             return false;
         }
-        if (package.modelProducts.size() != package.models.size()) {
-            return false;
-        }
-        if (package.modelProducts.size() != package.remeshProducts.size()) {
-            return false;
-        }
 
         const HeatProduct* computeProduct = tryGetProduct<HeatProduct>(*ecsRegistry, socketKey);
         if (!computeProduct || !computeProduct->isValid()) {
@@ -81,11 +80,9 @@ private:
         outConfig.active = computeProduct->active;
         outConfig.paused = computeProduct->paused;
 
-        for (size_t index = 0; index < package.modelProducts.size(); ++index) {
-            const ProductHandle& modelHandle = package.modelProducts[index];
-            const ProductHandle& remeshHandle = package.remeshProducts[index];
-            const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, modelHandle.outputSocketKey);
-            const RemeshProduct* remeshProduct = tryGetProduct<RemeshProduct>(*ecsRegistry, remeshHandle.outputSocketKey);
+        for (size_t i = 0; i < package.resolvedRemeshHandles.size(); ++i) {
+            const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, package.resolvedModelHandles[i].key);
+            const RemeshProduct* remeshProduct = tryGetProduct<RemeshProduct>(*ecsRegistry, package.resolvedRemeshHandles[i].key);
             if (!remeshProduct || !modelProduct || modelProduct->runtimeModelId == 0) {
                 return false;
             }
@@ -115,29 +112,37 @@ private:
             }
 
             outConfig.models.push_back(*modelProduct);
-            outConfig.modelTemperatures.push_back(package.models[index].initialTemperature);
-            outConfig.modelFixedTemperatures.push_back(package.models[index].fixedTemperatureValue);
-            outConfig.modelBoundaryConditions.push_back(package.models[index].boundaryCondition);
+            outConfig.modelTemperatures.push_back(package.resolvedInitialTemperature[i]);
+            outConfig.modelFixedTemperatures.push_back(package.resolvedFixedTemperatureValues[i]);
+            outConfig.modelBoundaryConditions.push_back(static_cast<HeatBoundaryCondition>(package.resolvedBoundaryConditions[i]));
             outConfig.modelBufferViews.push_back(modelBufferViews);
 
-            if (modelProduct->runtimeModelId != 0 &&
-                index < computeProduct->modelSurfaceBuffers.size() &&
-                index < computeProduct->modelSurfaceBufferOffsets.size() &&
-                index < computeProduct->modelSurfacePointCounts.size()) {
-                outConfig.modelSurfaceBuffers.push_back(computeProduct->modelSurfaceBuffers[index]);
-                outConfig.modelSurfaceBufferOffsets.push_back(computeProduct->modelSurfaceBufferOffsets[index]);
-                outConfig.modelSurfacePointCounts.push_back(computeProduct->modelSurfacePointCounts[index]);
+            const auto surfaceIt = std::find(
+                computeProduct->modelRuntimeModelIds.begin(),
+                computeProduct->modelRuntimeModelIds.end(),
+                modelProduct->runtimeModelId);
+            const size_t surfaceIndex = surfaceIt != computeProduct->modelRuntimeModelIds.end()
+                ? static_cast<size_t>(std::distance(computeProduct->modelRuntimeModelIds.begin(), surfaceIt))
+                : static_cast<size_t>(-1);
+
+            if (surfaceIndex != static_cast<size_t>(-1) &&
+                surfaceIndex < computeProduct->modelSurfaceBuffers.size() &&
+                surfaceIndex < computeProduct->modelSurfaceBufferOffsets.size() &&
+                surfaceIndex < computeProduct->modelSurfacePointCounts.size()) {
+                outConfig.modelSurfaceBuffers.push_back(computeProduct->modelSurfaceBuffers[surfaceIndex]);
+                outConfig.modelSurfaceBufferOffsets.push_back(computeProduct->modelSurfaceBufferOffsets[surfaceIndex]);
+                outConfig.modelSurfacePointCounts.push_back(computeProduct->modelSurfacePointCounts[surfaceIndex]);
             } else {
                 outConfig.modelSurfaceBuffers.push_back(VK_NULL_HANDLE);
                 outConfig.modelSurfaceBufferOffsets.push_back(0);
                 outConfig.modelSurfacePointCounts.push_back(0);
             }
 
-            if (modelProduct->runtimeModelId != 0 &&
-                index < computeProduct->modelSurfaceGradientBuffers.size() &&
-                index < computeProduct->modelSurfaceGradientBufferOffsets.size()) {
-                outConfig.modelSurfaceGradientBuffers.push_back(computeProduct->modelSurfaceGradientBuffers[index]);
-                outConfig.modelSurfaceGradientBufferOffsets.push_back(computeProduct->modelSurfaceGradientBufferOffsets[index]);
+            if (surfaceIndex != static_cast<size_t>(-1) &&
+                surfaceIndex < computeProduct->modelSurfaceGradientBuffers.size() &&
+                surfaceIndex < computeProduct->modelSurfaceGradientBufferOffsets.size()) {
+                outConfig.modelSurfaceGradientBuffers.push_back(computeProduct->modelSurfaceGradientBuffers[surfaceIndex]);
+                outConfig.modelSurfaceGradientBufferOffsets.push_back(computeProduct->modelSurfaceGradientBufferOffsets[surfaceIndex]);
             } else {
                 outConfig.modelSurfaceGradientBuffers.push_back(VK_NULL_HANDLE);
                 outConfig.modelSurfaceGradientBufferOffsets.push_back(0);

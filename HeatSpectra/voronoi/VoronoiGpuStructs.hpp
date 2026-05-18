@@ -35,8 +35,6 @@ struct GMLSSurfaceStencil {
 struct GMLSSurfaceWeight {
     uint32_t cellIndex;
     float weight;
-    uint32_t _pad0 = 0;
-    uint32_t _pad1 = 0;
 };
 
 struct GMLSSurfaceGradientWeight {

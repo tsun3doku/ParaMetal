@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
@@ -7,6 +7,7 @@
 class VulkanDevice;
 class MemoryAllocator;
 class UniformBufferManager;
+class CommandPool;
 
 class ContactLineRenderer {
 public:
@@ -15,7 +16,7 @@ public:
         glm::vec3 color;
     };
 
-    ContactLineRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager);
+    ContactLineRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, CommandPool& commandPool);
     ~ContactLineRenderer();
 
     void initialize(VkRenderPass renderPass, uint32_t subpass, uint32_t maxFramesInFlight);
@@ -39,6 +40,7 @@ private:
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
     UniformBufferManager& uniformBufferManager;
+    CommandPool& commandPool;
 
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;

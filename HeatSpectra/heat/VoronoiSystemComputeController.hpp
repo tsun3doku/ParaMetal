@@ -33,22 +33,7 @@ public:
         std::vector<std::vector<VoronoiModelRuntime::SurfaceVertex>> receiverSurfaceVertices;
         std::vector<std::vector<uint32_t>> receiverIntrinsicTriangleIndices;
         std::vector<uint32_t> receiverRuntimeModelIds;
-        std::vector<VkBuffer> meshVertexBuffers;
-        std::vector<VkDeviceSize> meshVertexBufferOffsets;
-        std::vector<VkBuffer> meshIndexBuffers;
-        std::vector<VkDeviceSize> meshIndexBufferOffsets;
-        std::vector<uint32_t> meshIndexCounts;
         std::vector<glm::mat4> meshModelMatrices;
-        std::vector<VkBufferView> supportingHalfedgeViews;
-        std::vector<VkBufferView> supportingAngleViews;
-        std::vector<VkBufferView> halfedgeViews;
-        std::vector<VkBufferView> edgeViews;
-        std::vector<VkBufferView> triangleViews;
-        std::vector<VkBufferView> lengthViews;
-        std::vector<VkBufferView> inputHalfedgeViews;
-        std::vector<VkBufferView> inputEdgeViews;
-        std::vector<VkBufferView> inputTriangleViews;
-        std::vector<VkBufferView> inputLengthViews;
         std::vector<VkBuffer> receiverSurfaceBuffers;
         std::vector<VkDeviceSize> receiverSurfaceBufferOffsets;
         std::vector<VkBuffer> receiverSurfaceGradientBuffers;
@@ -66,7 +51,8 @@ public:
     void configure(uint64_t socketKey, const Config& config);
     void disable(uint64_t socketKey);
     void disableAll();
-    bool exportProduct(uint64_t socketKey, VoronoiProduct& outProduct) const;
+    const VoronoiSystem* getSystem(uint64_t socketKey) const;
+    const Config* getConfig(uint64_t socketKey) const;
     std::vector<VoronoiSystem*> getActiveSystems() const;
 
 private:
@@ -82,54 +68,39 @@ private:
 };
 
 inline uint64_t buildComputeHash(const VoronoiSystemComputeController::Config& config) {
-    uint64_t hash = 1469598103934665603ull;
-    hash = RuntimeProductHash::mixPod(hash, static_cast<uint64_t>(config.active ? 1u : 0u));
-    hash = RuntimeProductHash::mixPod(hash, config.cellSize);
-    hash = RuntimeProductHash::mixPod(hash, config.voxelResolution);
-    hash = RuntimeProductHash::mixPodVector(hash, config.receiverNodeModelIds);
-    hash = RuntimeProductHash::mix(hash, static_cast<uint64_t>(config.receiverGeometryPositions.size()));
+    uint64_t hash = NodeGraphHash::start();
+    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.active ? 1u : 0u));
+    NodeGraphHash::combinePod(hash, config.cellSize);
+    NodeGraphHash::combinePod(hash, config.voxelResolution);
+    NodeGraphHash::combinePodVector(hash, config.receiverNodeModelIds);
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(config.receiverGeometryPositions.size()));
     for (const auto& positions : config.receiverGeometryPositions) {
-        hash = RuntimeProductHash::mixPodVector(hash, positions);
+        NodeGraphHash::combinePodVector(hash, positions);
     }
-    hash = RuntimeProductHash::mix(hash, static_cast<uint64_t>(config.receiverGeometryTriangleIndices.size()));
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(config.receiverGeometryTriangleIndices.size()));
     for (const auto& indices : config.receiverGeometryTriangleIndices) {
-        hash = RuntimeProductHash::mixPodVector(hash, indices);
+        NodeGraphHash::combinePodVector(hash, indices);
     }
-    hash = RuntimeProductHash::mix(hash, static_cast<uint64_t>(config.receiverIntrinsicMeshes.size()));
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(config.receiverIntrinsicMeshes.size()));
     for (const SupportingHalfedge::IntrinsicMesh& mesh : config.receiverIntrinsicMeshes) {
-        hash = RuntimeProductHash::mixPodVector(hash, mesh.vertices);
-        hash = RuntimeProductHash::mixPodVector(hash, mesh.indices);
-        hash = RuntimeProductHash::mixPodVector(hash, mesh.faceIds);
-        hash = RuntimeProductHash::mixPodVector(hash, mesh.triangles);
+        NodeGraphHash::combinePodVector(hash, mesh.vertices);
+        NodeGraphHash::combinePodVector(hash, mesh.indices);
+        NodeGraphHash::combinePodVector(hash, mesh.faceIds);
+        NodeGraphHash::combinePodVector(hash, mesh.triangles);
     }
-    hash = RuntimeProductHash::mix(hash, static_cast<uint64_t>(config.receiverSurfaceVertices.size()));
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(config.receiverSurfaceVertices.size()));
     for (const auto& vertices : config.receiverSurfaceVertices) {
-        hash = RuntimeProductHash::mixPodVector(hash, vertices);
+        NodeGraphHash::combinePodVector(hash, vertices);
     }
-    hash = RuntimeProductHash::mix(hash, static_cast<uint64_t>(config.receiverIntrinsicTriangleIndices.size()));
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(config.receiverIntrinsicTriangleIndices.size()));
     for (const auto& indices : config.receiverIntrinsicTriangleIndices) {
-        hash = RuntimeProductHash::mixPodVector(hash, indices);
+        NodeGraphHash::combinePodVector(hash, indices);
     }
-    hash = RuntimeProductHash::mixPodVector(hash, config.receiverRuntimeModelIds);
-    hash = RuntimeProductHash::mixPodVector(hash, config.meshVertexBuffers);
-    hash = RuntimeProductHash::mixPodVector(hash, config.meshVertexBufferOffsets);
-    hash = RuntimeProductHash::mixPodVector(hash, config.meshIndexBuffers);
-    hash = RuntimeProductHash::mixPodVector(hash, config.meshIndexBufferOffsets);
-    hash = RuntimeProductHash::mixPodVector(hash, config.meshIndexCounts);
-    hash = RuntimeProductHash::mixPodVector(hash, config.meshModelMatrices);
-    hash = RuntimeProductHash::mixPodVector(hash, config.supportingHalfedgeViews);
-    hash = RuntimeProductHash::mixPodVector(hash, config.supportingAngleViews);
-    hash = RuntimeProductHash::mixPodVector(hash, config.halfedgeViews);
-    hash = RuntimeProductHash::mixPodVector(hash, config.edgeViews);
-    hash = RuntimeProductHash::mixPodVector(hash, config.triangleViews);
-    hash = RuntimeProductHash::mixPodVector(hash, config.lengthViews);
-    hash = RuntimeProductHash::mixPodVector(hash, config.inputHalfedgeViews);
-    hash = RuntimeProductHash::mixPodVector(hash, config.inputEdgeViews);
-    hash = RuntimeProductHash::mixPodVector(hash, config.inputTriangleViews);
-    hash = RuntimeProductHash::mixPodVector(hash, config.inputLengthViews);
-    hash = RuntimeProductHash::mixPodVector(hash, config.receiverSurfaceBuffers);
-    hash = RuntimeProductHash::mixPodVector(hash, config.receiverSurfaceBufferOffsets);
-    hash = RuntimeProductHash::mixPodVector(hash, config.receiverSurfaceGradientBuffers);
-    hash = RuntimeProductHash::mixPodVector(hash, config.receiverSurfaceGradientBufferOffsets);
+    NodeGraphHash::combinePodVector(hash, config.receiverRuntimeModelIds);
+    NodeGraphHash::combinePodVector(hash, config.meshModelMatrices);
+    NodeGraphHash::combinePodVector(hash, config.receiverSurfaceBuffers);
+    NodeGraphHash::combinePodVector(hash, config.receiverSurfaceBufferOffsets);
+    NodeGraphHash::combinePodVector(hash, config.receiverSurfaceGradientBuffers);
+    NodeGraphHash::combinePodVector(hash, config.receiverSurfaceGradientBufferOffsets);
     return hash;
 }

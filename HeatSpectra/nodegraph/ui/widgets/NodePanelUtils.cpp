@@ -231,7 +231,7 @@ void collectUpstreamModelPaths(
         return;
     }
 
-    const NodeGraphNode* node = ::findNodeInState(state, nodeId);
+    const NodeGraphNode* node = state.node(nodeId);
     if (!node) {
         return;
     }
@@ -245,7 +245,7 @@ void collectUpstreamModelPaths(
     }
 
     for (const NodeGraphSocket& inputSocket : node->inputs) {
-        const NodeGraphEdge* inputEdge = ::findIncomingEdgeInState(state, node->id, inputSocket.id);
+        const NodeGraphEdge* inputEdge = state.incomingEdge(node->id, inputSocket.id);
         if (!inputEdge) {
             continue;
         }
@@ -263,7 +263,7 @@ void findUpstreamModelNodeIds(
         return;
     }
 
-    const NodeGraphNode* node = ::findNodeInState(state, nodeId);
+    const NodeGraphNode* node = state.node(nodeId);
     if (!node) {
         return;
     }
@@ -276,7 +276,7 @@ void findUpstreamModelNodeIds(
     }
 
     for (const NodeGraphSocket& inputSocket : node->inputs) {
-        const NodeGraphEdge* inputEdge = ::findIncomingEdgeInState(state, node->id, inputSocket.id);
+        const NodeGraphEdge* inputEdge = state.incomingEdge(node->id, inputSocket.id);
         if (!inputEdge) {
             continue;
         }

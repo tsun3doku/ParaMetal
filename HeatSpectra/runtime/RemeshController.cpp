@@ -76,21 +76,11 @@ void RemeshController::disable() {
 }
 
 
-bool RemeshController::exportProduct(uint64_t socketKey, RemeshProduct& outProduct) const {
-    outProduct = {};
-
-    if (socketKey == 0) {
-        return false;
-    }
-
-    if (configuredConfigs.find(socketKey) == configuredConfigs.end()) {
-        return false;
-    }
-
+const RemeshSystem* RemeshController::getSystem(uint64_t socketKey) const {
     const auto systemIt = activeSystems.find(socketKey);
     if (systemIt == activeSystems.end() || !systemIt->second) {
-        return false;
+        return nullptr;
     }
 
-    return systemIt->second->exportProduct(outProduct);
+    return systemIt->second.get();
 }

@@ -42,39 +42,14 @@ void HeatSystemVoronoiStage::dispatchDiffusionSubstep(
     vkCmdDispatch(commandBuffer, workGroupCount, 1, 1);
 }
 
-void HeatSystemVoronoiStage::insertInterSubstepBarrier(
-    VkCommandBuffer commandBuffer,
-    int substepIndex,
-    uint32_t numSubsteps) const {
-    if (substepIndex >= (static_cast<int>(numSubsteps) - 1)) {
-        return;
-    }
-
-    VkMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-
-    vkCmdPipelineBarrier(
-        commandBuffer,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        0,
-        1,
-        &barrier,
-        0,
-        nullptr,
-        0,
-        nullptr);
-}
-
 void HeatSystemVoronoiStage::insertFinalTemperatureBarrier(
     VkCommandBuffer commandBuffer,
     uint32_t numSubsteps,
     VkBuffer bufferA,
     VkDeviceSize offsetA,
     VkBuffer bufferB,
-    VkDeviceSize offsetB) const {
+    VkDeviceSize offsetB,
+    VkDeviceSize bufferSize) const {
     const bool writesBufferB = finalSubstepWritesBufferB(numSubsteps);
     VkBuffer finalTempBuffer = bufferA;
     VkDeviceSize finalTempOffset = offsetA;
@@ -89,7 +64,7 @@ void HeatSystemVoronoiStage::insertFinalTemperatureBarrier(
     finalTempBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     finalTempBarrier.buffer = finalTempBuffer;
     finalTempBarrier.offset = finalTempOffset;
-    finalTempBarrier.size = VK_WHOLE_SIZE;
+    finalTempBarrier.size = bufferSize;
 
     vkCmdPipelineBarrier(
         commandBuffer,
@@ -114,7 +89,7 @@ bool HeatSystemVoronoiStage::finalSubstepWritesBufferB(uint32_t numSubsteps) con
 bool HeatSystemVoronoiStage::createDescriptorPool(uint32_t numModels) {
     // 2 descriptor sets per model 
     uint32_t numSets = numModels * 2;
-    uint32_t storageBufferDescriptors = numSets * 7;
+    uint32_t storageBufferDescriptors = numSets * 6;
     uint32_t uniformBufferDescriptors = numSets * 1;
 
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
@@ -151,7 +126,6 @@ bool HeatSystemVoronoiStage::createDescriptorSetLayout() {
         {3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // timeBuffer
         {4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // tempRead
         {5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // tempWrite
-        {6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // seedFlagsBuffer
         {7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // couplingAccumulator
     };
 

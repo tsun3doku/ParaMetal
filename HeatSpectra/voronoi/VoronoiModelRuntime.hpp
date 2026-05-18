@@ -36,23 +36,8 @@ public:
         VulkanDevice& vulkanDevice,
         MemoryAllocator& memoryAllocator,
         uint32_t runtimeModelId,
-        VkBuffer vertexBuffer,
-        VkDeviceSize vertexBufferOffset,
-        VkBuffer indexBuffer,
-        VkDeviceSize indexBufferOffset,
-        uint32_t indexCount,
         const glm::mat4& modelMatrix,
         CpuData cpuData,
-        VkBufferView supportingHalfedgeView,
-        VkBufferView supportingAngleView,
-        VkBufferView halfedgeView,
-        VkBufferView edgeView,
-        VkBufferView triangleView,
-        VkBufferView lengthView,
-        VkBufferView inputHalfedgeView,
-        VkBufferView inputEdgeView,
-        VkBufferView inputTriangleView,
-        VkBufferView inputLengthView,
         CommandPool& renderCommandPool);
     ~VoronoiModelRuntime();
 
@@ -64,20 +49,13 @@ public:
         const std::vector<voronoi::GMLSSurfaceStencil>& stencils,
         const std::vector<voronoi::GMLSSurfaceWeight>& valueWeights,
         const std::vector<voronoi::GMLSSurfaceGradientWeight>& gradientWeights);
-    void executeBufferTransfers(VkCommandBuffer commandBuffer);
     void cleanup();
-    void cleanupStagingBuffers();
 
     void setStencilKDTree(std::unique_ptr<StencilKDTree> kdTree);
     StencilKDTree* getStencilKDTree() const { return stencilKDTree.get(); }
 
     uint32_t getNodeModelId() const { return nodeModelId; }
     uint32_t getRuntimeModelId() const { return runtimeModelId; }
-    VkBuffer getVertexBuffer() const { return vertexBuffer; }
-    VkDeviceSize getVertexBufferOffset() const { return vertexBufferOffset; }
-    VkBuffer getIndexBuffer() const { return indexBuffer; }
-    VkDeviceSize getIndexBufferOffset() const { return indexBufferOffset; }
-    uint32_t getIndexCount() const { return indexCount; }
     const glm::mat4& getModelMatrix() const { return modelMatrix; }
 
     size_t getIntrinsicVertexCount() const { return intrinsicVertexCount; }
@@ -98,48 +76,27 @@ public:
     VkDeviceSize getGMLSSurfaceStencilBufferOffset() const { return gmlsSurfaceStencilBufferOffset; }
     VkBuffer getGMLSSurfaceWeightBuffer() const { return gmlsSurfaceWeightBuffer; }
     VkDeviceSize getGMLSSurfaceWeightBufferOffset() const { return gmlsSurfaceWeightBufferOffset; }
+    size_t getGMLSSurfaceWeightCount() const { return valueWeightCount; }
     VkBuffer getGMLSSurfaceGradientWeightBuffer() const { return gmlsSurfaceGradientWeightBuffer; }
     VkDeviceSize getGMLSSurfaceGradientWeightBufferOffset() const { return gmlsSurfaceGradientWeightBufferOffset; }
-    VkBufferView getSupportingHalfedgeView() const;
-    VkBufferView getSupportingAngleView() const;
-    VkBufferView getHalfedgeView() const;
-    VkBufferView getEdgeView() const;
-    VkBufferView getTriangleView() const;
-    VkBufferView getLengthView() const;
-    VkBufferView getInputHalfedgeView() const;
-    VkBufferView getInputEdgeView() const;
-    VkBufferView getInputTriangleView() const;
-    VkBufferView getInputLengthView() const;
+    size_t getGMLSSurfaceGradientWeightCount() const { return gradientWeightCount; }
 
 private:
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
     uint32_t nodeModelId = 0;
     uint32_t runtimeModelId = 0;
-    VkBuffer vertexBuffer = VK_NULL_HANDLE;
-    VkDeviceSize vertexBufferOffset = 0;
-    VkBuffer indexBuffer = VK_NULL_HANDLE;
-    VkDeviceSize indexBufferOffset = 0;
-    uint32_t indexCount = 0;
     glm::mat4 modelMatrix{1.0f};
     SupportingHalfedge::IntrinsicMesh intrinsicMesh;
     std::vector<glm::vec3> geometryPositions;
     std::vector<uint32_t> geometryTriangleIndices;
     std::vector<SurfaceVertex> surfaceVertices;
-    VkBufferView supportingHalfedgeView = VK_NULL_HANDLE;
-    VkBufferView supportingAngleView = VK_NULL_HANDLE;
-    VkBufferView halfedgeView = VK_NULL_HANDLE;
-    VkBufferView edgeView = VK_NULL_HANDLE;
-    VkBufferView triangleView = VK_NULL_HANDLE;
-    VkBufferView lengthView = VK_NULL_HANDLE;
-    VkBufferView inputHalfedgeView = VK_NULL_HANDLE;
-    VkBufferView inputEdgeView = VK_NULL_HANDLE;
-    VkBufferView inputTriangleView = VK_NULL_HANDLE;
-    VkBufferView inputLengthView = VK_NULL_HANDLE;
     CommandPool& renderCommandPool;
 
     size_t intrinsicVertexCount = 0;
     size_t intrinsicTriangleCount = 0;
+    size_t valueWeightCount = 0;
+    size_t gradientWeightCount = 0;
     std::vector<uint32_t> intrinsicTriangleIndices;
 
     VkBuffer triangleIndicesBuffer = VK_NULL_HANDLE;
@@ -157,24 +114,8 @@ private:
     VkBuffer gmlsSurfaceGradientWeightBuffer = VK_NULL_HANDLE;
     VkDeviceSize gmlsSurfaceGradientWeightBufferOffset = 0;
 
-    VkBuffer gmlsSurfaceStencilStagingBuffer = VK_NULL_HANDLE;
-    VkDeviceSize gmlsSurfaceStencilStagingOffset = 0;
-    VkDeviceSize gmlsSurfaceStencilBufferSize = 0;
-
-    VkBuffer gmlsSurfaceWeightStagingBuffer = VK_NULL_HANDLE;
-    VkDeviceSize gmlsSurfaceWeightStagingOffset = 0;
-    VkDeviceSize gmlsSurfaceWeightBufferSize = 0;
-
-    VkBuffer gmlsSurfaceGradientWeightStagingBuffer = VK_NULL_HANDLE;
-    VkDeviceSize gmlsSurfaceGradientWeightStagingOffset = 0;
-    VkDeviceSize gmlsSurfaceGradientWeightBufferSize = 0;
-
     VkBuffer surfaceBuffer = VK_NULL_HANDLE;
     VkDeviceSize surfaceBufferOffset = 0;
-
-    VkBuffer initStagingBuffer = VK_NULL_HANDLE;
-    VkDeviceSize initStagingOffset = 0;
-    VkDeviceSize initBufferSize = 0;
 
     std::unique_ptr<StencilKDTree> stencilKDTree;
 };

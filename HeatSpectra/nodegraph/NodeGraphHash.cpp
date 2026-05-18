@@ -32,5 +32,11 @@ void NodeGraphHash::combineInputHash(uint64_t& hash, const NodeDataBlock* input)
     }
     combine(hash, static_cast<uint64_t>(input->dataType));
     combine(hash, input->payloadHandle.key);
-    combine(hash, input->payloadHandle.revision);
+}
+
+void NodeGraphHash::combineBytes(uint64_t& hash, const void* data, size_t size) {
+    const auto* bytes = static_cast<const unsigned char*>(data);
+    for (size_t i = 0; i < size; ++i) {
+        combine(hash, static_cast<uint64_t>(bytes[i]));
+    }
 }

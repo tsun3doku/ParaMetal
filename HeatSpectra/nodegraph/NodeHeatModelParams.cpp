@@ -1,4 +1,5 @@
 #include "NodeHeatModelParams.hpp"
+#include "heat/HeatSystemPresets.hpp"
 
 #include "NodeGraphEditor.hpp"
 #include "NodeGraphRegistry.hpp"
@@ -9,25 +10,25 @@ HeatModelNodeParams readHeatModelNodeParams(const NodeGraphNode& node) {
     params.density = NodePanelUtils::readFloatParam(
         node,
         nodegraphparams::heatmodel::Density,
-        1000.0);
+        HeatSimDefaults::density);
     params.specificHeat = NodePanelUtils::readFloatParam(
         node,
         nodegraphparams::heatmodel::SpecificHeat,
-        1000.0);
+        HeatSimDefaults::specificHeat);
     params.conductivity = NodePanelUtils::readFloatParam(
         node,
         nodegraphparams::heatmodel::Conductivity,
-        50.0);
+        HeatSimDefaults::conductivity);
     params.initialTemperature = NodePanelUtils::readFloatParam(
         node,
         nodegraphparams::heatmodel::InitialTemperature,
-        1.0);
+        HeatSimDefaults::ambientTemperature);
     params.boundaryCondition = static_cast<HeatBoundaryCondition>(
         NodePanelUtils::readEnumParam(node, nodegraphparams::heatmodel::BoundaryCondition, 0));
     params.fixedTemperatureValue = NodePanelUtils::readFloatParam(
         node,
         nodegraphparams::heatmodel::FixedTemperatureValue,
-        1.0);
+        HeatSimDefaults::ambientTemperature);
     return params;
 }
 

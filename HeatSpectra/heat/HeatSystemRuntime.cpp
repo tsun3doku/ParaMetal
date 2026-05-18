@@ -2,6 +2,7 @@
 
 #include "vulkan/CommandBufferManager.hpp"
 #include "heat/HeatModelRuntime.hpp"
+#include "heat/HeatSystemPresets.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/VulkanDevice.hpp"
 
@@ -61,7 +62,7 @@ bool HeatSystemRuntime::ensureModelBindings(
 
         const auto tempIt = activeModelTemperatureByRuntimeId.find(modelId);
         const float initialTemperature =
-            (tempIt != activeModelTemperatureByRuntimeId.end()) ? tempIt->second : 1.0f;
+            (tempIt != activeModelTemperatureByRuntimeId.end()) ? tempIt->second : HeatSimDefaults::ambientTemperature;
 
         const auto bcIt = activeModelBoundaryConditions.find(modelId);
         const uint32_t boundaryCondition =
@@ -69,16 +70,16 @@ bool HeatSystemRuntime::ensureModelBindings(
 
         const auto fixedTempIt = activeModelFixedTemperatureValues.find(modelId);
         const float fixedTemperatureValue =
-            (fixedTempIt != activeModelFixedTemperatureValues.end()) ? fixedTempIt->second : 1.0f;
+            (fixedTempIt != activeModelFixedTemperatureValues.end()) ? fixedTempIt->second : HeatSimDefaults::ambientTemperature;
 
         const auto densityIt = activeModelDensity.find(modelId);
-        const float density = (densityIt != activeModelDensity.end()) ? densityIt->second : 1000.0f;
+        const float density = (densityIt != activeModelDensity.end()) ? densityIt->second : HeatSimDefaults::density;
 
         const auto specificHeatIt = activeModelSpecificHeat.find(modelId);
-        const float specificHeat = (specificHeatIt != activeModelSpecificHeat.end()) ? specificHeatIt->second : 1000.0f;
+        const float specificHeat = (specificHeatIt != activeModelSpecificHeat.end()) ? specificHeatIt->second : HeatSimDefaults::specificHeat;
 
         const auto conductivityIt = activeModelConductivity.find(modelId);
-        const float conductivity = (conductivityIt != activeModelConductivity.end()) ? conductivityIt->second : 1.0f;
+        const float conductivity = (conductivityIt != activeModelConductivity.end()) ? conductivityIt->second : HeatSimDefaults::conductivity;
 
         auto heatModel = std::make_unique<HeatModelRuntime>(
             vulkanDevice,

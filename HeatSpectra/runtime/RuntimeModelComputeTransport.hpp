@@ -27,9 +27,10 @@ private:
     bool tryBuildRuntimeModelPath(uint64_t socketKey, const ModelPackage& package, const std::string*& outModelPath) const;
     void removePublishedProduct(uint64_t socketKey);
     void publishProduct(uint64_t socketKey, uint32_t runtimeModelId);
+    uint64_t buildConfigInputHash(uint64_t socketKey, const ModelPackage& package) const;
 
     ModelComputeRuntime* modelRuntime = nullptr;
     ECSRegistry* ecsRegistry = nullptr;
     std::unordered_set<uint64_t> activeSocketKeys;
-    std::unordered_map<uint64_t, uint64_t> appliedPackageHash;
+    std::unordered_map<uint64_t, uint64_t> appliedConfigInputHash;
 };

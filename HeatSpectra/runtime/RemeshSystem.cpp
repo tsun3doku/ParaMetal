@@ -83,38 +83,6 @@ void RemeshSystem::disable() {
     resetState(true);
 }
 
-bool RemeshSystem::exportProduct(RemeshProduct& outProduct) const {
-    outProduct = {};
-
-    if (!ready) {
-        return false;
-    }
-
-    outProduct.runtimeModelId = runtimeModelId;
-    outProduct.geometryPositions = geometryPositions;
-    outProduct.geometryTriangleIndices = geometryTriangleIndices;
-    outProduct.intrinsicMesh = intrinsicMesh;
-    outProduct.intrinsicTriangleBuffer = intrinsicGpuResources.intrinsicTriangleBuffer;
-    outProduct.intrinsicTriangleBufferOffset = intrinsicGpuResources.triangleGeometryOffset;
-    outProduct.intrinsicVertexBuffer = intrinsicGpuResources.intrinsicVertexBuffer;
-    outProduct.intrinsicVertexBufferOffset = intrinsicGpuResources.vertexGeometryOffset;
-    outProduct.intrinsicTriangleCount = intrinsicGpuResources.triangleCount;
-    outProduct.intrinsicVertexCount = intrinsicGpuResources.vertexCount;
-    outProduct.averageTriangleArea = intrinsicGpuResources.averageTriangleArea;
-    outProduct.supportingHalfedgeView = intrinsicGpuResources.viewS;
-    outProduct.supportingAngleView = intrinsicGpuResources.viewA;
-    outProduct.halfedgeView = intrinsicGpuResources.viewH;
-    outProduct.edgeView = intrinsicGpuResources.viewE;
-    outProduct.triangleView = intrinsicGpuResources.viewT;
-    outProduct.lengthView = intrinsicGpuResources.viewL;
-    outProduct.inputHalfedgeView = intrinsicGpuResources.viewHInput;
-    outProduct.inputEdgeView = intrinsicGpuResources.viewEInput;
-    outProduct.inputTriangleView = intrinsicGpuResources.viewTInput;
-    outProduct.inputLengthView = intrinsicGpuResources.viewLInput;
-    outProduct.productHash = buildProductHash(outProduct);
-    return outProduct.isValid();
-}
-
 void RemeshSystem::resetState(bool waitForDevice) {
     if (waitForDevice && ready) {
         vkDeviceWaitIdle(vulkanDevice.getDevice());

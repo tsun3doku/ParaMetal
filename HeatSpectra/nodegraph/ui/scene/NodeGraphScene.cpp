@@ -49,18 +49,6 @@ void NodeGraphScene::setBridge(NodeGraphBridge* bridgePtr) {
     buildFromState(state);
 }
 
-void NodeGraphScene::setNodeActivatedCallback(NodeActivatedCallback callback) {
-    nodeActivatedCallback = std::move(callback);
-}
-
-void NodeGraphScene::setNodeSelectionChangedCallback(NodeSelectionChangedCallback callback) {
-    nodeSelectionChangedCallback = std::move(callback);
-}
-
-void NodeGraphScene::setStatusCallback(StatusCallback callback) {
-    statusCallback = std::move(callback);
-}
-
 void NodeGraphScene::applyPendingChanges() {
     if (!bridge) {
         return;
@@ -80,16 +68,20 @@ void NodeGraphScene::buildFromState(const NodeGraphState& state) {
     suppressSelectionChangedNotifications = true;
     clearSceneState();
 
-    for (const NodeGraphNode& node : state.nodes) {
+    for (const auto& [id, node] : state.nodes) {
         createNodeItem(node);
     }
-    for (const NodeGraphEdge& edge : state.edges) {
+    for (const auto& [id, edge] : state.edges) {
         createEdgeItem(edge);
     }
 
     selectNodesById(selectedNodeIds);
     suppressSelectionChangedNotifications = false;
     notifySelectedNodeChanged();
+
+    if (!state.nodes.empty()) {
+        emit graphPopulated();
+    }
 }
 
 void NodeGraphScene::applyDelta(const NodeGraphDelta& delta) {
@@ -117,7 +109,7 @@ void NodeGraphScene::applyDelta(const NodeGraphDelta& delta) {
 
             removeNodeItem(change.node.id);
             createNodeItem(change.node);
-            for (const NodeGraphEdge& edge : state.edges) {
+            for (const auto& [id, edge] : state.edges) {
                 if (edge.fromNode == change.node.id || edge.toNode == change.node.id) {
                     createEdgeItem(edge);
                 }
@@ -192,6 +184,7 @@ NodeGraphNodeItem* NodeGraphScene::createNodeItem(const NodeGraphNode& node) {
         inputSocket->setPen(QPen(nodegraphscene::socketBorderColor(), nodegraphscene::socketBorderWidth));
         inputSocket->setBrush(nodegraphscene::valueTypeColor(socket.valueType));
         nodegraphscene::setDecorativeItemFlags(inputSocket);
+        inputSocket->setData(NodeIdRole, static_cast<qulonglong>(node.id.value));
         inputSocketItemsBySocket[socket.id.value] = inputSocket;
     }
 
@@ -212,6 +205,7 @@ NodeGraphNodeItem* NodeGraphScene::createNodeItem(const NodeGraphNode& node) {
         outputSocket->setPen(QPen(nodegraphscene::socketBorderColor(), nodegraphscene::socketBorderWidth));
         outputSocket->setBrush(nodegraphscene::valueTypeColor(socket.valueType));
         nodegraphscene::setDecorativeItemFlags(outputSocket);
+        outputSocket->setData(NodeIdRole, static_cast<qulonglong>(node.id.value));
 
         outputSocketItemsBySocket[socket.id.value] = outputSocket;
     }
@@ -412,7 +406,7 @@ bool NodeGraphScene::copySelectedNodes() {
     }
 
     const NodeGraphState state = bridge->state();
-    for (const NodeGraphNode& node : state.nodes) {
+    for (const auto& [id, node] : state.nodes) {
         if (selectedNodeIds.find(node.id.value) == selectedNodeIds.end()) {
             continue;
         }
@@ -442,7 +436,7 @@ bool NodeGraphScene::copySelectedNodes() {
             return lhs.sourceNodeId.value < rhs.sourceNodeId.value;
         });
 
-    for (const NodeGraphEdge& edge : state.edges) {
+    for (const auto& [id, edge] : state.edges) {
         if (selectedNodeIds.find(edge.fromNode.value) == selectedNodeIds.end() ||
             selectedNodeIds.find(edge.toNode.value) == selectedNodeIds.end()) {
             continue;
@@ -644,11 +638,11 @@ void NodeGraphScene::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
 
     if (event && event->button() == Qt::LeftButton) {
         const qreal dragDistance = QLineF(event->buttonDownScenePos(Qt::LeftButton), event->scenePos()).length();
-        if (dragDistance < nodegraphscene::clickDragThreshold && nodeActivatedCallback && !suppressNodeActivationOnRelease) {
+        if (dragDistance < nodegraphscene::clickDragThreshold && !suppressNodeActivationOnRelease) {
             QGraphicsItem* item = itemAt(event->scenePos(), QTransform());
             const NodeGraphNodeId nodeId = itemNodeId(item);
             if (nodeId.isValid()) {
-                nodeActivatedCallback(nodeId, event->scenePos());
+                emit nodeActivated(nodeId);
             }
         }
 
@@ -810,9 +804,7 @@ void NodeGraphScene::updateHoverState(const QPointF& scenePos) {
 }
 
 void NodeGraphScene::notifySelectedNodeChanged() {
-    if (nodeSelectionChangedCallback) {
-        nodeSelectionChangedCallback(selectedSingleNodeId());
-    }
+    emit nodeSelectionChanged(selectedSingleNodeId());
 }
 
 void NodeGraphScene::selectNodesById(const std::vector<NodeGraphNodeId>& nodeIds) {
@@ -1009,10 +1001,8 @@ bool NodeGraphScene::handleNodeCapClick(const QPointF& scenePos) {
     return false;
 }
 
-void NodeGraphScene::reportStatus(const QString& text) const {
-    if (statusCallback) {
-        statusCallback(text);
-    }
+void NodeGraphScene::reportStatus(const QString& text) {
+    emit statusReported(text);
 }
 
 NodeGraphNodeId NodeGraphScene::itemNodeId(const QGraphicsItem* item) {

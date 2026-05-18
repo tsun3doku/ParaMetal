@@ -5,7 +5,7 @@
 class App;
 class QAction;
 class ModelSelection;
-class NodeGraphDock;
+class NodeGraphEditorWidget;
 class NodeGraphBridge;
 class RuntimeQuery;
 class SceneController;
@@ -28,7 +28,7 @@ protected:
 
 private:
     void createMenuBar();
-    void createNodeGraphDock();
+    void createNodeGraphEditorWidget();
     void syncNodeGraphBridge();
     void setNodeGraphVisible(bool visible);
     void raiseNativeSplitterHandles();
@@ -40,7 +40,7 @@ private:
     QAction* nodeGraphAction = nullptr;
     VulkanWindow* viewportWindow = nullptr;
     QWidget* viewportContainer = nullptr;
-    NodeGraphDock* nodeGraphDock = nullptr;
+    NodeGraphEditorWidget* nodeGraphEditor = nullptr;
     NodeGraphBridge* boundNodeGraphBridge = nullptr;
     const SceneController* boundSceneController = nullptr;
     ModelSelection* boundModelSelection = nullptr;

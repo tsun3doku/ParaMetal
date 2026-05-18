@@ -3,6 +3,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "contact/ContactSystem.hpp"
 #include "contact/ContactSystemComputeController.hpp"
 #include "runtime/RuntimeECS.hpp"
 #include "runtime/RuntimePackages.hpp"
@@ -24,13 +25,21 @@ public:
 
         std::unordered_set<uint64_t> nextSocketKeys;
 
-        auto view = registry.view<ContactPackage>();
+        auto view = registry.view<ContactPackage>(entt::exclude<Stale>);
         for (auto entity : view) {
             uint64_t socketKey = static_cast<uint64_t>(entity);
             const auto& package = registry.get<ContactPackage>(entity);
-            auto hashIt = appliedPackageHash.find(socketKey);
-            if (hashIt != appliedPackageHash.end() && hashIt->second == package.packageHash) {
+
+            const uint64_t inputHash = buildConfigInputHash(socketKey, package);
+            auto hashIt = appliedConfigInputHash.find(socketKey);
+            if (inputHash != 0 && hashIt != appliedConfigInputHash.end() && hashIt->second == inputHash) {
                 nextSocketKeys.insert(socketKey);
+                continue;
+            }
+
+            if (!package.authored.active || !package.authored.pair.hasValidContact) {
+                controller->disable(socketKey);
+                appliedConfigInputHash.erase(socketKey);
                 continue;
             }
 
@@ -42,11 +51,10 @@ public:
             nextSocketKeys.insert(socketKey);
         }
 
-        for (uint64_t socketKey : activeSocketKeys) {
-            if (nextSocketKeys.find(socketKey) == nextSocketKeys.end()) {
-                controller->disable(socketKey);
-                appliedPackageHash.erase(socketKey);
-            }
+        for (auto entity : registry.view<ContactPackage, Stale>()) {
+            uint64_t socketKey = static_cast<uint64_t>(entity);
+            controller->disable(socketKey);
+            appliedConfigInputHash.erase(socketKey);
         }
 
         activeSocketKeys = std::move(nextSocketKeys);
@@ -57,23 +65,17 @@ public:
             return;
         }
 
-        std::vector<uint64_t> removals;
-        auto productView = ecsRegistry->view<ContactProduct>();
-        for (auto entity : productView) {
-            const uint64_t socketKey = static_cast<uint64_t>(entity);
-            if (activeSocketKeys.find(socketKey) == activeSocketKeys.end()) {
-                removals.push_back(socketKey);
-            }
-        }
-        for (uint64_t socketKey : removals) {
-            removePublishedProduct(socketKey);
+        auto staleProductView = ecsRegistry->view<ContactProduct, Stale>();
+        for (auto entity : staleProductView) {
+            removePublishedProduct(static_cast<uint64_t>(entity));
         }
         for (uint64_t socketKey : activeSocketKeys) {
             auto entity = static_cast<ECSEntity>(socketKey);
             const auto& package = ecsRegistry->get<ContactPackage>(entity);
-            auto hashIt = appliedPackageHash.find(socketKey);
+            const uint64_t inputHash = buildConfigInputHash(socketKey, package);
+            auto hashIt = appliedConfigInputHash.find(socketKey);
             const ContactProduct* product = tryGetProduct<ContactProduct>(*ecsRegistry, socketKey);
-            if (!product || hashIt == appliedPackageHash.end() || hashIt->second != package.packageHash) {
+            if (!product || hashIt == appliedConfigInputHash.end() || hashIt->second != inputHash) {
                 publishProduct(socketKey);
             }
         }
@@ -88,14 +90,16 @@ private:
             return false;
         }
 
+        const uint64_t modelAEntityId = package.modelAMeshHandle.key;
+        const uint64_t modelBEntityId = package.modelBMeshHandle.key;
+        if (modelAEntityId == 0 || modelBEntityId == 0) {
+            return false;
+        }
+
         const RemeshProduct* modelARemeshProduct =
-            package.modelARemeshProduct.isValid()
-            ? tryGetProduct<RemeshProduct>(*ecsRegistry, package.modelARemeshProduct.outputSocketKey)
-            : nullptr;
+            tryGetProduct<RemeshProduct>(*ecsRegistry, modelAEntityId);
         const RemeshProduct* modelBRemeshProduct =
-            package.modelBRemeshProduct.isValid()
-            ? tryGetProduct<RemeshProduct>(*ecsRegistry, package.modelBRemeshProduct.outputSocketKey)
-            : nullptr;
+            tryGetProduct<RemeshProduct>(*ecsRegistry, modelBEntityId);
         if (!modelARemeshProduct || !modelBRemeshProduct) {
             return false;
         }
@@ -103,10 +107,8 @@ private:
         outConfig = {};
         outConfig.minNormalDot = package.authored.pair.minNormalDot;
         outConfig.contactRadius = package.authored.pair.contactRadius;
-        outConfig.modelAId = modelARemeshProduct->runtimeModelId;
         outConfig.modelALocalToWorld = package.modelALocalToWorld;
         outConfig.modelAIntrinsicMesh = modelARemeshProduct->intrinsicMesh;
-        outConfig.modelBId = modelBRemeshProduct->runtimeModelId;
         outConfig.modelBLocalToWorld = package.modelBLocalToWorld;
         outConfig.modelBIntrinsicMesh = modelBRemeshProduct->intrinsicMesh;
         outConfig.modelARuntimeModelId = modelARemeshProduct->runtimeModelId;
@@ -118,6 +120,19 @@ private:
 
         outConfig.computeHash = buildComputeHash(outConfig);
         return true;
+    }
+
+    uint64_t buildConfigInputHash(uint64_t socketKey, const ContactPackage& package) const {
+        (void)socketKey;
+        uint64_t hash = package.packageHash;
+        const RemeshProduct* modelARemeshProduct = tryGetProduct<RemeshProduct>(*ecsRegistry, package.modelAMeshHandle.key);
+        const RemeshProduct* modelBRemeshProduct = tryGetProduct<RemeshProduct>(*ecsRegistry, package.modelBMeshHandle.key);
+        if (!modelARemeshProduct || !modelBRemeshProduct) {
+            return 0;
+        }
+        NodeGraphHash::combine(hash, modelARemeshProduct->productHash);
+        NodeGraphHash::combine(hash, modelBRemeshProduct->productHash);
+        return hash;
     }
 
     void removePublishedProduct(uint64_t socketKey) {
@@ -135,7 +150,7 @@ private:
         }
 
         ContactProduct product{};
-        if (!controller->exportProduct(socketKey, product)) {
+        if (!buildProduct(socketKey, product)) {
             auto entity = static_cast<ECSEntity>(socketKey);
             ecsRegistry->remove<ContactProduct>(entity);
             return;
@@ -144,11 +159,34 @@ private:
         auto entity = static_cast<ECSEntity>(socketKey);
         const auto& package = ecsRegistry->get<ContactPackage>(entity);
         ecsRegistry->emplace_or_replace<ContactProduct>(entity, product);
-        appliedPackageHash[socketKey] = package.packageHash;
+        appliedConfigInputHash[socketKey] = buildConfigInputHash(socketKey, package);
+    }
+
+    bool buildProduct(uint64_t socketKey, ContactProduct& outProduct) const {
+        outProduct = {};
+        ContactSystem* system = controller ? controller->getSystem(socketKey) : nullptr;
+        if (!system || !controller->getConfig(socketKey)) {
+            return false;
+        }
+
+        const ContactCoupling* coupling = system->getContactCoupling();
+        if (!coupling) {
+            return false;
+        }
+
+        outProduct.coupling = *coupling;
+        outProduct.contactPairBuffer = system->getContactPairBuffer();
+        outProduct.contactPairBufferOffset = system->getContactPairBufferOffset();
+        outProduct.modelARuntimeModelId = coupling->modelARuntimeModelId;
+        outProduct.modelBRuntimeModelId = coupling->modelBRuntimeModelId;
+        outProduct.outlineVertices = system->getOutlineVertices();
+        outProduct.correspondenceVertices = system->getCorrespondenceVertices();
+        outProduct.productHash = buildProductHash(outProduct);
+        return outProduct.isValid();
     }
 
     ContactSystemComputeController* controller = nullptr;
     ECSRegistry* ecsRegistry = nullptr;
     std::unordered_set<uint64_t> activeSocketKeys;
-    std::unordered_map<uint64_t, uint64_t> appliedPackageHash;
+    std::unordered_map<uint64_t, uint64_t> appliedConfigInputHash;
 };

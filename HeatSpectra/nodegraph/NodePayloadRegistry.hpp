@@ -25,11 +25,9 @@ public:
         Entry entry{};
         entry.payload = std::make_shared<T>(std::move(payload));
         entry.type = std::type_index(typeid(T));
-        entry.revision = revisionCounter.fetch_add(1, std::memory_order_relaxed);
         entries[key] = entry;
         NodeDataHandle handle{};
         handle.key = key;
-        handle.revision = entry.revision;
         return handle;
     }
 
@@ -47,20 +45,15 @@ public:
 
     void erase(uint64_t key);
     void clear();
-    const GeometryData* resolveGeometryHandle(const NodeDataHandle& handle) const;
-    bool hasRemeshHandle(const NodeDataHandle& handle) const;
-
-    NodeDataHandle resolveMeshHandle(NodePayloadType type, const NodeDataHandle& handle) const;
-    const GeometryData* resolveGeometry(NodePayloadType type, const NodeDataHandle& handle) const;
-    uint64_t resolvePayloadHash(NodePayloadType type, const NodeDataHandle& handle) const;
+    NodeDataHandle resolveMeshHandle(uint8_t type, const NodeDataHandle& handle) const;
+    const GeometryData* resolveGeometry(const NodeDataHandle& handle, NodeDataHandle* outSourceHandle = nullptr) const;
+    uint64_t resolvePayloadHash(const NodeDataHandle& handle) const;
 
 private:
     struct Entry {
         std::shared_ptr<void> payload;
         std::type_index type{typeid(void)};
-        uint64_t revision = 0;
     };
 
     std::unordered_map<uint64_t, Entry> entries;
-    std::atomic<uint64_t> revisionCounter{1};
 };

@@ -1,8 +1,9 @@
-﻿#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.h>
 
 #include "MemoryAllocator.hpp"
 #include "VulkanDevice.hpp"
 #include "UniformBufferManager.hpp"
+#include "VulkanBuffer.hpp"
 #include <array>
 
 UniformBufferManager::UniformBufferManager(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, uint32_t maxFramesInFlight)
@@ -25,16 +26,14 @@ void UniformBufferManager::createUniformBuffers(uint32_t maxFramesInFlight) {
     uniformBufferOffsets_.resize(maxFramesInFlight);
 
     for (size_t i = 0; i < maxFramesInFlight; i++) {
-        auto [buffer, offset] = memoryAllocator.allocate(
+        createUniformBuffer(
+            memoryAllocator,
+            vulkanDevice,
             bufferSize,
-            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            vulkanDevice.getPhysicalDeviceProperties().limits.minUniformBufferOffsetAlignment
+            uniformBuffers[i],
+            uniformBufferOffsets_[i],
+            &uniformBuffersMapped[i]
         );
-
-        uniformBuffers[i] = buffer;
-        uniformBufferOffsets_[i] = offset;
-        uniformBuffersMapped[i] = memoryAllocator.getMappedPointer(buffer, offset);
     }
 }
 
@@ -46,16 +45,14 @@ void UniformBufferManager::createGridUniformBuffers(uint32_t maxFramesInFlight) 
     gridUniformBufferOffsets_.resize(maxFramesInFlight);
 
     for (size_t i = 0; i < maxFramesInFlight; i++) {
-        auto [buffer, offset] = memoryAllocator.allocate(
+        createUniformBuffer(
+            memoryAllocator,
+            vulkanDevice,
             bufferSize,
-            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            vulkanDevice.getPhysicalDeviceProperties().limits.minUniformBufferOffsetAlignment
+            gridUniformBuffers[i],
+            gridUniformBufferOffsets_[i],
+            &gridUniformBuffersMapped[i]
         );
-
-        gridUniformBuffers[i] = buffer;
-        gridUniformBufferOffsets_[i] = offset;
-        gridUniformBuffersMapped[i] = memoryAllocator.getMappedPointer(buffer, offset);
     }
 }
 
@@ -67,16 +64,14 @@ void UniformBufferManager::createLightUniformBuffers(uint32_t maxFramesInFlight)
     lightBufferOffsets_.resize(maxFramesInFlight);
 
     for (size_t i = 0; i < maxFramesInFlight; i++) {
-        auto [buffer, offset] = memoryAllocator.allocate(
+        createUniformBuffer(
+            memoryAllocator,
+            vulkanDevice,
             bufferSize,
-            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            vulkanDevice.getPhysicalDeviceProperties().limits.minUniformBufferOffsetAlignment
+            lightBuffers[i],
+            lightBufferOffsets_[i],
+            &lightBuffersMapped[i]
         );
-
-        lightBuffers[i] = buffer;
-        lightBufferOffsets_[i] = offset;
-        lightBuffersMapped[i] = memoryAllocator.getMappedPointer(buffer, offset);
     }
 }
 
@@ -88,16 +83,14 @@ void UniformBufferManager::createMaterialUniformBuffers(uint32_t maxFramesInFlig
     materialBufferOffsets_.resize(maxFramesInFlight);
 
     for (size_t i = 0; i < maxFramesInFlight; i++) {
-        auto [buffer, offset] = memoryAllocator.allocate(
+        createUniformBuffer(
+            memoryAllocator,
+            vulkanDevice,
             bufferSize,
-            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            vulkanDevice.getPhysicalDeviceProperties().limits.minUniformBufferOffsetAlignment
+            materialBuffers[i],
+            materialBufferOffsets_[i],
+            &materialBuffersMapped[i]
         );
-
-        materialBuffers[i] = buffer;
-        materialBufferOffsets_[i] = offset;
-        materialBuffersMapped[i] = memoryAllocator.getMappedPointer(buffer, offset);
     }
 }
 
@@ -131,16 +124,14 @@ void UniformBufferManager::createSSAOKernelBuffers(uint32_t maxFramesInFlight) {
 
     // Create buffers and copy kernel data
     for (size_t i = 0; i < maxFramesInFlight; i++) {
-        auto [buffer, offset] = memoryAllocator.allocate(
+        createUniformBuffer(
+            memoryAllocator,
+            vulkanDevice,
             bufferSize,
-            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            vulkanDevice.getPhysicalDeviceProperties().limits.minUniformBufferOffsetAlignment
+            SSAOKernelBuffers[i],
+            SSAOKernelBufferOffsets_[i],
+            &SSAOKernelBuffersMapped[i]
         );
-
-        SSAOKernelBuffers[i] = buffer;
-        SSAOKernelBufferOffsets_[i] = offset;
-        SSAOKernelBuffersMapped[i] = memoryAllocator.getMappedPointer(buffer, offset);
 
         memcpy(SSAOKernelBuffersMapped[i], &ssaoKernel, sizeof(ssaoKernel));
     }
@@ -180,24 +171,10 @@ void UniformBufferManager::updateSSAOKernelBuffer(uint32_t currentImage, SSAOKer
 
 void UniformBufferManager::cleanup(uint32_t maxFramesInFlight) {
     for (size_t i = 0; i < maxFramesInFlight; i++) {
-        if (uniformBuffers[i] != VK_NULL_HANDLE) {
-            memoryAllocator.free(uniformBuffers[i], 0);
-        }
-
-        if (gridUniformBuffers[i] != VK_NULL_HANDLE) {
-            memoryAllocator.free(gridUniformBuffers[i], 0);
-        }
-
-        if (lightBuffers[i] != VK_NULL_HANDLE) {
-            memoryAllocator.free(lightBuffers[i], 0);
-        }
-
-        if (materialBuffers[i] != VK_NULL_HANDLE) {
-            memoryAllocator.free(materialBuffers[i], 0);
-        }
-
-        if (SSAOKernelBuffers[i] != VK_NULL_HANDLE) {
-            memoryAllocator.free(SSAOKernelBuffers[i], 0);
-        }
+        freeBuffer(memoryAllocator, uniformBuffers[i], uniformBufferOffsets_[i]);
+        freeBuffer(memoryAllocator, gridUniformBuffers[i], gridUniformBufferOffsets_[i]);
+        freeBuffer(memoryAllocator, lightBuffers[i], lightBufferOffsets_[i]);
+        freeBuffer(memoryAllocator, materialBuffers[i], materialBufferOffsets_[i]);
+        freeBuffer(memoryAllocator, SSAOKernelBuffers[i], SSAOKernelBufferOffsets_[i]);
     }
 }

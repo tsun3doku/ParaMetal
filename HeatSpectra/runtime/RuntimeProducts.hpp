@@ -12,41 +12,9 @@
 #include "domain/GeometryData.hpp"
 #include "mesh/remesher/SupportingHalfedge.hpp"
 #include "nodegraph/NodeGraphCoreTypes.hpp"
+#include "nodegraph/NodeGraphHash.hpp"
 #include "contact/ContactTypes.hpp"
 #include "voronoi/VoronoiGpuStructs.hpp"
-
-namespace RuntimeProductHash {
-
-inline uint64_t mix(uint64_t hash, uint64_t value) {
-    hash ^= value + 0x9E3779B97F4A7C15ull + (hash << 6) + (hash >> 2);
-    return hash;
-}
-
-inline uint64_t mixBytes(uint64_t hash, const void* data, size_t size) {
-    const auto* bytes = static_cast<const unsigned char*>(data);
-    for (size_t index = 0; index < size; ++index) {
-        hash = mix(hash, static_cast<uint64_t>(bytes[index]));
-    }
-    return hash;
-}
-
-template <typename T>
-inline uint64_t mixPod(uint64_t hash, const T& value) {
-    static_assert(std::is_trivially_copyable_v<T>, "mixPod requires trivially copyable type");
-    return mixBytes(hash, &value, sizeof(T));
-}
-
-template <typename T>
-inline uint64_t mixPodVector(uint64_t hash, const std::vector<T>& values) {
-    static_assert(std::is_trivially_copyable_v<T>, "mixPodVector requires trivially copyable type");
-    hash = mix(hash, static_cast<uint64_t>(values.size()));
-    if (!values.empty()) {
-        hash = mixBytes(hash, values.data(), sizeof(T) * values.size());
-    }
-    return hash;
-}
-
-} // namespace RuntimeProductHash
 
 struct ModelProduct {
     uint32_t runtimeModelId = 0;
@@ -71,61 +39,6 @@ struct ModelProduct {
             renderVertexBuffer != VK_NULL_HANDLE &&
             renderIndexBuffer != VK_NULL_HANDLE &&
             renderIndexCount != 0;
-    }
-
-};
-
-
-struct VoronoiSurfaceProduct {
-    uint32_t runtimeModelId = 0;
-    uint32_t nodeOffset = 0;
-    uint32_t nodeCount = 0;
-    VkBuffer vertexBuffer = VK_NULL_HANDLE;
-    VkDeviceSize vertexBufferOffset = 0;
-    VkBuffer indexBuffer = VK_NULL_HANDLE;
-    VkDeviceSize indexBufferOffset = 0;
-    uint32_t indexCount = 0;
-    glm::mat4 modelMatrix{ 1.0f };
-    uint32_t intrinsicVertexCount = 0;
-    VkBuffer candidateBuffer = VK_NULL_HANDLE;
-    VkDeviceSize candidateBufferOffset = 0;
-    VkBuffer gmlsSurfaceStencilBuffer = VK_NULL_HANDLE;
-    VkDeviceSize gmlsSurfaceStencilBufferOffset = 0;
-    VkBuffer gmlsSurfaceWeightBuffer = VK_NULL_HANDLE;
-    VkDeviceSize gmlsSurfaceWeightBufferOffset = 0;
-    VkBuffer gmlsSurfaceGradientWeightBuffer = VK_NULL_HANDLE;
-    VkDeviceSize gmlsSurfaceGradientWeightBufferOffset = 0;
-    VkBufferView supportingHalfedgeView = VK_NULL_HANDLE;
-    VkBufferView supportingAngleView = VK_NULL_HANDLE;
-    VkBufferView halfedgeView = VK_NULL_HANDLE;
-    VkBufferView edgeView = VK_NULL_HANDLE;
-    VkBufferView triangleView = VK_NULL_HANDLE;
-    VkBufferView lengthView = VK_NULL_HANDLE;
-    VkBufferView inputHalfedgeView = VK_NULL_HANDLE;
-    VkBufferView inputEdgeView = VK_NULL_HANDLE;
-    VkBufferView inputTriangleView = VK_NULL_HANDLE;
-    VkBufferView inputLengthView = VK_NULL_HANDLE;
-    std::vector<uint32_t> seedFlags;
-    std::vector<glm::vec3> seedPositions;
-
-    bool isValid() const {
-        return runtimeModelId != 0 &&
-            nodeCount != 0 &&
-            vertexBuffer != VK_NULL_HANDLE &&
-            indexBuffer != VK_NULL_HANDLE &&
-            indexCount != 0 &&
-            intrinsicVertexCount != 0 &&
-            candidateBuffer != VK_NULL_HANDLE &&
-            supportingHalfedgeView != VK_NULL_HANDLE &&
-            supportingAngleView != VK_NULL_HANDLE &&
-            halfedgeView != VK_NULL_HANDLE &&
-            edgeView != VK_NULL_HANDLE &&
-            triangleView != VK_NULL_HANDLE &&
-            lengthView != VK_NULL_HANDLE &&
-            inputHalfedgeView != VK_NULL_HANDLE &&
-            inputEdgeView != VK_NULL_HANDLE &&
-            inputTriangleView != VK_NULL_HANDLE &&
-            inputLengthView != VK_NULL_HANDLE;
     }
 
 };
@@ -177,6 +90,7 @@ struct RemeshProduct {
 
 struct VoronoiProduct {
     uint32_t nodeCount = 0;
+    uint32_t simNodeCount = 0;
     const voronoi::Node* mappedVoronoiNodes = nullptr;
 
     VkBuffer nodeBuffer = VK_NULL_HANDLE;
@@ -185,39 +99,60 @@ struct VoronoiProduct {
     VkBuffer voronoiNeighborBuffer = VK_NULL_HANDLE;
     VkDeviceSize voronoiNeighborBufferOffset = 0;
 
-    VkBuffer neighborIndicesBuffer = VK_NULL_HANDLE;
-    VkDeviceSize neighborIndicesBufferOffset = 0;
+    VkBuffer voronoiNeighborIndicesBuffer = VK_NULL_HANDLE;
+    VkDeviceSize voronoiNeighborIndicesBufferOffset = 0;
 
-    VkBuffer interfaceAreasBuffer = VK_NULL_HANDLE;
-    VkDeviceSize interfaceAreasBufferOffset = 0;
+    VkBuffer voronoiInterfaceAreasBuffer = VK_NULL_HANDLE;
+    VkDeviceSize voronoiInterfaceAreasBufferOffset = 0;
 
-    VkBuffer interfaceNeighborIdsBuffer = VK_NULL_HANDLE;
-    VkDeviceSize interfaceNeighborIdsBufferOffset = 0;
-    VkBuffer gmlsInterfaceBuffer = VK_NULL_HANDLE;
-    VkDeviceSize gmlsInterfaceBufferOffset = 0;
+    VkBuffer voronoiInterfaceNeighborIdsBuffer = VK_NULL_HANDLE;
+    VkDeviceSize voronoiInterfaceNeighborIdsBufferOffset = 0;
+    VkBuffer voronoiGMLSInterfaceBuffer = VK_NULL_HANDLE;
+    VkDeviceSize voronoiGMLSInterfaceBufferOffset = 0;
+    VkBuffer simNodeBuffer = VK_NULL_HANDLE;
+    VkDeviceSize simNodeBufferOffset = 0;
+    VkBuffer simGMLSInterfaceBuffer = VK_NULL_HANDLE;
+    VkDeviceSize simGMLSInterfaceBufferOffset = 0;
+    uint32_t simGMLSInterfaceCount = 0;
 
-    VkBuffer seedFlagsBuffer = VK_NULL_HANDLE;
-    VkDeviceSize seedFlagsBufferOffset = 0;
+    VkBuffer voronoiSeedFlagsBuffer = VK_NULL_HANDLE;
+    VkDeviceSize voronoiSeedFlagsBufferOffset = 0;
     VkBuffer seedPositionBuffer = VK_NULL_HANDLE;
     VkDeviceSize seedPositionBufferOffset = 0;
     VkBuffer occupancyPointBuffer = VK_NULL_HANDLE;
     VkDeviceSize occupancyPointBufferOffset = 0;
     uint32_t occupancyPointCount = 0;
 
-    std::vector<VoronoiSurfaceProduct> surfaces;
+    std::vector<uint32_t> modelRuntimeModelIds;
+    std::vector<VkBuffer> modelCandidateBuffers;
+    std::vector<VkDeviceSize> modelCandidateBufferOffsets;
+    std::vector<VkBuffer> modelGMLSSurfaceStencilBuffers;
+    std::vector<VkDeviceSize> modelGMLSSurfaceStencilBufferOffsets;
+    std::vector<VkBuffer> modelGMLSSurfaceWeightBuffers;
+    std::vector<VkDeviceSize> modelGMLSSurfaceWeightBufferOffsets;
+    std::vector<size_t> modelGMLSSurfaceWeightCounts;
+    std::vector<VkBuffer> modelGMLSSurfaceGradientWeightBuffers;
+    std::vector<VkDeviceSize> modelGMLSSurfaceGradientWeightBufferOffsets;
+    std::vector<size_t> modelGMLSSurfaceGradientWeightCounts;
+    std::vector<std::vector<uint32_t>> modelSeedFlags;
+    std::vector<std::vector<glm::vec3>> modelSeedPositions;
+    std::vector<uint32_t> voronoiToSim;
+    std::vector<uint32_t> simToVoronoi;
+
     uint64_t productHash = 0;
 
     bool isValid() const {
         return nodeCount != 0 &&
+            simNodeCount != 0 &&
             nodeBuffer != VK_NULL_HANDLE &&
-            neighborIndicesBuffer != VK_NULL_HANDLE &&
+            simNodeBuffer != VK_NULL_HANDLE &&
+            voronoiNeighborIndicesBuffer != VK_NULL_HANDLE &&
             seedPositionBuffer != VK_NULL_HANDLE;
     }
 
 };
 
 struct ContactProduct {
-    // Compute output 
     ContactCoupling coupling{};
     VkBuffer contactPairBuffer = VK_NULL_HANDLE;
     VkDeviceSize contactPairBufferOffset = 0;
@@ -245,6 +180,7 @@ struct HeatProduct {
     std::vector<uint32_t> modelSurfacePointCounts;
     std::vector<VkBuffer> modelSurfaceGradientBuffers;
     std::vector<VkDeviceSize> modelSurfaceGradientBufferOffsets;
+
     uint64_t productHash = 0;
 
     bool isValid() const {
@@ -258,113 +194,159 @@ struct HeatProduct {
 
 };
 
+inline void combineVkHandle(uint64_t& hash, VkBuffer handle) {
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(handle)));
+}
+
+inline void combineVkHandle(uint64_t& hash, VkBufferView handle) {
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(handle)));
+}
+
+inline void combineVkHandle(uint64_t& hash, VkDeviceSize handle) {
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(handle));
+}
+
 inline uint64_t buildProductHash(const ModelProduct& product) {
-    uint64_t hash = 1469598103934665603ull;
-    hash = RuntimeProductHash::mixPod(hash, product.runtimeModelId);
-    hash = RuntimeProductHash::mixPod(hash, product.vertexBuffer);
-    hash = RuntimeProductHash::mixPod(hash, product.vertexBufferOffset);
-    hash = RuntimeProductHash::mixPod(hash, product.indexBuffer);
-    hash = RuntimeProductHash::mixPod(hash, product.indexBufferOffset);
-    hash = RuntimeProductHash::mixPod(hash, product.indexCount);
-    hash = RuntimeProductHash::mixPod(hash, product.renderVertexBuffer);
-    hash = RuntimeProductHash::mixPod(hash, product.renderVertexBufferOffset);
-    hash = RuntimeProductHash::mixPod(hash, product.renderIndexBuffer);
-    hash = RuntimeProductHash::mixPod(hash, product.renderIndexBufferOffset);
-    hash = RuntimeProductHash::mixPod(hash, product.renderIndexCount);
-    hash = RuntimeProductHash::mixPod(hash, product.modelMatrix);
+    uint64_t hash = NodeGraphHash::start();
+    NodeGraphHash::combine(hash, product.runtimeModelId);
+    combineVkHandle(hash, product.vertexBuffer);
+    NodeGraphHash::combine(hash, product.vertexBufferOffset);
+    combineVkHandle(hash, product.indexBuffer);
+    NodeGraphHash::combine(hash, product.indexBufferOffset);
+    NodeGraphHash::combine(hash, product.indexCount);
+    combineVkHandle(hash, product.renderVertexBuffer);
+    NodeGraphHash::combine(hash, product.renderVertexBufferOffset);
+    combineVkHandle(hash, product.renderIndexBuffer);
+    NodeGraphHash::combine(hash, product.renderIndexBufferOffset);
+    NodeGraphHash::combine(hash, product.renderIndexCount);
+    NodeGraphHash::combinePod(hash, product.modelMatrix);
     return hash;
 }
 
 inline uint64_t buildProductHash(const RemeshProduct& product) {
-    uint64_t hash = 1469598103934665603ull;
-    hash = RuntimeProductHash::mixPod(hash, product.runtimeModelId);
-    hash = RuntimeProductHash::mixPodVector(hash, product.geometryPositions);
-    hash = RuntimeProductHash::mixPodVector(hash, product.geometryTriangleIndices);
-    hash = RuntimeProductHash::mixPodVector(hash, product.intrinsicMesh.vertices);
-    hash = RuntimeProductHash::mixPodVector(hash, product.intrinsicMesh.indices);
-    hash = RuntimeProductHash::mixPodVector(hash, product.intrinsicMesh.faceIds);
-    hash = RuntimeProductHash::mixPodVector(hash, product.intrinsicMesh.triangles);
-    hash = RuntimeProductHash::mixPod(hash, product.intrinsicTriangleCount);
-    hash = RuntimeProductHash::mixPod(hash, product.intrinsicVertexCount);
-    hash = RuntimeProductHash::mixPod(hash, product.averageTriangleArea);
+    uint64_t hash = NodeGraphHash::start();
+    NodeGraphHash::combine(hash, product.runtimeModelId);
+    NodeGraphHash::combinePodVector(hash, product.geometryPositions);
+    NodeGraphHash::combinePodVector(hash, product.geometryTriangleIndices);
+    NodeGraphHash::combinePodVector(hash, product.intrinsicMesh.vertices);
+    NodeGraphHash::combinePodVector(hash, product.intrinsicMesh.indices);
+    NodeGraphHash::combinePodVector(hash, product.intrinsicMesh.faceIds);
+    NodeGraphHash::combinePodVector(hash, product.intrinsicMesh.triangles);
+    combineVkHandle(hash, product.intrinsicTriangleBuffer);
+    NodeGraphHash::combine(hash, product.intrinsicTriangleBufferOffset);
+    combineVkHandle(hash, product.intrinsicVertexBuffer);
+    NodeGraphHash::combine(hash, product.intrinsicVertexBufferOffset);
+    NodeGraphHash::combine(hash, product.intrinsicTriangleCount);
+    NodeGraphHash::combine(hash, product.intrinsicVertexCount);
+    NodeGraphHash::combinePod(hash, product.averageTriangleArea);
+    combineVkHandle(hash, product.supportingHalfedgeView);
+    combineVkHandle(hash, product.supportingAngleView);
+    combineVkHandle(hash, product.halfedgeView);
+    combineVkHandle(hash, product.edgeView);
+    combineVkHandle(hash, product.triangleView);
+    combineVkHandle(hash, product.lengthView);
+    combineVkHandle(hash, product.inputHalfedgeView);
+    combineVkHandle(hash, product.inputEdgeView);
+    combineVkHandle(hash, product.inputTriangleView);
+    combineVkHandle(hash, product.inputLengthView);
     return hash;
 }
 
 inline uint64_t buildProductHash(const VoronoiProduct& product) {
-    uint64_t hash = 1469598103934665603ull;
-    hash = RuntimeProductHash::mixPod(hash, product.nodeCount);
-    if (product.nodeCount != 0 && product.nodeBuffer != VK_NULL_HANDLE) {
-        hash = RuntimeProductHash::mixPod(hash, product.nodeBuffer);
+    uint64_t hash = NodeGraphHash::start();
+    NodeGraphHash::combine(hash, product.nodeCount);
+    NodeGraphHash::combine(hash, product.simNodeCount);
+    NodeGraphHash::combinePodVector(hash, product.modelRuntimeModelIds);
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(product.modelSeedFlags.size()));
+    for (const auto& flags : product.modelSeedFlags) {
+        NodeGraphHash::combinePodVector(hash, flags);
     }
-
-    hash = RuntimeProductHash::mix(hash, static_cast<uint64_t>(product.surfaces.size()));
-    for (const VoronoiSurfaceProduct& surfaceProduct : product.surfaces) {
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.runtimeModelId);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.nodeOffset);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.nodeCount);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.vertexBuffer);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.vertexBufferOffset);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.indexBuffer);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.indexBufferOffset);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.indexCount);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.modelMatrix);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.intrinsicVertexCount);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.candidateBuffer);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.candidateBufferOffset);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.gmlsSurfaceStencilBuffer);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.gmlsSurfaceStencilBufferOffset);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.gmlsSurfaceWeightBuffer);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.gmlsSurfaceWeightBufferOffset);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.gmlsSurfaceGradientWeightBuffer);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.gmlsSurfaceGradientWeightBufferOffset);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.supportingHalfedgeView);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.supportingAngleView);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.halfedgeView);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.edgeView);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.triangleView);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.lengthView);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.inputHalfedgeView);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.inputEdgeView);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.inputTriangleView);
-        hash = RuntimeProductHash::mixPod(hash, surfaceProduct.inputLengthView);
-        hash = RuntimeProductHash::mixPodVector(hash, surfaceProduct.seedFlags);
-        hash = RuntimeProductHash::mixPodVector(hash, surfaceProduct.seedPositions);
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(product.modelSeedPositions.size()));
+    for (const auto& positions : product.modelSeedPositions) {
+        NodeGraphHash::combinePodVector(hash, positions);
     }
-    hash = RuntimeProductHash::mixPod(hash, product.seedPositionBuffer);
-    hash = RuntimeProductHash::mixPod(hash, product.seedPositionBufferOffset);
-    hash = RuntimeProductHash::mixPod(hash, product.gmlsInterfaceBuffer);
-    hash = RuntimeProductHash::mixPod(hash, product.gmlsInterfaceBufferOffset);
-    hash = RuntimeProductHash::mixPod(hash, product.occupancyPointBuffer);
-    hash = RuntimeProductHash::mixPod(hash, product.occupancyPointBufferOffset);
-    hash = RuntimeProductHash::mixPod(hash, product.occupancyPointCount);
+    NodeGraphHash::combine(hash, product.occupancyPointCount);
+    NodeGraphHash::combinePodVector(hash, product.voronoiToSim);
+    NodeGraphHash::combinePodVector(hash, product.simToVoronoi);
+    combineVkHandle(hash, product.nodeBuffer);
+    NodeGraphHash::combine(hash, product.nodeBufferOffset);
+    combineVkHandle(hash, product.voronoiNeighborBuffer);
+    NodeGraphHash::combine(hash, product.voronoiNeighborBufferOffset);
+    combineVkHandle(hash, product.voronoiNeighborIndicesBuffer);
+    NodeGraphHash::combine(hash, product.voronoiNeighborIndicesBufferOffset);
+    combineVkHandle(hash, product.voronoiInterfaceAreasBuffer);
+    NodeGraphHash::combine(hash, product.voronoiInterfaceAreasBufferOffset);
+    combineVkHandle(hash, product.voronoiInterfaceNeighborIdsBuffer);
+    NodeGraphHash::combine(hash, product.voronoiInterfaceNeighborIdsBufferOffset);
+    combineVkHandle(hash, product.voronoiGMLSInterfaceBuffer);
+    NodeGraphHash::combine(hash, product.voronoiGMLSInterfaceBufferOffset);
+    combineVkHandle(hash, product.simNodeBuffer);
+    NodeGraphHash::combine(hash, product.simNodeBufferOffset);
+    combineVkHandle(hash, product.simGMLSInterfaceBuffer);
+    NodeGraphHash::combine(hash, product.simGMLSInterfaceBufferOffset);
+    NodeGraphHash::combine(hash, product.simGMLSInterfaceCount);
+    combineVkHandle(hash, product.voronoiSeedFlagsBuffer);
+    NodeGraphHash::combine(hash, product.voronoiSeedFlagsBufferOffset);
+    combineVkHandle(hash, product.seedPositionBuffer);
+    NodeGraphHash::combine(hash, product.seedPositionBufferOffset);
+    combineVkHandle(hash, product.occupancyPointBuffer);
+    NodeGraphHash::combine(hash, product.occupancyPointBufferOffset);
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(product.modelCandidateBuffers.size()));
+    for (size_t i = 0; i < product.modelCandidateBuffers.size(); ++i) {
+        combineVkHandle(hash, product.modelCandidateBuffers[i]);
+        NodeGraphHash::combine(hash, product.modelCandidateBufferOffsets[i]);
+    }
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(product.modelGMLSSurfaceStencilBuffers.size()));
+    for (size_t i = 0; i < product.modelGMLSSurfaceStencilBuffers.size(); ++i) {
+        combineVkHandle(hash, product.modelGMLSSurfaceStencilBuffers[i]);
+        NodeGraphHash::combine(hash, product.modelGMLSSurfaceStencilBufferOffsets[i]);
+    }
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(product.modelGMLSSurfaceWeightBuffers.size()));
+    for (size_t i = 0; i < product.modelGMLSSurfaceWeightBuffers.size(); ++i) {
+        combineVkHandle(hash, product.modelGMLSSurfaceWeightBuffers[i]);
+        NodeGraphHash::combine(hash, product.modelGMLSSurfaceWeightBufferOffsets[i]);
+        NodeGraphHash::combine(hash, product.modelGMLSSurfaceWeightCounts[i]);
+    }
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(product.modelGMLSSurfaceGradientWeightBuffers.size()));
+    for (size_t i = 0; i < product.modelGMLSSurfaceGradientWeightBuffers.size(); ++i) {
+        combineVkHandle(hash, product.modelGMLSSurfaceGradientWeightBuffers[i]);
+        NodeGraphHash::combine(hash, product.modelGMLSSurfaceGradientWeightBufferOffsets[i]);
+        NodeGraphHash::combine(hash, product.modelGMLSSurfaceGradientWeightCounts[i]);
+    }
     return hash;
 }
 
 inline uint64_t buildProductHash(const ContactProduct& product) {
-    uint64_t hash = 1469598103934665603ull;
-    hash = RuntimeProductHash::mixPod(hash, product.coupling.modelARuntimeModelId);
-    hash = RuntimeProductHash::mixPod(hash, product.coupling.modelBRuntimeModelId);
-    hash = RuntimeProductHash::mixPodVector(hash, product.coupling.modelBTriangleIndices);
-    hash = RuntimeProductHash::mixPod(hash, product.coupling.contactPairCount);
-    if (product.coupling.contactPairCount != 0 && !product.coupling.contactPairs.empty()) {
-        hash = RuntimeProductHash::mixPod(hash, product.coupling.contactPairCount);
-    }
-    hash = RuntimeProductHash::mixPod(hash, product.modelARuntimeModelId);
-    hash = RuntimeProductHash::mixPod(hash, product.modelBRuntimeModelId);
-    hash = RuntimeProductHash::mixPodVector(hash, product.outlineVertices);
-    hash = RuntimeProductHash::mixPodVector(hash, product.correspondenceVertices);
+    uint64_t hash = NodeGraphHash::start();
+    NodeGraphHash::combine(hash, product.coupling.modelARuntimeModelId);
+    NodeGraphHash::combine(hash, product.coupling.modelBRuntimeModelId);
+    NodeGraphHash::combinePodVector(hash, product.coupling.modelBTriangleIndices);
+    NodeGraphHash::combine(hash, product.coupling.contactPairCount);
+    NodeGraphHash::combinePodVector(hash, product.coupling.contactPairs);
+    NodeGraphHash::combine(hash, product.modelARuntimeModelId);
+    NodeGraphHash::combine(hash, product.modelBRuntimeModelId);
+    NodeGraphHash::combinePodVector(hash, product.outlineVertices);
+    NodeGraphHash::combinePodVector(hash, product.correspondenceVertices);
+    combineVkHandle(hash, product.contactPairBuffer);
+    NodeGraphHash::combine(hash, product.contactPairBufferOffset);
     return hash;
 }
 
 inline uint64_t buildProductHash(const HeatProduct& product) {
-    uint64_t hash = 1469598103934665603ull;
-    hash = RuntimeProductHash::mixPod(hash, static_cast<uint64_t>(product.active ? 1u : 0u));
-    hash = RuntimeProductHash::mixPod(hash, static_cast<uint64_t>(product.paused ? 1u : 0u));
-    hash = RuntimeProductHash::mixPodVector(hash, product.modelRuntimeModelIds);
-    hash = RuntimeProductHash::mixPodVector(hash, product.modelSurfaceBuffers);
-    hash = RuntimeProductHash::mixPodVector(hash, product.modelSurfaceBufferOffsets);
-    hash = RuntimeProductHash::mixPodVector(hash, product.modelSurfacePointCounts);
-    hash = RuntimeProductHash::mixPodVector(hash, product.modelSurfaceGradientBuffers);
-    hash = RuntimeProductHash::mixPodVector(hash, product.modelSurfaceGradientBufferOffsets);
+    uint64_t hash = NodeGraphHash::start();
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(product.active ? 1u : 0u));
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(product.paused ? 1u : 0u));
+    NodeGraphHash::combinePodVector(hash, product.modelRuntimeModelIds);
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(product.modelSurfaceBuffers.size()));
+    for (size_t i = 0; i < product.modelSurfaceBuffers.size(); ++i) {
+        combineVkHandle(hash, product.modelSurfaceBuffers[i]);
+        NodeGraphHash::combine(hash, product.modelSurfaceBufferOffsets[i]);
+    }
+    NodeGraphHash::combinePodVector(hash, product.modelSurfacePointCounts);
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(product.modelSurfaceGradientBuffers.size()));
+    for (size_t i = 0; i < product.modelSurfaceGradientBuffers.size(); ++i) {
+        combineVkHandle(hash, product.modelSurfaceGradientBuffers[i]);
+        NodeGraphHash::combine(hash, product.modelSurfaceGradientBufferOffsets[i]);
+    }
     return hash;
 }

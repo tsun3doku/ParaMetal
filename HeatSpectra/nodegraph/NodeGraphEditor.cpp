@@ -12,27 +12,6 @@
 #include <utility>
 #include <vector>
 
-namespace {
-
-bool findFirstSocketByValueType(
-    const std::vector<NodeGraphSocket>& sockets,
-    NodeGraphValueType valueType,
-    NodeGraphSocketId& outSocketId) {
-    outSocketId = {};
-    for (const NodeGraphSocket& socket : sockets) {
-        if (socket.valueType != valueType || !socket.id.isValid()) {
-            continue;
-        }
-
-        outSocketId = socket.id;
-        return true;
-    }
-
-    return false;
-}
-
-}
-
 NodeGraphEditor::NodeGraphEditor(NodeGraphBridge* bridgePtr)
     : bridge(bridgePtr) {
 }
@@ -66,20 +45,18 @@ void NodeGraphEditor::resetToDefaultGraph() {
         return created;
     };
     const auto inputSocketByType = [](const NodeGraphNode& node, NodeGraphValueType valueType) {
-        NodeGraphSocketId socketId{};
-        findFirstSocketByValueType(node.inputs, valueType, socketId);
-        return socketId;
+        const NodeGraphSocket* socket = node.input(valueType);
+        return socket ? socket->id : NodeGraphSocketId{};
     };
     const auto outputSocketByType = [](const NodeGraphNode& node, NodeGraphValueType valueType) {
-        NodeGraphSocketId socketId{};
-        findFirstSocketByValueType(node.outputs, valueType, socketId);
-        return socketId;
+        const NodeGraphSocket* socket = node.output(valueType);
+        return socket ? socket->id : NodeGraphSocketId{};
     };
     const auto firstOutputSocket = [](const NodeGraphNode& node) {
         return node.outputs.empty() ? NodeGraphSocketId{} : node.outputs.front().id;
     };
     const auto inputSocketByName = [](const NodeGraphNode& node, const char* name) {
-        const NodeGraphSocket* socket = findInputSocket(node, name);
+        const NodeGraphSocket* socket = node.input(name);
         return socket ? socket->id : NodeGraphSocketId{};
     };
 
@@ -275,12 +252,12 @@ bool NodeGraphEditor::disconnectIncomingInput(NodeGraphNodeId nodeId, NodeGraphS
     }
 
     const NodeGraphState state = bridge->state();
-    const NodeGraphEdgeId existingIncomingEdge = nodegraphsceneutils::findIncomingEdgeForInput(state, nodeId, socketId);
-    if (!existingIncomingEdge.isValid()) {
+    const NodeGraphEdge* existingIncomingEdge = state.incomingEdge(nodeId, socketId);
+    if (!existingIncomingEdge || !existingIncomingEdge->id.isValid()) {
         return false;
     }
 
-    return removeConnection(existingIncomingEdge);
+    return removeConnection(existingIncomingEdge->id);
 }
 
 bool NodeGraphEditor::pasteCopiedNodes(
@@ -320,7 +297,7 @@ bool NodeGraphEditor::pasteCopiedNodes(
             newOutputSocketBySourceOutputSocket[copiedNode.outputSocketIds[index].value] = newNode.outputs[index].id;
         }
 
-        const NodeTypeDefinition* nodeDefinition = NodeGraphRegistry::findNodeById(getNodeTypeId(copiedNode.typeId));
+        const NodeTypeDefinition* nodeDefinition = bridge ? bridge->getRegistry().findNodeType(getNodeTypeId(copiedNode.typeId)) : nullptr;
         for (const NodeGraphParamValue& originalParameter : copiedNode.parameters) {
             NodeGraphParamValue parameter = originalParameter;
 
@@ -345,8 +322,8 @@ bool NodeGraphEditor::pasteCopiedNodes(
         sortedEdges.begin(),
         sortedEdges.end(),
         [&originalState](const CopiedEdge& lhs, const CopiedEdge& rhs) {
-            const NodeGraphNode* lhsToNode = nodegraphsceneutils::findStateNodeById(originalState, lhs.toNode);
-            const NodeGraphNode* rhsToNode = nodegraphsceneutils::findStateNodeById(originalState, rhs.toNode);
+            const NodeGraphNode* lhsToNode = originalState.node(lhs.toNode);
+            const NodeGraphNode* rhsToNode = originalState.node(rhs.toNode);
             const int lhsSocketIndex = lhsToNode ? nodegraphsceneutils::findSocketIndexById(lhsToNode->inputs, lhs.toSocket) : -1;
             const int rhsSocketIndex = rhsToNode ? nodegraphsceneutils::findSocketIndexById(rhsToNode->inputs, rhs.toSocket) : -1;
             if (lhs.toNode.value != rhs.toNode.value) {
@@ -368,7 +345,7 @@ bool NodeGraphEditor::pasteCopiedNodes(
         }
 
         NodeGraphSocketId targetInputSocket{};
-        const NodeGraphNode* oldTargetNode = nodegraphsceneutils::findStateNodeById(originalState, copiedEdge.toNode);
+        const NodeGraphNode* oldTargetNode = originalState.node(copiedEdge.toNode);
         if (!oldTargetNode) {
             continue;
         }

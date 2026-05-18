@@ -20,8 +20,9 @@ ContactLineRenderer::LineVertex toLineVertex(const ContactLineVertex& vertex) {
 ContactOverlayRenderer::ContactOverlayRenderer(
     VulkanDevice& device,
     MemoryAllocator& allocator,
-    UniformBufferManager& uniformBufferManager)
-    : lineRenderer(std::make_unique<ContactLineRenderer>(device, allocator, uniformBufferManager)) {
+    UniformBufferManager& uniformBufferManager,
+    CommandPool& commandPool)
+    : lineRenderer(std::make_unique<ContactLineRenderer>(device, allocator, uniformBufferManager, commandPool)) {
 }
 
 ContactOverlayRenderer::~ContactOverlayRenderer() {

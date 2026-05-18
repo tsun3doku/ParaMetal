@@ -1,4 +1,4 @@
-﻿#define TINYOBJLOADER_IMPLEMENTATION
+#define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
 #define GLM_ENABLE_EXPERIMENTAL
@@ -14,6 +14,8 @@
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/CommandBufferManager.hpp"
+#include "vulkan/VulkanBuffer.hpp"
+
 #include "Camera.hpp"
 #include "Model.hpp"
 #include "util/Structs.hpp"
@@ -223,7 +225,6 @@ bool Model::loadModel(const std::string& modelPath) {
         hasSplitRenderMesh = true;
     }
 
-    modelPosition = glm::vec3(0.0f);
     return true;
 }
 
@@ -234,29 +235,17 @@ void Model::createVertexBuffer() {
         return;
     }
 
-    VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-
-    auto [stagingBuffer, stagingOffset] = memoryAllocator.allocate(
-        bufferSize, 
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+    const VkDeviceSize alignment = vulkanDevice.getPhysicalDeviceProperties().limits.minUniformBufferOffsetAlignment;
+    uploadDeviceBuffer(
+        memoryAllocator,
+        commandPool,
+        vertices.data(),
+        sizeof(Vertex) * vertices.size(),
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        alignment,
+        vertexBuffer,
+        vertexBufferOffset_
     );
-
-    void* stagingData = memoryAllocator.getMappedPointer(stagingBuffer, stagingOffset);
-    memcpy(stagingData, vertices.data(), static_cast<size_t>(bufferSize));
-
-    auto [vertexBufferHandle, vertexBufferOffset] = memoryAllocator.allocate(
-        bufferSize,
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
-        vulkanDevice.getPhysicalDeviceProperties().limits.minUniformBufferOffsetAlignment
-    );
-
-    commandPool.copyBuffer(stagingBuffer, stagingOffset, vertexBufferHandle, vertexBufferOffset, bufferSize);
-    memoryAllocator.free(stagingBuffer, stagingOffset);
-
-    vertexBuffer = vertexBufferHandle;
-    vertexBufferOffset_ = vertexBufferOffset; 
 }
 
 void Model::createIndexBuffer() {
@@ -266,29 +255,17 @@ void Model::createIndexBuffer() {
         return;
     }
 
-    VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
-
-    auto [stagingBuffer, stagingOffset] = memoryAllocator.allocate(
-        bufferSize,
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+    const VkDeviceSize alignment = vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
+    uploadDeviceBuffer(
+        memoryAllocator,
+        commandPool,
+        indices.data(),
+        sizeof(uint32_t) * indices.size(),
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        alignment,
+        indexBuffer,
+        indexBufferOffset_
     );
-
-    void* stagingData = memoryAllocator.getMappedPointer(stagingBuffer, stagingOffset);
-    memcpy(stagingData, indices.data(), static_cast<size_t>(bufferSize));
-
-    auto [indexBufferHandle, indexBufferOffset] = memoryAllocator.allocate(
-        bufferSize,
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment
-    );
-
-    commandPool.copyBuffer(stagingBuffer, stagingOffset, indexBufferHandle, indexBufferOffset, bufferSize);
-    memoryAllocator.free(stagingBuffer, stagingOffset);
-
-    indexBuffer = indexBufferHandle;
-    indexBufferOffset_ = indexBufferOffset;
 }
 
 void Model::createRenderVertexBuffer() {
@@ -298,29 +275,17 @@ void Model::createRenderVertexBuffer() {
         return;
     }
 
-    VkDeviceSize bufferSize = sizeof(renderVertices[0]) * renderVertices.size();
-
-    auto [stagingBuffer, stagingOffset] = memoryAllocator.allocate(
-        bufferSize,
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+    const VkDeviceSize alignment = vulkanDevice.getPhysicalDeviceProperties().limits.minUniformBufferOffsetAlignment;
+    uploadDeviceBuffer(
+        memoryAllocator,
+        commandPool,
+        renderVertices.data(),
+        sizeof(Vertex) * renderVertices.size(),
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        alignment,
+        renderVertexBuffer,
+        renderVertexBufferOffset_
     );
-
-    void* stagingData = memoryAllocator.getMappedPointer(stagingBuffer, stagingOffset);
-    memcpy(stagingData, renderVertices.data(), static_cast<size_t>(bufferSize));
-
-    auto [bufferHandle, bufferOffset] = memoryAllocator.allocate(
-        bufferSize,
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        vulkanDevice.getPhysicalDeviceProperties().limits.minUniformBufferOffsetAlignment
-    );
-
-    commandPool.copyBuffer(stagingBuffer, stagingOffset, bufferHandle, bufferOffset, bufferSize);
-    memoryAllocator.free(stagingBuffer, stagingOffset);
-
-    renderVertexBuffer = bufferHandle;
-    renderVertexBufferOffset_ = bufferOffset;
 }
 
 void Model::createRenderIndexBuffer() {
@@ -330,29 +295,17 @@ void Model::createRenderIndexBuffer() {
         return;
     }
 
-    VkDeviceSize bufferSize = sizeof(renderIndices[0]) * renderIndices.size();
-
-    auto [stagingBuffer, stagingOffset] = memoryAllocator.allocate(
-        bufferSize,
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+    const VkDeviceSize alignment = vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
+    uploadDeviceBuffer(
+        memoryAllocator,
+        commandPool,
+        renderIndices.data(),
+        sizeof(uint32_t) * renderIndices.size(),
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        alignment,
+        renderIndexBuffer,
+        renderIndexBufferOffset_
     );
-
-    void* stagingData = memoryAllocator.getMappedPointer(stagingBuffer, stagingOffset);
-    memcpy(stagingData, renderIndices.data(), static_cast<size_t>(bufferSize));
-
-    auto [bufferHandle, bufferOffset] = memoryAllocator.allocate(
-        bufferSize,
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment
-    );
-
-    commandPool.copyBuffer(stagingBuffer, stagingOffset, bufferHandle, bufferOffset, bufferSize);
-    memoryAllocator.free(stagingBuffer, stagingOffset);
-
-    renderIndexBuffer = bufferHandle;
-    renderIndexBufferOffset_ = bufferOffset;
 }
 
 glm::vec3 Model::getFaceNormal(uint32_t faceIndex) const {
@@ -445,93 +398,63 @@ void Model::rotate(float angleRadians, const glm::vec3& axis, const glm::vec3& p
 }
 
 void Model::updateVertexBuffer() {
-    if (vertices.empty() || vertexBuffer == VK_NULL_HANDLE) {
-        return;
-    }
-
-    VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-
-    // Create a staging buffer
-    auto [stagingBuffer, stagingOffset] = memoryAllocator.allocate(
-        bufferSize,
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+    if (vertices.empty()) return;
+    const VkDeviceSize alignment = vulkanDevice.getPhysicalDeviceProperties().limits.minUniformBufferOffsetAlignment;
+    uploadDeviceBuffer(
+        memoryAllocator,
+        commandPool,
+        vertices.data(),
+        sizeof(vertices[0]) * vertices.size(),
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        alignment,
+        vertexBuffer,
+        vertexBufferOffset_
     );
-
-    // Copy data to staging buffer
-    void* stagingData = memoryAllocator.getMappedPointer(stagingBuffer, stagingOffset);
-    memcpy(stagingData, vertices.data(), static_cast<size_t>(bufferSize));
-
-    // Copy from staging buffer to vertex buffer
-    commandPool.copyBuffer(stagingBuffer, stagingOffset, vertexBuffer, vertexBufferOffset_, bufferSize);
-
-    // Free staging buffer
-    memoryAllocator.free(stagingBuffer, stagingOffset);
 }
 
 void Model::updateIndexBuffer() {
-    if (indices.empty() || indexBuffer == VK_NULL_HANDLE) {
-        return;
-    }
-
-    VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
-
-    // Create a staging buffer
-    auto [stagingBuffer, stagingOffset] = memoryAllocator.allocate(
-        bufferSize,
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+    if (indices.empty()) return;
+    const VkDeviceSize alignment = vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
+    uploadDeviceBuffer(
+        memoryAllocator,
+        commandPool,
+        indices.data(),
+        sizeof(indices[0]) * indices.size(),
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        alignment,
+        indexBuffer,
+        indexBufferOffset_
     );
-
-    // Copy data to staging buffer
-    void* stagingData = memoryAllocator.getMappedPointer(stagingBuffer, stagingOffset);
-    memcpy(stagingData, indices.data(), static_cast<size_t>(bufferSize));
-
-    // Copy from staging buffer to index buffer
-    commandPool.copyBuffer(stagingBuffer, stagingOffset, indexBuffer, indexBufferOffset_, bufferSize);
-
-    // Free staging buffer
-    memoryAllocator.free(stagingBuffer, stagingOffset);
 }
 
 void Model::updateRenderVertexBuffer() {
-    if (renderVertices.empty() || renderVertexBuffer == VK_NULL_HANDLE) {
-        return;
-    }
-
-    VkDeviceSize bufferSize = sizeof(renderVertices[0]) * renderVertices.size();
-
-    auto [stagingBuffer, stagingOffset] = memoryAllocator.allocate(
-        bufferSize,
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+    if (renderVertices.empty()) return;
+    const VkDeviceSize alignment = vulkanDevice.getPhysicalDeviceProperties().limits.minUniformBufferOffsetAlignment;
+    uploadDeviceBuffer(
+        memoryAllocator,
+        commandPool,
+        renderVertices.data(),
+        sizeof(renderVertices[0]) * renderVertices.size(),
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        alignment,
+        renderVertexBuffer,
+        renderVertexBufferOffset_
     );
-
-    void* stagingData = memoryAllocator.getMappedPointer(stagingBuffer, stagingOffset);
-    memcpy(stagingData, renderVertices.data(), static_cast<size_t>(bufferSize));
-
-    commandPool.copyBuffer(stagingBuffer, stagingOffset, renderVertexBuffer, renderVertexBufferOffset_, bufferSize);
-    memoryAllocator.free(stagingBuffer, stagingOffset);
 }
 
 void Model::updateRenderIndexBuffer() {
-    if (renderIndices.empty() || renderIndexBuffer == VK_NULL_HANDLE) {
-        return;
-    }
-
-    VkDeviceSize bufferSize = sizeof(renderIndices[0]) * renderIndices.size();
-
-    auto [stagingBuffer, stagingOffset] = memoryAllocator.allocate(
-        bufferSize,
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+    if (renderIndices.empty()) return;
+    const VkDeviceSize alignment = vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
+    uploadDeviceBuffer(
+        memoryAllocator,
+        commandPool,
+        renderIndices.data(),
+        sizeof(renderIndices[0]) * renderIndices.size(),
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        alignment,
+        renderIndexBuffer,
+        renderIndexBufferOffset_
     );
-
-    void* stagingData = memoryAllocator.getMappedPointer(stagingBuffer, stagingOffset);
-    memcpy(stagingData, renderIndices.data(), static_cast<size_t>(bufferSize));
-
-    commandPool.copyBuffer(stagingBuffer, stagingOffset, renderIndexBuffer, renderIndexBufferOffset_, bufferSize);
-    memoryAllocator.free(stagingBuffer, stagingOffset);
 }
 
 void Model::saveOBJ(const std::string& path) const {
@@ -548,24 +471,8 @@ void Model::saveOBJ(const std::string& path) const {
 }
 
 void Model::cleanup() {
-    if (vertexBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(vertexBuffer, vertexBufferOffset_);
-        vertexBuffer = VK_NULL_HANDLE;
-        vertexBufferOffset_ = 0;
-    }
-    if (indexBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(indexBuffer, indexBufferOffset_);
-        indexBuffer = VK_NULL_HANDLE;
-        indexBufferOffset_ = 0;
-    }
-    if (renderVertexBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(renderVertexBuffer, renderVertexBufferOffset_);
-        renderVertexBuffer = VK_NULL_HANDLE;
-        renderVertexBufferOffset_ = 0;
-    }
-    if (renderIndexBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(renderIndexBuffer, renderIndexBufferOffset_);
-        renderIndexBuffer = VK_NULL_HANDLE;
-        renderIndexBufferOffset_ = 0;
-    }
+    freeBuffer(memoryAllocator, vertexBuffer, vertexBufferOffset_);
+    freeBuffer(memoryAllocator, indexBuffer, indexBufferOffset_);
+    freeBuffer(memoryAllocator, renderVertexBuffer, renderVertexBufferOffset_);
+    freeBuffer(memoryAllocator, renderIndexBuffer, renderIndexBufferOffset_);
 }

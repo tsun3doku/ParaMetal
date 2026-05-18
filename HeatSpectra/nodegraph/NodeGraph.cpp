@@ -1,16 +1,17 @@
-#include "NodeGraphDocument.hpp"
+#include "NodeGraph.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
 
-#include <algorithm>
 #include <cmath>
 #include <utility>
 
-NodeGraphDocument::NodeGraphDocument() = default;
+NodeGraph::NodeGraph(const NodeGraphRegistry* reg) : registry(reg) {}
 
-NodeGraphNodeId NodeGraphDocument::addNode(const NodeTypeId& typeId, const std::string& title, float x, float y) {
-    const NodeTypeId canonicalTypeId = getNodeTypeId(typeId);
-    const NodeTypeDefinition* definition = NodeGraphRegistry::findNodeById(canonicalTypeId);
+NodeGraphNodeId NodeGraph::addNode(const NodeTypeId& typeId, const std::string& title, float x, float y) {
+    if (!registry) {
+        return {};
+    }
+    const NodeTypeDefinition* definition = registry->findNodeType(typeId);
     if (!definition) {
         return {};
     }
@@ -22,38 +23,38 @@ NodeGraphNodeId NodeGraphDocument::addNode(const NodeTypeId& typeId, const std::
     node.title = title.empty() ? definition->displayName : title;
     node.x = x;
     node.y = y;
-    node.displayEnabled = (definition->id == nodegraphtypes::Model);
+    node.displayEnabled = false;
     node.inputs = buildSocketsFromInterface(*definition, NodeGraphSocketDirection::Input);
     node.outputs = buildSocketsFromInterface(*definition, NodeGraphSocketDirection::Output);
     for (const NodeGraphParamDefinition& parameter : definition->parameters) {
         node.parameters.push_back(makeNodeGraphParamValue(parameter));
     }
 
-    nodes.push_back(std::move(node));
+    NodeGraphNodeId id = node.id;
+    nodes[id.value] = std::move(node);
     bumpRevision();
-    return nodes.back().id;
+    return id;
 }
 
-bool NodeGraphDocument::removeNode(NodeGraphNodeId nodeId) {
-    const auto nodeIt = std::find_if(nodes.begin(), nodes.end(), [nodeId](const NodeGraphNode& node) {
-        return node.id == nodeId;
-    });
-
-    if (nodeIt == nodes.end()) {
+bool NodeGraph::removeNode(NodeGraphNodeId nodeId) {
+    auto it = nodes.find(nodeId.value);
+    if (it == nodes.end()) {
         return false;
     }
 
-    nodes.erase(nodeIt);
-    edges.erase(
-        std::remove_if(edges.begin(), edges.end(), [nodeId](const NodeGraphEdge& edge) {
-            return edge.fromNode == nodeId || edge.toNode == nodeId;
-        }),
-        edges.end());
+    nodes.erase(it);
+    for (auto edgeIt = edges.begin(); edgeIt != edges.end(); ) {
+        if (edgeIt->second.fromNode == nodeId || edgeIt->second.toNode == nodeId) {
+            edgeIt = edges.erase(edgeIt);
+        } else {
+            ++edgeIt;
+        }
+    }
     bumpRevision();
     return true;
 }
 
-bool NodeGraphDocument::moveNode(NodeGraphNodeId nodeId, float x, float y) {
+bool NodeGraph::moveNode(NodeGraphNodeId nodeId, float x, float y) {
     NodeGraphNode* node = findNode(nodeId);
     if (!node) {
         return false;
@@ -69,7 +70,7 @@ bool NodeGraphDocument::moveNode(NodeGraphNodeId nodeId, float x, float y) {
     return true;
 }
 
-bool NodeGraphDocument::setNodeDisplayEnabled(NodeGraphNodeId nodeId, bool enabled) {
+bool NodeGraph::setNodeDisplayEnabled(NodeGraphNodeId nodeId, bool enabled) {
     NodeGraphNode* node = findNode(nodeId);
     if (!node) {
         return false;
@@ -77,7 +78,7 @@ bool NodeGraphDocument::setNodeDisplayEnabled(NodeGraphNodeId nodeId, bool enabl
 
     bool changed = false;
     if (enabled) {
-        for (NodeGraphNode& candidate : nodes) {
+        for (auto& [id, candidate] : nodes) {
             const bool shouldBeDisplayed = (candidate.id == nodeId);
             if (candidate.displayEnabled == shouldBeDisplayed) {
                 continue;
@@ -99,7 +100,7 @@ bool NodeGraphDocument::setNodeDisplayEnabled(NodeGraphNodeId nodeId, bool enabl
     return true;
 }
 
-bool NodeGraphDocument::setNodeFrozen(NodeGraphNodeId nodeId, bool frozen) {
+bool NodeGraph::setNodeFrozen(NodeGraphNodeId nodeId, bool frozen) {
     NodeGraphNode* node = findNode(nodeId);
     if (!node || node->frozen == frozen) {
         return false;
@@ -110,13 +111,13 @@ bool NodeGraphDocument::setNodeFrozen(NodeGraphNodeId nodeId, bool frozen) {
     return true;
 }
 
-bool NodeGraphDocument::setNodeParameter(NodeGraphNodeId nodeId, const NodeGraphParamValue& parameter) {
+bool NodeGraph::setNodeParameter(NodeGraphNodeId nodeId, const NodeGraphParamValue& parameter) {
     NodeGraphNode* node = findNode(nodeId);
     if (!node) {
         return false;
     }
 
-    const NodeTypeDefinition* definition = NodeGraphRegistry::findNodeById(node->typeId);
+    const NodeTypeDefinition* definition = registry ? registry->findNodeType(node->typeId) : nullptr;
     if (!definition) {
         return false;
     }
@@ -140,7 +141,7 @@ bool NodeGraphDocument::setNodeParameter(NodeGraphNodeId nodeId, const NodeGraph
     return true;
 }
 
-bool NodeGraphDocument::appendSocket(
+bool NodeGraph::appendSocket(
     NodeGraphNodeId nodeId,
     const NodeSocketSignature& socketSignature,
     NodeGraphSocketId* outSocketId) {
@@ -170,7 +171,7 @@ bool NodeGraphDocument::appendSocket(
     return true;
 }
 
-bool NodeGraphDocument::addConnection(
+bool NodeGraph::addConnection(
     NodeGraphNodeId fromNode,
     NodeGraphSocketId fromSocket,
     NodeGraphNodeId toNode,
@@ -183,7 +184,7 @@ bool NodeGraphDocument::addConnection(
     edge.toNode = toNode;
     edge.toSocket = toSocket;
 
-    edges.push_back(edge);
+    edges[edge.id.value] = edge;
     bumpRevision();
 
     if (outEdgeId) {
@@ -192,21 +193,18 @@ bool NodeGraphDocument::addConnection(
     return true;
 }
 
-bool NodeGraphDocument::removeConnection(NodeGraphEdgeId edgeId) {
-    const auto edgeIt = std::find_if(edges.begin(), edges.end(), [edgeId](const NodeGraphEdge& edge) {
-        return edge.id == edgeId;
-    });
-
-    if (edgeIt == edges.end()) {
+bool NodeGraph::removeConnection(NodeGraphEdgeId edgeId) {
+    auto it = edges.find(edgeId.value);
+    if (it == edges.end()) {
         return false;
     }
 
-    edges.erase(edgeIt);
+    edges.erase(it);
     bumpRevision();
     return true;
 }
 
-void NodeGraphDocument::clear() {
+void NodeGraph::clear() {
     nodes.clear();
     edges.clear();
     nextNodeId = 1;
@@ -215,51 +213,21 @@ void NodeGraphDocument::clear() {
     bumpRevision();
 }
 
-const NodeGraphNode* NodeGraphDocument::findNode(NodeGraphNodeId nodeId) const {
-    const auto nodeIt = std::find_if(nodes.begin(), nodes.end(), [nodeId](const NodeGraphNode& node) {
-        return node.id == nodeId;
-    });
-
-    return nodeIt != nodes.end() ? &(*nodeIt) : nullptr;
+const NodeGraphNode* NodeGraph::findNode(NodeGraphNodeId nodeId) const {
+    auto it = nodes.find(nodeId.value);
+    return it != nodes.end() ? &it->second : nullptr;
 }
 
-NodeGraphNode* NodeGraphDocument::findNode(NodeGraphNodeId nodeId) {
-    const auto nodeIt = std::find_if(nodes.begin(), nodes.end(), [nodeId](const NodeGraphNode& node) {
-        return node.id == nodeId;
-    });
-
-    return nodeIt != nodes.end() ? &(*nodeIt) : nullptr;
+NodeGraphNode* NodeGraph::findNode(NodeGraphNodeId nodeId) {
+    auto it = nodes.find(nodeId.value);
+    return it != nodes.end() ? &it->second : nullptr;
 }
 
-const NodeGraphSocket* NodeGraphDocument::findInputSocket(NodeGraphNodeId nodeId, NodeGraphSocketId socketId) const {
-    const NodeGraphNode* node = findNode(nodeId);
-    if (!node) {
-        return nullptr;
-    }
-
-    const auto socketIt = std::find_if(node->inputs.begin(), node->inputs.end(), [socketId](const NodeGraphSocket& socket) {
-        return socket.id == socketId;
-    });
-    return socketIt != node->inputs.end() ? &(*socketIt) : nullptr;
-}
-
-const NodeGraphSocket* NodeGraphDocument::findOutputSocket(NodeGraphNodeId nodeId, NodeGraphSocketId socketId) const {
-    const NodeGraphNode* node = findNode(nodeId);
-    if (!node) {
-        return nullptr;
-    }
-
-    const auto socketIt = std::find_if(node->outputs.begin(), node->outputs.end(), [socketId](const NodeGraphSocket& socket) {
-        return socket.id == socketId;
-    });
-    return socketIt != node->outputs.end() ? &(*socketIt) : nullptr;
-}
-
-NodeGraphSocketId NodeGraphDocument::allocateSocketId() {
+NodeGraphSocketId NodeGraph::allocateSocketId() {
     return NodeGraphSocketId{nextSocketId++};
 }
 
-std::vector<NodeGraphSocket> NodeGraphDocument::buildSocketsFromInterface(
+std::vector<NodeGraphSocket> NodeGraph::buildSocketsFromInterface(
     const NodeTypeDefinition& definition,
     NodeGraphSocketDirection direction) {
     std::vector<NodeGraphSocket> sockets;
@@ -282,6 +250,6 @@ std::vector<NodeGraphSocket> NodeGraphDocument::buildSocketsFromInterface(
     return sockets;
 }
 
-void NodeGraphDocument::bumpRevision() {
+void NodeGraph::bumpRevision() {
     ++revision;
 }

@@ -22,8 +22,7 @@ public:
     }
 private:
     void applyChange(const NodeGraphChange& change);
-    void executeDataflow(NodeGraphEvaluationState* outState, const NodeGraphCompiled& compiled);
-    void rebuildNodeById();
+    void execute(NodeGraphEvaluationState* outState, const NodeGraphCompiled& compiled);
     void clearNodeCaches();
     void invalidateNodeCaches(const std::unordered_set<uint32_t>& dirtyNodeIds);
     EvaluatedSocketValue makeMissingSocketValue() const;
@@ -46,7 +45,6 @@ private:
     NodeRuntimeServices runtimeServices{};
     NodeGraphKernels kernels;
     NodeGraphState graphState{};
-    std::unordered_map<uint32_t, const NodeGraphNode*> nodeById{};
     std::unordered_map<uint32_t, uint64_t> lastHashByNodeId{};
     std::unordered_map<uint32_t, std::vector<NodeDataBlock>> cachedOutputsByNodeId{};
 };

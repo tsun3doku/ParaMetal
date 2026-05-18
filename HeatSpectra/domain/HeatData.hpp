@@ -21,6 +21,8 @@ struct HeatData {
     uint64_t payloadHash = 0;
     uint64_t voronoiPayloadHash = 0;
     uint64_t contactPayloadHash = 0;
+    std::vector<NodeDataHandle> voronoiHandles;
+    std::vector<NodeDataHandle> contactHandles;
     std::vector<NodeDataHandle> heatModelHandles;
     std::vector<HeatMaterialBinding> materialBindings;
     float contactThermalConductance = 16000.0f;

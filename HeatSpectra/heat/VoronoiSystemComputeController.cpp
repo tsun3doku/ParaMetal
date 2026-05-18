@@ -1,4 +1,5 @@
 #include "VoronoiSystemComputeController.hpp"
+#include <iostream>
 
 #include "VoronoiSystem.hpp"
 #include "runtime/RuntimeProducts.hpp"
@@ -61,22 +62,7 @@ void VoronoiSystemComputeController::configure(uint64_t socketKey, const Config&
             config.receiverSurfaceVertices,
             config.receiverIntrinsicTriangleIndices,
             config.receiverRuntimeModelIds,
-            config.meshVertexBuffers,
-            config.meshVertexBufferOffsets,
-            config.meshIndexBuffers,
-            config.meshIndexBufferOffsets,
-            config.meshIndexCounts,
-            config.meshModelMatrices,
-            config.supportingHalfedgeViews,
-            config.supportingAngleViews,
-            config.halfedgeViews,
-            config.edgeViews,
-            config.triangleViews,
-            config.lengthViews,
-            config.inputHalfedgeViews,
-            config.inputEdgeViews,
-            config.inputTriangleViews,
-            config.inputLengthViews);
+            config.meshModelMatrices);
         system->setParams(config.cellSize, config.voxelResolution);
         system->ensureConfigured();
     }
@@ -122,7 +108,8 @@ std::vector<VoronoiSystem*> VoronoiSystemComputeController::getActiveSystems() c
     return systems;
 }
 
-bool VoronoiSystemComputeController::exportProduct(uint64_t socketKey, VoronoiProduct& outProduct) const {
+#if 0
+bool VoronoiSystemComputeController::disabledProductExport(uint64_t socketKey, VoronoiProduct& outProduct) const {
     outProduct = {};
 
     if (configuredConfigs.find(socketKey) == configuredConfigs.end()) {
@@ -137,6 +124,7 @@ bool VoronoiSystemComputeController::exportProduct(uint64_t socketKey, VoronoiPr
     const auto& voronoiSystem = it->second;
 
     outProduct.nodeCount = voronoiSystem->getVoronoiNodeCount();
+    outProduct.simNodeCount = voronoiSystem->runtimeRef().getSimNodeCount();
 
     const VoronoiResources& resources = voronoiSystem->resourcesRef();
     outProduct.mappedVoronoiNodes = nullptr;
@@ -144,69 +132,84 @@ bool VoronoiSystemComputeController::exportProduct(uint64_t socketKey, VoronoiPr
     outProduct.nodeBufferOffset = resources.voronoiNodeBufferOffset;
     outProduct.voronoiNeighborBuffer = resources.voronoiNeighborBuffer;
     outProduct.voronoiNeighborBufferOffset = resources.voronoiNeighborBufferOffset;
-    outProduct.neighborIndicesBuffer = resources.neighborIndicesBuffer;
-    outProduct.neighborIndicesBufferOffset = resources.neighborIndicesBufferOffset;
-    outProduct.interfaceAreasBuffer = resources.interfaceAreasBuffer;
-    outProduct.interfaceAreasBufferOffset = resources.interfaceAreasBufferOffset;
-    outProduct.interfaceNeighborIdsBuffer = resources.interfaceNeighborIdsBuffer;
-    outProduct.interfaceNeighborIdsBufferOffset = resources.interfaceNeighborIdsBufferOffset;
-    outProduct.gmlsInterfaceBuffer = resources.gmlsInterfaceBuffer;
-    outProduct.gmlsInterfaceBufferOffset = resources.gmlsInterfaceBufferOffset;
-    outProduct.seedFlagsBuffer = resources.seedFlagsBuffer;
-    outProduct.seedFlagsBufferOffset = resources.seedFlagsBufferOffset;
+    outProduct.voronoiNeighborIndicesBuffer = resources.voronoiNeighborIndicesBuffer;
+    outProduct.voronoiNeighborIndicesBufferOffset = resources.voronoiNeighborIndicesBufferOffset;
+    outProduct.voronoiInterfaceAreasBuffer = resources.voronoiInterfaceAreasBuffer;
+    outProduct.voronoiInterfaceAreasBufferOffset = resources.voronoiInterfaceAreasBufferOffset;
+    outProduct.voronoiInterfaceNeighborIdsBuffer = resources.voronoiInterfaceNeighborIdsBuffer;
+    outProduct.voronoiInterfaceNeighborIdsBufferOffset = resources.voronoiInterfaceNeighborIdsBufferOffset;
+    outProduct.voronoiGMLSInterfaceBuffer = resources.voronoiGMLSInterfaceBuffer;
+    outProduct.voronoiGMLSInterfaceBufferOffset = resources.voronoiGMLSInterfaceBufferOffset;
+    outProduct.simNodeBuffer = voronoiSystem->runtimeRef().getSimNodeBuffer();
+    outProduct.simNodeBufferOffset = voronoiSystem->runtimeRef().getSimNodeBufferOffset();
+    outProduct.simGMLSInterfaceBuffer = voronoiSystem->runtimeRef().getSimGMLSInterfaceBuffer();
+    outProduct.simGMLSInterfaceBufferOffset = voronoiSystem->runtimeRef().getSimGMLSInterfaceBufferOffset();
+    outProduct.simGMLSInterfaceCount = voronoiSystem->runtimeRef().getSimGMLSInterfaceCount();
+    outProduct.voronoiSeedFlagsBuffer = resources.voronoiSeedFlagsBuffer;
+    outProduct.voronoiSeedFlagsBufferOffset = resources.voronoiSeedFlagsBufferOffset;
     outProduct.seedPositionBuffer = resources.seedPositionBuffer;
     outProduct.seedPositionBufferOffset = resources.seedPositionBufferOffset;
     outProduct.occupancyPointBuffer = resources.occupancyPointBuffer;
     outProduct.occupancyPointBufferOffset = resources.occupancyPointBufferOffset;
     outProduct.occupancyPointCount = resources.occupancyPointCount;
+    outProduct.voronoiToSim = voronoiSystem->runtimeRef().getVoronoiToSim();
+    outProduct.simToVoronoi = voronoiSystem->runtimeRef().getSimToVoronoi();
 
     const auto& modelRuntimes = voronoiSystem->getModelRuntimes();
-    VoronoiModelRuntime* modelRuntime = voronoiSystem->getModelRuntime();
-    if (!modelRuntime) {
-        return false;
-    }
-
-    outProduct.surfaces.reserve(1);
-    VoronoiSurfaceProduct surfaceProduct{};
-    surfaceProduct.runtimeModelId = modelRuntime->getRuntimeModelId();
-    surfaceProduct.nodeOffset = 0;
-    surfaceProduct.nodeCount = voronoiSystem->getVoronoiNodeCount();
-    surfaceProduct.seedFlags = voronoiSystem->runtimeRef().getSeedFlags();
+    const auto& domainSeedFlags = voronoiSystem->runtimeRef().getSeedFlags();
     const auto& domainSeedPositions = voronoiSystem->runtimeRef().getSeedPositions();
-    surfaceProduct.seedPositions.reserve(domainSeedPositions.size());
-    for (const glm::vec4& seedPosition : domainSeedPositions) {
-        surfaceProduct.seedPositions.push_back(glm::vec3(seedPosition));
+
+    outProduct.modelRuntimeModelIds.reserve(modelRuntimes.size());
+    outProduct.modelCandidateBuffers.reserve(modelRuntimes.size());
+    outProduct.modelCandidateBufferOffsets.reserve(modelRuntimes.size());
+    outProduct.modelGMLSSurfaceStencilBuffers.reserve(modelRuntimes.size());
+    outProduct.modelGMLSSurfaceStencilBufferOffsets.reserve(modelRuntimes.size());
+    outProduct.modelGMLSSurfaceWeightBuffers.reserve(modelRuntimes.size());
+    outProduct.modelGMLSSurfaceWeightBufferOffsets.reserve(modelRuntimes.size());
+    outProduct.modelGMLSSurfaceGradientWeightBuffers.reserve(modelRuntimes.size());
+    outProduct.modelGMLSSurfaceGradientWeightBufferOffsets.reserve(modelRuntimes.size());
+    outProduct.modelSeedFlags.reserve(modelRuntimes.size());
+    outProduct.modelSeedPositions.reserve(modelRuntimes.size());
+
+    for (const auto& modelRuntime : modelRuntimes) {
+        if (!modelRuntime) {
+            continue;
+        }
+        outProduct.modelRuntimeModelIds.push_back(modelRuntime->getRuntimeModelId());
+        outProduct.modelCandidateBuffers.push_back(modelRuntime->getVoronoiCandidateBuffer());
+        outProduct.modelCandidateBufferOffsets.push_back(modelRuntime->getVoronoiCandidateBufferOffset());
+        outProduct.modelGMLSSurfaceStencilBuffers.push_back(modelRuntime->getGMLSSurfaceStencilBuffer());
+        outProduct.modelGMLSSurfaceStencilBufferOffsets.push_back(modelRuntime->getGMLSSurfaceStencilBufferOffset());
+        outProduct.modelGMLSSurfaceWeightBuffers.push_back(modelRuntime->getGMLSSurfaceWeightBuffer());
+        outProduct.modelGMLSSurfaceWeightBufferOffsets.push_back(modelRuntime->getGMLSSurfaceWeightBufferOffset());
+        outProduct.modelGMLSSurfaceWeightCounts.push_back(modelRuntime->getGMLSSurfaceWeightCount());
+        outProduct.modelGMLSSurfaceGradientWeightBuffers.push_back(modelRuntime->getGMLSSurfaceGradientWeightBuffer());
+        outProduct.modelGMLSSurfaceGradientWeightBufferOffsets.push_back(modelRuntime->getGMLSSurfaceGradientWeightBufferOffset());
+        outProduct.modelGMLSSurfaceGradientWeightCounts.push_back(modelRuntime->getGMLSSurfaceGradientWeightCount());
+        outProduct.modelSeedFlags.push_back(domainSeedFlags);
+        std::vector<glm::vec3> seedPositions;
+        seedPositions.reserve(domainSeedPositions.size());
+        for (const glm::vec4& pos : domainSeedPositions) {
+            seedPositions.push_back(glm::vec3(pos));
+        }
+        outProduct.modelSeedPositions.push_back(std::move(seedPositions));
     }
-
-    surfaceProduct.vertexBuffer = modelRuntime->getVertexBuffer();
-    surfaceProduct.vertexBufferOffset = modelRuntime->getVertexBufferOffset();
-    surfaceProduct.indexBuffer = modelRuntime->getIndexBuffer();
-    surfaceProduct.indexBufferOffset = modelRuntime->getIndexBufferOffset();
-    surfaceProduct.indexCount = modelRuntime->getIndexCount();
-    surfaceProduct.modelMatrix = modelRuntime->getModelMatrix();
-    surfaceProduct.intrinsicVertexCount = static_cast<uint32_t>(modelRuntime->getIntrinsicVertexCount());
-    surfaceProduct.candidateBuffer = modelRuntime->getVoronoiCandidateBuffer();
-    surfaceProduct.candidateBufferOffset = modelRuntime->getVoronoiCandidateBufferOffset();
-    surfaceProduct.gmlsSurfaceStencilBuffer = modelRuntime->getGMLSSurfaceStencilBuffer();
-    surfaceProduct.gmlsSurfaceStencilBufferOffset = modelRuntime->getGMLSSurfaceStencilBufferOffset();
-    surfaceProduct.gmlsSurfaceWeightBuffer = modelRuntime->getGMLSSurfaceWeightBuffer();
-    surfaceProduct.gmlsSurfaceWeightBufferOffset = modelRuntime->getGMLSSurfaceWeightBufferOffset();
-    surfaceProduct.gmlsSurfaceGradientWeightBuffer = modelRuntime->getGMLSSurfaceGradientWeightBuffer();
-    surfaceProduct.gmlsSurfaceGradientWeightBufferOffset = modelRuntime->getGMLSSurfaceGradientWeightBufferOffset();
-    surfaceProduct.supportingHalfedgeView = modelRuntime->getSupportingHalfedgeView();
-    surfaceProduct.supportingAngleView = modelRuntime->getSupportingAngleView();
-    surfaceProduct.halfedgeView = modelRuntime->getHalfedgeView();
-    surfaceProduct.edgeView = modelRuntime->getEdgeView();
-    surfaceProduct.triangleView = modelRuntime->getTriangleView();
-    surfaceProduct.lengthView = modelRuntime->getLengthView();
-    surfaceProduct.inputHalfedgeView = modelRuntime->getInputHalfedgeView();
-    surfaceProduct.inputEdgeView = modelRuntime->getInputEdgeView();
-    surfaceProduct.inputTriangleView = modelRuntime->getInputTriangleView();
-    surfaceProduct.inputLengthView = modelRuntime->getInputLengthView();
-
-    outProduct.surfaces.push_back(std::move(surfaceProduct));
 
     outProduct.productHash = buildProductHash(outProduct);
 
     return outProduct.isValid();
+}
+#endif
+
+const VoronoiSystem* VoronoiSystemComputeController::getSystem(uint64_t socketKey) const {
+    const auto it = activeSystems.find(socketKey);
+    if (it == activeSystems.end() || !it->second || !it->second->isReady()) {
+        return nullptr;
+    }
+    return it->second.get();
+}
+
+const VoronoiSystemComputeController::Config* VoronoiSystemComputeController::getConfig(uint64_t socketKey) const {
+    const auto it = configuredConfigs.find(socketKey);
+    return it != configuredConfigs.end() ? &it->second : nullptr;
 }

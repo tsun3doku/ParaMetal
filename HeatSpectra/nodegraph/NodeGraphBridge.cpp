@@ -1,11 +1,10 @@
 #include "NodeGraphBridge.hpp"
 
+#include "NodeGraphInit.hpp"
 #include "NodeGraphRegistry.hpp"
-#include "NodeGraphTopology.hpp"
+#include "NodeGraphUtils.hpp"
 #include "NodeGraphValidator.hpp"
 
-#include <algorithm>
-#include <cstddef>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -13,8 +12,8 @@
 
 namespace {
 
-NodeGraphEdgeId findIncomingEdgeId(const NodeGraphDocument& doc, NodeGraphNodeId toNode, NodeGraphSocketId toSocket) {
-    for (const NodeGraphEdge& edge : doc.getEdges()) {
+NodeGraphEdgeId findIncomingEdgeId(const NodeGraph& doc, NodeGraphNodeId toNode, NodeGraphSocketId toSocket) {
+    for (const auto& [id, edge] : doc.getEdges()) {
         if (edge.toNode == toNode && edge.toSocket == toSocket) {
             return edge.id;
         }
@@ -23,19 +22,15 @@ NodeGraphEdgeId findIncomingEdgeId(const NodeGraphDocument& doc, NodeGraphNodeId
     return {};
 }
 
-const NodeGraphEdge* findEdgeById(const NodeGraphDocument& doc, NodeGraphEdgeId edgeId) {
-    for (const NodeGraphEdge& edge : doc.getEdges()) {
-        if (edge.id == edgeId) {
-            return &edge;
-        }
-    }
-
-    return nullptr;
+const NodeGraphEdge* findEdgeById(const NodeGraph& doc, NodeGraphEdgeId edgeId) {
+    const auto it = doc.getEdges().find(edgeId.value);
+    return (it != doc.getEdges().end()) ? &it->second : nullptr;
 }
 
 }
 
-NodeGraphBridge::NodeGraphBridge() {
+NodeGraphBridge::NodeGraphBridge() : document(&registry) {
+    initNodeGraph(registry);
     rebuildStateLocked();
 }
 
@@ -51,13 +46,13 @@ void NodeGraphBridge::clear() {
     resetChange.reason = NodeGraphChangeReason::Topology;
     changes.push_back(std::move(resetChange));
     changes.reserve(1 + graphState.nodes.size() + graphState.edges.size());
-    for (const NodeGraphNode& node : graphState.nodes) {
+    for (const auto& [id, node] : graphState.nodes) {
         NodeGraphChange change{NodeGraphChangeType::NodeUpsert};
         change.reason = NodeGraphChangeReason::Topology;
         change.node = node;
         changes.push_back(std::move(change));
     }
-    for (const NodeGraphEdge& edge : graphState.edges) {
+    for (const auto& [id, edge] : graphState.edges) {
         NodeGraphChange change{NodeGraphChangeType::EdgeUpsert};
         change.reason = NodeGraphChangeReason::Topology;
         change.edge = edge;
@@ -142,8 +137,8 @@ bool NodeGraphBridge::setNodeDisplayEnabled(NodeGraphNodeId nodeId, bool enabled
 
     std::unordered_map<uint32_t, std::pair<bool, bool>> stateByNodeId;
     stateByNodeId.reserve(document.getNodes().size());
-    for (const NodeGraphNode& existingNode : document.getNodes()) {
-        stateByNodeId.emplace(existingNode.id.value, std::make_pair(existingNode.displayEnabled, existingNode.frozen));
+    for (const auto& [id, existingNode] : document.getNodes()) {
+        stateByNodeId.emplace(id, std::make_pair(existingNode.displayEnabled, existingNode.frozen));
     }
 
     if (!document.setNodeDisplayEnabled(nodeId, enabled)) {
@@ -151,8 +146,8 @@ bool NodeGraphBridge::setNodeDisplayEnabled(NodeGraphNodeId nodeId, bool enabled
     }
 
     std::vector<NodeGraphChange> changes;
-    for (const NodeGraphNode& updatedNode : document.getNodes()) {
-        const auto previousIt = stateByNodeId.find(updatedNode.id.value);
+    for (const auto& [id, updatedNode] : document.getNodes()) {
+        const auto previousIt = stateByNodeId.find(id);
         const bool previousDisplayEnabled = previousIt != stateByNodeId.end() ? previousIt->second.first : false;
         const bool previousFrozen = previousIt != stateByNodeId.end() ? previousIt->second.second : false;
         if (previousDisplayEnabled == updatedNode.displayEnabled && previousFrozen == updatedNode.frozen) {
@@ -222,7 +217,7 @@ bool NodeGraphBridge::connectSockets(
     std::vector<NodeGraphChange> changes;
 
     NodeGraphEdgeId newEdgeId{};
-    if (NodeGraphValidator::canCreateConnection(document, fromNode, fromSocket, toNode, toSocket, errorMessage)) {
+    if (NodeGraphValidator::canCreateConnection(document, registry.typeRegistry(), fromNode, fromSocket, toNode, toSocket, errorMessage)) {
         document.addConnection(fromNode, fromSocket, toNode, toSocket, &newEdgeId);
         if (const NodeGraphEdge* edge = findEdgeById(document, newEdgeId)) {
             NodeGraphChange edgeChange{NodeGraphChangeType::EdgeUpsert};
@@ -260,7 +255,7 @@ bool NodeGraphBridge::connectSockets(
         return false;
     }
 
-    if (!NodeGraphValidator::canCreateConnection(document, fromNode, fromSocket, toNode, toSocket, errorMessage, existingIncomingEdgeId)) {
+    if (!NodeGraphValidator::canCreateConnection(document, registry.typeRegistry(), fromNode, fromSocket, toNode, toSocket, errorMessage, existingIncomingEdgeId)) {
         return false;
     }
 
@@ -306,7 +301,7 @@ bool NodeGraphBridge::removeConnection(NodeGraphEdgeId edgeId) {
     return true;
 }
 
-bool NodeGraphBridge::canExecuteHeatSolve(std::string& reason) const {
+bool NodeGraphBridge::canExecute(std::string& reason) const {
     std::lock_guard<std::mutex> lock(mutex);
     const NodeGraphCompiled plan = NodeGraphCompiler::compile(graphState);
     if (!plan.isValid) {
@@ -331,8 +326,7 @@ bool NodeGraphBridge::resolveGizmoTransformNode(uint64_t outputSocketKey, NodeGr
         return false;
     }
 
-    const NodeGraphTopology topology(graphState);
-    return topology.findFirstUpstreamNodeByType(outputSocketKey, nodegraphtypes::Transform, outTransformNodeId);
+    return findFirstUpstreamNodeByType(graphState, outputSocketKey, nodegraphtypes::Transform, outTransformNodeId);
 }
 
 bool NodeGraphBridge::consumeChanges(uint64_t& lastSeenRevision, NodeGraphDelta& outDelta) const {

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <vulkan/vulkan.h>
 #include <cstdint>
@@ -39,20 +39,20 @@ public:
         VkBuffer voxelOffsetsBuffer = VK_NULL_HANDLE;
         VkDeviceSize voxelOffsetsBufferOffset = 0;
 
-        VkBuffer neighborIndicesBuffer = VK_NULL_HANDLE;
-        VkDeviceSize neighborIndicesBufferOffset = 0;
+        VkBuffer voronoiNeighborIndicesBuffer = VK_NULL_HANDLE;
+        VkDeviceSize voronoiNeighborIndicesBufferOffset = 0;
 
-        VkBuffer interfaceAreasBuffer = VK_NULL_HANDLE;
-        VkDeviceSize interfaceAreasBufferOffset = 0;
+        VkBuffer voronoiInterfaceAreasBuffer = VK_NULL_HANDLE;
+        VkDeviceSize voronoiInterfaceAreasBufferOffset = 0;
 
-        VkBuffer interfaceNeighborIdsBuffer = VK_NULL_HANDLE;
-        VkDeviceSize interfaceNeighborIdsBufferOffset = 0;
+        VkBuffer voronoiInterfaceNeighborIdsBuffer = VK_NULL_HANDLE;
+        VkDeviceSize voronoiInterfaceNeighborIdsBufferOffset = 0;
 
         VkBuffer debugCellGeometryBuffer = VK_NULL_HANDLE;
         VkDeviceSize debugCellGeometryBufferOffset = 0;
 
-        VkBuffer seedFlagsBuffer = VK_NULL_HANDLE;
-        VkDeviceSize seedFlagsBufferOffset = 0;
+        VkBuffer voronoiSeedFlagsBuffer = VK_NULL_HANDLE;
+        VkDeviceSize voronoiSeedFlagsBufferOffset = 0;
 
         VkBuffer voronoiDumpBuffer = VK_NULL_HANDLE;
         VkDeviceSize voronoiDumpBufferOffset = 0;

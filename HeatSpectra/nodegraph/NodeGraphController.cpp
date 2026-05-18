@@ -4,7 +4,6 @@
 
 #include "NodeGraphBridge.hpp"
 #include "NodeGraphDebugCache.hpp"
-#include "NodeGraphRuntimeBridge.hpp"
 #include "NodePayloadRegistry.hpp"
 #include "runtime/RuntimeContactComputeTransport.hpp"
 #include "runtime/RuntimeContactDisplayTransport.hpp"
@@ -44,7 +43,17 @@ void NodeGraphController::applyPendingChanges() {
     NodeGraphDelta delta{};
     if (bridge->consumeChanges(revisionSeen, delta)) {
         runtime.applyDelta(delta);
-        if (allChangesAreLayout(delta)) {
+        bool skipCompile = false;
+        if (!delta.changes.empty()) {
+            skipCompile = true;
+            for (const NodeGraphChange& change : delta.changes) {
+                if (change.reason != NodeGraphChangeReason::Layout) {
+                    skipCompile = false;
+                    break;
+                }
+            }
+        }
+        if (skipCompile) {
             return;
         }
         NodeGraphDebugCache::instance().setState(runtime.state(), runtimeServices.payloadRegistry);
@@ -73,17 +82,16 @@ void NodeGraphController::tick() {
 
     if (hasComputeTransports || hasDisplayTransports) {
         RuntimePackageCompiler packageCompiler{};
-        packageCompiler.setRuntimeBridge(runtimeServices.runtimeBridge);
 
-        // Snapshot all package entities as stale before compilation
+        // Collect all current package entities as stale candidates before compilation
         std::unordered_set<ECSEntity> staleEntities = collectPackageEntities(ecsRegistry);
 
         // Compile and apply packages directly to registry 
         packageCompiler.compileAndApply(runtime.state(), execState, runtimeServices.payloadRegistry, ecsRegistry, staleEntities);
 
-        destroyStaleEntities(ecsRegistry, staleEntities);
+        markStaleEntities(ecsRegistry, staleEntities);
 
-        // Sync compute transports 
+        // Sync compute transports
         if (runtimeServices.modelComputeTransport) {
             runtimeServices.modelComputeTransport->sync(ecsRegistry);
             runtimeServices.modelComputeTransport->finalizeSync();
@@ -107,9 +115,11 @@ void NodeGraphController::tick() {
 
         if (hasDisplayTransports) {
             const std::unordered_set<uint64_t> visibleKeys =
-                nodeGraphDisplay.computeDisplaySelectedKeys(
+                nodeGraphDisplay.computeDisplayKeys(
                     runtime.state(),
-                    ecsRegistry);
+                    execState,
+                    ecsRegistry,
+                    runtimeServices.payloadRegistry);
 
             if (runtimeServices.modelDisplayTransport) { runtimeServices.modelDisplayTransport->setVisibleKeys(&visibleKeys); }
             if (runtimeServices.remeshDisplayTransport) { runtimeServices.remeshDisplayTransport->setVisibleKeys(&visibleKeys); }
@@ -139,21 +149,7 @@ void NodeGraphController::tick() {
             }
         }
 
-        if (runtimeServices.runtimeBridge) {
-            runtimeServices.runtimeBridge->clear();
-            for (auto entity : ecsRegistry.view<RemeshPackage>()) {
-                uint64_t socketKey = static_cast<uint64_t>(entity);
-                const auto& package = ecsRegistry.get<RemeshPackage>(entity);
-                if (socketKey == 0 || package.remeshHandle.key == 0) {
-                    continue;
-                }
-
-                ProductHandle handle{};
-                handle.type = NodeProductType::Remesh;
-                handle.outputSocketKey = socketKey;
-                runtimeServices.runtimeBridge->setRemeshProductForPayload(package.remeshHandle, handle);
-            }
-        }
+        destroyStaleEntities(ecsRegistry);
     }
 
     NodeGraphDebugCache::instance().update(
@@ -162,24 +158,6 @@ void NodeGraphController::tick() {
         execState.outputBySocket);
 }
 
-bool NodeGraphController::canExecuteHeatSolve() const {
-    return plan.isValid;
-}
-
 const NodeGraphCompiled& NodeGraphController::compiledState() const {
     return plan;
-}
-
-bool NodeGraphController::allChangesAreLayout(const NodeGraphDelta& delta) {
-    if (delta.changes.empty()) {
-        return false;
-    }
-
-    for (const NodeGraphChange& change : delta.changes) {
-        if (change.reason != NodeGraphChangeReason::Layout) {
-            return false;
-        }
-    }
-
-    return true;
 }

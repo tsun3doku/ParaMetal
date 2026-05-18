@@ -25,9 +25,11 @@ private:
     bool tryBuildConfig(uint64_t socketKey, const VoronoiPackage& package, VoronoiSystemComputeController::Config& outConfig) const;
     void removePublishedProduct(uint64_t socketKey);
     void publishProduct(uint64_t socketKey);
+    bool buildProduct(uint64_t socketKey, VoronoiProduct& outProduct) const;
+    uint64_t buildConfigInputHash(uint64_t socketKey, const VoronoiPackage& package) const;
 
     VoronoiSystemComputeController* controller = nullptr;
     ECSRegistry* ecsRegistry = nullptr;
     std::unordered_set<uint64_t> activeSocketKeys;
-    std::unordered_map<uint64_t, uint64_t> appliedPackageHash;
+    std::unordered_map<uint64_t, uint64_t> appliedConfigInputHash;
 };

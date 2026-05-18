@@ -8,13 +8,10 @@
 #include "runtime/RuntimeECS.hpp"
 #include "runtime/RuntimePackages.hpp"
 
-class NodeGraphRuntimeBridge;
 class NodePayloadRegistry;
 
 class RuntimePackageCompiler {
 public:
-    void setRuntimeBridge(const NodeGraphRuntimeBridge* runtimeBridge);
-
     ModelPackage buildModelPackage(
         const GeometryData& geometry) const;
     RemeshPackage buildRemeshPackage(
@@ -27,19 +24,20 @@ public:
         const NodeGraphNode& node,
         const NodePayloadRegistry* payloadRegistry,
         const ECSRegistry& registry,
-        const VoronoiData& voronoi) const;
+        const VoronoiData& voronoi,
+        const NodeDataHandle& voronoiHandle = {}) const;
     HeatPackage buildHeatPackage(
         const NodeGraphNode& node,
         const NodePayloadRegistry* payloadRegistry,
         const ECSRegistry& registry,
         const HeatData& heat,
-        const std::vector<ProductHandle>& voronoiProducts,
-        const std::vector<ProductHandle>& contactProducts) const;
+        const NodeDataHandle& heatHandle) const;
     ContactPackage buildContactPackage(
         const NodeGraphNode& node,
         const NodePayloadRegistry* payloadRegistry,
         const ECSRegistry& registry,
-        const ContactData& contact) const;
+        const ContactData& contact,
+        const NodeDataHandle& contactHandle = {}) const;
 
     void compileAndApply(
         const NodeGraphState& graphState,
@@ -51,6 +49,4 @@ public:
 private:
     template <typename PackageT>
     static void applyPackage(ECSRegistry& registry, uint64_t socketKey, const PackageT& pkg, std::unordered_set<ECSEntity>& staleEntities);
-
-    const NodeGraphRuntimeBridge* runtimeBridge = nullptr;
 };

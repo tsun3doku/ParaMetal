@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "VulkanDevice.hpp"
 #include "MemoryAllocator.hpp"
@@ -66,3 +66,15 @@ VkResult uploadDeviceBuffer(
     VkBuffer& outBuffer,
     VkDeviceSize& outOffset
 );
+
+VkResult downloadDeviceBuffer(
+    MemoryAllocator& allocator,
+    CommandPool& commandPool,
+    VkBuffer srcBuffer,
+    VkDeviceSize srcOffset,
+    VkDeviceSize size,
+    void* dstData
+);
+
+void freeBuffer(MemoryAllocator& allocator, VkBuffer& buffer, VkDeviceSize& offset);
+void freeBufferView(VulkanDevice& device, VkBufferView& bufferView);

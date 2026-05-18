@@ -12,15 +12,16 @@ void RuntimeModelComputeTransport::sync(const ECSRegistry& registry) {
 
     std::unordered_set<uint64_t> nextSocketKeys;
 
-    auto view = registry.view<ModelPackage>();
+    auto view = registry.view<ModelPackage>(entt::exclude<Stale>);
     for (auto entity : view) {
         uint64_t socketKey = static_cast<uint64_t>(entity);
         const auto& package = registry.get<ModelPackage>(entity);
         nextSocketKeys.insert(socketKey);
 
+        const uint64_t inputHash = buildConfigInputHash(socketKey, package);
         const ModelProduct* product = tryGetProduct<ModelProduct>(registry, socketKey);
-        auto hashIt = appliedPackageHash.find(socketKey);
-        if (product && hashIt != appliedPackageHash.end() && hashIt->second == package.packageHash) {
+        auto hashIt = appliedConfigInputHash.find(socketKey);
+        if (inputHash != 0 && product && hashIt != appliedConfigInputHash.end() && hashIt->second == inputHash) {
             continue;
         }
 
@@ -33,13 +34,10 @@ void RuntimeModelComputeTransport::sync(const ECSRegistry& registry) {
         nextSocketKeys.insert(socketKey);
     }
 
-    for (uint64_t socketKey : activeSocketKeys) {
-        if (nextSocketKeys.find(socketKey) != nextSocketKeys.end()) {
-            continue;
-        }
-
+    for (auto entity : registry.view<ModelPackage, Stale>()) {
+        uint64_t socketKey = static_cast<uint64_t>(entity);
         modelRuntime->queueReleaseSocket(socketKey);
-        appliedPackageHash.erase(socketKey);
+        appliedConfigInputHash.erase(socketKey);
     }
 
     activeSocketKeys = std::move(nextSocketKeys);
@@ -52,23 +50,17 @@ void RuntimeModelComputeTransport::finalizeSync() {
 
     modelRuntime->flush();
 
-    std::vector<uint64_t> removals;
-    auto productView = ecsRegistry->view<ModelProduct>();
-    for (auto entity : productView) {
-        const uint64_t socketKey = static_cast<uint64_t>(entity);
-        if (activeSocketKeys.find(socketKey) == activeSocketKeys.end()) {
-            removals.push_back(socketKey);
-        }
-    }
-    for (uint64_t socketKey : removals) {
-        removePublishedProduct(socketKey);
+    auto staleProductView = ecsRegistry->view<ModelProduct, Stale>();
+    for (auto entity : staleProductView) {
+        removePublishedProduct(static_cast<uint64_t>(entity));
     }
     for (uint64_t socketKey : activeSocketKeys) {
         auto entity = static_cast<ECSEntity>(socketKey);
         const auto& package = ecsRegistry->get<ModelPackage>(entity);
-        auto hashIt = appliedPackageHash.find(socketKey);
+        const uint64_t inputHash = buildConfigInputHash(socketKey, package);
+        auto hashIt = appliedConfigInputHash.find(socketKey);
         const ModelProduct* product = tryGetProduct<ModelProduct>(*ecsRegistry, socketKey);
-        if (!product || hashIt == appliedPackageHash.end() || hashIt->second != package.packageHash) {
+        if (!product || hashIt == appliedConfigInputHash.end() || hashIt->second != inputHash) {
             uint32_t runtimeModelId = 0;
             if (modelRuntime->tryGetRuntimeModelId(socketKey, runtimeModelId) && runtimeModelId != 0) {
                 publishProduct(socketKey, runtimeModelId);
@@ -92,6 +84,11 @@ bool RuntimeModelComputeTransport::tryBuildRuntimeModelPath(
 
     outModelPath = &package.geometry.baseModelPath;
     return true;
+}
+
+uint64_t RuntimeModelComputeTransport::buildConfigInputHash(uint64_t socketKey, const ModelPackage& package) const {
+    (void)socketKey;
+    return package.packageHash;
 }
 
 void RuntimeModelComputeTransport::removePublishedProduct(uint64_t socketKey) {
@@ -119,5 +116,5 @@ void RuntimeModelComputeTransport::publishProduct(uint64_t socketKey, uint32_t r
     }
 
     ecsRegistry->emplace_or_replace<ModelProduct>(entity, product);
-    appliedPackageHash[socketKey] = package.packageHash;
+    appliedConfigInputHash[socketKey] = buildConfigInputHash(socketKey, package);
 }

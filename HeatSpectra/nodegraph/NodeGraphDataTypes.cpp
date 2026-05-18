@@ -1,22 +1,22 @@
 #include "NodeGraphDataTypes.hpp"
+#include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
+#include "NodeGraphTypeRegistry.hpp"
 #include "NodeGraphUtils.hpp"
 
-#include "NodeGraphPayloadTypes.hpp"
 #include "NodePayloadRegistry.hpp"
 #include "domain/HeatModelData.hpp"
 
 #include <cstddef>
-#include <unordered_map>
-#include <unordered_set>
 
-void populateMetadata(NodeDataBlock& dataBlock, const NodePayloadRegistry* registry) {
-    dataBlock.metadata["data.type"] = nodePayloadTypeName(dataBlock.dataType);
+void populateMetadata(NodeDataBlock& dataBlock, const NodeGraphTypeRegistry* typeRegistry, const NodePayloadRegistry* registry) {
+    const std::string* typeName = typeRegistry ? typeRegistry->getTypeName(dataBlock.dataType) : nullptr;
+    dataBlock.metadata["data.type"] = typeName ? *typeName : "unknown";
 
-    if (dataBlock.dataType == NodePayloadType::Geometry ||
-        dataBlock.dataType == NodePayloadType::Remesh ||
-        dataBlock.dataType == NodePayloadType::HeatModel) {
-        const GeometryData* geometry = registry ? registry->resolveGeometry(dataBlock.dataType, dataBlock.payloadHandle) : nullptr;
+    if (dataBlock.dataType == payloadtypes::Geometry ||
+        dataBlock.dataType == payloadtypes::Remesh ||
+        dataBlock.dataType == payloadtypes::HeatModel) {
+        const GeometryData* geometry = registry ? registry->resolveGeometry(dataBlock.payloadHandle) : nullptr;
         if (!geometry || geometry->baseModelPath.empty()) {
             dataBlock.metadata.erase("geometry.model_path");
         } else {
@@ -50,7 +50,7 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodePayloadRegistry* regis
     dataBlock.metadata.erase("remesh.triangle_count");
     dataBlock.metadata.erase("remesh.face_count");
 
-    if (dataBlock.dataType == NodePayloadType::HeatModel) {
+    if (dataBlock.dataType == payloadtypes::HeatModel) {
         const HeatModelData* heatModel = registry ? registry->get<HeatModelData>(dataBlock.payloadHandle) : nullptr;
         dataBlock.metadata["heat_model.boundary_condition"] =
             heatModel ? std::to_string(static_cast<uint32_t>(heatModel->boundaryCondition)) : std::string();
@@ -64,7 +64,7 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodePayloadRegistry* regis
         dataBlock.metadata.erase("heat_model.initial_temperature");
     }
 
-    if (dataBlock.dataType == NodePayloadType::Heat) {
+    if (dataBlock.dataType == payloadtypes::Heat) {
         const HeatData* heatData = registry ? registry->get<HeatData>(dataBlock.payloadHandle) : nullptr;
         dataBlock.metadata["heat.active"] = (heatData && heatData->active) ? "true" : "false";
         dataBlock.metadata["heat.paused"] = (heatData && heatData->paused) ? "true" : "false";
@@ -81,7 +81,7 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodePayloadRegistry* regis
         dataBlock.metadata.erase("heat.material_binding_count");
     }
 
-    if (dataBlock.dataType == NodePayloadType::Contact) {
+    if (dataBlock.dataType == payloadtypes::Contact) {
         const ContactData* contactData = registry ? registry->get<ContactData>(dataBlock.payloadHandle) : nullptr;
         dataBlock.metadata["contact.active"] = (contactData && contactData->active) ? "true" : "false";
         dataBlock.metadata["contact.binding_count"] =
@@ -91,7 +91,7 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodePayloadRegistry* regis
         dataBlock.metadata.erase("contact.binding_count");
     }
 
-    if (dataBlock.dataType == NodePayloadType::Voronoi) {
+    if (dataBlock.dataType == payloadtypes::Voronoi) {
         const VoronoiData* voronoiData = registry ? registry->get<VoronoiData>(dataBlock.payloadHandle) : nullptr;
         dataBlock.metadata["voronoi.active"] = (voronoiData && voronoiData->active) ? "true" : "false";
         dataBlock.metadata["voronoi.model_count"] =
@@ -108,43 +108,3 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodePayloadRegistry* regis
     }
 }
 
-void buildOutputs(const NodeGraphNode& node, const std::vector<const NodeDataBlock*>& inputs, std::vector<NodeDataBlock>& outputs) {
-    std::unordered_map<std::string, std::string> mergedMetadata;
-    std::vector<NodeGraphNodeId> mergedLineage;
-    std::unordered_set<uint32_t> seenNodeIds;
-
-    for (const NodeDataBlock* input : inputs) {
-        if (!input) {
-            continue;
-        }
-
-        for (const auto& metadataEntry : input->metadata) {
-            mergedMetadata[metadataEntry.first] = metadataEntry.second;
-        }
-
-        for (NodeGraphNodeId lineageNodeId : input->lineageNodeIds) {
-            if (!lineageNodeId.isValid()) {
-                continue;
-            }
-
-            if (seenNodeIds.insert(lineageNodeId.value).second) {
-                mergedLineage.push_back(lineageNodeId);
-            }
-        }
-    }
-
-    if (node.id.isValid() && seenNodeIds.insert(node.id.value).second) {
-        mergedLineage.push_back(node.id);
-    }
-
-    mergedMetadata["graph.producer_node_id"] = std::to_string(node.id.value);
-    mergedMetadata["graph.producer_type_id"] = getNodeTypeId(node.typeId);
-    mergedMetadata["graph.lineage_depth"] = std::to_string(mergedLineage.size());
-
-    for (NodeDataBlock& output : outputs) {
-        output = {};
-        output.metadata = mergedMetadata;
-        output.lineageNodeIds = mergedLineage;
-        populateMetadata(output);
-    }
-}

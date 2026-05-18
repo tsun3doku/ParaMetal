@@ -285,9 +285,12 @@ void main() {
     float contourSpacing = 20.0;
     float d = mod(interpolatedTemp, contourSpacing);
     float distToContour = min(d, contourSpacing - d);
-    float tempGrad = max(fwidth(interpolatedTemp), 1e-5);
-    float contourHalfWidth = tempGrad * 1.0;
-    float contourFactor = smoothstep(0.0, contourHalfWidth, distToContour);
+    float pixelGrad = length(vec2(dFdx(interpolatedTemp), dFdy(interpolatedTemp)));
+    float contourFactor = 1.0;
+    if (pixelGrad > 1e-3) {
+        float contourHalfWidth = pixelGrad * 1.5;
+        contourFactor = smoothstep(0.0, contourHalfWidth, distToContour);
+    }
 
     float normalized = clamp(interpolatedTemp / TEMPERATURE_SCALE, 0.0, 1.0);
     vec3 heatColor = temperatureToColor(normalized);

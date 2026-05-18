@@ -17,7 +17,6 @@ ModelUploader::ModelUploader(VulkanDevice& vulkanDevice, MemoryAllocator& memory
 }
 
 void ModelUploader::uploadInitialModels(ModelRegistry& resourceManager) {
-    resourceManager.setModels(nullptr, nullptr, nullptr);
 }
 
 uint32_t ModelUploader::addModel(ModelRegistry& resourceManager, const std::string& modelPath, uint32_t preferredModelId) {

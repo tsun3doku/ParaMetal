@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <vulkan/vulkan.h>
 #include <cstdint>
@@ -22,11 +22,11 @@ public:
         VkBuffer voxelOffsetsBuffer = VK_NULL_HANDLE;
         VkDeviceSize voxelOffsetsBufferOffset = 0;
 
-        VkBuffer neighborIndicesBuffer = VK_NULL_HANDLE;
-        VkDeviceSize neighborIndicesBufferOffset = 0;
+        VkBuffer voronoiNeighborIndicesBuffer = VK_NULL_HANDLE;
+        VkDeviceSize voronoiNeighborIndicesBufferOffset = 0;
 
-        VkBuffer seedFlagsBuffer = VK_NULL_HANDLE;
-        VkDeviceSize seedFlagsBufferOffset = 0;
+        VkBuffer voronoiSeedFlagsBuffer = VK_NULL_HANDLE;
+        VkDeviceSize voronoiSeedFlagsBufferOffset = 0;
 
         VkBuffer voxelGridParamsBuffer = VK_NULL_HANDLE;
         VkDeviceSize voxelGridParamsBufferOffset = 0;

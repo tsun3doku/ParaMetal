@@ -22,16 +22,16 @@ struct HeatModelData {
     uint64_t meshPayloadHash = 0;
 
     // Material
-    float density = 1000.0f;      
-    float specificHeat = 1000.0f;  
-    float conductivity = 1.0f;    
+    float density = HeatSimDefaults::density;
+    float specificHeat = HeatSimDefaults::specificHeat;
+    float conductivity = HeatSimDefaults::conductivity;
 
     // State
-    float initialTemperature = 1.0f;  
+    float initialTemperature = HeatSimDefaults::ambientTemperature;
 
     // Boundary condition
     HeatBoundaryCondition boundaryCondition = HeatBoundaryCondition::None;
-    float fixedTemperatureValue = 1.0f; 
+    float fixedTemperatureValue = HeatSimDefaults::ambientTemperature;
 
     void sealPayload();
 };

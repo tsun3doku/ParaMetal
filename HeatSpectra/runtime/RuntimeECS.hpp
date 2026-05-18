@@ -12,6 +12,8 @@
 enum class ECSEntity : uint64_t {};
 using ECSRegistry = entt::basic_registry<ECSEntity>;
 
+struct Stale {};
+
 template <>
 struct std::hash<ECSEntity> {
     size_t operator()(ECSEntity e) const noexcept {
@@ -50,7 +52,9 @@ inline NodeProductType productTypeFor<HeatProduct>() {
 template <typename ProductT>
 const ProductT* tryGetProduct(const ECSRegistry& registry, uint64_t socketKey) {
     auto entity = static_cast<ECSEntity>(socketKey);
-    if (registry.valid(entity) && registry.all_of<ProductT>(entity)) {
+    if (registry.valid(entity) &&
+        registry.all_of<ProductT>(entity) &&
+        !registry.all_of<Stale>(entity)) {
         return &registry.get<ProductT>(entity);
     }
     return nullptr;
@@ -67,7 +71,9 @@ ProductHandle getPublishedHandle(const ECSRegistry& registry, uint64_t outputSoc
     }
 
     const auto entity = static_cast<ECSEntity>(outputSocketKey);
-    if (!registry.valid(entity) || !registry.all_of<ProductT>(entity)) {
+    if (!registry.valid(entity) ||
+        !registry.all_of<ProductT>(entity) ||
+        registry.all_of<Stale>(entity)) {
         return {};
     }
 
@@ -84,8 +90,17 @@ inline std::unordered_set<ECSEntity> collectPackageEntities(const ECSRegistry& r
     return entities;
 }
 
-inline void destroyStaleEntities(ECSRegistry& registry, std::unordered_set<ECSEntity>& staleEntities) {
+inline void markStaleEntities(ECSRegistry& registry, std::unordered_set<ECSEntity>& staleEntities) {
     for (ECSEntity entity : staleEntities) {
+        if (registry.valid(entity) && !registry.all_of<Stale>(entity)) {
+            registry.emplace<Stale>(entity);
+        }
+    }
+}
+
+inline void destroyStaleEntities(ECSRegistry& registry) {
+    auto view = registry.view<Stale>();
+    for (auto entity : view) {
         if (registry.valid(entity)) {
             registry.destroy(entity);
         }

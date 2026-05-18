@@ -1,14 +1,17 @@
 ﻿#pragma once
 
-#include "NodeGraphDocument.hpp"
+#include "NodeGraph.hpp"
 
 #include <string>
 #include <vector>
 
+class NodeGraphTypeRegistry;
+
 class NodeGraphValidator {
 public:
     static bool canCreateConnection(
-        const NodeGraphDocument& document,
+        const NodeGraph& document,
+        const NodeGraphTypeRegistry& typeRegistry,
         NodeGraphNodeId fromNode,
         NodeGraphSocketId fromSocket,
         NodeGraphNodeId toNode,
@@ -17,5 +20,5 @@ public:
         NodeGraphEdgeId ignoreExistingEdge = {});
 
 private:
-    static bool wouldIntroduceCycle(const NodeGraphDocument& document, NodeGraphNodeId fromNode, NodeGraphNodeId toNode);
+    static bool wouldIntroduceCycle(const NodeGraph& document, NodeGraphNodeId fromNode, NodeGraphNodeId toNode);
 };

@@ -66,11 +66,11 @@ void VoronoiGeoCompute::updateDescriptors(const Bindings& bindings) {
         BindingWrite{6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.voxelOccupancyBuffer, currentBindings.voxelOccupancyBufferOffset, VK_WHOLE_SIZE}},
         BindingWrite{9, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.voxelTrianglesListBuffer, currentBindings.voxelTrianglesListBufferOffset, VK_WHOLE_SIZE}},
         BindingWrite{10, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.voxelOffsetsBuffer, currentBindings.voxelOffsetsBufferOffset, VK_WHOLE_SIZE}},
-        BindingWrite{11, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.neighborIndicesBuffer, currentBindings.neighborIndicesBufferOffset, VK_WHOLE_SIZE}},
-        BindingWrite{12, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.interfaceAreasBuffer, currentBindings.interfaceAreasBufferOffset, VK_WHOLE_SIZE}},
-        BindingWrite{13, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.interfaceNeighborIdsBuffer, currentBindings.interfaceNeighborIdsBufferOffset, VK_WHOLE_SIZE}},
+        BindingWrite{11, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.voronoiNeighborIndicesBuffer, currentBindings.voronoiNeighborIndicesBufferOffset, VK_WHOLE_SIZE}},
+        BindingWrite{12, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.voronoiInterfaceAreasBuffer, currentBindings.voronoiInterfaceAreasBufferOffset, VK_WHOLE_SIZE}},
+        BindingWrite{13, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.voronoiInterfaceNeighborIdsBuffer, currentBindings.voronoiInterfaceNeighborIdsBufferOffset, VK_WHOLE_SIZE}},
         BindingWrite{14, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.debugCellGeometryBuffer, currentBindings.debugCellGeometryBufferOffset, VK_WHOLE_SIZE}},
-        BindingWrite{15, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.seedFlagsBuffer, currentBindings.seedFlagsBufferOffset, VK_WHOLE_SIZE}},
+        BindingWrite{15, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.voronoiSeedFlagsBuffer, currentBindings.voronoiSeedFlagsBufferOffset, VK_WHOLE_SIZE}},
         BindingWrite{16, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.voronoiDumpBuffer, currentBindings.voronoiDumpBufferOffset, VK_WHOLE_SIZE}},
     };
 

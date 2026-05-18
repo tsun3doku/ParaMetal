@@ -90,7 +90,8 @@ void OverlayPass::create() {
     contactOverlayRenderer = std::make_unique<ContactOverlayRenderer>(
         vulkanDevice,
         memoryAllocator,
-        uniformBufferManager);
+        uniformBufferManager,
+        renderCommandPool);
     if (!contactOverlayRenderer) {
         std::cerr << "[OverlayPass] Failed to create contact overlay renderer" << std::endl;
         destroy();
@@ -105,7 +106,8 @@ void OverlayPass::create() {
     heatOverlayRenderer = std::make_unique<HeatOverlayRenderer>(
         vulkanDevice,
         memoryAllocator,
-        uniformBufferManager);
+        uniformBufferManager,
+        renderCommandPool);
     if (!heatOverlayRenderer) {
         std::cerr << "[OverlayPass] Failed to create heat overlay renderer" << std::endl;
         destroy();

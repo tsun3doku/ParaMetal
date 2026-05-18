@@ -18,49 +18,19 @@ VoronoiModelRuntime::VoronoiModelRuntime(
     VulkanDevice& vulkanDevice,
     MemoryAllocator& memoryAllocator,
     uint32_t runtimeModelId,
-    VkBuffer vertexBuffer,
-    VkDeviceSize vertexBufferOffset,
-    VkBuffer indexBuffer,
-    VkDeviceSize indexBufferOffset,
-    uint32_t indexCount,
     const glm::mat4& modelMatrix,
     CpuData cpuData,
-    VkBufferView supportingHalfedgeView,
-    VkBufferView supportingAngleView,
-    VkBufferView halfedgeView,
-    VkBufferView edgeView,
-    VkBufferView triangleView,
-    VkBufferView lengthView,
-    VkBufferView inputHalfedgeView,
-    VkBufferView inputEdgeView,
-    VkBufferView inputTriangleView,
-    VkBufferView inputLengthView,
     CommandPool& renderCommandPool)
     : vulkanDevice(vulkanDevice),
       memoryAllocator(memoryAllocator),
       nodeModelId(cpuData.nodeModelId),
       runtimeModelId(runtimeModelId),
-      vertexBuffer(vertexBuffer),
-      vertexBufferOffset(vertexBufferOffset),
-      indexBuffer(indexBuffer),
-      indexBufferOffset(indexBufferOffset),
-      indexCount(indexCount),
       modelMatrix(modelMatrix),
       intrinsicMesh(std::move(cpuData.intrinsicMesh)),
       geometryPositions(std::move(cpuData.geometryPositions)),
       geometryTriangleIndices(std::move(cpuData.geometryTriangleIndices)),
       surfaceVertices(std::move(cpuData.surfaceVertices)),
       intrinsicTriangleIndices(std::move(cpuData.intrinsicTriangleIndices)),
-      supportingHalfedgeView(supportingHalfedgeView),
-      supportingAngleView(supportingAngleView),
-      halfedgeView(halfedgeView),
-      edgeView(edgeView),
-      triangleView(triangleView),
-      lengthView(lengthView),
-      inputHalfedgeView(inputHalfedgeView),
-      inputEdgeView(inputEdgeView),
-      inputTriangleView(inputTriangleView),
-      inputLengthView(inputLengthView),
       renderCommandPool(renderCommandPool) {
 }
 
@@ -88,11 +58,7 @@ bool VoronoiModelRuntime::createVoronoiBuffers() {
     const VkDeviceSize candidateBufferSize = sizeof(uint32_t) * triangleCount * K_CANDIDATES;
     const VkDeviceSize storageAlignment = vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
 
-    if (triangleIndicesBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(triangleIndicesBuffer, triangleIndicesBufferOffset);
-        triangleIndicesBuffer = VK_NULL_HANDLE;
-        triangleIndicesBufferOffset = 0;
-    }
+    freeBuffer(memoryAllocator, triangleIndicesBuffer, triangleIndicesBufferOffset);
     auto [triIdxHandle, triIdxOffset] = memoryAllocator.allocate(
         triangleIndicesBufferSize,
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -122,11 +88,7 @@ bool VoronoiModelRuntime::createVoronoiBuffers() {
     }
     std::memcpy(triIdxStagingData, intrinsicTriangleIndices.data(), static_cast<size_t>(triangleIndicesBufferSize));
 
-    if (voronoiCandidateBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(voronoiCandidateBuffer, voronoiCandidateBufferOffset);
-        voronoiCandidateBuffer = VK_NULL_HANDLE;
-        voronoiCandidateBufferOffset = 0;
-    }
+    freeBuffer(memoryAllocator, voronoiCandidateBuffer, voronoiCandidateBufferOffset);
 
     VkBuffer candidateStagingBuffer = VK_NULL_HANDLE;
     VkDeviceSize candidateStagingOffset = 0;
@@ -198,54 +160,27 @@ bool VoronoiModelRuntime::createSurfaceBuffers() {
         return false;
     }
 
-    if (surfaceBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(surfaceBuffer, surfaceBufferOffset);
-        surfaceBuffer = VK_NULL_HANDLE;
-        surfaceBufferOffset = 0;
-    }
-
-    if (initStagingBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(initStagingBuffer, initStagingOffset);
-        initStagingBuffer = VK_NULL_HANDLE;
-        initStagingOffset = 0;
-        initBufferSize = 0;
-    }
+    freeBuffer(memoryAllocator, surfaceBuffer, surfaceBufferOffset);
 
     const VkDeviceSize vertexBufferSize = sizeof(SurfaceVertex) * vertexCount;
-    if (createStorageBuffer(
+    const VkDeviceSize storageAlignment = vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
+    if (uploadDeviceBuffer(
             memoryAllocator,
-            vulkanDevice,
-            nullptr,
+            renderCommandPool,
+            surfaceVertices.data(),
             vertexBufferSize,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            storageAlignment,
             surfaceBuffer,
-            surfaceBufferOffset,
-            nullptr,
-            false,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT) != VK_SUCCESS) {
+            surfaceBufferOffset) != VK_SUCCESS) {
         std::cerr << "[VoronoiModelRuntime] Failed to create surface vertex buffer" << std::endl;
         cleanup();
         return false;
     }
-
-    initBufferSize = vertexBufferSize;
-    void* initStagingData = nullptr;
-    if (createStagingBuffer(
-            memoryAllocator,
-            initBufferSize,
-            initStagingBuffer,
-            initStagingOffset,
-            &initStagingData) != VK_SUCCESS ||
-        !initStagingData) {
-        std::cerr << "[VoronoiModelRuntime] Failed to create surface initialization staging buffer" << std::endl;
-        cleanup();
-        return false;
-    }
-    std::memcpy(initStagingData, surfaceVertices.data(), static_cast<size_t>(initBufferSize));
     return true;
 }
 
 bool VoronoiModelRuntime::resetSurfaceState() {
-    cleanupStagingBuffers();
     return createSurfaceBuffers();
 }
 
@@ -257,203 +192,67 @@ void VoronoiModelRuntime::stageGMLSSurfaceData(
         return;
     }
 
-    auto freeBuffer = [this](VkBuffer& buffer, VkDeviceSize& offset) {
-        if (buffer != VK_NULL_HANDLE) {
-            memoryAllocator.free(buffer, offset);
-            buffer = VK_NULL_HANDLE;
-            offset = 0;
-        }
-    };
-    auto freeStagingBuffer = [this](VkBuffer& buffer, VkDeviceSize& offset, VkDeviceSize& size) {
-        if (buffer != VK_NULL_HANDLE) {
-            memoryAllocator.free(buffer, offset);
-            buffer = VK_NULL_HANDLE;
-            offset = 0;
-        }
-        size = 0;
-    };
-    auto stageBuffer = [this, &freeBuffer, &freeStagingBuffer](
-                           const void* srcData,
-                           VkDeviceSize bufferSize,
-                           VkBuffer& deviceBuffer,
-                           VkDeviceSize& deviceOffset,
-                           VkBuffer& stagingBuffer,
-                           VkDeviceSize& stagingOffset,
-                           VkDeviceSize& stagedSize) -> bool {
-        freeStagingBuffer(stagingBuffer, stagingOffset, stagedSize);
-        freeBuffer(deviceBuffer, deviceOffset);
+    freeBuffer(memoryAllocator, gmlsSurfaceStencilBuffer, gmlsSurfaceStencilBufferOffset);
+    freeBuffer(memoryAllocator, gmlsSurfaceWeightBuffer, gmlsSurfaceWeightBufferOffset);
+    freeBuffer(memoryAllocator, gmlsSurfaceGradientWeightBuffer, gmlsSurfaceGradientWeightBufferOffset);
 
-        if (bufferSize == 0 || srcData == nullptr) {
-            return true;
-        }
+    const VkDeviceSize storageAlignment = vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
 
-        if (createStorageBuffer(
+    {
+        VkDeviceSize size = sizeof(voronoi::GMLSSurfaceStencil) * stencils.size();
+        if (uploadDeviceBuffer(
                 memoryAllocator,
-                vulkanDevice,
-                nullptr,
-                bufferSize,
-                deviceBuffer,
-                deviceOffset,
-                nullptr,
-                false,
-                VK_BUFFER_USAGE_TRANSFER_DST_BIT) != VK_SUCCESS ||
-            deviceBuffer == VK_NULL_HANDLE) {
-            std::cerr << "[VoronoiModelRuntime] Failed to allocate GMLS surface device buffer" << std::endl;
-            return false;
+                renderCommandPool,
+                stencils.data(),
+                size,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                storageAlignment,
+                gmlsSurfaceStencilBuffer,
+                gmlsSurfaceStencilBufferOffset) != VK_SUCCESS) {
+            return;
         }
+    }
 
-        void* stagingData = nullptr;
-        if (createStagingBuffer(
+    {
+        VkDeviceSize size = sizeof(voronoi::GMLSSurfaceWeight) * valueWeights.size();
+        if (uploadDeviceBuffer(
                 memoryAllocator,
-                bufferSize,
-                stagingBuffer,
-                stagingOffset,
-                &stagingData) != VK_SUCCESS ||
-            !stagingData) {
-            std::cerr << "[VoronoiModelRuntime] Failed to create GMLS surface staging buffer" << std::endl;
-            freeBuffer(deviceBuffer, deviceOffset);
-            return false;
+                renderCommandPool,
+                valueWeights.data(),
+                size,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                storageAlignment,
+                gmlsSurfaceWeightBuffer,
+                gmlsSurfaceWeightBufferOffset) != VK_SUCCESS) {
+            return;
         }
-
-        std::memcpy(stagingData, srcData, static_cast<size_t>(bufferSize));
-        stagedSize = bufferSize;
-        return true;
-    };
-
-    if (!stageBuffer(
-            stencils.data(),
-            sizeof(voronoi::GMLSSurfaceStencil) * stencils.size(),
-            gmlsSurfaceStencilBuffer,
-            gmlsSurfaceStencilBufferOffset,
-            gmlsSurfaceStencilStagingBuffer,
-            gmlsSurfaceStencilStagingOffset,
-            gmlsSurfaceStencilBufferSize)) {
-        return;
-    }
-    if (!stageBuffer(
-            valueWeights.data(),
-            sizeof(voronoi::GMLSSurfaceWeight) * valueWeights.size(),
-            gmlsSurfaceWeightBuffer,
-            gmlsSurfaceWeightBufferOffset,
-            gmlsSurfaceWeightStagingBuffer,
-            gmlsSurfaceWeightStagingOffset,
-            gmlsSurfaceWeightBufferSize)) {
-        return;
-    }
-    if (!stageBuffer(
-            gradientWeights.data(),
-            sizeof(voronoi::GMLSSurfaceGradientWeight) * gradientWeights.size(),
-            gmlsSurfaceGradientWeightBuffer,
-            gmlsSurfaceGradientWeightBufferOffset,
-            gmlsSurfaceGradientWeightStagingBuffer,
-            gmlsSurfaceGradientWeightStagingOffset,
-            gmlsSurfaceGradientWeightBufferSize)) {
-        return;
-    }
-}
-
-void VoronoiModelRuntime::executeBufferTransfers(VkCommandBuffer commandBuffer) {
-    if (initStagingBuffer != VK_NULL_HANDLE) {
-        VkBufferCopy surfaceCopyRegion{ initStagingOffset, surfaceBufferOffset, initBufferSize };
-        vkCmdCopyBuffer(commandBuffer, initStagingBuffer, surfaceBuffer, 1, &surfaceCopyRegion);
+        valueWeightCount = valueWeights.size();
     }
 
-    if (gmlsSurfaceStencilStagingBuffer != VK_NULL_HANDLE && gmlsSurfaceStencilBuffer != VK_NULL_HANDLE) {
-        VkBufferCopy copyRegion{
-            gmlsSurfaceStencilStagingOffset,
-            gmlsSurfaceStencilBufferOffset,
-            gmlsSurfaceStencilBufferSize
-        };
-        vkCmdCopyBuffer(commandBuffer, gmlsSurfaceStencilStagingBuffer, gmlsSurfaceStencilBuffer, 1, &copyRegion);
-    }
-    if (gmlsSurfaceWeightStagingBuffer != VK_NULL_HANDLE && gmlsSurfaceWeightBuffer != VK_NULL_HANDLE) {
-        VkBufferCopy copyRegion{
-            gmlsSurfaceWeightStagingOffset,
-            gmlsSurfaceWeightBufferOffset,
-            gmlsSurfaceWeightBufferSize
-        };
-        vkCmdCopyBuffer(commandBuffer, gmlsSurfaceWeightStagingBuffer, gmlsSurfaceWeightBuffer, 1, &copyRegion);
-    }
-    if (gmlsSurfaceGradientWeightStagingBuffer != VK_NULL_HANDLE && gmlsSurfaceGradientWeightBuffer != VK_NULL_HANDLE) {
-        VkBufferCopy copyRegion{
-            gmlsSurfaceGradientWeightStagingOffset,
-            gmlsSurfaceGradientWeightBufferOffset,
-            gmlsSurfaceGradientWeightBufferSize
-        };
-        vkCmdCopyBuffer(commandBuffer, gmlsSurfaceGradientWeightStagingBuffer, gmlsSurfaceGradientWeightBuffer, 1, &copyRegion);
+    {
+        VkDeviceSize size = sizeof(voronoi::GMLSSurfaceGradientWeight) * gradientWeights.size();
+        if (uploadDeviceBuffer(
+                memoryAllocator,
+                renderCommandPool,
+                gradientWeights.data(),
+                size,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                storageAlignment,
+                gmlsSurfaceGradientWeightBuffer,
+                gmlsSurfaceGradientWeightBufferOffset) != VK_SUCCESS) {
+            return;
+        }
+        gradientWeightCount = gradientWeights.size();
     }
 }
 
 void VoronoiModelRuntime::cleanup() {
-    auto freeBuffer = [this](VkBuffer& buffer, VkDeviceSize& offset) {
-        if (buffer != VK_NULL_HANDLE) {
-            memoryAllocator.free(buffer, offset);
-            buffer = VK_NULL_HANDLE;
-            offset = 0;
-        }
-    };
-
-    if (triangleIndicesBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(triangleIndicesBuffer, triangleIndicesBufferOffset);
-        triangleIndicesBuffer = VK_NULL_HANDLE;
-        triangleIndicesBufferOffset = 0;
-    }
-    if (voronoiCandidateBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(voronoiCandidateBuffer, voronoiCandidateBufferOffset);
-        voronoiCandidateBuffer = VK_NULL_HANDLE;
-        voronoiCandidateBufferOffset = 0;
-    }
-    if (gmlsSurfaceStencilBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(gmlsSurfaceStencilBuffer, gmlsSurfaceStencilBufferOffset);
-        gmlsSurfaceStencilBuffer = VK_NULL_HANDLE;
-        gmlsSurfaceStencilBufferOffset = 0;
-    }
-    if (gmlsSurfaceWeightBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(gmlsSurfaceWeightBuffer, gmlsSurfaceWeightBufferOffset);
-        gmlsSurfaceWeightBuffer = VK_NULL_HANDLE;
-        gmlsSurfaceWeightBufferOffset = 0;
-    }
-    if (gmlsSurfaceGradientWeightBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(gmlsSurfaceGradientWeightBuffer, gmlsSurfaceGradientWeightBufferOffset);
-        gmlsSurfaceGradientWeightBuffer = VK_NULL_HANDLE;
-        gmlsSurfaceGradientWeightBufferOffset = 0;
-    }
-
-    if (surfaceBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(surfaceBuffer, surfaceBufferOffset);
-        surfaceBuffer = VK_NULL_HANDLE;
-        surfaceBufferOffset = 0;
-    }
-
-    cleanupStagingBuffers();
-}
-
-void VoronoiModelRuntime::cleanupStagingBuffers() {
-    if (initStagingBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(initStagingBuffer, initStagingOffset);
-        initStagingBuffer = VK_NULL_HANDLE;
-        initStagingOffset = 0;
-        initBufferSize = 0;
-    }
-
-    if (gmlsSurfaceStencilStagingBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(gmlsSurfaceStencilStagingBuffer, gmlsSurfaceStencilStagingOffset);
-        gmlsSurfaceStencilStagingBuffer = VK_NULL_HANDLE;
-        gmlsSurfaceStencilStagingOffset = 0;
-        gmlsSurfaceStencilBufferSize = 0;
-    }
-    if (gmlsSurfaceWeightStagingBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(gmlsSurfaceWeightStagingBuffer, gmlsSurfaceWeightStagingOffset);
-        gmlsSurfaceWeightStagingBuffer = VK_NULL_HANDLE;
-        gmlsSurfaceWeightStagingOffset = 0;
-        gmlsSurfaceWeightBufferSize = 0;
-    }
-    if (gmlsSurfaceGradientWeightStagingBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(gmlsSurfaceGradientWeightStagingBuffer, gmlsSurfaceGradientWeightStagingOffset);
-        gmlsSurfaceGradientWeightStagingBuffer = VK_NULL_HANDLE;
-        gmlsSurfaceGradientWeightStagingOffset = 0;
-        gmlsSurfaceGradientWeightBufferSize = 0;
-    }
+    freeBuffer(memoryAllocator, triangleIndicesBuffer, triangleIndicesBufferOffset);
+    freeBuffer(memoryAllocator, voronoiCandidateBuffer, voronoiCandidateBufferOffset);
+    freeBuffer(memoryAllocator, gmlsSurfaceStencilBuffer, gmlsSurfaceStencilBufferOffset);
+    freeBuffer(memoryAllocator, gmlsSurfaceWeightBuffer, gmlsSurfaceWeightBufferOffset);
+    freeBuffer(memoryAllocator, gmlsSurfaceGradientWeightBuffer, gmlsSurfaceGradientWeightBufferOffset);
+    freeBuffer(memoryAllocator, surfaceBuffer, surfaceBufferOffset);
 }
 
 void VoronoiModelRuntime::setStencilKDTree(std::unique_ptr<StencilKDTree> kdTree) {
@@ -467,44 +266,4 @@ std::vector<glm::vec3> VoronoiModelRuntime::getIntrinsicSurfacePositions() const
         positions.push_back(glm::vec3(vertex.position));
     }
     return positions;
-}
-
-VkBufferView VoronoiModelRuntime::getSupportingHalfedgeView() const {
-    return supportingHalfedgeView;
-}
-
-VkBufferView VoronoiModelRuntime::getSupportingAngleView() const {
-    return supportingAngleView;
-}
-
-VkBufferView VoronoiModelRuntime::getHalfedgeView() const {
-    return halfedgeView;
-}
-
-VkBufferView VoronoiModelRuntime::getEdgeView() const {
-    return edgeView;
-}
-
-VkBufferView VoronoiModelRuntime::getTriangleView() const {
-    return triangleView;
-}
-
-VkBufferView VoronoiModelRuntime::getLengthView() const {
-    return lengthView;
-}
-
-VkBufferView VoronoiModelRuntime::getInputHalfedgeView() const {
-    return inputHalfedgeView;
-}
-
-VkBufferView VoronoiModelRuntime::getInputEdgeView() const {
-    return inputEdgeView;
-}
-
-VkBufferView VoronoiModelRuntime::getInputTriangleView() const {
-    return inputTriangleView;
-}
-
-VkBufferView VoronoiModelRuntime::getInputLengthView() const {
-    return inputLengthView;
 }

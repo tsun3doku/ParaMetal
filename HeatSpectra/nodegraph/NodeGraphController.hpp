@@ -17,12 +17,9 @@ public:
 
     void applyPendingChanges();
     void tick();
-    bool canExecuteHeatSolve() const;
     const NodeGraphCompiled& compiledState() const;
 
 private:
-    static bool allChangesAreLayout(const NodeGraphDelta& delta);
-
     NodeGraphBridge* bridge = nullptr;
     NodeRuntimeServices runtimeServices{};
     NodeGraphRuntime runtime;

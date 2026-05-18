@@ -23,17 +23,17 @@ public:
     VkBuffer voronoiDumpBuffer = VK_NULL_HANDLE;
     VkDeviceSize voronoiDumpBufferOffset = 0;
 
-    VkBuffer neighborIndicesBuffer = VK_NULL_HANDLE;
-    VkDeviceSize neighborIndicesBufferOffset = 0;
+    VkBuffer voronoiNeighborIndicesBuffer = VK_NULL_HANDLE;
+    VkDeviceSize voronoiNeighborIndicesBufferOffset = 0;
 
-    VkBuffer interfaceAreasBuffer = VK_NULL_HANDLE;
-    VkDeviceSize interfaceAreasBufferOffset = 0;
+    VkBuffer voronoiInterfaceAreasBuffer = VK_NULL_HANDLE;
+    VkDeviceSize voronoiInterfaceAreasBufferOffset = 0;
 
-    VkBuffer interfaceNeighborIdsBuffer = VK_NULL_HANDLE;
-    VkDeviceSize interfaceNeighborIdsBufferOffset = 0;
+    VkBuffer voronoiInterfaceNeighborIdsBuffer = VK_NULL_HANDLE;
+    VkDeviceSize voronoiInterfaceNeighborIdsBufferOffset = 0;
 
-    VkBuffer gmlsInterfaceBuffer = VK_NULL_HANDLE;
-    VkDeviceSize gmlsInterfaceBufferOffset = 0;
+    VkBuffer voronoiGMLSInterfaceBuffer = VK_NULL_HANDLE;
+    VkDeviceSize voronoiGMLSInterfaceBufferOffset = 0;
 
     VkBuffer meshTriangleBuffer = VK_NULL_HANDLE;
     VkDeviceSize meshTriangleBufferOffset = 0;
@@ -41,8 +41,8 @@ public:
     VkBuffer seedPositionBuffer = VK_NULL_HANDLE;
     VkDeviceSize seedPositionBufferOffset = 0;
 
-    VkBuffer seedFlagsBuffer = VK_NULL_HANDLE;
-    VkDeviceSize seedFlagsBufferOffset = 0;
+    VkBuffer voronoiSeedFlagsBuffer = VK_NULL_HANDLE;
+    VkDeviceSize voronoiSeedFlagsBufferOffset = 0;
 
     VkBuffer occupancyPointBuffer = VK_NULL_HANDLE;
     VkDeviceSize occupancyPointBufferOffset = 0;

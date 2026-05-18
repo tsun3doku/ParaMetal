@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #define GLM_ENABLE_EXPERIMENTAL
 #define GLM_FORCE_LEFT_HANDED
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -239,11 +239,11 @@ private:
 
     bool hasSplitRenderMesh = false;
 
-	VkBuffer vertexBuffer;
-    VkDeviceSize vertexBufferOffset_;
+    VkBuffer vertexBuffer = VK_NULL_HANDLE;
+    VkDeviceSize vertexBufferOffset_ = 0;
 
-	VkBuffer indexBuffer;
-    VkDeviceSize indexBufferOffset_;
+    VkBuffer indexBuffer = VK_NULL_HANDLE;
+    VkDeviceSize indexBufferOffset_ = 0;
 
     VkBuffer renderVertexBuffer = VK_NULL_HANDLE;
     VkDeviceSize renderVertexBufferOffset_ = 0;

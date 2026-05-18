@@ -209,10 +209,10 @@ xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindows.dll" "$(OutDir)p
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="nodegraph\NodeGraphRegistry.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphTypeRegistry.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphInit.cpp" />
     <ClCompile Include="nodegraph\NodeGraphParamUtils.cpp" />
-    <ClCompile Include="nodegraph\NodeGraphTopology.cpp" />
     <ClCompile Include="nodegraph\NodeGraphUtils.cpp" />
-    <ClCompile Include="runtime\RuntimeHandleResolver.cpp" />
     <ClCompile Include="scene\Camera.cpp" />
     <ClCompile Include="scene\CameraController.cpp" />
     <ClCompile Include="scene\MousePicker.cpp" />
@@ -227,7 +227,7 @@ xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindows.dll" "$(OutDir)p
     <ClCompile Include="runtime\SceneContext.cpp" />
     <ClCompile Include="runtime\RenderContext.cpp" />
     <ClCompile Include="runtime\ModelComputeRuntime.cpp" />
-    <ClCompile Include="runtime\ModelDisplayRuntime.cpp" />
+    <ClCompile Include="runtime\ModelDisplayController.cpp" />
     <ClCompile Include="runtime\ContactDisplayController.cpp" />
     <ClCompile Include="runtime\HeatDisplayController.cpp" />
     <ClCompile Include="runtime\RemeshDisplayController.cpp" />
@@ -300,8 +300,27 @@ xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindows.dll" "$(OutDir)p
     <ClCompile Include="scene\MaterialSystem.cpp" />
     <ClCompile Include="nodegraph\NodeGraphBridge.cpp" />
     <ClCompile Include="nodegraph\NodeGraphController.cpp" />
-    <ClCompile Include="nodegraph\NodeGraphDocument.cpp" />
-    <ClCompile Include="nodegraph\ui\scene\NodeGraphDock.cpp" />
+    <ClCompile Include="nodegraph\NodeGraph.cpp" />
+    <ClCompile Include="nodegraph\ui\scene\NodeGraphCanvas.cpp">
+      <DynamicSource Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">input</DynamicSource>
+      <QtMocFileName Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">%(Filename).moc</QtMocFileName>
+      <DynamicSource Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">input</DynamicSource>
+      <QtMocFileName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(Filename).moc</QtMocFileName>
+      <DynamicSource Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">input</DynamicSource>
+      <QtMocFileName Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">%(Filename).moc</QtMocFileName>
+      <DynamicSource Condition="'$(Configuration)|$(Platform)'=='Release|x64'">input</DynamicSource>
+      <QtMocFileName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(Filename).moc</QtMocFileName>
+    </ClCompile>
+    <ClCompile Include="nodegraph\ui\scene\NodeGraphEditorWidget.cpp">
+      <DynamicSource Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">input</DynamicSource>
+      <QtMocFileName Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">%(Filename).moc</QtMocFileName>
+      <DynamicSource Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">input</DynamicSource>
+      <QtMocFileName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(Filename).moc</QtMocFileName>
+      <DynamicSource Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">input</DynamicSource>
+      <QtMocFileName Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">%(Filename).moc</QtMocFileName>
+      <DynamicSource Condition="'$(Configuration)|$(Platform)'=='Release|x64'">input</DynamicSource>
+      <QtMocFileName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(Filename).moc</QtMocFileName>
+    </ClCompile>
     <ClCompile Include="nodegraph\NodeGraphEditor.cpp" />
     <ClCompile Include="nodegraph\NodeGraphDataTypes.cpp" />
     <ClCompile Include="nodegraph\NodeGraphHash.cpp" />
@@ -347,7 +366,6 @@ xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindows.dll" "$(OutDir)p
     <ClCompile Include="nodegraph\ui\scene\NodeGraphScene.cpp" />
     <ClCompile Include="nodegraph\ui\scene\NodeGraphSceneStyle.cpp" />
     <ClCompile Include="nodegraph\ui\scene\NodeGraphSceneUtils.cpp" />
-    <ClCompile Include="nodegraph\NodeGraphTypes.cpp" />
     <ClCompile Include="nodegraph\NodeGraphValidator.cpp" />
     <ClCompile Include="voronoi\LloydCompute.cpp" />
     <ClCompile Include="voronoi\VoronoiCandidateCompute.cpp" />
@@ -471,21 +489,21 @@ xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindows.dll" "$(OutDir)p
     <ClInclude Include="nodegraph\NodeGraphCoreTypes.hpp" />
     <ClInclude Include="nodegraph\NodeGraphPayloadTypes.hpp" />
     <ClInclude Include="nodegraph\NodeGraphRegistry.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphTypeRegistry.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphInit.hpp" />
     <ClInclude Include="nodegraph\NodeGraphParamUtils.hpp" />
-    <ClInclude Include="nodegraph\NodeGraphTopology.hpp" />
     <ClInclude Include="nodegraph\NodeGraphUtils.hpp" />
     <ClInclude Include="nodegraph\NodePayloadRegistry.hpp" />
     <ClInclude Include="nodegraph\ui\widgets\NodeGraphWidgetStyle.hpp" />
     <ClInclude Include="runtime\RuntimeContactComputeTransport.hpp" />
     <ClInclude Include="runtime\ContactDisplayController.hpp" />
     <ClInclude Include="runtime\HeatDisplayController.hpp" />
-    <ClInclude Include="runtime\RuntimeHandleResolver.hpp" />
     <ClInclude Include="runtime\RuntimeHeatComputeTransport.hpp" />
     <ClInclude Include="runtime\RuntimeHeatDisplayTransport.hpp" />
     <ClInclude Include="runtime\RemeshController.hpp" />
     <ClInclude Include="runtime\RemeshSystem.hpp" />
     <ClInclude Include="runtime\ModelComputeRuntime.hpp" />
-    <ClInclude Include="runtime\ModelDisplayRuntime.hpp" />
+    <ClInclude Include="runtime\ModelDisplayController.hpp" />
     <ClInclude Include="runtime\RemeshDisplayController.hpp" />
     <ClInclude Include="render\ContactOverlayRenderer.hpp" />
     <ClInclude Include="render\VoronoiOverlayRenderer.hpp" />
@@ -517,7 +535,6 @@ xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindows.dll" "$(OutDir)p
     <ClInclude Include="runtime\RenderContext.hpp" />
     <ClInclude Include="runtime\RuntimePackageCompiler.hpp" />
     <ClInclude Include="runtime\RuntimePackages.hpp" />
-    <ClInclude Include="runtime\RuntimeThermalTypes.hpp" />
     <ClInclude Include="runtime\RuntimeController.hpp" />
     <ClInclude Include="runtime\RenderSettingsManager.hpp" />
     <ClInclude Include="runtime\RenderSettingsController.hpp" />
@@ -589,8 +606,9 @@ xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindows.dll" "$(OutDir)p
     <ClInclude Include="scene\MaterialSystem.hpp" />
     <ClInclude Include="nodegraph\NodeGraphBridge.hpp" />
     <ClInclude Include="nodegraph\NodeGraphController.hpp" />
-    <ClInclude Include="nodegraph\NodeGraphDocument.hpp" />
-    <ClInclude Include="nodegraph\ui\scene\NodeGraphDock.hpp" />
+    <ClInclude Include="nodegraph\NodeGraph.hpp" />
+    <QtMoc Include="nodegraph\ui\scene\NodeGraphCanvas.hpp" />
+    <QtMoc Include="nodegraph\ui\scene\NodeGraphEditorWidget.hpp" />
     <ClInclude Include="nodegraph\NodeGraphEditor.hpp" />
     <ClInclude Include="nodegraph\NodeGraphDataTypes.hpp" />
     <ClInclude Include="nodegraph\NodeGraphHash.hpp" />
@@ -629,7 +647,7 @@ xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindows.dll" "$(OutDir)p
     <ClInclude Include="nodegraph\ui\widgets\NodePanel.hpp" />
     <ClInclude Include="nodegraph\ui\widgets\NodeGraphSliderItem.hpp" />
     <ClInclude Include="nodegraph\ui\widgets\NodeGraphSliderRow.hpp" />
-    <ClInclude Include="nodegraph\ui\scene\NodeGraphScene.hpp" />
+    <QtMoc Include="nodegraph\ui\scene\NodeGraphScene.hpp" />
     <ClInclude Include="nodegraph\ui\scene\NodeGraphSceneStyle.hpp" />
     <ClInclude Include="nodegraph\ui\scene\NodeGraphSceneUtils.hpp" />
     <ClInclude Include="nodegraph\NodeGraphTypes.hpp" />

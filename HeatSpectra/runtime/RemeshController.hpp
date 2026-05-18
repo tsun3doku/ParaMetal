@@ -33,7 +33,7 @@ public:
     void configure(const Config& config);
     void disable(uint64_t socketKey);
     void disable();
-    bool exportProduct(uint64_t socketKey, RemeshProduct& outProduct) const;
+    const RemeshSystem* getSystem(uint64_t socketKey) const;
 
     Remesher& getRemesher() { return remesher; }
     const Remesher& getRemesher() const { return remesher; }
@@ -58,14 +58,14 @@ private:
 };
 
 inline uint64_t buildComputeHash(const RemeshController::Config& config) {
-    uint64_t hash = 1469598103934665603ull;
-    hash = RuntimeProductHash::mixPod(hash, config.socketKey);
-    hash = RuntimeProductHash::mixPodVector(hash, config.pointPositions);
-    hash = RuntimeProductHash::mixPodVector(hash, config.triangleIndices);
-    hash = RuntimeProductHash::mixPod(hash, config.iterations);
-    hash = RuntimeProductHash::mixPod(hash, config.minAngleDegrees);
-    hash = RuntimeProductHash::mixPod(hash, config.maxEdgeLength);
-    hash = RuntimeProductHash::mixPod(hash, config.stepSize);
-    hash = RuntimeProductHash::mixPod(hash, config.runtimeModelId);
+    uint64_t hash = NodeGraphHash::start();
+    NodeGraphHash::combine(hash, config.socketKey);
+    NodeGraphHash::combinePodVector(hash, config.pointPositions);
+    NodeGraphHash::combinePodVector(hash, config.triangleIndices);
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(config.iterations));
+    NodeGraphHash::combinePod(hash, config.minAngleDegrees);
+    NodeGraphHash::combinePod(hash, config.maxEdgeLength);
+    NodeGraphHash::combinePod(hash, config.stepSize);
+    NodeGraphHash::combine(hash, config.runtimeModelId);
     return hash;
 }

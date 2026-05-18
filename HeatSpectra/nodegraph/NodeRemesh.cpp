@@ -1,4 +1,5 @@
 #include "NodeRemesh.hpp"
+#include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
 
@@ -15,19 +16,19 @@ void NodeRemesh::execute(NodeGraphKernelContext& context) const {
     NodePayloadRegistry* const payloadRegistry = context.executionState.services.payloadRegistry;
     RemeshData remeshData{};
 
-    const NodeGraphSocket* meshInputSocket = findInputSocket(context.node, NodeGraphValueType::Mesh);
+    const NodeGraphSocket* meshInputSocket = context.node.input(NodeGraphValueType::Mesh);
     const EvaluatedSocketValue* inputMesh =
         meshInputSocket ? readEvaluatedInput(context.node, meshInputSocket->id, context.executionState) : nullptr;
     const NodeDataBlock* upstreamGeometryValue = readInputValue(inputMesh);
     if (upstreamGeometryValue &&
-        upstreamGeometryValue->dataType != NodePayloadType::Geometry &&
-        upstreamGeometryValue->dataType != NodePayloadType::Remesh) {
+        upstreamGeometryValue->dataType != payloadtypes::Geometry &&
+        upstreamGeometryValue->dataType != payloadtypes::Remesh) {
         upstreamGeometryValue = nullptr;
     }
 
     const bool hasValidInput = payloadRegistry && upstreamGeometryValue && upstreamGeometryValue->payloadHandle.key != 0;
     if (hasValidInput) {
-        const uint64_t sourcePayloadHash = payloadRegistry->resolvePayloadHash(upstreamGeometryValue->dataType, upstreamGeometryValue->payloadHandle);
+        const uint64_t sourcePayloadHash = payloadRegistry->resolvePayloadHash(upstreamGeometryValue->payloadHandle);
         const RemeshNodeParams params = readRemeshNodeParams(context.node);
         remeshData.sourceMeshHandle = upstreamGeometryValue->payloadHandle;
         remeshData.sourcePayloadHash = sourcePayloadHash;
@@ -44,25 +45,25 @@ void NodeRemesh::execute(NodeGraphKernelContext& context) const {
         outputValue = {};
         outputValue.dataType = outputSocket.contract.producedPayloadType;
 
-        if (!payloadRegistry || outputValue.dataType != NodePayloadType::Remesh || !hasValidInput) {
-            populateMetadata(outputValue, payloadRegistry);
+        if (!payloadRegistry || outputValue.dataType != payloadtypes::Remesh || !hasValidInput) {
+            populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
 
-        const uint64_t payloadKey = makeSocketKey(context.node.id, outputSocket.id);
+        const uint64_t payloadKey = NodeSocketKey(context.node.id, outputSocket.id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, remeshData);
-        populateMetadata(outputValue, payloadRegistry);
+        populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 
 bool NodeRemesh::computeInputHash(const NodeGraphKernelHashContext& context, uint64_t& outHash) const {
-    const NodeGraphSocket* meshInputSocket = findInputSocket(context.node, NodeGraphValueType::Mesh);
+    const NodeGraphSocket* meshInputSocket = context.node.input(NodeGraphValueType::Mesh);
     const EvaluatedSocketValue* inputValueState =
         meshInputSocket ? readEvaluatedInput(context.node, meshInputSocket->id, context.executionState) : nullptr;
     const NodeDataBlock* inputValue = readInputValue(inputValueState);
     if (inputValue &&
-        inputValue->dataType != NodePayloadType::Geometry &&
-        inputValue->dataType != NodePayloadType::Remesh) {
+        inputValue->dataType != payloadtypes::Geometry &&
+        inputValue->dataType != payloadtypes::Remesh) {
         inputValue = nullptr;
     }
 

@@ -1,7 +1,11 @@
 #pragma once
 
 #include "NodeGraphTypes.hpp"
+#include "NodeGraphTypeRegistry.hpp"
+
+#include <string>
 #include <vector>
+#include <unordered_map>
 
 namespace nodegraphtypes {
 inline constexpr const char* Model = "model";
@@ -99,26 +103,20 @@ constexpr uint32_t FixedTemperatureValue = 6;
 
 class NodeGraphRegistry {
 public:
-    static const std::vector<NodeTypeDefinition>& getBuiltInNodes();
-    static const NodeTypeDefinition* findNodeById(const NodeTypeId& typeId);
+    NodeGraphRegistry() = default;
+
+    uint8_t registerPayloadType(const std::string& name, NodeGraphValueType displayType);
+    NodeGraphValueType getPayloadDisplayType(uint8_t typeId) const;
+    const std::string* getPayloadTypeName(uint8_t typeId) const;
+
+    void registerNodeType(NodeTypeDefinition definition);
+    const NodeTypeDefinition* findNodeType(const NodeTypeId& typeId) const;
+    const std::vector<NodeTypeDefinition>& allNodeTypes() const;
+
+    const NodeGraphTypeRegistry& typeRegistry() const { return payloadTypes; }
 
 private:
-    static NodeSocketSignature makeInputSocket(
-        const char* name,
-        NodeGraphValueType valueType,
-        bool variadic = false);
-
-    static NodeSocketSignature makeOutputSocket(
-        const char* name,
-        NodePayloadType producedPayloadType);
-
-    static NodeTypeDefinition buildModelNode();
-    static NodeTypeDefinition buildTransformNode();
-    static NodeTypeDefinition buildGroupNode();
-    static NodeTypeDefinition buildRemeshNode();
-    static NodeTypeDefinition buildHeatModelNode();
-    static NodeTypeDefinition buildContactNode();
-    static NodeTypeDefinition buildVoronoiNode();
-    static NodeTypeDefinition buildHeatSolveNode();
-    static NodeTypeDefinition buildCustomNode();
+    NodeGraphTypeRegistry payloadTypes;
+    std::unordered_map<std::string, NodeTypeDefinition> nodeTypes;
+    std::vector<NodeTypeDefinition> nodeList;
 };

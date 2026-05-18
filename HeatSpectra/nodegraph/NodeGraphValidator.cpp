@@ -1,15 +1,15 @@
 #include "NodeGraphValidator.hpp"
-
+#include "NodeGraphTypeRegistry.hpp"
 #include "NodeGraphTypes.hpp"
 
-#include <algorithm>
 #include <queue>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 
 bool NodeGraphValidator::canCreateConnection(
-    const NodeGraphDocument& document,
+    const NodeGraph& document,
+    const NodeGraphTypeRegistry& typeRegistry,
     NodeGraphNodeId fromNode,
     NodeGraphSocketId fromSocket,
     NodeGraphNodeId toNode,
@@ -35,41 +35,41 @@ bool NodeGraphValidator::canCreateConnection(
         return false;
     }
 
-    const NodeGraphSocket* srcSocket = document.findOutputSocket(fromNode, fromSocket);
-    const NodeGraphSocket* dstSocket = document.findInputSocket(toNode, toSocket);
+    const NodeGraphSocket* srcSocket = srcNode ? srcNode->output(fromSocket) : nullptr;
+    const NodeGraphSocket* dstSocket = dstNode ? dstNode->input(toSocket) : nullptr;
     if (!srcSocket || !dstSocket) {
         errorMessage = "Connection references a missing input or output socket.";
         return false;
     }
 
-    const NodePayloadType producedPayloadType = srcSocket->contract.producedPayloadType;
-    if (!acceptsPayload(*dstSocket, producedPayloadType)) {
-        errorMessage = "Data contract mismatch: output '" + srcSocket->name + "' provides '" +
-            std::string(nodePayloadTypeName(producedPayloadType)) + "' but input '" + dstSocket->name +
-            "' does not accept it.";
+    const uint8_t producedPayloadType = srcSocket->contract.producedPayloadType;
+    NodeGraphValueType srcDisplayType = typeRegistry.getDisplayType(producedPayloadType);
+    if (srcDisplayType == NodeGraphValueType::None || srcDisplayType != dstSocket->valueType) {
+        const std::string* typeName = typeRegistry.getTypeName(producedPayloadType);
+        errorMessage = "Data contract mismatch: output '" + srcSocket->name +
+            "' provides '" + (typeName ? *typeName : std::string("unknown")) +
+            "' but input '" + dstSocket->name + "' does not accept it.";
         return false;
     }
 
-    const auto duplicateEdgeIt = std::find_if(document.getEdges().begin(), document.getEdges().end(), [&](const NodeGraphEdge& edge) {
+    for (const auto& [id, edge] : document.getEdges()) {
         if (ignoreExistingEdge.isValid() && edge.id == ignoreExistingEdge) {
+            continue;
+        }
+        if (edge.fromNode == fromNode && edge.fromSocket == fromSocket && edge.toNode == toNode && edge.toSocket == toSocket) {
+            errorMessage = "Connection already exists.";
             return false;
         }
-        return edge.fromNode == fromNode && edge.fromSocket == fromSocket && edge.toNode == toNode && edge.toSocket == toSocket;
-    });
-    if (duplicateEdgeIt != document.getEdges().end()) {
-        errorMessage = "Connection already exists.";
-        return false;
     }
 
-    const auto inputAlreadyConnectedIt = std::find_if(document.getEdges().begin(), document.getEdges().end(), [&](const NodeGraphEdge& edge) {
+    for (const auto& [id, edge] : document.getEdges()) {
         if (ignoreExistingEdge.isValid() && edge.id == ignoreExistingEdge) {
+            continue;
+        }
+        if (edge.toNode == toNode && edge.toSocket == toSocket && !dstSocket->variadic) {
+            errorMessage = "Input socket already has a connection.";
             return false;
         }
-        return edge.toNode == toNode && edge.toSocket == toSocket;
-    });
-    if (inputAlreadyConnectedIt != document.getEdges().end() && !dstSocket->variadic) {
-        errorMessage = "Input socket already has a connection.";
-        return false;
     }
 
     if (wouldIntroduceCycle(document, fromNode, toNode)) {
@@ -81,11 +81,11 @@ bool NodeGraphValidator::canCreateConnection(
 }
 
 bool NodeGraphValidator::wouldIntroduceCycle(
-    const NodeGraphDocument& document,
+    const NodeGraph& document,
     NodeGraphNodeId fromNode,
     NodeGraphNodeId toNode) {
     std::unordered_map<uint32_t, std::vector<uint32_t>> adjacency;
-    for (const NodeGraphEdge& edge : document.getEdges()) {
+    for (const auto& [id, edge] : document.getEdges()) {
         adjacency[edge.fromNode.value].push_back(edge.toNode.value);
     }
 

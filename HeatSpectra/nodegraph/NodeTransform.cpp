@@ -1,4 +1,5 @@
 #include "NodeTransform.hpp"
+#include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
 
@@ -62,11 +63,14 @@ const char* NodeTransform::typeId() const {
 }
 
 void NodeTransform::execute(NodeGraphKernelContext& context) const {
-    const NodeGraphSocket* meshSocket = findInputSocket(context.node, NodeGraphValueType::Mesh);
+    const NodeGraphSocket* meshSocket = context.node.input(NodeGraphValueType::Mesh);
     const EvaluatedSocketValue* inputMesh =
         meshSocket ? readEvaluatedInput(context.node, meshSocket->id, context.executionState) : nullptr;
     const NodeDataBlock* inputMeshValue = readInputValue(inputMesh);
-    if (inputMeshValue && valueTypeOf(inputMeshValue->dataType) != NodeGraphValueType::Mesh) {
+    if (inputMeshValue &&
+        inputMeshValue->dataType != payloadtypes::Geometry &&
+        inputMeshValue->dataType != payloadtypes::Remesh &&
+        inputMeshValue->dataType != payloadtypes::HeatModel) {
         inputMeshValue = nullptr;
     }
     NodePayloadRegistry* const payloadRegistry = context.executionState.services.payloadRegistry;
@@ -81,16 +85,16 @@ void NodeTransform::execute(NodeGraphKernelContext& context) const {
         outputValue.dataType = outputSocket.contract.producedPayloadType;
 
         if (!payloadRegistry ||
-            outputValue.dataType != NodePayloadType::Geometry ||
+            outputValue.dataType != payloadtypes::Geometry ||
             !inputMeshValue ||
             inputMeshValue->payloadHandle.key == 0) {
-            populateMetadata(outputValue, payloadRegistry);
+            populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
 
-        const GeometryData* inputGeometry = payloadRegistry->resolveGeometry(inputMeshValue->dataType, inputMeshValue->payloadHandle);
+        const GeometryData* inputGeometry = payloadRegistry->resolveGeometry(inputMeshValue->payloadHandle);
         if (!inputGeometry) {
-            populateMetadata(outputValue, payloadRegistry);
+            populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
 
@@ -99,18 +103,21 @@ void NodeTransform::execute(NodeGraphKernelContext& context) const {
             NodeModelTransform::toMat4(forwardedGeometry.localToWorld) *
             NodeModelTransform::toMat4(localTransform));
 
-        const uint64_t payloadKey = makeSocketKey(context.node.id, outputSocket.id);
+        const uint64_t payloadKey = NodeSocketKey(context.node.id, outputSocket.id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(forwardedGeometry));
-        populateMetadata(outputValue, payloadRegistry);
+        populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 
 bool NodeTransform::computeInputHash(const NodeGraphKernelHashContext& context, uint64_t& outHash) const {
-    const NodeGraphSocket* meshSocket = findInputSocket(context.node, NodeGraphValueType::Mesh);
+    const NodeGraphSocket* meshSocket = context.node.input(NodeGraphValueType::Mesh);
     const EvaluatedSocketValue* inputMesh =
         meshSocket ? readEvaluatedInput(context.node, meshSocket->id, context.executionState) : nullptr;
     const NodeDataBlock* inputMeshValue = readInputValue(inputMesh);
-    if (inputMeshValue && valueTypeOf(inputMeshValue->dataType) != NodeGraphValueType::Mesh) {
+    if (inputMeshValue &&
+        inputMeshValue->dataType != payloadtypes::Geometry &&
+        inputMeshValue->dataType != payloadtypes::Remesh &&
+        inputMeshValue->dataType != payloadtypes::HeatModel) {
         inputMeshValue = nullptr;
     }
 

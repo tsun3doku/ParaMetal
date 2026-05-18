@@ -34,19 +34,9 @@ void ContactSystemComputeController::configure(uint64_t socketKey, const Config&
 
     configuredConfigs[socketKey] = config;
 
-    system->setParams(
-        config.minNormalDot,
-        config.contactRadius);
-    system->setModelAState(
-        config.modelAId,
-        config.modelALocalToWorld,
-        config.modelAIntrinsicMesh,
-        config.modelARuntimeModelId);
-    system->setModelBState(
-        config.modelBId,
-        config.modelBLocalToWorld,
-        config.modelBIntrinsicMesh,
-        config.modelBRuntimeModelId);
+    system->setParams(config.minNormalDot, config.contactRadius);
+    system->setModelAState(config.modelALocalToWorld, config.modelAIntrinsicMesh, config.modelARuntimeModelId);
+    system->setModelBState(config.modelBLocalToWorld, config.modelBIntrinsicMesh, config.modelBRuntimeModelId);
     system->setModelBTriangleIndices(config.modelBTriangleIndices);
     system->ensureConfigured();
 }
@@ -72,31 +62,15 @@ void ContactSystemComputeController::disableAll() {
     activeSystems.clear();
 }
 
-bool ContactSystemComputeController::exportProduct(uint64_t socketKey, ContactProduct& outProduct) {
-    outProduct = {};
-    if (configuredConfigs.find(socketKey) == configuredConfigs.end()) {
-        return false;
-    }
-
+ContactSystem* ContactSystemComputeController::getSystem(uint64_t socketKey) const {
     const auto it = activeSystems.find(socketKey);
     if (it == activeSystems.end() || !it->second) {
-        return false;
+        return nullptr;
     }
+    return it->second.get();
+}
 
-    ContactSystem& system = *it->second;
-
-    const ContactCoupling* coupling = system.getContactCoupling();
-    if (!coupling) {
-        return false;
-    }
-
-    outProduct.coupling = *coupling;
-    outProduct.contactPairBuffer = system.getContactPairBuffer();
-    outProduct.contactPairBufferOffset = system.getContactPairBufferOffset();
-    outProduct.modelARuntimeModelId = coupling->modelARuntimeModelId;
-    outProduct.modelBRuntimeModelId = coupling->modelBRuntimeModelId;
-    outProduct.outlineVertices = system.getOutlineVertices();
-    outProduct.correspondenceVertices = system.getCorrespondenceVertices();
-    outProduct.productHash = buildProductHash(outProduct);
-    return outProduct.isValid();
+const ContactSystemComputeController::Config* ContactSystemComputeController::getConfig(uint64_t socketKey) const {
+    const auto it = configuredConfigs.find(socketKey);
+    return it != configuredConfigs.end() ? &it->second : nullptr;
 }

@@ -7,7 +7,7 @@
 #include "contact/ContactSystemComputeController.hpp"
 #include "runtime/RemeshController.hpp"
 #include "runtime/ModelComputeRuntime.hpp"
-#include "runtime/ModelDisplayRuntime.hpp"
+#include "runtime/ModelDisplayController.hpp"
 #include "runtime/RemeshDisplayController.hpp"
 #include "runtime/ContactDisplayController.hpp"
 #include "runtime/RuntimeContactComputeTransport.hpp"
@@ -26,7 +26,6 @@
 #include "heat/VoronoiSystemComputeController.hpp"
 #include "nodegraph/NodeGraphBridge.hpp"
 #include "nodegraph/NodeGraphController.hpp"
-#include "nodegraph/NodeGraphRuntimeBridge.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
 #include "app/SwapchainManager.hpp"
 #include "render/RenderRuntime.hpp"
@@ -80,7 +79,7 @@ private:
     std::unique_ptr<RuntimeVoronoiComputeTransport> runtimeVoronoiComputeTransportState;
     std::unique_ptr<RuntimeVoronoiDisplayTransport> runtimeVoronoiDisplayTransportState;
     std::unique_ptr<ModelComputeRuntime> modelComputeRuntimeState;
-    std::unique_ptr<ModelDisplayRuntime> modelDisplayRuntimeState;
+    std::unique_ptr<ModelDisplayController> modelDisplayControllerState;
     std::unique_ptr<RemeshController> remeshControllerState;
     std::unique_ptr<RemeshDisplayController> remeshDisplayControllerState;
     std::unique_ptr<ContactDisplayController> contactDisplayControllerState;
@@ -92,7 +91,6 @@ private:
     std::unique_ptr<SceneController> sceneControllerState;
     std::unique_ptr<InputController> inputControllerState;
     std::unique_ptr<NodeGraphBridge> nodeGraphBridgeState;
-    std::unique_ptr<NodeGraphRuntimeBridge> nodeGraphRuntimeBridgeState;
     std::unique_ptr<NodeGraphController> nodeGraphControllerState;
     std::unique_ptr<NodePayloadRegistry> payloadRegistryState;
     bool initialized = false;

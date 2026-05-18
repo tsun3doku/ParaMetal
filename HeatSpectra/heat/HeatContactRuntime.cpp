@@ -77,13 +77,13 @@ bool buildPointStencil(
         const uint32_t localCellIndex = kdTree.regularLocalIndices[retIndices[supportIndex]];
         const float valueWeight = static_cast<float>(valueWeights[supportIndex]);
         if (std::abs(valueWeight) > 1e-7f) {
-            localValueWeights.push_back({ localCellIndex, valueWeight, 0u, 0u });
+            localValueWeights.push_back({ localCellIndex, valueWeight });
             ++valueWeightCountOut;
         }
 
         const float scatterWeight = scatterWeights[supportIndex];
         if (scatterWeight > 1e-7f) {
-            localScatterWeights.push_back({ localCellIndex, scatterWeight, 0u, 0u });
+            localScatterWeights.push_back({ localCellIndex, scatterWeight });
             ++scatterWeightCountOut;
         }
     }
@@ -94,6 +94,22 @@ bool buildPointStencil(
     scatterWeightsOut.insert(scatterWeightsOut.end(), localScatterWeights.begin(), localScatterWeights.end());
 
     return (valueWeightCountOut != 0 && scatterWeightCountOut != 0);
+}
+
+void remapWeightsToSimNodes(
+    const HeatModelRuntime& model,
+    std::vector<contact::ContactSampleWeight>& weights) {
+    std::vector<contact::ContactSampleWeight> remapped;
+    remapped.reserve(weights.size());
+    for (contact::ContactSampleWeight weight : weights) {
+        const uint32_t simNodeId = model.mapVoronoiNodeToSim(weight.cellIndex);
+        if (simNodeId == UINT32_MAX) {
+            continue;
+        }
+        weight.cellIndex = simNodeId;
+        remapped.push_back(weight);
+    }
+    weights = std::move(remapped);
 }
 
 void thresholdContactEdges(
@@ -120,7 +136,7 @@ void thresholdContactEdges(
                 if (std::abs(w) < 1e-7f) {
                     continue;
                 }
-                outEdges.push_back({ neighborId, w, 0u, 0u });
+                outEdges.push_back({ neighborId, w });
                 ++index.count;
             }
         }
@@ -212,6 +228,7 @@ bool HeatContactRuntime::build(
                     bScatterWeights, bScatterOffset, bScatterCount)) {
                 continue;
             }
+            remapWeightsToSimNodes(modelB, bValueWeights);
 
             if (samplePoint.sourceTriangleIndex >= modelAMesh.triangles.size()) {
                 continue;
@@ -245,6 +262,7 @@ bool HeatContactRuntime::build(
                     aScatterWeights, aScatterOffset, aScatterCount)) {
                 continue;
             }
+            remapWeightsToSimNodes(modelA, aValueWeights);
 
             const float sampleConductance = contactThermalConductance * samplePoint.wArea;
 
@@ -405,22 +423,13 @@ bool HeatContactRuntime::createDescriptorSets(const ContactSystemComputeStage& c
 }
 
 void HeatContactRuntime::cleanup(MemoryAllocator& memoryAllocator) {
-    if (edgesAToB != VK_NULL_HANDLE) memoryAllocator.free(edgesAToB, edgesAToBOffset);
-    if (edgeIndexAToB != VK_NULL_HANDLE) memoryAllocator.free(edgeIndexAToB, edgeIndexAToBOffset);
-    if (edgesBToA != VK_NULL_HANDLE) memoryAllocator.free(edgesBToA, edgesBToAOffset);
-    if (edgeIndexBToA != VK_NULL_HANDLE) memoryAllocator.free(edgeIndexBToA, edgeIndexBToAOffset);
+    freeBuffer(memoryAllocator, edgesAToB, edgesAToBOffset);
+    freeBuffer(memoryAllocator, edgeIndexAToB, edgeIndexAToBOffset);
+    freeBuffer(memoryAllocator, edgesBToA, edgesBToAOffset);
+    freeBuffer(memoryAllocator, edgeIndexBToA, edgeIndexBToAOffset);
 
-    edgesAToB = VK_NULL_HANDLE;
-    edgesAToBOffset = 0;
     edgeCountAToB = 0;
-    edgeIndexAToB = VK_NULL_HANDLE;
-    edgeIndexAToBOffset = 0;
-
-    edgesBToA = VK_NULL_HANDLE;
-    edgesBToAOffset = 0;
     edgeCountBToA = 0;
-    edgeIndexBToA = VK_NULL_HANDLE;
-    edgeIndexBToAOffset = 0;
 
     setAA = VK_NULL_HANDLE;
     setAB = VK_NULL_HANDLE;

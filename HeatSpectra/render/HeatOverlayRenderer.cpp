@@ -12,10 +12,11 @@ namespace render {
 HeatOverlayRenderer::HeatOverlayRenderer(
     VulkanDevice& device,
     MemoryAllocator& allocator,
-    UniformBufferManager& uniformBufferManager)
+    UniformBufferManager& uniformBufferManager,
+    CommandPool& commandPool)
     : memoryAllocator(allocator),
       surfaceRenderer(std::make_unique<HeatSurfaceRenderer>(device, uniformBufferManager)),
-      vectorArrowRenderer(std::make_unique<VectorArrowRenderer>(device, allocator, uniformBufferManager)) {
+      vectorArrowRenderer(std::make_unique<VectorArrowRenderer>(device, allocator, uniformBufferManager, commandPool)) {
 }
 
 HeatOverlayRenderer::~HeatOverlayRenderer() {
@@ -114,8 +115,8 @@ void HeatOverlayRenderer::rebuildBindings() {
         }
     }
 
-    surfaceRenderer->updateDescriptors(surfaceBindings, maxFramesInFlight, false);
-    vectorArrowRenderer->updateDescriptors(fluxVectorBindings, maxFramesInFlight, false);
+    surfaceRenderer->updateDescriptors(surfaceBindings, maxFramesInFlight, true);
+    vectorArrowRenderer->updateDescriptors(fluxVectorBindings, maxFramesInFlight, true);
 }
 
 void HeatOverlayRenderer::render(VkCommandBuffer commandBuffer, uint32_t frameIndex) {

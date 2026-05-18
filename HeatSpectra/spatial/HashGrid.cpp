@@ -1,4 +1,4 @@
-﻿#include "HashGrid.hpp"
+#include "HashGrid.hpp"
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/VulkanBuffer.hpp"
@@ -140,15 +140,12 @@ bool HashGrid::createBuffers(uint32_t maxPointsTotal) {
         
         // Create indirect draw buffer 
         VkDeviceSize indirectBufferSize = sizeof(VkDrawIndirectCommand);
-        auto [indirectBuffer, indirectOffset] = memoryAllocator.allocate(indirectBufferSize,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-        if (indirectBuffer == VK_NULL_HANDLE) {
-            std::cerr << "[HashGrid] Failed to allocate indirect draw buffer" << std::endl;
+        if (createStorageBuffer(memoryAllocator, vulkanDevice, nullptr, indirectBufferSize,
+            indirectDrawBuffers[i], indirectDrawBufferOffsets[i], &mappedPtr, false,
+            VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT) != VK_SUCCESS) {
+            std::cerr << "[HashGrid] Failed to create indirect draw buffer" << std::endl;
             return false;
         }
-        indirectDrawBuffers[i] = indirectBuffer;
-        indirectDrawBufferOffsets[i] = indirectOffset;
     }
     return true;
 }
@@ -282,44 +279,26 @@ void HashGrid::cleanupResources() {
         buildDescriptorPool = VK_NULL_HANDLE;
     }
     
-    if (gridBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(gridBuffer, gridBufferOffset_);
-        gridBuffer = VK_NULL_HANDLE;
-    }
-    if (cellStartBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(cellStartBuffer, cellStartBufferOffset_);
-        cellStartBuffer = VK_NULL_HANDLE;
-    }
-    if (cellCountBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(cellCountBuffer, cellCountBufferOffset_);
-        cellCountBuffer = VK_NULL_HANDLE;
-    }
-    if (paramsBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(paramsBuffer, paramsBufferOffset_);
-        paramsBuffer = VK_NULL_HANDLE;
-    }
+    freeBuffer(memoryAllocator, gridBuffer, gridBufferOffset_);
+    freeBuffer(memoryAllocator, cellStartBuffer, cellStartBufferOffset_);
+    freeBuffer(memoryAllocator, cellCountBuffer, cellCountBufferOffset_);
+    freeBuffer(memoryAllocator, paramsBuffer, paramsBufferOffset_);
 
     for (size_t i = 0; i < occupiedCellsBuffers.size(); ++i) {
-        if (occupiedCellsBuffers[i] != VK_NULL_HANDLE) {
-            memoryAllocator.free(occupiedCellsBuffers[i], occupiedCellsBufferOffsets[i]);
-        }
+        freeBuffer(memoryAllocator, occupiedCellsBuffers[i], occupiedCellsBufferOffsets[i]);
     }
     occupiedCellsBuffers.clear();
     occupiedCellsBufferOffsets.clear();
     
     for (size_t i = 0; i < occupiedCountBuffers.size(); ++i) {
-        if (occupiedCountBuffers[i] != VK_NULL_HANDLE) {
-            memoryAllocator.free(occupiedCountBuffers[i], occupiedCountBufferOffsets[i]);
-        }
+        freeBuffer(memoryAllocator, occupiedCountBuffers[i], occupiedCountBufferOffsets[i]);
     }
     occupiedCountBuffers.clear();
     occupiedCountBufferOffsets.clear();
     mappedOccupiedCounts.clear();
     
     for (size_t i = 0; i < indirectDrawBuffers.size(); ++i) {
-        if (indirectDrawBuffers[i] != VK_NULL_HANDLE) {
-            memoryAllocator.free(indirectDrawBuffers[i], indirectDrawBufferOffsets[i]);
-        }
+        freeBuffer(memoryAllocator, indirectDrawBuffers[i], indirectDrawBufferOffsets[i]);
     }
     indirectDrawBuffers.clear();
     indirectDrawBufferOffsets.clear();

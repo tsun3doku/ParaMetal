@@ -102,7 +102,7 @@ void RuntimeController::tick(float deltaTime, uint32_t& frameCounter) {
     auto graphTickEnd = std::chrono::high_resolution_clock::now();
 
     scene->cameraController().tick(deltaTime);
-    const bool allowHeatSolve = render->nodeGraphController()->canExecuteHeatSolve();
+    const bool allowHeatSolve = render->nodeGraphController()->compiledState().isValid;
     const RuntimeRenderFrameResult renderResult = runtimeRenderController->renderFrame(allowHeatSolve, frameCounter);
     hasFrameSlot = renderResult.submitted;
     frameSlot = renderResult.frameSlot;

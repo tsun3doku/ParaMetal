@@ -18,35 +18,17 @@ ModelRegistry::ModelRegistry(MemoryAllocator& memoryAllocator)
 ModelRegistry::~ModelRegistry() {
 }
 
-void ModelRegistry::clearAdditionalModels() {
-    for (auto& [modelId, model] : additionalModelsById) {
+void ModelRegistry::clearModels() {
+    for (auto& [modelId, model] : models) {
         (void)modelId;
         if (model) {
             model->cleanup();
         }
-        unregisterModel(model);
     }
-    additionalModelsById.clear();
-}
-
-void ModelRegistry::setModels(std::unique_ptr<Model> newVisModel, std::unique_ptr<Model> newCommonSubdivision, std::unique_ptr<Model> newHeatModel) {
-    const uint32_t visModelId = getVisModelID();
-    const uint32_t heatModelId = getHeatModelID();
-    const uint32_t commonSubdivisionId = getCommonSubdivisionModelID();
-
-    clearAdditionalModels();
-
-    unregisterModel(visModel);
-    unregisterModel(heatModel);
-    unregisterModel(commonSubdivision);
-
-    visModel = std::move(newVisModel);
-    heatModel = std::move(newHeatModel);
-    commonSubdivision = std::move(newCommonSubdivision);
-
-    registerModel(visModel, visModelId);
-    registerModel(heatModel, heatModelId);
-    registerModel(commonSubdivision, commonSubdivisionId);
+    models.clear();
+    visibleModelIds.clear();
+    recycledModelIds.clear();
+    nextModelId = 1;
 }
 
 uint32_t ModelRegistry::addModel(std::unique_ptr<Model> model, uint32_t preferredModelId) {
@@ -56,9 +38,8 @@ uint32_t ModelRegistry::addModel(std::unique_ptr<Model> model, uint32_t preferre
 
     const uint32_t modelId = acquireModelId(preferredModelId);
     model->setRuntimeModelId(modelId);
-    modelsById[modelId] = model.get();
-    additionalModelsById.emplace(modelId, std::move(model));
-    visibleModelIds.erase(modelId);
+    models.emplace(modelId, std::move(model));
+    visibleModelIds.insert(modelId);
     return modelId;
 }
 
@@ -67,22 +48,17 @@ bool ModelRegistry::removeModelByID(uint32_t modelID) {
         return false;
     }
 
-    if ((visModel && visModel->getRuntimeModelId() == modelID) ||
-        (heatModel && heatModel->getRuntimeModelId() == modelID) ||
-        (commonSubdivision && commonSubdivision->getRuntimeModelId() == modelID)) {
-        return false;
-    }
-
-    const auto it = additionalModelsById.find(modelID);
-    if (it == additionalModelsById.end()) {
+    const auto it = models.find(modelID);
+    if (it == models.end()) {
         return false;
     }
 
     if (it->second) {
         it->second->cleanup();
     }
-    unregisterModel(it->second);
-    additionalModelsById.erase(it);
+    
+    unregisterModel(modelID);
+    models.erase(it);
     return true;
 }
 
@@ -90,10 +66,7 @@ std::vector<uint32_t> ModelRegistry::getRenderableModelIds() const {
     std::vector<uint32_t> modelIds;
     modelIds.reserve(visibleModelIds.size());
     for (uint32_t modelId : visibleModelIds) {
-        if (commonSubdivision && commonSubdivision->getRuntimeModelId() == modelId) {
-            continue;
-        }
-        if (modelsById.find(modelId) == modelsById.end()) {
+        if (models.find(modelId) == models.end()) {
             continue;
         }
         modelIds.push_back(modelId);
@@ -104,7 +77,7 @@ std::vector<uint32_t> ModelRegistry::getRenderableModelIds() const {
 }
 
 bool ModelRegistry::hasModel(uint32_t modelID) const {
-    return modelsById.find(modelID) != modelsById.end();
+    return models.find(modelID) != models.end();
 }
 
 bool ModelRegistry::setModelVisible(uint32_t modelID, bool visible) {
@@ -202,56 +175,34 @@ bool ModelRegistry::tryGetWorldBoundingBoxCenter(uint32_t modelID, glm::vec3& ou
 }
 
 Model* ModelRegistry::findModel(uint32_t modelID) {
-    const auto it = modelsById.find(modelID);
-    if (it == modelsById.end()) {
+    const auto it = models.find(modelID);
+    if (it == models.end()) {
         return nullptr;
     }
-    return it->second;
+    return it->second.get();
 }
 
 const Model* ModelRegistry::findModel(uint32_t modelID) const {
-    const auto it = modelsById.find(modelID);
-    if (it == modelsById.end()) {
+    const auto it = models.find(modelID);
+    if (it == models.end()) {
         return nullptr;
     }
-    return it->second;
-}
-
-uint32_t ModelRegistry::getVisModelID() const {
-    return visModel ? visModel->getRuntimeModelId() : 0;
-}
-
-uint32_t ModelRegistry::getHeatModelID() const {
-    return heatModel ? heatModel->getRuntimeModelId() : 0;
-}
-
-uint32_t ModelRegistry::getCommonSubdivisionModelID() const {
-    return commonSubdivision ? commonSubdivision->getRuntimeModelId() : 0;
+    return it->second.get();
 }
 
 void ModelRegistry::cleanup() {
-    clearAdditionalModels();
-
-    if (visModel) {
-        visModel->cleanup();
-    }
-    if (heatModel) {
-        heatModel->cleanup();
-    }
-    if (commonSubdivision) {
-        commonSubdivision->cleanup();
-    }
+    clearModels();
 }
 
 bool ModelRegistry::isReservedModelId(uint32_t modelId) {
-    return modelId == 0 || (modelId >= 3 && modelId <= 8);
+    return modelId == 0;
 }
 
 uint32_t ModelRegistry::acquireModelId(uint32_t preferredModelId) {
     if (preferredModelId != 0 &&
         preferredModelId <= MaxStencilModelId &&
         !isReservedModelId(preferredModelId) &&
-        modelsById.find(preferredModelId) == modelsById.end()) {
+        models.find(preferredModelId) == models.end()) {
         return preferredModelId;
     }
 
@@ -261,14 +212,14 @@ uint32_t ModelRegistry::acquireModelId(uint32_t preferredModelId) {
         if (candidate == 0 || candidate > MaxStencilModelId || isReservedModelId(candidate)) {
             continue;
         }
-        if (modelsById.find(candidate) == modelsById.end()) {
+        if (models.find(candidate) == models.end()) {
             return candidate;
         }
     }
 
     while (nextModelId <= MaxStencilModelId &&
            (isReservedModelId(nextModelId) ||
-            modelsById.find(nextModelId) != modelsById.end())) {
+            models.find(nextModelId) != models.end())) {
         ++nextModelId;
     }
 
@@ -290,32 +241,16 @@ void ModelRegistry::recycleModelId(uint32_t modelId) {
     }
 }
 
-void ModelRegistry::registerModel(std::unique_ptr<Model>& modelSlot, uint32_t preferredModelId) {
-    if (!modelSlot) {
-        return;
-    }
 
-    const uint32_t modelId = acquireModelId(preferredModelId);
-    if (modelId == 0) {
-        std::cerr << "[ModelRegistry] Failed to register model: no available model ID" << std::endl;
-        return;
-    }
-    modelSlot->setRuntimeModelId(modelId);
-    modelsById[modelId] = modelSlot.get();
-    visibleModelIds.insert(modelId);
-}
-
-void ModelRegistry::unregisterModel(std::unique_ptr<Model>& modelSlot) {
-    if (!modelSlot) {
-        return;
-    }
-
-    const uint32_t modelId = modelSlot->getRuntimeModelId();
+void ModelRegistry::unregisterModel(uint32_t modelId) {
     if (modelId != 0) {
-        modelsById.erase(modelId);
         visibleModelIds.erase(modelId);
         recycleModelId(modelId);
-        modelSlot->setRuntimeModelId(0);
+        
+        auto it = models.find(modelId);
+        if (it != models.end() && it->second) {
+            it->second->setRuntimeModelId(0);
+        }
     }
 }
 
