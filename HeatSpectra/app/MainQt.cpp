@@ -7,7 +7,6 @@
 #include <QAction>
 #include <QApplication>
 #include <QCloseEvent>
-#include <QFileDialog>
 #include <QHBoxLayout>
 #include <QMenu>
 #include <QMenuBar>
@@ -148,11 +147,6 @@ void MainWindow::createMenuBar() {
 
     QMenu* fileMenu = menuBar->addMenu("&File");
 
-    QAction* openAction = new QAction("&Open Model...", this);
-    openAction->setShortcut(QKeySequence::Open);
-    connect(openAction, &QAction::triggered, this, &MainWindow::onOpenModel);
-    fileMenu->addAction(openAction);
-
     fileMenu->addSeparator();
 
     QAction* exitAction = new QAction("E&xit", this);
@@ -251,27 +245,6 @@ void MainWindow::setNodeGraphVisible(bool visible) {
     nodeGraphEditor->hide();
 }
 
-void MainWindow::onOpenModel() {
-    if (app) {
-        app->setRenderPaused(true);
-    }
-
-    QString filename = QFileDialog::getOpenFileName(this, "Open Model", "models", "3D Models (*.obj *.ply);;OBJ Files (*.obj);;PLY Files (*.ply)");
-
-    if (!filename.isEmpty() && app) {
-        std::string modelPath = filename.toStdString();
-        const uint32_t modelId = app->loadModel(modelPath);
-        if (modelId != 0) {
-            QMessageBox::information(this, "Success", QString("Model loaded: %1").arg(filename));
-        } else {
-            QMessageBox::critical(this, "Error", QString("Failed to load model: %1").arg(filename));
-        }
-    }
-
-    if (app) {
-        app->setRenderPaused(false);
-    }
-}
 
 void MainWindow::closeEvent(QCloseEvent* event) {
     if (app) {

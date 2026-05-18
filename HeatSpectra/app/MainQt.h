@@ -32,7 +32,6 @@ private:
     void syncNodeGraphBridge();
     void setNodeGraphVisible(bool visible);
     void raiseNativeSplitterHandles();
-    void onOpenModel();
     void onExit();
 
     App* app = nullptr;
