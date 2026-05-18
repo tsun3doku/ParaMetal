@@ -1,4 +1,5 @@
 #include "NodeVoronoi.hpp"
+#include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphDataTypes.hpp"
 #include "NodeGraphUtils.hpp"
@@ -21,7 +22,7 @@ void NodeVoronoi::execute(NodeGraphKernelContext& context) const {
     NodeDataHandle modelPayloadHandle;
     NodePayloadRegistry* const payloadRegistry = context.executionState.services.payloadRegistry;
 
-    const NodeGraphSocket* meshSocket = findInputSocket(context.node, NodeGraphValueType::Mesh);
+    const NodeGraphSocket* meshSocket = context.node.input(NodeGraphValueType::Mesh);
     if (meshSocket) {
         const auto evals = readEvaluatedInputs(context.node, meshSocket->id, context.executionState);
         for (const EvaluatedSocketValue* eval : evals) {
@@ -30,7 +31,9 @@ void NodeVoronoi::execute(NodeGraphKernelContext& context) const {
             }
 
             const NodeDataBlock& inputValue = eval->data;
-            if (valueTypeOf(inputValue.dataType) != NodeGraphValueType::Mesh ||
+            if ((inputValue.dataType != payloadtypes::Geometry &&
+                 inputValue.dataType != payloadtypes::Remesh &&
+                 inputValue.dataType != payloadtypes::HeatModel) ||
                 inputValue.payloadHandle.key == 0) {
                 continue;
             }
@@ -44,7 +47,7 @@ void NodeVoronoi::execute(NodeGraphKernelContext& context) const {
 
             // Take the first valid mesh input only
             modelMeshHandle = meshHandle;
-            modelPayloadHash = payloadRegistry->resolvePayloadHash(inputValue.dataType, inputValue.payloadHandle);
+            modelPayloadHash = payloadRegistry->resolvePayloadHash(inputValue.payloadHandle);
             modelPayloadHandle = inputValue.payloadHandle;
             break;
         }
@@ -59,8 +62,8 @@ void NodeVoronoi::execute(NodeGraphKernelContext& context) const {
         outputValue = {};
         outputValue.dataType = outputSocket.contract.producedPayloadType;
 
-        if (!payloadRegistry || outputValue.dataType != NodePayloadType::Voronoi) {
-            populateMetadata(outputValue, payloadRegistry);
+        if (!payloadRegistry || outputValue.dataType != payloadtypes::Voronoi) {
+            populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
 
@@ -73,9 +76,9 @@ void NodeVoronoi::execute(NodeGraphKernelContext& context) const {
             voronoiData.modelPayloadHandles.push_back(modelPayloadHandle);
         }
         voronoiData.active = active;
-        const uint64_t payloadKey = makeSocketKey(context.node.id, context.node.outputs[outputIndex].id);
+        const uint64_t payloadKey = NodeSocketKey(context.node.id, context.node.outputs[outputIndex].id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(voronoiData));
-        populateMetadata(outputValue, payloadRegistry);
+        populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 
@@ -83,13 +86,15 @@ bool NodeVoronoi::computeInputHash(const NodeGraphKernelHashContext& context, ui
     outHash = NodeGraphHash::start();
     NodeGraphHash::combine(outHash, static_cast<uint64_t>(context.node.id.value));
 
-    const NodeGraphSocket* meshSocket = findInputSocket(context.node, NodeGraphValueType::Mesh);
+    const NodeGraphSocket* meshSocket = context.node.input(NodeGraphValueType::Mesh);
     if (meshSocket) {
         const auto evals = readEvaluatedInputs(context.node, meshSocket->id, context.executionState);
         for (const EvaluatedSocketValue* input : evals) {
             const NodeDataBlock* inputData = nullptr;
             if (input && input->status == EvaluatedSocketStatus::Value) {
-                if (valueTypeOf(input->data.dataType) == NodeGraphValueType::Mesh &&
+                if ((input->data.dataType == payloadtypes::Geometry ||
+                     input->data.dataType == payloadtypes::Remesh ||
+                     input->data.dataType == payloadtypes::HeatModel) &&
                     input->data.payloadHandle.key != 0) {
                     inputData = &input->data;
                 }

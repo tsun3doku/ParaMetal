@@ -57,40 +57,36 @@ void VoronoiOverlayRenderer::renderSurface(VkCommandBuffer commandBuffer, uint32
             continue;
         }
 
-        for (const VoronoiSurfaceProduct& surface : config.surfaces) {
-            if (!surface.isValid()) {
-                continue;
-            }
-
+        for (size_t i = 0; i < config.modelRuntimeModelIds.size(); ++i) {
             voronoiRenderer->updateDescriptors(
                 frameIndex,
-                surface.intrinsicVertexCount,
+                static_cast<uint32_t>(config.modelIntrinsicVertexCounts[i]),
                 config.seedPositionBuffer,
                 config.seedPositionBufferOffset,
                 config.neighborIndicesBuffer,
                 config.neighborIndicesBufferOffset,
-                surface.supportingHalfedgeView,
-                surface.supportingAngleView,
-                surface.halfedgeView,
-                surface.edgeView,
-                surface.triangleView,
-                surface.lengthView,
-                surface.inputHalfedgeView,
-                surface.inputEdgeView,
-                surface.inputTriangleView,
-                surface.inputLengthView,
-                surface.candidateBuffer,
-                surface.candidateBufferOffset);
+                config.modelSupportingHalfedgeViews[i],
+                config.modelSupportingAngleViews[i],
+                config.modelHalfedgeViews[i],
+                config.modelEdgeViews[i],
+                config.modelTriangleViews[i],
+                config.modelLengthViews[i],
+                config.modelInputHalfedgeViews[i],
+                config.modelInputEdgeViews[i],
+                config.modelInputTriangleViews[i],
+                config.modelInputLengthViews[i],
+                config.modelCandidateBuffers[i],
+                config.modelCandidateBufferOffsets[i]);
 
             voronoiRenderer->render(
                 commandBuffer,
-                surface.vertexBuffer,
-                surface.vertexBufferOffset,
-                surface.indexBuffer,
-                surface.indexBufferOffset,
-                surface.indexCount,
+                config.modelVertexBuffers[i],
+                config.modelVertexBufferOffsets[i],
+                config.modelIndexBuffers[i],
+                config.modelIndexBufferOffsets[i],
+                config.modelIndexCounts[i],
                 frameIndex,
-                surface.modelMatrix);
+                config.modelMatrices[i]);
         }
     }
 }

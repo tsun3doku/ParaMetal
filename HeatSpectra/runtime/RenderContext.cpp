@@ -13,10 +13,8 @@
 #include "nodegraph/NodeGraphBridge.hpp"
 #include "nodegraph/NodeGraphController.hpp"
 #include "nodegraph/NodeGraphEditor.hpp"
-#include "nodegraph/NodeGraphRuntimeBridge.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
 #include "runtime/ModelComputeRuntime.hpp"
-#include "runtime/ModelDisplayRuntime.hpp"
 #include "runtime/ContactDisplayController.hpp"
 #include "runtime/RemeshDisplayController.hpp"
 #include "runtime/RemeshController.hpp"
@@ -80,16 +78,15 @@ bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, Win
     const VkRenderPass renderPass = renderRuntime->getFrameGraphRuntime().getRenderPass();
 
     payloadRegistryState = std::make_unique<NodePayloadRegistry>();
-    nodeGraphRuntimeBridgeState = std::make_unique<NodeGraphRuntimeBridge>();
     runtimeModelComputeTransportState = std::make_unique<RuntimeModelComputeTransport>();
     runtimeModelDisplayTransportState = std::make_unique<RuntimeModelDisplayTransport>();
+    modelDisplayControllerState = std::make_unique<ModelDisplayController>();
     modelComputeRuntimeState = std::make_unique<ModelComputeRuntime>(
         core.device(),
         *resourceManager,
         *modelUploader,
         frameSync,
         runtimeBusy);
-    modelDisplayRuntimeState = std::make_unique<ModelDisplayRuntime>(*resourceManager);
     runtimeRemeshDisplayTransportState = std::make_unique<RuntimeRemeshDisplayTransport>();
     runtimeRemeshTransportState = std::make_unique<RuntimeRemeshComputeTransport>();
     sceneControllerState = std::make_unique<SceneController>(
@@ -143,12 +140,11 @@ bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, Win
     runtimeHeatComputeTransportState->setController(heatSystemComputeControllerState.get());
     runtimeHeatDisplayTransportState->setController(heatDisplayControllerState.get());
     runtimeModelComputeTransportState->setRuntime(modelComputeRuntimeState.get());
-    runtimeModelDisplayTransportState->setRuntime(modelDisplayRuntimeState.get());
+    modelDisplayControllerState->setModelRegistry(resourceManager);
+    runtimeModelDisplayTransportState->setController(modelDisplayControllerState.get());
     runtimeRemeshTransportState->setController(remeshControllerState.get());
     remeshDisplayControllerState->setIntrinsicRenderer(renderRuntime->getSceneRenderer().getIntrinsicRenderer());
     runtimeRemeshDisplayTransportState->setController(remeshDisplayControllerState.get());
-
-    modelDisplayRuntimeState->setComputeRuntime(modelComputeRuntimeState.get());
 
     sceneControllerState->focusOnVisibleModel();
 
@@ -167,7 +163,6 @@ bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, Win
     nodeRuntimeServices.heatSystemController = heatSystemComputeControllerState.get();
     nodeRuntimeServices.renderSettingsController = renderSettingsController;
     nodeRuntimeServices.payloadRegistry = payloadRegistryState.get();
-    nodeRuntimeServices.runtimeBridge = nodeGraphRuntimeBridgeState.get();
     nodeRuntimeServices.resourceManager = resourceManager;
     nodeRuntimeServices.remesher = &remeshControllerState->getRemesher();
 
@@ -236,7 +231,6 @@ void RenderContext::shutdown() {
     inputControllerState.reset();
     nodeGraphControllerState.reset();
     nodeGraphBridgeState.reset();
-    nodeGraphRuntimeBridgeState.reset();
     sceneControllerState.reset();
     runtimeModelDisplayTransportState.reset();
     runtimeRemeshDisplayTransportState.reset();
@@ -252,7 +246,6 @@ void RenderContext::shutdown() {
     runtimeVoronoiDisplayTransportState.reset();
     runtimeVoronoiComputeTransportState.reset();
     runtimeModelComputeTransportState.reset();
-    modelDisplayRuntimeState.reset();
     modelComputeRuntimeState.reset();
     voronoiDisplayControllerState.reset();
     voronoiSystemComputeControllerState.reset();

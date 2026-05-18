@@ -11,7 +11,6 @@
 
 class NodeGraphBridge;
 class HeatSystemComputeController;
-class NodeGraphRuntimeBridge;
 class NodePayloadRegistry;
 class Remesher;
 class ModelRegistry;
@@ -43,7 +42,6 @@ struct NodeRuntimeServices {
     HeatSystemComputeController* heatSystemController = nullptr;
     RenderSettingsController* renderSettingsController = nullptr;
     NodePayloadRegistry* payloadRegistry = nullptr;
-    NodeGraphRuntimeBridge* runtimeBridge = nullptr;
     ModelRegistry* resourceManager = nullptr;
     Remesher* remesher = nullptr;
 };

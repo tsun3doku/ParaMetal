@@ -84,7 +84,7 @@
     <ClCompile Include="runtime\ModelComputeRuntime.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="runtime\ModelDisplayRuntime.cpp">
+    <ClCompile Include="runtime\ModelDisplayController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="runtime\RemeshDisplayController.cpp">
@@ -108,7 +108,7 @@
     <ClInclude Include="runtime\ModelComputeRuntime.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="runtime\ModelDisplayRuntime.hpp">
+    <ClInclude Include="runtime\ModelDisplayController.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="runtime\RemeshDisplayController.hpp">
@@ -396,10 +396,13 @@
     <ClCompile Include="nodegraph\NodeGraphController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="nodegraph\NodeGraphDocument.cpp">
+    <ClCompile Include="nodegraph\NodeGraph.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="nodegraph\ui\scene\NodeGraphDock.cpp">
+    <ClCompile Include="nodegraph\ui\scene\NodeGraphCanvas.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="nodegraph\ui\scene\NodeGraphEditorWidget.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="nodegraph\NodeGraphEditor.cpp">
@@ -516,16 +519,10 @@
     <ClCompile Include="nodegraph\ui\scene\NodeGraphSceneUtils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="nodegraph\NodeGraphTypes.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="nodegraph\NodeGraphValidator.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="nodegraph\NodeGraphRegistry.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="nodegraph\NodeGraphTopology.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="nodegraph\NodeGraphUtils.cpp">
@@ -558,9 +555,6 @@
     <ClCompile Include="nodegraph\NodeHeatSolveParams.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="runtime\RuntimeHandleResolver.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="vulkan\MemoryPool.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -571,6 +565,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="heat\HeatContactRuntime.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="nodegraph\NodeGraphTypeRegistry.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="nodegraph\NodeGraphInit.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -792,9 +792,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="runtime\RuntimePackages.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="runtime\RuntimeThermalTypes.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="runtime\RuntimeController.hpp">
@@ -1106,10 +1103,13 @@
     <ClInclude Include="nodegraph\NodeGraphController.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="nodegraph\NodeGraphDocument.hpp">
+    <ClInclude Include="nodegraph\NodeGraph.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="nodegraph\ui\scene\NodeGraphDock.hpp">
+    <ClInclude Include="nodegraph\ui\scene\NodeGraphCanvas.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nodegraph\ui\scene\NodeGraphEditorWidget.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\NodeGraphEditor.hpp">
@@ -1253,9 +1253,6 @@
     <ClInclude Include="nodegraph\NodeGraphRegistry.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="nodegraph\NodeGraphTopology.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="nodegraph\NodeGraphUtils.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1331,9 +1328,6 @@
     <ClInclude Include="nodegraph\NodeHeatSolveParams.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="runtime\RuntimeHandleResolver.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="nodegraph\ui\widgets\NodeGraphWidgetStyle.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1353,6 +1347,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="vulkan\VulkanBuffer.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nodegraph\NodeGraphTypeRegistry.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nodegraph\NodeGraphInit.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

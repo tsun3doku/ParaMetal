@@ -26,3 +26,18 @@ struct HeatMaterialBindingGroup {
 
 const HeatMaterialPreset& heatMaterialPresetById(HeatMaterialPresetId id);
 const char* heatMaterialPresetName(HeatMaterialPresetId id);
+
+struct HeatSimDefaults {
+    // Physical Constants
+    static constexpr float ambientTemperature = 1.0f;
+    
+    // Default Material Properties
+    static constexpr float density = 1000.0f;       // kg/m³
+    static constexpr float specificHeat = 1000.0f;  // J/(kg·K)
+    static constexpr float conductivity = 1.0f;     // W/(m·K)
+    
+    // Simulation Parameters
+    static constexpr float contactThermalConductance = 16000.0f;
+    static constexpr float minNormalDot = -0.65f;
+    static constexpr float contactRadius = 0.01f;
+};

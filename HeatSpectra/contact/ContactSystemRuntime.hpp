@@ -15,12 +15,10 @@ public:
 
     void setParams(float minNormalDot, float contactRadius);
     void setModelAState(
-        uint32_t modelId,
         const std::array<float, 16>& localToWorld,
         const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
         uint32_t runtimeModelId);
     void setModelBState(
-        uint32_t modelId,
         const std::array<float, 16>& localToWorld,
         const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
         uint32_t runtimeModelId);
@@ -52,7 +50,6 @@ private:
 
     float minNormalDot = -0.65f;
     float contactRadius = 0.01f;
-    uint32_t modelAId = 0;
     std::array<float, 16> modelALocalToWorld{
         1.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 1.0f, 0.0f, 0.0f,
@@ -61,7 +58,6 @@ private:
     };
     SupportingHalfedge::IntrinsicMesh modelAIntrinsicMesh;
     uint32_t modelARuntimeModelId = 0;
-    uint32_t modelBId = 0;
     std::array<float, 16> modelBLocalToWorld{
         1.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 1.0f, 0.0f, 0.0f,

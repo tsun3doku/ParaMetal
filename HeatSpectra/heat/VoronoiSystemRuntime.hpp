@@ -31,6 +31,14 @@ public:
     VoronoiModelRuntime* getModelRuntime() const { return modelRuntimes.empty() ? nullptr : modelRuntimes.front().get(); }
 
     uint32_t getVoronoiNodeCount() const { return resources.voronoiNodeCount; }
+    uint32_t getSimNodeCount() const { return simNodeCount; }
+    VkBuffer getSimNodeBuffer() const { return simNodeBuffer; }
+    VkDeviceSize getSimNodeBufferOffset() const { return simNodeBufferOffset; }
+    VkBuffer getSimGMLSInterfaceBuffer() const { return simGMLSInterfaceBuffer; }
+    VkDeviceSize getSimGMLSInterfaceBufferOffset() const { return simGMLSInterfaceBufferOffset; }
+    uint32_t getSimGMLSInterfaceCount() const { return simGMLSInterfaceCount; }
+    const std::vector<uint32_t>& getVoronoiToSim() const { return voronoiToSim; }
+    const std::vector<uint32_t>& getSimToVoronoi() const { return simToVoronoi; }
 
     VoronoiResources& resourcesRef() { return resources; }
     const VoronoiResources& resourcesRef() const { return resources; }
@@ -55,6 +63,8 @@ public:
     const std::vector<std::array<glm::vec4, 3>>& getMeshTriangles() const { return meshTriangles; }
 
     void reorderNodes();
+    void buildSimSpaceMapping();
+    bool buildSimBuffers(MemoryAllocator& memoryAllocator, CommandPool& renderCommandPool);
 
     void setReceiverGeometry(
         VulkanDevice& vulkanDevice,
@@ -67,29 +77,13 @@ public:
         const std::vector<std::vector<VoronoiModelRuntime::SurfaceVertex>>& receiverSurfaceVertices,
         const std::vector<std::vector<uint32_t>>& receiverIntrinsicTriangleIndices,
         const std::vector<uint32_t>& receiverModelIds,
-        const std::vector<VkBuffer>& meshVertexBuffers,
-        const std::vector<VkDeviceSize>& meshVertexBufferOffsets,
-        const std::vector<VkBuffer>& meshIndexBuffers,
-        const std::vector<VkDeviceSize>& meshIndexBufferOffsets,
-        const std::vector<uint32_t>& meshIndexCounts,
-        const std::vector<glm::mat4>& meshModelMatrices,
-        const std::vector<VkBufferView>& supportingHalfedgeViews,
-        const std::vector<VkBufferView>& supportingAngleViews,
-        const std::vector<VkBufferView>& halfedgeViews,
-        const std::vector<VkBufferView>& edgeViews,
-        const std::vector<VkBufferView>& triangleViews,
-        const std::vector<VkBufferView>& lengthViews,
-        const std::vector<VkBufferView>& inputHalfedgeViews,
-        const std::vector<VkBufferView>& inputEdgeViews,
-        const std::vector<VkBufferView>& inputTriangleViews,
-        const std::vector<VkBufferView>& inputLengthViews);
+        const std::vector<glm::mat4>& meshModelMatrices);
     void clearReceiverGeometry();
     void setParams(float cellSize, int voxelResolution);
     float getCellSize() const { return cellSize; }
     int getVoxelResolution() const { return voxelResolution; }
     void markSeederReady();
     void markReady();
-    void uploadModelStagingBuffers(CommandPool& renderCommandPool);
 
     void cleanupResources(VulkanDevice& vulkanDevice);
     void cleanup(MemoryAllocator& memoryAllocator);
@@ -110,6 +104,14 @@ private:
     std::vector<glm::vec4> seedPositions;
     std::vector<uint32_t> neighborIndices;
     std::vector<std::array<glm::vec4, 3>> meshTriangles;
+    std::vector<uint32_t> voronoiToSim;
+    std::vector<uint32_t> simToVoronoi;
+    uint32_t simNodeCount = 0;
+    VkBuffer simNodeBuffer = VK_NULL_HANDLE;
+    VkDeviceSize simNodeBufferOffset = 0;
+    VkBuffer simGMLSInterfaceBuffer = VK_NULL_HANDLE;
+    VkDeviceSize simGMLSInterfaceBufferOffset = 0;
+    uint32_t simGMLSInterfaceCount = 0;
 
     VoronoiResources resources;
     bool voronoiSeederReady = false;

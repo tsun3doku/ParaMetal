@@ -79,18 +79,18 @@ private:
 };
 
 inline uint64_t buildDisplayHash(const RemeshDisplayController::Config& config, uint64_t productHash) {
-    uint64_t hash = 1469598103934665603ull;
-    hash = RuntimeProductHash::mixPod(hash, static_cast<uint64_t>(config.showRemeshOverlay ? 1u : 0u));
-    hash = RuntimeProductHash::mixPod(hash, static_cast<uint64_t>(config.showFaceNormals ? 1u : 0u));
-    hash = RuntimeProductHash::mixPod(hash, static_cast<uint64_t>(config.showVertexNormals ? 1u : 0u));
-    hash = RuntimeProductHash::mixPod(hash, config.normalLength);
-    hash = RuntimeProductHash::mixPod(hash, config.runtimeModelId);
-    hash = RuntimeProductHash::mixPod(hash, config.renderVertexBuffer);
-    hash = RuntimeProductHash::mixPod(hash, config.renderVertexBufferOffset);
-    hash = RuntimeProductHash::mixPod(hash, config.renderIndexBuffer);
-    hash = RuntimeProductHash::mixPod(hash, config.renderIndexBufferOffset);
-    hash = RuntimeProductHash::mixPod(hash, config.renderIndexCount);
-    hash = RuntimeProductHash::mixPod(hash, config.modelMatrix);
-    hash = RuntimeProductHash::mixPod(hash, productHash);
+    uint64_t hash = NodeGraphHash::start();
+    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showRemeshOverlay ? 1u : 0u));
+    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showFaceNormals ? 1u : 0u));
+    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showVertexNormals ? 1u : 0u));
+    NodeGraphHash::combinePod(hash, config.normalLength);
+    NodeGraphHash::combine(hash, config.runtimeModelId);
+    NodeGraphHash::combinePod(hash, config.renderVertexBuffer);
+    NodeGraphHash::combinePod(hash, config.renderVertexBufferOffset);
+    NodeGraphHash::combinePod(hash, config.renderIndexBuffer);
+    NodeGraphHash::combinePod(hash, config.renderIndexBufferOffset);
+    NodeGraphHash::combine(hash, config.renderIndexCount);
+    NodeGraphHash::combinePod(hash, config.modelMatrix);
+    NodeGraphHash::combine(hash, productHash);
     return hash;
 }

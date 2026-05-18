@@ -9,19 +9,22 @@ void RuntimeVoronoiComputeTransport::sync(const ECSRegistry& registry) {
 
     std::unordered_set<uint64_t> nextSocketKeys;
 
-    auto view = registry.view<VoronoiPackage>();
+    auto view = registry.view<VoronoiPackage>(entt::exclude<Stale>);
     for (auto entity : view) {
         uint64_t socketKey = static_cast<uint64_t>(entity);
         const auto& package = registry.get<VoronoiPackage>(entity);
 
-        if (!package.authored.active || package.modelProducts.empty()) {
+        if (!package.authored.active || package.modelMeshHandles.empty()) {
+            controller->disable(socketKey);
+            appliedConfigInputHash.erase(socketKey);
             continue;
         }
         nextSocketKeys.insert(socketKey);
 
+        const uint64_t inputHash = buildConfigInputHash(socketKey, package);
         const VoronoiProduct* product = tryGetProduct<VoronoiProduct>(registry, socketKey);
-        auto hashIt = appliedPackageHash.find(socketKey);
-        if (product && hashIt != appliedPackageHash.end() && hashIt->second == package.packageHash) {
+        auto hashIt = appliedConfigInputHash.find(socketKey);
+        if (inputHash != 0 && product && hashIt != appliedConfigInputHash.end() && hashIt->second == inputHash) {
             continue;
         }
 
@@ -31,14 +34,12 @@ void RuntimeVoronoiComputeTransport::sync(const ECSRegistry& registry) {
         }
 
         controller->configure(socketKey, config);
-        nextSocketKeys.insert(socketKey);
     }
 
-    for (uint64_t socketKey : activeSocketKeys) {
-        if (nextSocketKeys.find(socketKey) == nextSocketKeys.end()) {
-            controller->disable(socketKey);
-            appliedPackageHash.erase(socketKey);
-        }
+    for (auto entity : registry.view<VoronoiPackage, Stale>()) {
+        uint64_t socketKey = static_cast<uint64_t>(entity);
+        controller->disable(socketKey);
+        appliedConfigInputHash.erase(socketKey);
     }
 
     activeSocketKeys = std::move(nextSocketKeys);
@@ -51,7 +52,7 @@ bool RuntimeVoronoiComputeTransport::tryBuildConfig(
     if (socketKey == 0 || !ecsRegistry) {
         return false;
     }
-    if (!package.authored.active || package.modelProducts.empty()) {
+    if (!package.authored.active || package.modelMeshHandles.empty()) {
         return false;
     }
 
@@ -60,21 +61,21 @@ bool RuntimeVoronoiComputeTransport::tryBuildConfig(
     outConfig.cellSize = package.authored.cellSize;
     outConfig.voxelResolution = package.authored.voxelResolution;
 
-    for (size_t modelIndex = 0; modelIndex < package.modelProducts.size(); ++modelIndex) {
-        if (modelIndex >= package.modelRemeshProducts.size()) {
+    for (size_t modelIndex = 0; modelIndex < package.modelMeshHandles.size(); ++modelIndex) {
+        if (modelIndex >= package.modelRemeshHandles.size()) {
             return false;
         }
 
-        const ProductHandle& remeshProductHandle = package.modelRemeshProducts[modelIndex];
+        const uint64_t remeshEntityId = package.modelRemeshHandles[modelIndex].key;
         const RemeshProduct* remeshProduct =
-            tryGetProduct<RemeshProduct>(*ecsRegistry, remeshProductHandle.outputSocketKey);
+            tryGetProduct<RemeshProduct>(*ecsRegistry, remeshEntityId);
         if (!remeshProduct) {
             return false;
         }
 
-        const ProductHandle& modelProductHandle = package.modelProducts[modelIndex];
+        const uint64_t modelEntityId = package.modelMeshHandles[modelIndex].key;
         const ModelProduct* modelProduct =
-            tryGetProduct<ModelProduct>(*ecsRegistry, modelProductHandle.outputSocketKey);
+            tryGetProduct<ModelProduct>(*ecsRegistry, modelEntityId);
         if (!modelProduct) {
             return false;
         }
@@ -92,22 +93,6 @@ bool RuntimeVoronoiComputeTransport::tryBuildConfig(
             vertex.normal = glm::vec4(intrinsicVertex.normal, 0.0f);
             outConfig.receiverSurfaceVertices.back().push_back(vertex);
         }
-        outConfig.supportingHalfedgeViews.push_back(remeshProduct->supportingHalfedgeView);
-        outConfig.supportingAngleViews.push_back(remeshProduct->supportingAngleView);
-        outConfig.halfedgeViews.push_back(remeshProduct->halfedgeView);
-        outConfig.edgeViews.push_back(remeshProduct->edgeView);
-        outConfig.triangleViews.push_back(remeshProduct->triangleView);
-        outConfig.lengthViews.push_back(remeshProduct->lengthView);
-        outConfig.inputHalfedgeViews.push_back(remeshProduct->inputHalfedgeView);
-        outConfig.inputEdgeViews.push_back(remeshProduct->inputEdgeView);
-        outConfig.inputTriangleViews.push_back(remeshProduct->inputTriangleView);
-        outConfig.inputLengthViews.push_back(remeshProduct->inputLengthView);
-
-        outConfig.meshVertexBuffers.push_back(modelProduct->vertexBuffer);
-        outConfig.meshVertexBufferOffsets.push_back(modelProduct->vertexBufferOffset);
-        outConfig.meshIndexBuffers.push_back(modelProduct->indexBuffer);
-        outConfig.meshIndexBufferOffsets.push_back(modelProduct->indexBufferOffset);
-        outConfig.meshIndexCounts.push_back(modelProduct->indexCount);
         outConfig.meshModelMatrices.push_back(NodeModelTransform::toMat4(package.modelLocalToWorlds[modelIndex]));
     }
 
@@ -120,16 +105,9 @@ void RuntimeVoronoiComputeTransport::finalizeSync() {
         return;
     }
 
-    std::vector<uint64_t> removals;
-    auto productView = ecsRegistry->view<VoronoiProduct>();
-    for (auto entity : productView) {
-        const uint64_t socketKey = static_cast<uint64_t>(entity);
-        if (activeSocketKeys.find(socketKey) == activeSocketKeys.end()) {
-            removals.push_back(socketKey);
-        }
-    }
-    for (uint64_t socketKey : removals) {
-        removePublishedProduct(socketKey);
+    auto staleProductView = ecsRegistry->view<VoronoiProduct, Stale>();
+    for (auto entity : staleProductView) {
+        removePublishedProduct(static_cast<uint64_t>(entity));
     }
     for (uint64_t socketKey : activeSocketKeys) {
         auto entity = static_cast<ECSEntity>(socketKey);
@@ -137,9 +115,10 @@ void RuntimeVoronoiComputeTransport::finalizeSync() {
             continue;
         }
         const auto& package = ecsRegistry->get<VoronoiPackage>(entity);
-        auto hashIt = appliedPackageHash.find(socketKey);
+        const uint64_t inputHash = buildConfigInputHash(socketKey, package);
+        auto hashIt = appliedConfigInputHash.find(socketKey);
         const VoronoiProduct* product = tryGetProduct<VoronoiProduct>(*ecsRegistry, socketKey);
-        if (!product || hashIt == appliedPackageHash.end() || hashIt->second != package.packageHash) {
+        if (!product || hashIt == appliedConfigInputHash.end() || hashIt->second != inputHash) {
             publishProduct(socketKey);
         }
     }
@@ -160,7 +139,7 @@ void RuntimeVoronoiComputeTransport::publishProduct(uint64_t socketKey) {
     }
 
     VoronoiProduct product{};
-    if (!controller->exportProduct(socketKey, product)) {
+    if (!buildProduct(socketKey, product)) {
         auto entity = static_cast<ECSEntity>(socketKey);
         ecsRegistry->remove<VoronoiProduct>(entity);
         return;
@@ -173,5 +152,106 @@ void RuntimeVoronoiComputeTransport::publishProduct(uint64_t socketKey) {
     const auto& package = ecsRegistry->get<VoronoiPackage>(entity);
 
     ecsRegistry->emplace_or_replace<VoronoiProduct>(entity, product);
-    appliedPackageHash[socketKey] = package.packageHash;
+    appliedConfigInputHash[socketKey] = buildConfigInputHash(socketKey, package);
+}
+
+uint64_t RuntimeVoronoiComputeTransport::buildConfigInputHash(uint64_t socketKey, const VoronoiPackage& package) const {
+    (void)socketKey;
+    uint64_t hash = package.packageHash;
+    for (size_t modelIndex = 0; modelIndex < package.modelMeshHandles.size(); ++modelIndex) {
+        if (modelIndex >= package.modelRemeshHandles.size()) {
+            return 0;
+        }
+        const RemeshProduct* remeshProduct = tryGetProduct<RemeshProduct>(*ecsRegistry, package.modelRemeshHandles[modelIndex].key);
+        const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, package.modelMeshHandles[modelIndex].key);
+        if (!remeshProduct || !modelProduct) {
+            return 0;
+        }
+        NodeGraphHash::combine(hash, remeshProduct->productHash);
+        NodeGraphHash::combine(hash, modelProduct->productHash);
+    }
+    return hash;
+}
+
+bool RuntimeVoronoiComputeTransport::buildProduct(uint64_t socketKey, VoronoiProduct& outProduct) const {
+    outProduct = {};
+    const VoronoiSystem* voronoiSystem = controller ? controller->getSystem(socketKey) : nullptr;
+    if (!voronoiSystem || !controller->getConfig(socketKey)) {
+        return false;
+    }
+
+    outProduct.nodeCount = voronoiSystem->getVoronoiNodeCount();
+    outProduct.simNodeCount = voronoiSystem->runtimeRef().getSimNodeCount();
+
+    const VoronoiResources& resources = voronoiSystem->resourcesRef();
+    outProduct.mappedVoronoiNodes = nullptr;
+    outProduct.nodeBuffer = resources.voronoiNodeBuffer;
+    outProduct.nodeBufferOffset = resources.voronoiNodeBufferOffset;
+    outProduct.voronoiNeighborBuffer = resources.voronoiNeighborBuffer;
+    outProduct.voronoiNeighborBufferOffset = resources.voronoiNeighborBufferOffset;
+    outProduct.voronoiNeighborIndicesBuffer = resources.voronoiNeighborIndicesBuffer;
+    outProduct.voronoiNeighborIndicesBufferOffset = resources.voronoiNeighborIndicesBufferOffset;
+    outProduct.voronoiInterfaceAreasBuffer = resources.voronoiInterfaceAreasBuffer;
+    outProduct.voronoiInterfaceAreasBufferOffset = resources.voronoiInterfaceAreasBufferOffset;
+    outProduct.voronoiInterfaceNeighborIdsBuffer = resources.voronoiInterfaceNeighborIdsBuffer;
+    outProduct.voronoiInterfaceNeighborIdsBufferOffset = resources.voronoiInterfaceNeighborIdsBufferOffset;
+    outProduct.voronoiGMLSInterfaceBuffer = resources.voronoiGMLSInterfaceBuffer;
+    outProduct.voronoiGMLSInterfaceBufferOffset = resources.voronoiGMLSInterfaceBufferOffset;
+    outProduct.simNodeBuffer = voronoiSystem->runtimeRef().getSimNodeBuffer();
+    outProduct.simNodeBufferOffset = voronoiSystem->runtimeRef().getSimNodeBufferOffset();
+    outProduct.simGMLSInterfaceBuffer = voronoiSystem->runtimeRef().getSimGMLSInterfaceBuffer();
+    outProduct.simGMLSInterfaceBufferOffset = voronoiSystem->runtimeRef().getSimGMLSInterfaceBufferOffset();
+    outProduct.simGMLSInterfaceCount = voronoiSystem->runtimeRef().getSimGMLSInterfaceCount();
+    outProduct.voronoiSeedFlagsBuffer = resources.voronoiSeedFlagsBuffer;
+    outProduct.voronoiSeedFlagsBufferOffset = resources.voronoiSeedFlagsBufferOffset;
+    outProduct.seedPositionBuffer = resources.seedPositionBuffer;
+    outProduct.seedPositionBufferOffset = resources.seedPositionBufferOffset;
+    outProduct.occupancyPointBuffer = resources.occupancyPointBuffer;
+    outProduct.occupancyPointBufferOffset = resources.occupancyPointBufferOffset;
+    outProduct.occupancyPointCount = resources.occupancyPointCount;
+    outProduct.voronoiToSim = voronoiSystem->runtimeRef().getVoronoiToSim();
+    outProduct.simToVoronoi = voronoiSystem->runtimeRef().getSimToVoronoi();
+
+    const auto& modelRuntimes = voronoiSystem->getModelRuntimes();
+    const auto& domainSeedFlags = voronoiSystem->runtimeRef().getSeedFlags();
+    const auto& domainSeedPositions = voronoiSystem->runtimeRef().getSeedPositions();
+
+    outProduct.modelRuntimeModelIds.reserve(modelRuntimes.size());
+    outProduct.modelCandidateBuffers.reserve(modelRuntimes.size());
+    outProduct.modelCandidateBufferOffsets.reserve(modelRuntimes.size());
+    outProduct.modelGMLSSurfaceStencilBuffers.reserve(modelRuntimes.size());
+    outProduct.modelGMLSSurfaceStencilBufferOffsets.reserve(modelRuntimes.size());
+    outProduct.modelGMLSSurfaceWeightBuffers.reserve(modelRuntimes.size());
+    outProduct.modelGMLSSurfaceWeightBufferOffsets.reserve(modelRuntimes.size());
+    outProduct.modelGMLSSurfaceGradientWeightBuffers.reserve(modelRuntimes.size());
+    outProduct.modelGMLSSurfaceGradientWeightBufferOffsets.reserve(modelRuntimes.size());
+    outProduct.modelSeedFlags.reserve(modelRuntimes.size());
+    outProduct.modelSeedPositions.reserve(modelRuntimes.size());
+
+    for (const auto& modelRuntime : modelRuntimes) {
+        if (!modelRuntime) {
+            continue;
+        }
+        outProduct.modelRuntimeModelIds.push_back(modelRuntime->getRuntimeModelId());
+        outProduct.modelCandidateBuffers.push_back(modelRuntime->getVoronoiCandidateBuffer());
+        outProduct.modelCandidateBufferOffsets.push_back(modelRuntime->getVoronoiCandidateBufferOffset());
+        outProduct.modelGMLSSurfaceStencilBuffers.push_back(modelRuntime->getGMLSSurfaceStencilBuffer());
+        outProduct.modelGMLSSurfaceStencilBufferOffsets.push_back(modelRuntime->getGMLSSurfaceStencilBufferOffset());
+        outProduct.modelGMLSSurfaceWeightBuffers.push_back(modelRuntime->getGMLSSurfaceWeightBuffer());
+        outProduct.modelGMLSSurfaceWeightBufferOffsets.push_back(modelRuntime->getGMLSSurfaceWeightBufferOffset());
+        outProduct.modelGMLSSurfaceWeightCounts.push_back(modelRuntime->getGMLSSurfaceWeightCount());
+        outProduct.modelGMLSSurfaceGradientWeightBuffers.push_back(modelRuntime->getGMLSSurfaceGradientWeightBuffer());
+        outProduct.modelGMLSSurfaceGradientWeightBufferOffsets.push_back(modelRuntime->getGMLSSurfaceGradientWeightBufferOffset());
+        outProduct.modelGMLSSurfaceGradientWeightCounts.push_back(modelRuntime->getGMLSSurfaceGradientWeightCount());
+        outProduct.modelSeedFlags.push_back(domainSeedFlags);
+        std::vector<glm::vec3> seedPositions;
+        seedPositions.reserve(domainSeedPositions.size());
+        for (const glm::vec4& pos : domainSeedPositions) {
+            seedPositions.push_back(glm::vec3(pos));
+        }
+        outProduct.modelSeedPositions.push_back(std::move(seedPositions));
+    }
+
+    outProduct.productHash = buildProductHash(outProduct);
+    return outProduct.isValid();
 }

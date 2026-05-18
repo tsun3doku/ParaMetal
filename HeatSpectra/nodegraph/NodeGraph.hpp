@@ -1,14 +1,17 @@
-﻿#pragma once
+#pragma once
 
 #include "NodeGraphTypes.hpp"
 
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
-class NodeGraphDocument {
+class NodeGraphRegistry;
+
+class NodeGraph {
 public:
-    NodeGraphDocument();
+    explicit NodeGraph(const NodeGraphRegistry* registry = nullptr);
 
     NodeGraphNodeId addNode(const NodeTypeId& typeId, const std::string& title, float x, float y);
     bool removeNode(NodeGraphNodeId nodeId);
@@ -28,19 +31,16 @@ public:
 
     void clear();
 
-    const std::vector<NodeGraphNode>& getNodes() const {
+    const std::unordered_map<uint32_t, NodeGraphNode>& getNodes() const {
         return nodes;
     }
 
-    const std::vector<NodeGraphEdge>& getEdges() const {
+    const std::unordered_map<uint32_t, NodeGraphEdge>& getEdges() const {
         return edges;
     }
 
     const NodeGraphNode* findNode(NodeGraphNodeId nodeId) const;
     NodeGraphNode* findNode(NodeGraphNodeId nodeId);
-
-    const NodeGraphSocket* findInputSocket(NodeGraphNodeId nodeId, NodeGraphSocketId socketId) const;
-    const NodeGraphSocket* findOutputSocket(NodeGraphNodeId nodeId, NodeGraphSocketId socketId) const;
 
     uint64_t getRevision() const {
         return revision;
@@ -55,7 +55,8 @@ private:
     uint32_t nextSocketId = 1;
     uint32_t nextEdgeId = 1;
     uint64_t revision = 1;
+    const NodeGraphRegistry* registry = nullptr;
 
-    std::vector<NodeGraphNode> nodes;
-    std::vector<NodeGraphEdge> edges;
+    std::unordered_map<uint32_t, NodeGraphNode> nodes;
+    std::unordered_map<uint32_t, NodeGraphEdge> edges;
 };

@@ -27,17 +27,17 @@ struct MaterialNode {
 
 
 // Single bindings: each descriptor set is for one model
-layout(binding = 0) buffer VoronoiNodeBuffer {
+layout(binding = 0) buffer SimNodeBuffer {
     Node nodes[];
-} voronoiNodeBuffer;
+} simNodeBuffer;
 
 layout(binding = 1) readonly buffer GMLSInterfaceBuffer {
     GMLSInterface interfaces[];
 } gmlsInterfaceBuffer;
 
-layout(binding = 2) buffer VoronoiMaterialNodeBuffer {
+layout(binding = 2) buffer MaterialNodeBuffer {
     MaterialNode materialNodes[];
-};
+} materialNodeBuffer;
 
 layout(binding = 3) uniform TimeBuffer {
     float deltaTime;
@@ -51,10 +51,6 @@ layout(binding = 4) buffer TemperatureReadBuffer {
 layout(binding = 5) buffer TemperatureWriteBuffer {
     float temperatures[];
 } tempWrite;
-
-layout(binding = 6) readonly buffer SeedFlagsBuffer {
-    uint flags[];
-} seedFlagsBuffer;
 
 // Coupling accumulator: float2.x = contactK, float2.y = gatheredField
 layout(binding = 7) buffer CouplingAccumulator {
@@ -71,21 +67,16 @@ void main() {
         return;
     }
 
+    // Ghost cells exist only to bound Voronoi geometry — skip early before loading material data
     // Fixed temperature boundary condition - inject temperature every substep
-    MaterialNode materialNode = materialNodes[localNodeID];
+    MaterialNode materialNode = materialNodeBuffer.materialNodes[localNodeID];
     if (materialNode.boundaryCondition == 1u) {
         tempWrite.temperatures[localNodeID] = materialNode.fixedTemperatureValue;
         return;
     }
 
-    // Seed check uses local index (per-model buffer)
-    if ((seedFlagsBuffer.flags[localNodeID] & 1u) != 0u) {
-        tempWrite.temperatures[localNodeID] = tempRead.temperatures[localNodeID];
-        return;
-    }
-
-    // Voronoi node data uses local index (per-model buffer)
-    Node node = voronoiNodeBuffer.nodes[localNodeID];
+    // Sim node data uses local index (per-model buffer)
+    Node node = simNodeBuffer.nodes[localNodeID];
     float thermalMass = max(materialNode.thermalMass, 1e-12);
     float currentTemp = tempRead.temperatures[localNodeID];
 

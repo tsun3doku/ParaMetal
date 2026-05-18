@@ -1,57 +1,12 @@
 #pragma once
 
+#include "NodeGraphCoreTypes.hpp"
+
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
-
-struct NodeGraphNodeId {
-    uint32_t value = 0;
-
-    bool isValid() const {
-        return value != 0;
-    }
-};
-
-struct NodeGraphSocketId {
-    uint32_t value = 0;
-
-    bool isValid() const {
-        return value != 0;
-    }
-};
-
-struct NodeGraphEdgeId {
-    uint32_t value = 0;
-
-    bool isValid() const {
-        return value != 0;
-    }
-};
-
-inline bool operator==(NodeGraphNodeId lhs, NodeGraphNodeId rhs) {
-    return lhs.value == rhs.value;
-}
-
-inline bool operator!=(NodeGraphNodeId lhs, NodeGraphNodeId rhs) {
-    return !(lhs == rhs);
-}
-
-inline bool operator==(NodeGraphSocketId lhs, NodeGraphSocketId rhs) {
-    return lhs.value == rhs.value;
-}
-
-inline bool operator!=(NodeGraphSocketId lhs, NodeGraphSocketId rhs) {
-    return !(lhs == rhs);
-}
-
-inline bool operator==(NodeGraphEdgeId lhs, NodeGraphEdgeId rhs) {
-    return lhs.value == rhs.value;
-}
-
-inline bool operator!=(NodeGraphEdgeId lhs, NodeGraphEdgeId rhs) {
-    return !(lhs == rhs);
-}
 
 enum class NodeGraphValueType : uint8_t {
     None,
@@ -62,19 +17,6 @@ enum class NodeGraphValueType : uint8_t {
     ScalarFloat,
     ScalarInt,
     ScalarBool
-};
-
-enum class NodePayloadType : uint8_t {
-    None = 0,
-    Geometry = 1,
-    Remesh = 2,
-    HeatModel = 3,
-    Heat = 4,
-    Voronoi = 5,
-    Contact = 6,
-    // Deprecated aliases - use HeatModel instead
-    HeatReceiver = HeatModel,
-    HeatSource = HeatModel
 };
 
 enum class NodeGraphSocketDirection {
@@ -93,7 +35,7 @@ enum class NodeGraphNodeCategory {
 using NodeTypeId = std::string;
 
 struct NodeGraphSocketContract {
-    NodePayloadType producedPayloadType = NodePayloadType::None;
+    uint8_t producedPayloadType = 0;
 };
 
 struct NodeSocketSignature {
@@ -183,6 +125,44 @@ struct NodeGraphNode {
     std::vector<NodeGraphSocket> inputs;
     std::vector<NodeGraphSocket> outputs;
     std::vector<NodeGraphParamValue> parameters;
+
+    const NodeGraphSocket* input(const char* name) const {
+        for (const auto& s : inputs) {
+            if (s.name == name) return &s;
+        }
+        return nullptr;
+    }
+    const NodeGraphSocket* input(NodeGraphValueType valueType) const {
+        for (const auto& s : inputs) {
+            if (s.valueType == valueType) return &s;
+        }
+        return nullptr;
+    }
+    const NodeGraphSocket* output(NodeGraphValueType valueType) const {
+        for (const auto& s : outputs) {
+            if (s.valueType == valueType) return &s;
+        }
+        return nullptr;
+    }
+    const NodeGraphSocket* input(NodeGraphSocketId socketId) const {
+        for (const auto& s : inputs) {
+            if (s.id == socketId) return &s;
+        }
+        return nullptr;
+    }
+    const NodeGraphSocket* output(NodeGraphSocketId socketId) const {
+        for (const auto& s : outputs) {
+            if (s.id == socketId) return &s;
+        }
+        return nullptr;
+    }
+    const NodeGraphSocket* outputOfType(uint8_t payloadType) const {
+        for (const auto& s : outputs) {
+            if (s.direction == NodeGraphSocketDirection::Output &&
+                s.contract.producedPayloadType == payloadType) return &s;
+        }
+        return nullptr;
+    }
 };
 
 struct NodeGraphEdge {
@@ -195,8 +175,19 @@ struct NodeGraphEdge {
 
 struct NodeGraphState {
     uint64_t revision = 0;
-    std::vector<NodeGraphNode> nodes;
-    std::vector<NodeGraphEdge> edges;
+    std::unordered_map<uint32_t, NodeGraphNode> nodes;
+    std::unordered_map<uint32_t, NodeGraphEdge> edges;
+
+    const NodeGraphNode* node(NodeGraphNodeId id) const {
+        auto it = nodes.find(id.value);
+        return (it != nodes.end()) ? &it->second : nullptr;
+    }
+    const NodeGraphEdge* incomingEdge(NodeGraphNodeId toNode, NodeGraphSocketId toSocket) const {
+        for (const auto& [id, e] : edges) {
+            if (e.toNode == toNode && e.toSocket == toSocket) return &e;
+        }
+        return nullptr;
+    }
 };
 
 enum class NodeGraphChangeType : uint8_t {
@@ -229,18 +220,9 @@ struct NodeGraphDelta {
     std::vector<NodeGraphChange> changes;
 };
 
-NodeGraphValueType valueTypeOf(NodePayloadType payloadType);
-bool acceptsPayload(NodeGraphValueType valueType, NodePayloadType payloadType);
-bool acceptsPayload(const NodeGraphSocket& socket, NodePayloadType payloadType);
-bool producesPayload(const NodeGraphSocket& socket, NodePayloadType payloadType);
-
-const char* nodePayloadTypeName(NodePayloadType payloadType);
-
 struct NodeGraphCompiled {
     uint64_t revision = 0;
     bool isValid = false;
     std::vector<NodeGraphNodeId> executionOrder;
     std::vector<std::string> compilationErrors;
 };
-
-

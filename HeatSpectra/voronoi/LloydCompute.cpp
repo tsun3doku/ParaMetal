@@ -1,4 +1,4 @@
-﻿#include "LloydCompute.hpp"
+#include "LloydCompute.hpp"
 
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/MemoryAllocator.hpp"
@@ -66,8 +66,8 @@ void LloydCompute::updateDescriptors(const Bindings& bindings) {
         VkDescriptorBufferInfo{currentBindings.meshTriangleBuffer, currentBindings.meshTriangleBufferOffset, VK_WHOLE_SIZE},
         VkDescriptorBufferInfo{currentBindings.voxelTrianglesListBuffer, currentBindings.voxelTrianglesListBufferOffset, VK_WHOLE_SIZE},
         VkDescriptorBufferInfo{currentBindings.voxelOffsetsBuffer, currentBindings.voxelOffsetsBufferOffset, VK_WHOLE_SIZE},
-        VkDescriptorBufferInfo{currentBindings.neighborIndicesBuffer, currentBindings.neighborIndicesBufferOffset, VK_WHOLE_SIZE},
-        VkDescriptorBufferInfo{currentBindings.seedFlagsBuffer, currentBindings.seedFlagsBufferOffset, VK_WHOLE_SIZE},
+        VkDescriptorBufferInfo{currentBindings.voronoiNeighborIndicesBuffer, currentBindings.voronoiNeighborIndicesBufferOffset, VK_WHOLE_SIZE},
+        VkDescriptorBufferInfo{currentBindings.voronoiSeedFlagsBuffer, currentBindings.voronoiSeedFlagsBufferOffset, VK_WHOLE_SIZE},
         VkDescriptorBufferInfo{lloydAccumBuffer, lloydAccumBufferOffset, VK_WHOLE_SIZE},
         VkDescriptorBufferInfo{currentBindings.voxelGridParamsBuffer, currentBindings.voxelGridParamsBufferOffset, voxelParamsRange},
         VkDescriptorBufferInfo{lloydParamsBuffer, lloydParamsBufferOffset, sizeof(LloydParamsCPU)},

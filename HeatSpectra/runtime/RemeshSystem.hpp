@@ -6,7 +6,6 @@
 #include <glm/vec3.hpp>
 
 #include "mesh/remesher/Remesher.hpp"
-#include "runtime/RuntimeProducts.hpp"
 
 class ModelRegistry;
 class VulkanDevice;
@@ -24,8 +23,12 @@ public:
     void setRuntimeModelId(uint32_t runtimeModelId);
     bool ensureConfigured();
     void disable();
-    bool exportProduct(RemeshProduct& outProduct) const;
     bool isReady() const { return ready; }
+    uint32_t getRuntimeModelId() const { return runtimeModelId; }
+    const std::vector<glm::vec3>& getGeometryPositions() const { return geometryPositions; }
+    const std::vector<uint32_t>& getGeometryTriangleIndices() const { return geometryTriangleIndices; }
+    const SupportingHalfedge::IntrinsicMesh& getIntrinsicMesh() const { return intrinsicMesh; }
+    const SupportingHalfedge::GPUResources& getIntrinsicGpuResources() const { return intrinsicGpuResources; }
 
 private:
     void resetState(bool waitForDevice);

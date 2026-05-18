@@ -6,8 +6,7 @@
 
 VkResult createStorageBuffer(MemoryAllocator& allocator, VulkanDevice& device, const void* data, VkDeviceSize size, VkBuffer& outBuffer, VkDeviceSize& outOffset,
     void** outMappedPtr, bool hostVisible, VkBufferUsageFlags additionalUsage) {
-    outBuffer = VK_NULL_HANDLE;
-    outOffset = 0;
+    freeBuffer(allocator, outBuffer, outOffset);
     if (outMappedPtr) {
         *outMappedPtr = nullptr;
     }
@@ -47,9 +46,8 @@ VkResult createStorageBuffer(MemoryAllocator& allocator, VulkanDevice& device, c
 
 VkResult createTexelBuffer(MemoryAllocator& allocator, VulkanDevice& device, const void* data, VkDeviceSize size, VkFormat format, VkBuffer& outBuffer,
     VkDeviceSize& outOffset, VkBufferView& outBufferView, VkBufferUsageFlags additionalUsage, VkDeviceSize alignment) {
-    outBuffer = VK_NULL_HANDLE;
-    outOffset = 0;
-    outBufferView = VK_NULL_HANDLE;
+    freeBufferView(device, outBufferView);
+    freeBuffer(allocator, outBuffer, outOffset);
 
     if (size == 0) {
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -86,8 +84,7 @@ VkResult createTexelBuffer(MemoryAllocator& allocator, VulkanDevice& device, con
 }
 
 VkResult createStagingBuffer(MemoryAllocator& allocator, VkDeviceSize size, VkBuffer& outBuffer, VkDeviceSize& outOffset, void** outMappedPtr) {
-    outBuffer = VK_NULL_HANDLE;
-    outOffset = 0;
+    freeBuffer(allocator, outBuffer, outOffset);
     if (outMappedPtr) {
         *outMappedPtr = nullptr;
     }
@@ -116,8 +113,7 @@ VkResult createStagingBuffer(MemoryAllocator& allocator, VkDeviceSize size, VkBu
 }
 
 VkResult createUniformBuffer(MemoryAllocator& allocator, VulkanDevice& device, VkDeviceSize size, VkBuffer& outBuffer, VkDeviceSize& outOffset, void** outMappedPtr) {
-    outBuffer = VK_NULL_HANDLE;
-    outOffset = 0;
+    freeBuffer(allocator, outBuffer, outOffset);
     if (outMappedPtr) {
         *outMappedPtr = nullptr;
     }
@@ -148,8 +144,7 @@ VkResult createUniformBuffer(MemoryAllocator& allocator, VulkanDevice& device, V
 }
 
 VkResult createVertexBuffer(MemoryAllocator& allocator, VkDeviceSize size, VkBuffer& outBuffer, VkDeviceSize& outOffset, VkBufferUsageFlags additionalUsage) {
-    outBuffer = VK_NULL_HANDLE;
-    outOffset = 0;
+    freeBuffer(allocator, outBuffer, outOffset);
 
     if (size == 0) {
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -175,12 +170,11 @@ VkResult uploadDeviceBuffer(
     VkDeviceSize alignment,
     VkBuffer& outBuffer,
     VkDeviceSize& outOffset) {
-    outBuffer = VK_NULL_HANDLE;
-    outOffset = 0;
-
     if (size == 0 || data == nullptr) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
+
+    freeBuffer(allocator, outBuffer, outOffset);
 
     VkBuffer stagingBuffer = VK_NULL_HANDLE;
     VkDeviceSize stagingOffset = 0;
@@ -214,4 +208,51 @@ VkResult uploadDeviceBuffer(
 
     allocator.free(stagingBuffer, stagingOffset);
     return VK_SUCCESS;
+}
+
+VkResult downloadDeviceBuffer(
+    MemoryAllocator& allocator,
+    CommandPool& commandPool,
+    VkBuffer srcBuffer,
+    VkDeviceSize srcOffset,
+    VkDeviceSize size,
+    void* dstData) {
+    if (size == 0 || dstData == nullptr || srcBuffer == VK_NULL_HANDLE) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    VkDeviceSize stagingOffset = 0;
+    void* stagingData = nullptr;
+    if (createStagingBuffer(allocator, size, stagingBuffer, stagingOffset, &stagingData) != VK_SUCCESS || !stagingData) {
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    VkCommandBuffer cmd = commandPool.beginCommands();
+    VkBufferCopy region{};
+    region.srcOffset = srcOffset;
+    region.dstOffset = stagingOffset;
+    region.size = size;
+    vkCmdCopyBuffer(cmd, srcBuffer, stagingBuffer, 1, &region);
+    commandPool.endCommands(cmd);
+
+    std::memcpy(dstData, stagingData, static_cast<size_t>(size));
+
+    allocator.free(stagingBuffer, stagingOffset);
+    return VK_SUCCESS;
+}
+
+void freeBuffer(MemoryAllocator& allocator, VkBuffer& buffer, VkDeviceSize& offset) {
+    if (buffer != VK_NULL_HANDLE) {
+        allocator.free(buffer, offset);
+        buffer = VK_NULL_HANDLE;
+        offset = 0;
+    }
+}
+
+void freeBufferView(VulkanDevice& device, VkBufferView& bufferView) {
+    if (bufferView != VK_NULL_HANDLE) {
+        vkDestroyBufferView(device.getDevice(), bufferView, nullptr);
+        bufferView = VK_NULL_HANDLE;
+    }
 }

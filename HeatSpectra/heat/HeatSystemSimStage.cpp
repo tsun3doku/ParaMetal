@@ -84,18 +84,56 @@ void HeatSystemSimStage::recordComputeCommands(
             }
         }
 
-        voronoiStage.insertInterSubstepBarrier(commandBuffer, static_cast<int>(substepIndex), numSubsteps);
+        if (substepIndex + 1 < numSubsteps) {
+            std::vector<VkBufferMemoryBarrier> substepBarriers;
+            substepBarriers.reserve(activeModels.size() * (contactRuntimes.empty() ? 1u : 2u));
+
+            for (const auto& [modelId, modelPtr] : activeModels) {
+                if (!modelPtr || modelPtr->getSimNodeCount() == 0) continue;
+
+                VkBufferMemoryBarrier tempBarrier{};
+                tempBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+                tempBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                tempBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                tempBarrier.buffer = isEven ? modelPtr->getTempBufferB() : modelPtr->getTempBufferA();
+                tempBarrier.offset = isEven ? modelPtr->getTempBufferBOffset() : modelPtr->getTempBufferAOffset();
+                tempBarrier.size = modelPtr->getSimNodeCount() * sizeof(float);
+                substepBarriers.push_back(tempBarrier);
+
+                if (!contactRuntimes.empty() && modelPtr->getContactAccumulatorBuffer() != VK_NULL_HANDLE) {
+                    VkBufferMemoryBarrier contactBarrier{};
+                    contactBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+                    contactBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                    contactBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+                    contactBarrier.buffer = modelPtr->getContactAccumulatorBuffer();
+                    contactBarrier.offset = modelPtr->getContactAccumulatorBufferOffset();
+                    contactBarrier.size = modelPtr->getSimNodeCount() * sizeof(float) * 2;
+                    substepBarriers.push_back(contactBarrier);
+                }
+            }
+
+            if (!substepBarriers.empty()) {
+                vkCmdPipelineBarrier(
+                    commandBuffer,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    0,
+                    0,
+                    nullptr,
+                    static_cast<uint32_t>(substepBarriers.size()),
+                    substepBarriers.data(),
+                    0,
+                    nullptr);
+            }
+        }
     }
 
     const bool finalWritesBufferB = voronoiStage.finalSubstepWritesBufferB(numSubsteps);
     for (const auto& [modelId, heatModel] : activeModels) {
         if (!heatModel || heatModel->getSimNodeCount() == 0) continue;
 
-        voronoiStage.insertFinalTemperatureBarrier(commandBuffer, numSubsteps, heatModel->getTempBufferA(), heatModel->getTempBufferAOffset(), heatModel->getTempBufferB(), heatModel->getTempBufferBOffset());
+        voronoiStage.insertFinalTemperatureBarrier(commandBuffer, numSubsteps, heatModel->getTempBufferA(), heatModel->getTempBufferAOffset(), heatModel->getTempBufferB(), heatModel->getTempBufferBOffset(), heatModel->getSimNodeCount() * sizeof(float));
 
-        if (heatModel->getBoundaryCondition() == 1u) {
-            heatModel->injectFixedTemperature(finalWritesBufferB ? heatModel->getTempBufferB() : heatModel->getTempBufferA(), (finalWritesBufferB ? heatModel->getTempBufferBOffset() : heatModel->getTempBufferAOffset()), heatModel->getSimNodeCount(), heatModel->getFixedTemperatureValue());
-        }
     }
 
     surfaceStage.dispatchSurfaceTemperatureUpdates(commandBuffer, activeModels, finalWritesBufferB);

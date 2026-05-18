@@ -9,14 +9,6 @@
 #include <cstring>
 #include <iostream>
 
-static void freeRuntimeBuffer(MemoryAllocator& memoryAllocator, VkBuffer& buffer, VkDeviceSize& offset) {
-    if (buffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(buffer, offset);
-        buffer = VK_NULL_HANDLE;
-        offset = 0;
-    }
-}
-
 bool HeatSystemSimRuntime::initialize(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator) {
     if (isInitialized()) {
         reset();
@@ -39,7 +31,7 @@ void HeatSystemSimRuntime::reset() {
 }
 
 void HeatSystemSimRuntime::cleanup(MemoryAllocator& memoryAllocator) {
-    freeRuntimeBuffer(memoryAllocator, timeBuffer, timeBufferOffset);
+    freeBuffer(memoryAllocator, timeBuffer, timeBufferOffset);
     mappedTimeData = nullptr;
 }
 

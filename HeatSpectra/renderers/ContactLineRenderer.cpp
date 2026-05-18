@@ -1,17 +1,19 @@
-﻿#include "ContactLineRenderer.hpp"
+#include "ContactLineRenderer.hpp"
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/UniformBufferManager.hpp"
 #include "vulkan/VulkanImage.hpp"
 #include "util/Structs.hpp"
 #include "util/File_utils.h"
+#include "vulkan/VulkanBuffer.hpp"
+#include "vulkan/CommandBufferManager.hpp"
 
 #include <array>
 #include <cstring>
 #include <iostream>
 
-ContactLineRenderer::ContactLineRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager)
-    : vulkanDevice(device), memoryAllocator(allocator), uniformBufferManager(uniformBufferManager) {
+ContactLineRenderer::ContactLineRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, CommandPool& commandPool)
+    : vulkanDevice(device), memoryAllocator(allocator), uniformBufferManager(uniformBufferManager), commandPool(commandPool) {
 }
 
 ContactLineRenderer::~ContactLineRenderer() {
@@ -467,29 +469,19 @@ void ContactLineRenderer::uploadOutlines(const std::vector<LineVertex>& vertices
         return;
     }
 
-	if (outlineBuffer != VK_NULL_HANDLE && outlineBufferOffset != 0) {
-		memoryAllocator.free(outlineBuffer, outlineBufferOffset);
-		outlineBuffer = VK_NULL_HANDLE;
-		outlineBufferOffset = 0;
-	}
+    freeBuffer(memoryAllocator, outlineBuffer, outlineBufferOffset);
 
-    VkDeviceSize bufferSize = sizeof(LineVertex) * vertices.size();
-
-    auto [buffer, offset] = memoryAllocator.allocate(
-        bufferSize,
+    uploadDeviceBuffer(
+        memoryAllocator,
+        commandPool,
+        vertices.data(),
+        sizeof(LineVertex) * vertices.size(),
         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        alignof(LineVertex)
+        vulkanDevice.getPhysicalDeviceProperties().limits.minUniformBufferOffsetAlignment,
+        outlineBuffer,
+        outlineBufferOffset
     );
-
-    outlineBuffer = buffer;
-    outlineBufferOffset = offset;
     outlineVertexCount = static_cast<uint32_t>(vertices.size());
-
-    void* mappedPtr = memoryAllocator.getMappedPointer(outlineBuffer, outlineBufferOffset);
-    if (mappedPtr) {
-        memcpy(mappedPtr, vertices.data(), bufferSize);
-    }
 }
 
 void ContactLineRenderer::uploadCorrespondences(const std::vector<LineVertex>& vertices) {
@@ -498,29 +490,19 @@ void ContactLineRenderer::uploadCorrespondences(const std::vector<LineVertex>& v
         return;
     }
 
-	if (correspondenceBuffer != VK_NULL_HANDLE && correspondenceBufferOffset != 0) {
-		memoryAllocator.free(correspondenceBuffer, correspondenceBufferOffset);
-		correspondenceBuffer = VK_NULL_HANDLE;
-		correspondenceBufferOffset = 0;
-	}
+    freeBuffer(memoryAllocator, correspondenceBuffer, correspondenceBufferOffset);
 
-    VkDeviceSize bufferSize = sizeof(LineVertex) * vertices.size();
-
-    auto [buffer, offset] = memoryAllocator.allocate(
-        bufferSize,
+    uploadDeviceBuffer(
+        memoryAllocator,
+        commandPool,
+        vertices.data(),
+        sizeof(LineVertex) * vertices.size(),
         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        alignof(LineVertex)
+        vulkanDevice.getPhysicalDeviceProperties().limits.minUniformBufferOffsetAlignment,
+        correspondenceBuffer,
+        correspondenceBufferOffset
     );
-
-    correspondenceBuffer = buffer;
-    correspondenceBufferOffset = offset;
     correspondenceVertexCount = static_cast<uint32_t>(vertices.size());
-
-    void* mappedPtr = memoryAllocator.getMappedPointer(correspondenceBuffer, correspondenceBufferOffset);
-    if (mappedPtr) {
-        memcpy(mappedPtr, vertices.data(), bufferSize);
-    }
 }
 
 void ContactLineRenderer::render(VkCommandBuffer cmdBuffer, uint32_t frameIndex, const glm::mat4& modelMatrix, VkExtent2D extent) {
@@ -556,17 +538,8 @@ void ContactLineRenderer::render(VkCommandBuffer cmdBuffer, uint32_t frameIndex,
 void ContactLineRenderer::cleanup() {
     VkDevice device = vulkanDevice.getDevice();
 
-    if (outlineBuffer != VK_NULL_HANDLE && outlineBufferOffset != 0) {
-        memoryAllocator.free(outlineBuffer, outlineBufferOffset);
-        outlineBuffer = VK_NULL_HANDLE;
-        outlineBufferOffset = 0;
-    }
-
-    if (correspondenceBuffer != VK_NULL_HANDLE && correspondenceBufferOffset != 0) {
-        memoryAllocator.free(correspondenceBuffer, correspondenceBufferOffset);
-        correspondenceBuffer = VK_NULL_HANDLE;
-        correspondenceBufferOffset = 0;
-    }
+    freeBuffer(memoryAllocator, outlineBuffer, outlineBufferOffset);
+    freeBuffer(memoryAllocator, correspondenceBuffer, correspondenceBufferOffset);
 
     if (pipeline != VK_NULL_HANDLE) {
         vkDestroyPipeline(device, pipeline, nullptr);

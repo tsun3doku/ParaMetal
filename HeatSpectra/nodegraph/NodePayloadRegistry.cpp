@@ -1,6 +1,7 @@
 #include "NodePayloadRegistry.hpp"
 
 #include "NodeGraphHash.hpp"
+#include "NodeGraphPayloadTypes.hpp"
 #include "domain/ContactData.hpp"
 #include "domain/GeometryData.hpp"
 #include "domain/HeatData.hpp"
@@ -63,6 +64,14 @@ void HeatData::sealPayload() {
     uint64_t hash = NodeGraphHash::start();
     NodeGraphHash::combine(hash, voronoiPayloadHash);
     NodeGraphHash::combine(hash, contactPayloadHash);
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(voronoiHandles.size()));
+    for (const NodeDataHandle& handle : voronoiHandles) {
+        NodeGraphHash::combine(hash, handle.key);
+    }
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(contactHandles.size()));
+    for (const NodeDataHandle& handle : contactHandles) {
+        NodeGraphHash::combine(hash, handle.key);
+    }
     NodeGraphHash::combine(hash, static_cast<uint64_t>(active ? 1u : 0u));
     NodeGraphHash::combine(hash, static_cast<uint64_t>(paused ? 1u : 0u));
     NodeGraphHash::combine(hash, static_cast<uint64_t>(resetRequested ? 1u : 0u));
@@ -110,90 +119,50 @@ void NodePayloadRegistry::clear() {
     entries.clear();
 }
 
-const GeometryData* NodePayloadRegistry::resolveGeometryHandle(const NodeDataHandle& handle) const {
-    if (handle.key == 0) {
-        return nullptr;
-    }
-
-    return get<GeometryData>(handle);
-}
-
-bool NodePayloadRegistry::hasRemeshHandle(const NodeDataHandle& handle) const {
-    if (handle.key == 0) {
-        return false;
-    }
-
-    return get<RemeshData>(handle) != nullptr;
-}
-
-NodeDataHandle NodePayloadRegistry::resolveMeshHandle(NodePayloadType type, const NodeDataHandle& handle) const {
+NodeDataHandle NodePayloadRegistry::resolveMeshHandle(uint8_t type, const NodeDataHandle& handle) const {
     if (handle.key == 0) {
         return {};
     }
 
-    switch (type) {
-    case NodePayloadType::Geometry:
-    case NodePayloadType::Remesh:
+    if (type == payloadtypes::Geometry || type == payloadtypes::Remesh) {
         return handle;
-    case NodePayloadType::HeatModel: {
+    }
+    if (type == payloadtypes::HeatModel) {
         const HeatModelData* heatModel = get<HeatModelData>(handle);
         return heatModel ? heatModel->meshHandle : NodeDataHandle{};
     }
-    default:
-        return {};
-    }
+    return {};
 }
 
-const GeometryData* NodePayloadRegistry::resolveGeometry(NodePayloadType type, const NodeDataHandle& handle) const {
-    const NodeDataHandle meshHandle = resolveMeshHandle(type, handle);
-    if (meshHandle.key == 0) {
+const GeometryData* NodePayloadRegistry::resolveGeometry(const NodeDataHandle& handle, NodeDataHandle* outSourceHandle) const {
+    if (handle.key == 0) {
         return nullptr;
     }
 
-    if (const GeometryData* geometry = resolveGeometryHandle(meshHandle)) {
-        return geometry;
+    if (const GeometryData* g = get<GeometryData>(handle)) {
+        if (outSourceHandle) *outSourceHandle = handle;
+        return g;
     }
-
-    const RemeshData* remesh = get<RemeshData>(meshHandle);
-    if (remesh) {
-        return resolveGeometryHandle(remesh->sourceMeshHandle);
+    if (const RemeshData* r = get<RemeshData>(handle)) {
+        if (outSourceHandle) *outSourceHandle = r->sourceMeshHandle;
+        return get<GeometryData>(r->sourceMeshHandle);
     }
-
+    if (const HeatModelData* h = get<HeatModelData>(handle)) {
+        return resolveGeometry(h->meshHandle, outSourceHandle);
+    }
     return nullptr;
 }
 
-uint64_t NodePayloadRegistry::resolvePayloadHash(NodePayloadType type, const NodeDataHandle& handle) const {
+uint64_t NodePayloadRegistry::resolvePayloadHash(const NodeDataHandle& handle) const {
     if (handle.key == 0) {
         return 0;
     }
 
-    switch (type) {
-    case NodePayloadType::Geometry: {
-        const GeometryData* payload = get<GeometryData>(handle);
-        return payload ? payload->payloadHash : 0;
-    }
-    case NodePayloadType::Remesh: {
-        const RemeshData* payload = get<RemeshData>(handle);
-        return payload ? payload->payloadHash : 0;
-    }
-    case NodePayloadType::HeatModel: {
-        const HeatModelData* payload = get<HeatModelData>(handle);
-        return payload ? payload->payloadHash : 0;
-    }
-    case NodePayloadType::Contact: {
-        const ContactData* payload = get<ContactData>(handle);
-        return payload ? payload->payloadHash : 0;
-    }
-    case NodePayloadType::Heat: {
-        const HeatData* payload = get<HeatData>(handle);
-        return payload ? payload->payloadHash : 0;
-    }
-    case NodePayloadType::Voronoi: {
-        const VoronoiData* payload = get<VoronoiData>(handle);
-        return payload ? payload->payloadHash : 0;
-    }
-    case NodePayloadType::None:
-    default:
-        return 0;
-    }
+    if (const auto* p = get<GeometryData>(handle)) return p->payloadHash;
+    if (const auto* p = get<RemeshData>(handle)) return p->payloadHash;
+    if (const auto* p = get<HeatModelData>(handle)) return p->payloadHash;
+    if (const auto* p = get<ContactData>(handle)) return p->payloadHash;
+    if (const auto* p = get<HeatData>(handle)) return p->payloadHash;
+    if (const auto* p = get<VoronoiData>(handle)) return p->payloadHash;
+    return 0;
 }

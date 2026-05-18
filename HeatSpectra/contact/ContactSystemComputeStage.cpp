@@ -79,7 +79,7 @@ bool ContactSystemComputeStage::createDescriptorPool(uint32_t maxSets) {
         descriptorPool = VK_NULL_HANDLE;
     }
 
-    // 4 descriptor sets per contact relationship (A->B/B->A * Ping/Pong)
+    // 4 descriptor sets per contact pair
     uint32_t numSets = maxSets * 4;
     uint32_t storageBufferDescriptors = numSets * 4;
 
@@ -106,8 +106,8 @@ bool ContactSystemComputeStage::createDescriptorSetLayout() {
     std::vector<VkDescriptorSetLayoutBinding> bindings = {
         {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // source field buffer
         {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // dest accumulator buffer
-        {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // contactEdges (ContactSampleWeight)
-        {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // contactIndices (ContactIndex)
+        {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // contactEdges 
+        {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // contactIndices 
     };
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};

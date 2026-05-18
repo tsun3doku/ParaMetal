@@ -1,7 +1,8 @@
 #pragma once
 
-#include "NodeGraphDocument.hpp"
+#include "NodeGraph.hpp"
 #include "NodeGraphCompiler.hpp"
+#include "NodeGraphRegistry.hpp"
 
 #include <mutex>
 #include <string>
@@ -31,9 +32,11 @@ public:
         bool replaceExistingInput = true);
     bool removeConnection(NodeGraphEdgeId edgeId);
 
-    bool canExecuteHeatSolve(std::string& reason) const;
+    bool canExecute(std::string& reason) const;
 
     NodeGraphState state() const;
+    NodeGraphRegistry& getRegistry() { return registry; }
+    const NodeGraphRegistry& getRegistry() const { return registry; }
     bool resolveGizmoTransformNode(uint64_t outputSocketKey, NodeGraphNodeId& outTransformNodeId) const;
     bool consumeChanges(uint64_t& lastSeenRevision, NodeGraphDelta& outDelta) const;
 
@@ -42,7 +45,8 @@ private:
     void pushChangesLocked(const std::vector<NodeGraphChange>& changes);
 
     mutable std::mutex mutex;
-    NodeGraphDocument document;
+    NodeGraphRegistry registry;
+    NodeGraph document;
     NodeGraphState graphState;
     std::vector<std::pair<uint64_t, NodeGraphChange>> changeLog;
     uint64_t changeRevision = 0;

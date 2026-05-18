@@ -64,13 +64,13 @@ private:
 };
 
 inline uint64_t buildDisplayHash(const HeatDisplayController::Config& config, uint64_t productHash) {
-    uint64_t hash = 1469598103934665603ull;
-    hash = RuntimeProductHash::mixPod(hash, static_cast<uint64_t>(config.showHeatOverlay ? 1u : 0u));
-    hash = RuntimeProductHash::mixPod(hash, static_cast<uint64_t>(config.showFluxVectors ? 1u : 0u));
-    hash = RuntimeProductHash::mixPod(hash, config.fluxVectorScale);
-    hash = RuntimeProductHash::mixPod(hash, static_cast<uint64_t>(config.authoredActive ? 1u : 0u));
-    hash = RuntimeProductHash::mixPod(hash, static_cast<uint64_t>(config.active ? 1u : 0u));
-    hash = RuntimeProductHash::mixPod(hash, static_cast<uint64_t>(config.paused ? 1u : 0u));
-    hash = RuntimeProductHash::mixPod(hash, productHash);
+    uint64_t hash = NodeGraphHash::start();
+    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showHeatOverlay ? 1u : 0u));
+    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showFluxVectors ? 1u : 0u));
+    NodeGraphHash::combinePod(hash, config.fluxVectorScale);
+    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.authoredActive ? 1u : 0u));
+    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.active ? 1u : 0u));
+    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.paused ? 1u : 0u));
+    NodeGraphHash::combine(hash, productHash);
     return hash;
 }

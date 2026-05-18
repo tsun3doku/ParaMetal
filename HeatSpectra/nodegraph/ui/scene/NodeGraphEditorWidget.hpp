@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "nodegraph/NodeGraphEditor.hpp"
 #include "nodegraph/NodeGraphTypes.hpp"
@@ -6,18 +6,17 @@
 #include <QWidget>
 
 class NodeGraphBridge;
+class NodeGraphCanvas;
 class NodeGraphScene;
 class NodePanel;
 class ModelSelection;
 class RuntimeQuery;
 class SceneController;
-class QGraphicsView;
-class QPointF;
-class QPoint;
 
-class NodeGraphDock : public QWidget {
+class NodeGraphEditorWidget : public QWidget {
+    Q_OBJECT
 public:
-    explicit NodeGraphDock(QWidget* parent = nullptr);
+    explicit NodeGraphEditorWidget(QWidget* parent = nullptr);
 
     void setRuntimeQuery(const RuntimeQuery* runtimeQuery);
     void setBridge(NodeGraphBridge* bridge);
@@ -26,12 +25,17 @@ public:
     void refreshGraph();
     void syncSelection();
 
+private slots:
+    void onRequestCreateMenu(QPoint globalPos, QPointF scenePos, bool requireEmptySpace);
+    void onRequestDeleteSelected();
+    void onRequestCopySelected();
+    void onRequestPaste();
+
 private:
     void createUi();
     void handleGraphSelectionChanged(NodeGraphNodeId nodeId);
     void openInspectorForNode(NodeGraphNodeId nodeId);
     void syncViewportSelectionToGraph();
-    void showCreateNodeMenu(const QPoint& globalPos, const QPointF& scenePos, bool requireEmptySpace);
     void addNodeAt(const NodeTypeId& typeId, const QPointF& scenePos);
 
     const RuntimeQuery* runtimeQuery = nullptr;
@@ -41,7 +45,7 @@ private:
     ModelSelection* modelSelection = nullptr;
     NodeGraphScene* graphScene = nullptr;
     NodePanel* nodePanel = nullptr;
-    QGraphicsView* graphView = nullptr;
+    NodeGraphCanvas* graphCanvas = nullptr;
     bool suppressGraphSelectionHandling = false;
     uint32_t lastObservedRuntimeModelId = 0;
 };

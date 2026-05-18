@@ -9,6 +9,7 @@
 class MemoryAllocator;
 class UniformBufferManager;
 class VulkanDevice;
+class CommandPool;
 
 class VectorArrowRenderer {
 public:
@@ -23,7 +24,7 @@ public:
         float scale = 1.0f;
     };
 
-    VectorArrowRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager);
+    VectorArrowRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, CommandPool& commandPool);
     ~VectorArrowRenderer();
 
     void initialize(VkRenderPass renderPass, uint32_t maxFramesInFlight);
@@ -49,6 +50,7 @@ private:
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
     UniformBufferManager& uniformBufferManager;
+    CommandPool& commandPool;
 
     VkBuffer vertexBuffer = VK_NULL_HANDLE;
     VkDeviceSize vertexBufferOffset = 0;

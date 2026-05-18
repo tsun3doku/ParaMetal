@@ -24,6 +24,9 @@ void VoronoiSystemRuntime::invalidateMaterialization() {
     seedPositions.clear();
     neighborIndices.clear();
     meshTriangles.clear();
+    voronoiToSim.clear();
+    simToVoronoi.clear();
+    simNodeCount = 0;
 }
 
 void VoronoiSystemRuntime::reorderNodes() {
@@ -72,6 +75,141 @@ void VoronoiSystemRuntime::reorderNodes() {
     }
 }
 
+void VoronoiSystemRuntime::buildSimSpaceMapping() {
+    const uint32_t voronoiNodeCount = static_cast<uint32_t>(seedFlags.size());
+    voronoiToSim.assign(voronoiNodeCount, UINT32_MAX);
+    simToVoronoi.clear();
+    simToVoronoi.reserve(voronoiNodeCount);
+
+    for (uint32_t voronoiNodeId = 0; voronoiNodeId < voronoiNodeCount; ++voronoiNodeId) {
+        if ((seedFlags[voronoiNodeId] & 1u) != 0u) {
+            continue;
+        }
+
+        const uint32_t simNodeId = static_cast<uint32_t>(simToVoronoi.size());
+        voronoiToSim[voronoiNodeId] = simNodeId;
+        simToVoronoi.push_back(voronoiNodeId);
+    }
+
+    simNodeCount = static_cast<uint32_t>(simToVoronoi.size());
+}
+
+bool VoronoiSystemRuntime::buildSimBuffers(MemoryAllocator& memoryAllocator, CommandPool& renderCommandPool) {
+    if (resources.voronoiNodeCount == 0 ||
+        resources.voronoiNodeBuffer == VK_NULL_HANDLE ||
+        resources.voronoiGMLSInterfaceBuffer == VK_NULL_HANDLE) {
+        return false;
+    }
+
+    if (voronoiToSim.size() != resources.voronoiNodeCount || simToVoronoi.empty()) {
+        buildSimSpaceMapping();
+    }
+    if (simNodeCount == 0) {
+        return false;
+    }
+
+    std::vector<voronoi::Node> voronoiNodes(resources.voronoiNodeCount);
+    if (downloadDeviceBuffer(
+            memoryAllocator,
+            renderCommandPool,
+            resources.voronoiNodeBuffer,
+            resources.voronoiNodeBufferOffset,
+            voronoiNodes.size() * sizeof(voronoi::Node),
+            voronoiNodes.data()) != VK_SUCCESS) {
+        return false;
+    }
+
+    size_t voronoiInterfaceCount = 0;
+    for (const voronoi::Node& node : voronoiNodes) {
+        voronoiInterfaceCount = std::max(
+            voronoiInterfaceCount,
+            static_cast<size_t>(node.neighborOffset) + static_cast<size_t>(node.neighborCount));
+    }
+    if (voronoiInterfaceCount == 0) {
+        return false;
+    }
+
+    std::vector<voronoi::GMLSInterface> voronoiInterfaces(voronoiInterfaceCount);
+    if (downloadDeviceBuffer(
+            memoryAllocator,
+            renderCommandPool,
+            resources.voronoiGMLSInterfaceBuffer,
+            resources.voronoiGMLSInterfaceBufferOffset,
+            voronoiInterfaces.size() * sizeof(voronoi::GMLSInterface),
+            voronoiInterfaces.data()) != VK_SUCCESS) {
+        return false;
+    }
+
+    std::vector<voronoi::Node> simNodes(simNodeCount);
+    std::vector<voronoi::GMLSInterface> simInterfaces;
+    simInterfaces.reserve(voronoiInterfaces.size());
+
+    for (uint32_t simNodeId = 0; simNodeId < simNodeCount; ++simNodeId) {
+        const uint32_t voronoiNodeId = simToVoronoi[simNodeId];
+        const voronoi::Node& voronoiNode = voronoiNodes[voronoiNodeId];
+
+        voronoi::Node simNode{};
+        simNode.volume = voronoiNode.volume;
+        simNode.interfaceNeighborCount = 0;
+        simNode.neighborOffset = static_cast<uint32_t>(simInterfaces.size());
+
+        const size_t interfaceBegin = voronoiNode.neighborOffset;
+        const size_t interfaceEnd = interfaceBegin + voronoiNode.neighborCount;
+        for (size_t interfaceIndex = interfaceBegin; interfaceIndex < interfaceEnd && interfaceIndex < voronoiInterfaces.size(); ++interfaceIndex) {
+            const voronoi::GMLSInterface& voronoiInterface = voronoiInterfaces[interfaceIndex];
+            if (voronoiInterface.neighborIdx >= voronoiToSim.size()) {
+                continue;
+            }
+
+            const uint32_t neighborSimNodeId = voronoiToSim[voronoiInterface.neighborIdx];
+            if (neighborSimNodeId == UINT32_MAX) {
+                continue;
+            }
+
+            simInterfaces.push_back({neighborSimNodeId, voronoiInterface.conductance});
+        }
+
+        simNode.neighborCount = static_cast<uint32_t>(simInterfaces.size()) - simNode.neighborOffset;
+        simNode.interfaceNeighborCount = simNode.neighborCount;
+        simNodes[simNodeId] = simNode;
+    }
+
+    if (simInterfaces.empty()) {
+        return false;
+    }
+
+    freeBuffer(memoryAllocator, simNodeBuffer, simNodeBufferOffset);
+    freeBuffer(memoryAllocator, simGMLSInterfaceBuffer, simGMLSInterfaceBufferOffset);
+
+    constexpr VkDeviceSize storageAlignment = 16;
+    if (uploadDeviceBuffer(
+            memoryAllocator,
+            renderCommandPool,
+            simNodes.data(),
+            simNodes.size() * sizeof(voronoi::Node),
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            storageAlignment,
+            simNodeBuffer,
+            simNodeBufferOffset) != VK_SUCCESS) {
+        return false;
+    }
+
+    if (uploadDeviceBuffer(
+            memoryAllocator,
+            renderCommandPool,
+            simInterfaces.data(),
+            simInterfaces.size() * sizeof(voronoi::GMLSInterface),
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            storageAlignment,
+            simGMLSInterfaceBuffer,
+            simGMLSInterfaceBufferOffset) != VK_SUCCESS) {
+        return false;
+    }
+
+    simGMLSInterfaceCount = static_cast<uint32_t>(simInterfaces.size());
+    return true;
+}
+
 void VoronoiSystemRuntime::setReceiverGeometry(
     VulkanDevice& vulkanDevice,
     MemoryAllocator& memoryAllocator,
@@ -83,22 +221,7 @@ void VoronoiSystemRuntime::setReceiverGeometry(
     const std::vector<std::vector<VoronoiModelRuntime::SurfaceVertex>>& receiverSurfaceVertices,
     const std::vector<std::vector<uint32_t>>& receiverIntrinsicTriangleIndices,
     const std::vector<uint32_t>& receiverModelIds,
-    const std::vector<VkBuffer>& meshVertexBuffers,
-    const std::vector<VkDeviceSize>& meshVertexBufferOffsets,
-    const std::vector<VkBuffer>& meshIndexBuffers,
-    const std::vector<VkDeviceSize>& meshIndexBufferOffsets,
-    const std::vector<uint32_t>& meshIndexCounts,
-    const std::vector<glm::mat4>& meshModelMatrices,
-    const std::vector<VkBufferView>& supportingHalfedgeViews,
-    const std::vector<VkBufferView>& supportingAngleViews,
-    const std::vector<VkBufferView>& halfedgeViews,
-    const std::vector<VkBufferView>& edgeViews,
-    const std::vector<VkBufferView>& triangleViews,
-    const std::vector<VkBufferView>& lengthViews,
-    const std::vector<VkBufferView>& inputHalfedgeViews,
-    const std::vector<VkBufferView>& inputEdgeViews,
-    const std::vector<VkBufferView>& inputTriangleViews,
-    const std::vector<VkBufferView>& inputLengthViews) {
+    const std::vector<glm::mat4>& meshModelMatrices) {
     invalidateMaterialization();
 
     for (auto& modelRuntime : modelRuntimes) {
@@ -117,33 +240,10 @@ void VoronoiSystemRuntime::setReceiverGeometry(
             continue;
         }
 
-        if (supportingHalfedgeViews[index] == VK_NULL_HANDLE ||
-            supportingAngleViews[index] == VK_NULL_HANDLE ||
-            halfedgeViews[index] == VK_NULL_HANDLE ||
-            edgeViews[index] == VK_NULL_HANDLE ||
-            triangleViews[index] == VK_NULL_HANDLE ||
-            lengthViews[index] == VK_NULL_HANDLE ||
-            inputHalfedgeViews[index] == VK_NULL_HANDLE ||
-            inputEdgeViews[index] == VK_NULL_HANDLE ||
-            inputTriangleViews[index] == VK_NULL_HANDLE ||
-            inputLengthViews[index] == VK_NULL_HANDLE) {
-            continue;
-        }
-        if (meshVertexBuffers[index] == VK_NULL_HANDLE ||
-            meshIndexBuffers[index] == VK_NULL_HANDLE ||
-            meshIndexCounts[index] == 0) {
-            continue;
-        }
-
         auto modelRuntime = std::make_unique<VoronoiModelRuntime>(
             vulkanDevice,
             memoryAllocator,
             receiverId,
-            meshVertexBuffers[index],
-            meshVertexBufferOffsets[index],
-            meshIndexBuffers[index],
-            meshIndexBufferOffsets[index],
-            meshIndexCounts[index],
             meshModelMatrices[index],
             VoronoiModelRuntime::CpuData{
                 receiverNodeModelIds[index],
@@ -153,16 +253,6 @@ void VoronoiSystemRuntime::setReceiverGeometry(
                 receiverSurfaceVertices[index],
                 receiverIntrinsicTriangleIndices[index]
             },
-            supportingHalfedgeViews[index],
-            supportingAngleViews[index],
-            halfedgeViews[index],
-            edgeViews[index],
-            triangleViews[index],
-            lengthViews[index],
-            inputHalfedgeViews[index],
-            inputEdgeViews[index],
-            inputTriangleViews[index],
-            inputLengthViews[index],
             renderCommandPool);
         if (!modelRuntime->createVoronoiBuffers()) {
             std::cerr << "[VoronoiSystemRuntime] Failed to create Voronoi buffers for runtimeModelId="
@@ -211,32 +301,6 @@ void VoronoiSystemRuntime::markReady() {
     voronoiReady = true;
 }
 
-void VoronoiSystemRuntime::uploadModelStagingBuffers(CommandPool& renderCommandPool) {
-    VkCommandBuffer copyCmd = renderCommandPool.beginCommands();
-    for (auto& modelRuntime : modelRuntimes) {
-        modelRuntime->executeBufferTransfers(copyCmd);
-    }
-
-    VkMemoryBarrier memBarrier{};
-    memBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    memBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    memBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-    vkCmdPipelineBarrier(
-        copyCmd,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        0, 1, &memBarrier,
-        0, nullptr,
-        0, nullptr);
-
-    renderCommandPool.endCommands(copyCmd);
-
-    for (auto& modelRuntime : modelRuntimes) {
-        modelRuntime->cleanupStagingBuffers();
-    }
-}
-
 void VoronoiSystemRuntime::cleanupResources(VulkanDevice& vulkanDevice) {
     if (resources.surfacePipeline != VK_NULL_HANDLE) {
         vkDestroyPipeline(vulkanDevice.getDevice(), resources.surfacePipeline, nullptr);
@@ -269,13 +333,15 @@ void VoronoiSystemRuntime::cleanup(MemoryAllocator& memoryAllocator) {
 
     freeBuffer(resources.voronoiNodeBuffer, resources.voronoiNodeBufferOffset);
     freeBuffer(resources.voronoiNeighborBuffer, resources.voronoiNeighborBufferOffset);
-    freeBuffer(resources.neighborIndicesBuffer, resources.neighborIndicesBufferOffset);
-    freeBuffer(resources.interfaceAreasBuffer, resources.interfaceAreasBufferOffset);
-    freeBuffer(resources.interfaceNeighborIdsBuffer, resources.interfaceNeighborIdsBufferOffset);
-    freeBuffer(resources.gmlsInterfaceBuffer, resources.gmlsInterfaceBufferOffset);
+    freeBuffer(resources.voronoiNeighborIndicesBuffer, resources.voronoiNeighborIndicesBufferOffset);
+    freeBuffer(resources.voronoiInterfaceAreasBuffer, resources.voronoiInterfaceAreasBufferOffset);
+    freeBuffer(resources.voronoiInterfaceNeighborIdsBuffer, resources.voronoiInterfaceNeighborIdsBufferOffset);
+    freeBuffer(resources.voronoiGMLSInterfaceBuffer, resources.voronoiGMLSInterfaceBufferOffset);
     freeBuffer(resources.meshTriangleBuffer, resources.meshTriangleBufferOffset);
     freeBuffer(resources.seedPositionBuffer, resources.seedPositionBufferOffset);
-    freeBuffer(resources.seedFlagsBuffer, resources.seedFlagsBufferOffset);
+    freeBuffer(resources.voronoiSeedFlagsBuffer, resources.voronoiSeedFlagsBufferOffset);
+    freeBuffer(simNodeBuffer, simNodeBufferOffset);
+    freeBuffer(simGMLSInterfaceBuffer, simGMLSInterfaceBufferOffset);
     freeBuffer(resources.occupancyPointBuffer, resources.occupancyPointBufferOffset);
     resources.occupancyPointCount = 0;
     freeBuffer(resources.debugCellGeometryBuffer, resources.debugCellGeometryBufferOffset);

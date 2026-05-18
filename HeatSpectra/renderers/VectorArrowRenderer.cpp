@@ -6,6 +6,8 @@
 #include "vulkan/UniformBufferManager.hpp"
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/VulkanImage.hpp"
+#include "vulkan/VulkanBuffer.hpp"
+#include "vulkan/CommandBufferManager.hpp"
 
 #include <array>
 #include <cstring>
@@ -15,10 +17,12 @@
 VectorArrowRenderer::VectorArrowRenderer(
     VulkanDevice& device,
     MemoryAllocator& allocator,
-    UniformBufferManager& uboManager)
+    UniformBufferManager& uboManager,
+    CommandPool& commandPool)
     : vulkanDevice(device),
       memoryAllocator(allocator),
-      uniformBufferManager(uboManager) {
+      uniformBufferManager(uboManager),
+      commandPool(commandPool) {
 }
 
 VectorArrowRenderer::~VectorArrowRenderer() {
@@ -50,27 +54,20 @@ bool VectorArrowRenderer::createArrowGeometry() {
         glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.78f, 0.0f, -0.08f),
     };
 
-    const VkDeviceSize bufferSize = sizeof(glm::vec3) * vertices.size();
-    auto allocation = memoryAllocator.allocate(
-        bufferSize,
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
-    vertexBuffer = allocation.first;
-    vertexBufferOffset = allocation.second;
-    if (vertexBuffer == VK_NULL_HANDLE) {
-        std::cerr << "VectorArrowRenderer: Failed to allocate arrow vertex buffer" << std::endl;
-        return false;
-    }
-
-    void* mapped = memoryAllocator.getMappedPointer(vertexBuffer, vertexBufferOffset);
-    if (!mapped) {
-        std::cerr << "VectorArrowRenderer: Failed to map arrow vertex buffer" << std::endl;
-        return false;
-    }
-
-    std::memcpy(mapped, vertices.data(), static_cast<size_t>(bufferSize));
     vertexCount = static_cast<uint32_t>(vertices.size());
+    const VkDeviceSize alignment = vulkanDevice.getPhysicalDeviceProperties().limits.minUniformBufferOffsetAlignment;
+
+    uploadDeviceBuffer(
+        memoryAllocator,
+        commandPool,
+        vertices.data(),
+        sizeof(glm::vec3) * vertices.size(),
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        alignment,
+        vertexBuffer,
+        vertexBufferOffset
+    );
+
     return true;
 }
 
@@ -475,11 +472,7 @@ void VectorArrowRenderer::cleanup() {
         vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
         descriptorSetLayout = VK_NULL_HANDLE;
     }
-    if (vertexBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(vertexBuffer, vertexBufferOffset);
-        vertexBuffer = VK_NULL_HANDLE;
-        vertexBufferOffset = 0;
-    }
+    freeBuffer(memoryAllocator, vertexBuffer, vertexBufferOffset);
 
     vertexCount = 0;
     vectorDescriptorSets.clear();

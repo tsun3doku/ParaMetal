@@ -46,22 +46,7 @@ void VoronoiSystem::setReceiverGeometry(
     const std::vector<std::vector<VoronoiModelRuntime::SurfaceVertex>>& receiverSurfaceVertices,
     const std::vector<std::vector<uint32_t>>& receiverIntrinsicTriangleIndices,
     const std::vector<uint32_t>& receiverModelIds,
-    const std::vector<VkBuffer>& meshVertexBuffers,
-    const std::vector<VkDeviceSize>& meshVertexBufferOffsets,
-    const std::vector<VkBuffer>& meshIndexBuffers,
-    const std::vector<VkDeviceSize>& meshIndexBufferOffsets,
-    const std::vector<uint32_t>& meshIndexCounts,
-    const std::vector<glm::mat4>& meshModelMatrices,
-    const std::vector<VkBufferView>& supportingHalfedgeViews,
-    const std::vector<VkBufferView>& supportingAngleViews,
-    const std::vector<VkBufferView>& halfedgeViews,
-    const std::vector<VkBufferView>& edgeViews,
-    const std::vector<VkBufferView>& triangleViews,
-    const std::vector<VkBufferView>& lengthViews,
-    const std::vector<VkBufferView>& inputHalfedgeViews,
-    const std::vector<VkBufferView>& inputEdgeViews,
-    const std::vector<VkBufferView>& inputTriangleViews,
-    const std::vector<VkBufferView>& inputLengthViews) {
+    const std::vector<glm::mat4>& meshModelMatrices) {
     runtime.setReceiverGeometry(
         vulkanDevice,
         memoryAllocator,
@@ -73,22 +58,7 @@ void VoronoiSystem::setReceiverGeometry(
         receiverSurfaceVertices,
         receiverIntrinsicTriangleIndices,
         receiverModelIds,
-        meshVertexBuffers,
-        meshVertexBufferOffsets,
-        meshIndexBuffers,
-        meshIndexBufferOffsets,
-        meshIndexCounts,
-        meshModelMatrices,
-        supportingHalfedgeViews,
-        supportingAngleViews,
-        halfedgeViews,
-        edgeViews,
-        triangleViews,
-        lengthViews,
-        inputHalfedgeViews,
-        inputEdgeViews,
-        inputTriangleViews,
-        inputLengthViews);
+        meshModelMatrices);
 
 }
 
@@ -153,7 +123,6 @@ bool VoronoiSystem::rebuildVoronoiRuntime() {
 }
 
 void VoronoiSystem::executeBufferTransfers() {
-    runtime.uploadModelStagingBuffers(renderCommandPool);
     dispatchVoronoiCandidateUpdates();
 }
 

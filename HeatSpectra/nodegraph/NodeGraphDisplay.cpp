@@ -1,129 +1,155 @@
 #include "NodeGraphDisplay.hpp"
 
+#include "NodeGraphDataTypes.hpp"
+#include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphProductTypes.hpp"
 #include "NodeGraphUtils.hpp"
+#include "nodegraph/NodePayloadRegistry.hpp"
 #include "runtime/RuntimeECS.hpp"
 
-std::unordered_set<uint64_t> NodeGraphDisplay::computeDisplaySelectedKeys(const NodeGraphState& graphState, const ECSRegistry& registry) const {
-    // Build dependency graph
-    std::unordered_map<uint64_t, std::vector<uint64_t>> depsByKey;
+#include <unordered_set>
+#include <vector>
 
-    for (auto entity : registry.view<ModelPackage>()) {
-        depsByKey[static_cast<uint64_t>(entity)] = {};
-    }
-    for (auto entity : registry.view<RemeshPackage>()) {
-        uint64_t socketKey = static_cast<uint64_t>(entity);
-        const auto& package = registry.get<RemeshPackage>(entity);
-        std::vector<uint64_t> deps;
-        if (package.modelProductHandle.outputSocketKey != 0) {
-            deps.push_back(package.modelProductHandle.outputSocketKey);
-        }
-        depsByKey[socketKey] = std::move(deps);
-    }
-    for (auto entity : registry.view<VoronoiPackage>()) {
-        uint64_t socketKey = static_cast<uint64_t>(entity);
-        const auto& package = registry.get<VoronoiPackage>(entity);
-        std::vector<uint64_t> deps;
-        for (const ProductHandle& handle : package.modelProducts) {
-            if (handle.outputSocketKey != 0) {
-                deps.push_back(handle.outputSocketKey);
-            }
-        }
-        for (const ProductHandle& handle : package.modelRemeshProducts) {
-            if (handle.outputSocketKey != 0) {
-                deps.push_back(handle.outputSocketKey);
-            }
-        }
-        depsByKey[socketKey] = std::move(deps);
-    }
-    for (auto entity : registry.view<ContactPackage>()) {
-        uint64_t socketKey = static_cast<uint64_t>(entity);
-        const auto& package = registry.get<ContactPackage>(entity);
-        std::vector<uint64_t> deps;
-        if (package.modelAModelProduct.outputSocketKey != 0) {
-            deps.push_back(package.modelAModelProduct.outputSocketKey);
-        }
-        if (package.modelBModelProduct.outputSocketKey != 0) {
-            deps.push_back(package.modelBModelProduct.outputSocketKey);
-        }
-        if (package.modelARemeshProduct.outputSocketKey != 0) {
-            deps.push_back(package.modelARemeshProduct.outputSocketKey);
-        }
-        if (package.modelBRemeshProduct.outputSocketKey != 0) {
-            deps.push_back(package.modelBRemeshProduct.outputSocketKey);
-        }
-        depsByKey[socketKey] = std::move(deps);
-    }
-    for (auto entity : registry.view<HeatPackage>()) {
-        uint64_t socketKey = static_cast<uint64_t>(entity);
-        const auto& package = registry.get<HeatPackage>(entity);
-        std::vector<uint64_t> deps;
-        for (const ProductHandle& handle : package.modelProducts) {
-            if (handle.outputSocketKey != 0) {
-                deps.push_back(handle.outputSocketKey);
-            }
-        }
-        for (const ProductHandle& handle : package.remeshProducts) {
-            if (handle.outputSocketKey != 0) {
-                deps.push_back(handle.outputSocketKey);
-            }
-        }
-        for (const ProductHandle& handle : package.voronoiProducts) {
-            if (handle.isValid()) {
-                deps.push_back(handle.outputSocketKey);
-            }
-        }
-        for (const ProductHandle& handle : package.contactProducts) {
-            if (handle.isValid()) {
-                deps.push_back(handle.outputSocketKey);
-            }
-        }
-        depsByKey[socketKey] = std::move(deps);
-    }
+std::unordered_set<uint64_t> NodeGraphDisplay::computeDisplayKeys(
+    const NodeGraphState& graphState,
+    const NodeGraphEvaluationState& evaluationState,
+    const ECSRegistry& registry,
+    const NodePayloadRegistry* payloadRegistry) const {
 
-    // Collect display enabled output socket keys
     std::unordered_set<uint64_t> selectedKeys;
-    for (const NodeGraphNode& node : graphState.nodes) {
+
+    for (const auto& [id, node] : graphState.nodes) {
         if (!node.displayEnabled) {
             continue;
         }
 
         for (const NodeGraphSocket& output : node.outputs) {
-            const auto payloadType = output.contract.producedPayloadType;
-            if (payloadType != NodePayloadType::Geometry &&
-                payloadType != NodePayloadType::Remesh &&
-                payloadType != NodePayloadType::Voronoi &&
-                payloadType != NodePayloadType::Contact &&
-                payloadType != NodePayloadType::Heat) {
-                continue;
-            }
-
-            selectedKeys.insert(makeSocketKey(node.id, output.id));
-        }
-    }
-
-    // Walk dependency closure
-    std::vector<uint64_t> stack;
-    stack.reserve(selectedKeys.size());
-    for (uint64_t key : selectedKeys) {
-        stack.push_back(key);
-    }
-
-    while (!stack.empty()) {
-        const uint64_t key = stack.back();
-        stack.pop_back();
-
-        auto it = depsByKey.find(key);
-        if (it == depsByKey.end()) {
-            continue;
-        }
-
-        for (uint64_t depKey : it->second) {
-            if (selectedKeys.insert(depKey).second) {
-                stack.push_back(depKey);
-            }
+            const uint64_t socketKey = NodeSocketKey(node.id, output.id);
+            const auto valueIt = evaluationState.outputBySocket.find(socketKey);
+            const NodeDataBlock* block = (valueIt != evaluationState.outputBySocket.end() && valueIt->second.status == EvaluatedSocketStatus::Value)
+                ? &valueIt->second.data
+                : nullptr;
+            addDisplayKeys(socketKey, block, registry, payloadRegistry, selectedKeys);
         }
     }
 
     return selectedKeys;
+}
+
+void NodeGraphDisplay::addDisplayKeys(
+    uint64_t socketKey,
+    const NodeDataBlock* block,
+    const ECSRegistry& registry,
+    const NodePayloadRegistry* payloadRegistry,
+    std::unordered_set<uint64_t>& selectedKeys) const {
+
+    if (socketKey == 0) {
+        return;
+    }
+
+    auto entity = static_cast<ECSEntity>(socketKey);
+
+    // Mesh-like payloads: Geometry, Remesh, HeatModel
+    if (registry.all_of<ModelPackage>(entity)) {
+        selectedKeys.insert(socketKey);
+        return;
+    }
+
+    if (registry.all_of<RemeshPackage>(entity)) {
+        selectedKeys.insert(socketKey);
+        const auto& package = registry.get<RemeshPackage>(entity);
+        if (package.sourceMeshHandle.key != 0) {
+            selectedKeys.insert(package.sourceMeshHandle.key);
+        }
+        return;
+    }
+
+    if (block && block->dataType == payloadtypes::HeatModel && payloadRegistry) {
+        NodeDataHandle sourceModelHandle{};
+        payloadRegistry->resolveGeometry(block->payloadHandle, &sourceModelHandle);
+        const NodeDataHandle currentMeshHandle = payloadRegistry->resolveMeshHandle(block->dataType, block->payloadHandle);
+        if (sourceModelHandle.key != 0) {
+            selectedKeys.insert(sourceModelHandle.key);
+        }
+        if (currentMeshHandle.key != 0 &&
+            currentMeshHandle.key != sourceModelHandle.key &&
+            registry.valid(static_cast<ECSEntity>(currentMeshHandle.key)) &&
+            registry.all_of<RemeshPackage>(static_cast<ECSEntity>(currentMeshHandle.key))) {
+            selectedKeys.insert(currentMeshHandle.key);
+        }
+        return;
+    }
+
+    // Voronoi
+    if (registry.all_of<VoronoiPackage>(entity)) {
+        selectedKeys.insert(socketKey);
+        const auto& package = registry.get<VoronoiPackage>(entity);
+        for (const NodeDataHandle& handle : package.modelMeshHandles) {
+            if (handle.key != 0) {
+                selectedKeys.insert(handle.key);
+            }
+        }
+        for (const NodeDataHandle& handle : package.modelRemeshHandles) {
+            if (handle.key != 0) {
+                selectedKeys.insert(handle.key);
+            }
+        }
+        return;
+    }
+
+    // Contact
+    if (registry.all_of<ContactPackage>(entity)) {
+        selectedKeys.insert(socketKey);
+        const auto& package = registry.get<ContactPackage>(entity);
+
+        auto addEndpointKeys = [&](const NodeDataHandle& meshHandle) {
+            if (meshHandle.key == 0 || !payloadRegistry) {
+                return;
+            }
+            NodeDataHandle sourceModelHandle{};
+            payloadRegistry->resolveGeometry(meshHandle, &sourceModelHandle);
+            const NodeDataHandle currentMeshHandle = payloadRegistry->resolveMeshHandle(
+                payloadtypes::Remesh, meshHandle);
+            if (sourceModelHandle.key != 0) {
+                selectedKeys.insert(sourceModelHandle.key);
+            }
+            if (currentMeshHandle.key != 0 &&
+                currentMeshHandle.key != sourceModelHandle.key &&
+                registry.valid(static_cast<ECSEntity>(currentMeshHandle.key)) &&
+                registry.all_of<RemeshPackage>(static_cast<ECSEntity>(currentMeshHandle.key))) {
+                selectedKeys.insert(currentMeshHandle.key);
+            }
+        };
+
+        addEndpointKeys(package.modelAMeshHandle);
+        addEndpointKeys(package.modelBMeshHandle);
+        return;
+    }
+
+    // Heat
+    if (registry.all_of<HeatPackage>(entity)) {
+        selectedKeys.insert(socketKey);
+        const auto& package = registry.get<HeatPackage>(entity);
+        for (const NodeDataHandle& handle : package.resolvedModelHandles) {
+            if (handle.key != 0) {
+                selectedKeys.insert(handle.key);
+            }
+        }
+        for (const NodeDataHandle& handle : package.resolvedRemeshHandles) {
+            if (handle.key != 0) {
+                selectedKeys.insert(handle.key);
+            }
+        }
+        for (const NodeDataHandle& handle : package.authored.voronoiHandles) {
+            if (handle.key != 0) {
+                selectedKeys.insert(handle.key);
+            }
+        }
+        for (const NodeDataHandle& handle : package.authored.contactHandles) {
+            if (handle.key != 0) {
+                selectedKeys.insert(handle.key);
+            }
+        }
+        return;
+    }
 }

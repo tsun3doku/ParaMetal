@@ -47,8 +47,8 @@ private:
 };
 
 inline uint64_t buildDisplayHash(const ContactDisplayController::Config& config, uint64_t productHash) {
-    uint64_t hash = 1469598103934665603ull;
-    hash = RuntimeProductHash::mixPod(hash, static_cast<uint64_t>(config.showContactLines ? 1u : 0u));
-    hash = RuntimeProductHash::mixPod(hash, productHash);
+    uint64_t hash = NodeGraphHash::start();
+    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showContactLines ? 1u : 0u));
+    NodeGraphHash::combine(hash, productHash);
     return hash;
 }

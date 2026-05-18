@@ -1,17 +1,15 @@
 #include "RuntimeModelDisplayTransport.hpp"
 
 #include "nodegraph/NodeModelTransform.hpp"
-#include "runtime/ModelDisplayRuntime.hpp"
+#include "runtime/ModelDisplayController.hpp"
 #include "runtime/RuntimeECS.hpp"
 
 void RuntimeModelDisplayTransport::sync(const ECSRegistry& registry) {
-    if (!modelRuntime) {
+    if (!controller) {
         return;
     }
 
-    std::unordered_set<uint64_t> nextSocketKeys;
-
-    auto view = registry.view<ModelPackage>();
+    auto view = registry.view<ModelPackage>(entt::exclude<Stale>);
     for (auto entity : view) {
         uint64_t socketKey = static_cast<uint64_t>(entity);
         if (visibleKeys && visibleKeys->find(socketKey) == visibleKeys->end()) {
@@ -19,24 +17,24 @@ void RuntimeModelDisplayTransport::sync(const ECSRegistry& registry) {
         }
 
         const auto& package = registry.get<ModelPackage>(entity);
-        nextSocketKeys.insert(socketKey);
+        const ModelProduct* product = tryGetProduct<ModelProduct>(registry, socketKey);
 
-        modelRuntime->queueShowSocket(socketKey, NodeModelTransform::toMat4(package.localToWorld));
+        ModelDisplayController::Config config{};
+        config.runtimeModelId = product ? product->runtimeModelId : 0;
+        config.modelMatrix = NodeModelTransform::toMat4(package.localToWorld);
+        controller->apply(socketKey, config);
     }
 
-    for (uint64_t socketKey : activeSocketKeys) {
-        if (nextSocketKeys.find(socketKey) == nextSocketKeys.end()) {
-            modelRuntime->queueHideSocket(socketKey);
-        }
+    for (auto entity : registry.view<ModelPackage, Stale>()) {
+        uint64_t socketKey = static_cast<uint64_t>(entity);
+        controller->remove(socketKey);
     }
-
-    activeSocketKeys = std::move(nextSocketKeys);
 }
 
 void RuntimeModelDisplayTransport::finalizeSync() {
-    if (!modelRuntime) {
+    if (!controller) {
         return;
     }
 
-    modelRuntime->flush();
+    controller->finalizeSync();
 }

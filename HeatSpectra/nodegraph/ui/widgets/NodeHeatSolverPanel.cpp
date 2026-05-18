@@ -286,7 +286,7 @@ void NodeHeatSolverPanel::refreshBindingGroupOptions() {
 
     if (bridge()) {
         const NodeGraphState state = bridge()->state();
-        const NodeGraphNode* currentNode = findNodeInState(state, currentNodeId());
+        const NodeGraphNode* currentNode = state.node(currentNodeId());
         if (currentNode) {
             std::unordered_set<uint32_t> seenModelNodeIds;
             std::vector<uint32_t> modelNodeIds;
@@ -295,7 +295,7 @@ void NodeHeatSolverPanel::refreshBindingGroupOptions() {
                     continue;
                 }
 
-                const NodeGraphEdge* inputEdge = findIncomingEdgeInState(state, currentNode->id, inputSocket.id);
+                const NodeGraphEdge* inputEdge = state.incomingEdge(currentNode->id, inputSocket.id);
                 if (!inputEdge) {
                     continue;
                 }
@@ -407,7 +407,7 @@ void NodeHeatSolverPanel::updateHeatStatus() {
     if (!active) {
         if (desiredEnabled) {
             std::string reason;
-            if (bridge() && !bridge()->canExecuteHeatSolve(reason)) {
+            if (bridge() && !bridge()->canExecute(reason)) {
                 heatStatusValueLabel->setText("Blocked");
                 return;
             }

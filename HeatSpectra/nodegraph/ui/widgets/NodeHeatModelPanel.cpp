@@ -38,7 +38,7 @@ NodeHeatModelPanel::NodeHeatModelPanel(QWidget* parent)
     auto* tempValidator = new QDoubleValidator(0.0, 10000.0, 2, temperatureEdit);
     tempValidator->setNotation(QDoubleValidator::StandardNotation);
     temperatureEdit->setValidator(tempValidator);
-    temperatureEdit->setText("1.0");
+    temperatureEdit->setText(QString::number(HeatSimDefaults::ambientTemperature, 'f', 2));
     tempRow->addWidget(temperatureEdit, 1);
     layout->addLayout(tempRow);
 
@@ -50,7 +50,7 @@ NodeHeatModelPanel::NodeHeatModelPanel(QWidget* parent)
     auto* densityValidator = new QDoubleValidator(0.0, 100000.0, 1, densityEdit);
     densityValidator->setNotation(QDoubleValidator::StandardNotation);
     densityEdit->setValidator(densityValidator);
-    densityEdit->setText("1000.0");
+    densityEdit->setText(QString::number(HeatSimDefaults::density, 'f', 1));
     densityRow->addWidget(densityEdit, 1);
     layout->addLayout(densityRow);
 
@@ -62,7 +62,7 @@ NodeHeatModelPanel::NodeHeatModelPanel(QWidget* parent)
     auto* specificHeatValidator = new QDoubleValidator(0.0, 100000.0, 1, specificHeatEdit);
     specificHeatValidator->setNotation(QDoubleValidator::StandardNotation);
     specificHeatEdit->setValidator(specificHeatValidator);
-    specificHeatEdit->setText("1000.0");
+    specificHeatEdit->setText(QString::number(HeatSimDefaults::specificHeat, 'f', 1));
     specificHeatRow->addWidget(specificHeatEdit, 1);
     layout->addLayout(specificHeatRow);
 
@@ -74,7 +74,7 @@ NodeHeatModelPanel::NodeHeatModelPanel(QWidget* parent)
     auto* conductivityValidator = new QDoubleValidator(0.0, 10000.0, 2, conductivityEdit);
     conductivityValidator->setNotation(QDoubleValidator::StandardNotation);
     conductivityEdit->setValidator(conductivityValidator);
-    conductivityEdit->setText("1.0");
+    conductivityEdit->setText(QString::number(HeatSimDefaults::conductivity, 'f', 2));
     conductivityRow->addWidget(conductivityEdit, 1);
     layout->addLayout(conductivityRow);
 

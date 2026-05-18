@@ -122,11 +122,14 @@ void HeatSystem::clearVoronoiInputs() {
     modelVoronoiNodesByModelId.clear();
     modelVoronoiNodeBufferByModelId.clear();
     modelVoronoiNodeBufferOffsetByModelId.clear();
-    modelGMLSInterfaceBufferByModelId.clear();
-    modelGMLSInterfaceBufferOffsetByModelId.clear();
-    modelSeedFlagsBufferByModelId.clear();
-    modelSeedFlagsBufferOffsetByModelId.clear();
-    modelVoronoiNodeCountByModelId.clear();
+    modelSimNodeBufferByModelId.clear();
+    modelSimNodeBufferOffsetByModelId.clear();
+    modelSimGMLSInterfaceBufferByModelId.clear();
+    modelSimGMLSInterfaceBufferOffsetByModelId.clear();
+    voronoiNodeCounts.clear();
+    simNodeCounts.clear();
+    simGMLSInterfaceCounts.clear();
+    modelVoronoiToSimByModelId.clear();
     modelGMLSSurfaceStencilBufferByModelId.clear();
     modelGMLSSurfaceStencilBufferOffsetByModelId.clear();
     modelGMLSSurfaceWeightBufferByModelId.clear();
@@ -141,41 +144,51 @@ void HeatSystem::clearVoronoiInputs() {
 void HeatSystem::addVoronoiModelInput(
     uint32_t runtimeModelId,
     const voronoi::Node* nodes,
-    uint32_t nodeCount,
-    VkBuffer nodeBuffer,
-    VkDeviceSize nodeBufferOffset,
-    VkBuffer gmlsInterfaceBuffer,
-    VkDeviceSize gmlsInterfaceBufferOffset,
-    VkBuffer seedFlagsBuffer,
-    VkDeviceSize seedFlagsBufferOffset,
+    uint32_t voronoiNodeCount,
+    VkBuffer voronoiNodeBuffer,
+    VkDeviceSize voronoiNodeBufferOffset,
+    uint32_t simNodeCount,
+    VkBuffer simNodeBuffer,
+    VkDeviceSize simNodeBufferOffset,
+    VkBuffer simGMLSInterfaceBuffer,
+    VkDeviceSize simGMLSInterfaceBufferOffset,
+    uint32_t simGMLSInterfaceCount,
     VkBuffer gmlsSurfaceStencilBuffer,
     VkDeviceSize gmlsSurfaceStencilBufferOffset,
     VkBuffer gmlsSurfaceWeightBuffer,
     VkDeviceSize gmlsSurfaceWeightBufferOffset,
+    size_t gmlsSurfaceWeightCount,
     VkBuffer gmlsSurfaceGradientWeightBuffer,
     VkDeviceSize gmlsSurfaceGradientWeightBufferOffset,
+    size_t gmlsSurfaceGradientWeightCount,
     const std::vector<uint32_t>& seedFlags,
-    const std::vector<glm::vec3>& seedPositions) {
-    if (runtimeModelId == 0 || nodeCount == 0) {
+    const std::vector<glm::vec3>& seedPositions,
+    const std::vector<uint32_t>& voronoiToSim) {
+    if (runtimeModelId == 0 || voronoiNodeCount == 0 || simNodeCount == 0) {
         return;
     }
 
     modelVoronoiNodesByModelId[runtimeModelId] = nodes;
-    modelVoronoiNodeBufferByModelId[runtimeModelId] = nodeBuffer;
-    modelVoronoiNodeBufferOffsetByModelId[runtimeModelId] = nodeBufferOffset;
-    modelGMLSInterfaceBufferByModelId[runtimeModelId] = gmlsInterfaceBuffer;
-    modelGMLSInterfaceBufferOffsetByModelId[runtimeModelId] = gmlsInterfaceBufferOffset;
-    modelSeedFlagsBufferByModelId[runtimeModelId] = seedFlagsBuffer;
-    modelSeedFlagsBufferOffsetByModelId[runtimeModelId] = seedFlagsBufferOffset;
-    modelVoronoiNodeCountByModelId[runtimeModelId] = nodeCount;
+    modelVoronoiNodeBufferByModelId[runtimeModelId] = voronoiNodeBuffer;
+    modelVoronoiNodeBufferOffsetByModelId[runtimeModelId] = voronoiNodeBufferOffset;
+    modelSimNodeBufferByModelId[runtimeModelId] = simNodeBuffer;
+    modelSimNodeBufferOffsetByModelId[runtimeModelId] = simNodeBufferOffset;
+    modelSimGMLSInterfaceBufferByModelId[runtimeModelId] = simGMLSInterfaceBuffer;
+    modelSimGMLSInterfaceBufferOffsetByModelId[runtimeModelId] = simGMLSInterfaceBufferOffset;
+    voronoiNodeCounts[runtimeModelId] = voronoiNodeCount;
+    simNodeCounts[runtimeModelId] = simNodeCount;
+    simGMLSInterfaceCounts[runtimeModelId] = simGMLSInterfaceCount;
     modelGMLSSurfaceStencilBufferByModelId[runtimeModelId] = gmlsSurfaceStencilBuffer;
     modelGMLSSurfaceStencilBufferOffsetByModelId[runtimeModelId] = gmlsSurfaceStencilBufferOffset;
     modelGMLSSurfaceWeightBufferByModelId[runtimeModelId] = gmlsSurfaceWeightBuffer;
     modelGMLSSurfaceWeightBufferOffsetByModelId[runtimeModelId] = gmlsSurfaceWeightBufferOffset;
+    modelGMLSSurfaceWeightCountByModelId[runtimeModelId] = gmlsSurfaceWeightCount;
     modelGMLSSurfaceGradientWeightBufferByModelId[runtimeModelId] = gmlsSurfaceGradientWeightBuffer;
     modelGMLSSurfaceGradientWeightBufferOffsetByModelId[runtimeModelId] = gmlsSurfaceGradientWeightBufferOffset;
+    modelGMLSSurfaceGradientWeightCountByModelId[runtimeModelId] = gmlsSurfaceGradientWeightCount;
     modelVoronoiSeedFlagsByModelId[runtimeModelId] = seedFlags;
     modelVoronoiSeedPositionsByModelId[runtimeModelId] = seedPositions;
+    modelVoronoiToSimByModelId[runtimeModelId] = voronoiToSim;
     voronoiConfigDirty = true;
 }
 
@@ -243,10 +256,12 @@ bool HeatSystem::rebuildRuntimeResources(bool forceDescriptorReallocate) {
         const auto stencilOffsetIt = modelGMLSSurfaceStencilBufferOffsetByModelId.find(runtimeModelId);
         const auto valueWeightIt = modelGMLSSurfaceWeightBufferByModelId.find(runtimeModelId);
         const auto valueWeightOffsetIt = modelGMLSSurfaceWeightBufferOffsetByModelId.find(runtimeModelId);
+        const auto valueWeightCountIt = modelGMLSSurfaceWeightCountByModelId.find(runtimeModelId);
         const auto gradientWeightIt = modelGMLSSurfaceGradientWeightBufferByModelId.find(runtimeModelId);
         const auto gradientWeightOffsetIt = modelGMLSSurfaceGradientWeightBufferOffsetByModelId.find(runtimeModelId);
+        const auto gradientWeightCountIt = modelGMLSSurfaceGradientWeightCountByModelId.find(runtimeModelId);
         if (!heatVoronoiReady) {
-            heatModel->setGMLSSurfaceWeights(VK_NULL_HANDLE, 0, VK_NULL_HANDLE, 0, VK_NULL_HANDLE, 0);
+            heatModel->setGMLSSurfaceWeights(VK_NULL_HANDLE, 0, VK_NULL_HANDLE, 0, 0, VK_NULL_HANDLE, 0, 0);
             continue;
         }
 
@@ -255,11 +270,13 @@ bool HeatSystem::rebuildRuntimeResources(bool forceDescriptorReallocate) {
             stencilOffsetIt != modelGMLSSurfaceStencilBufferOffsetByModelId.end() ? stencilOffsetIt->second : 0,
             valueWeightIt != modelGMLSSurfaceWeightBufferByModelId.end() ? valueWeightIt->second : VK_NULL_HANDLE,
             valueWeightOffsetIt != modelGMLSSurfaceWeightBufferOffsetByModelId.end() ? valueWeightOffsetIt->second : 0,
+            valueWeightCountIt != modelGMLSSurfaceWeightCountByModelId.end() ? valueWeightCountIt->second : 0,
             gradientWeightIt != modelGMLSSurfaceGradientWeightBufferByModelId.end() ? gradientWeightIt->second : VK_NULL_HANDLE,
-            gradientWeightOffsetIt != modelGMLSSurfaceGradientWeightBufferOffsetByModelId.end() ? gradientWeightOffsetIt->second : 0);
+            gradientWeightOffsetIt != modelGMLSSurfaceGradientWeightBufferOffsetByModelId.end() ? gradientWeightOffsetIt->second : 0,
+            gradientWeightCountIt != modelGMLSSurfaceGradientWeightCountByModelId.end() ? gradientWeightCountIt->second : 0);
 
-        auto countIt = modelVoronoiNodeCountByModelId.find(runtimeModelId);
-        uint32_t nodeCount = (countIt != modelVoronoiNodeCountByModelId.end()) ? countIt->second : 0;
+        auto countIt = simNodeCounts.find(runtimeModelId);
+        uint32_t nodeCount = (countIt != simNodeCounts.end()) ? countIt->second : 0;
         heatModel->ensureSimulationBuffers(nodeCount);
     }
 
@@ -291,6 +308,40 @@ bool HeatSystem::rebuildRuntimeResources(bool forceDescriptorReallocate) {
 
     const bool simReady = simInitResult && voronoiStage;
     if (!simReady) return false;
+
+    for (const auto& [runtimeModelId, heatModel] : runtime.getActiveModels()) {
+        if (!heatModel) {
+            continue;
+        }
+
+        const auto countIt = simNodeCounts.find(runtimeModelId);
+        const auto nodeBufferIt = modelSimNodeBufferByModelId.find(runtimeModelId);
+        const auto nodeBufferOffsetIt = modelSimNodeBufferOffsetByModelId.find(runtimeModelId);
+        const auto gmlsInterfaceIt = modelSimGMLSInterfaceBufferByModelId.find(runtimeModelId);
+        const auto gmlsInterfaceOffsetIt = modelSimGMLSInterfaceBufferOffsetByModelId.find(runtimeModelId);
+        const auto gmlsInterfaceCountIt = simGMLSInterfaceCounts.find(runtimeModelId);
+        const auto voronoiToSimIt = modelVoronoiToSimByModelId.find(runtimeModelId);
+        if (countIt == simNodeCounts.end() ||
+            nodeBufferIt == modelSimNodeBufferByModelId.end() ||
+            nodeBufferOffsetIt == modelSimNodeBufferOffsetByModelId.end() ||
+            gmlsInterfaceIt == modelSimGMLSInterfaceBufferByModelId.end() ||
+            gmlsInterfaceOffsetIt == modelSimGMLSInterfaceBufferOffsetByModelId.end() ||
+            gmlsInterfaceCountIt == simGMLSInterfaceCounts.end()) {
+            continue;
+        }
+
+        heatModel->setSimResources(
+            nodeBufferIt->second,
+            nodeBufferOffsetIt->second,
+            countIt->second,
+            gmlsInterfaceIt->second,
+            gmlsInterfaceOffsetIt->second,
+            gmlsInterfaceCountIt->second);
+
+        if (voronoiToSimIt != modelVoronoiToSimByModelId.end()) {
+            heatModel->setVoronoiToSimNodeId(voronoiToSimIt->second);
+        }
+    }
 
     if (contactStage) {
         const bool rebuildContacts = contactCouplingsDirty || heatParamsDirty || forceDescriptorReallocate;
@@ -343,26 +394,28 @@ bool HeatSystem::rebuildRuntimeResources(bool forceDescriptorReallocate) {
     for (const auto& [runtimeModelId, heatModel] : runtime.getActiveModels()) {
         if (!heatModel || heatModel->getIntrinsicVertexCount() == 0) continue;
 
-        auto itCount = modelVoronoiNodeCountByModelId.find(runtimeModelId);
-        uint32_t nodeCount = (itCount != modelVoronoiNodeCountByModelId.end()) ? itCount->second : 0;
+        auto itCount = simNodeCounts.find(runtimeModelId);
+        uint32_t nodeCount = (itCount != simNodeCounts.end()) ? itCount->second : 0;
         if (nodeCount == 0) continue;
 
-        const auto nodeBufferIt = modelVoronoiNodeBufferByModelId.find(runtimeModelId);
-        const auto nodeBufferOffsetIt = modelVoronoiNodeBufferOffsetByModelId.find(runtimeModelId);
-        const auto gmlsInterfaceIt = modelGMLSInterfaceBufferByModelId.find(runtimeModelId);
-        const auto gmlsInterfaceOffsetIt = modelGMLSInterfaceBufferOffsetByModelId.find(runtimeModelId);
-        const auto seedFlagsBufferIt = modelSeedFlagsBufferByModelId.find(runtimeModelId);
-        const auto seedFlagsBufferOffsetIt = modelSeedFlagsBufferOffsetByModelId.find(runtimeModelId);
-        if (nodeBufferIt != modelVoronoiNodeBufferByModelId.end() &&
-            nodeBufferOffsetIt != modelVoronoiNodeBufferOffsetByModelId.end() &&
-            gmlsInterfaceIt != modelGMLSInterfaceBufferByModelId.end() &&
-            gmlsInterfaceOffsetIt != modelGMLSInterfaceBufferOffsetByModelId.end() &&
-            seedFlagsBufferIt != modelSeedFlagsBufferByModelId.end() &&
-            seedFlagsBufferOffsetIt != modelSeedFlagsBufferOffsetByModelId.end()) {
-            heatModel->setVoronoiResources(
+        const auto nodeBufferIt = modelSimNodeBufferByModelId.find(runtimeModelId);
+        const auto nodeBufferOffsetIt = modelSimNodeBufferOffsetByModelId.find(runtimeModelId);
+        const auto gmlsInterfaceIt = modelSimGMLSInterfaceBufferByModelId.find(runtimeModelId);
+        const auto gmlsInterfaceOffsetIt = modelSimGMLSInterfaceBufferOffsetByModelId.find(runtimeModelId);
+        const auto gmlsInterfaceCountIt = simGMLSInterfaceCounts.find(runtimeModelId);
+        const auto voronoiToSimIt = modelVoronoiToSimByModelId.find(runtimeModelId);
+        if (nodeBufferIt != modelSimNodeBufferByModelId.end() &&
+            nodeBufferOffsetIt != modelSimNodeBufferOffsetByModelId.end() &&
+            gmlsInterfaceIt != modelSimGMLSInterfaceBufferByModelId.end() &&
+            gmlsInterfaceOffsetIt != modelSimGMLSInterfaceBufferOffsetByModelId.end() &&
+            gmlsInterfaceCountIt != simGMLSInterfaceCounts.end()) {
+            heatModel->setSimResources(
                 nodeBufferIt->second, nodeBufferOffsetIt->second, nodeCount,
                 gmlsInterfaceIt->second, gmlsInterfaceOffsetIt->second,
-                seedFlagsBufferIt->second, seedFlagsBufferOffsetIt->second);
+                gmlsInterfaceCountIt->second);
+            if (voronoiToSimIt != modelVoronoiToSimByModelId.end()) {
+                heatModel->setVoronoiToSimNodeId(voronoiToSimIt->second);
+            }
         }
 
         heatModel->updateAllDescriptors(
@@ -469,9 +522,9 @@ bool HeatSystem::voronoiReady() const {
         if (runtimeModelId == 0) {
             continue;
         }
-        const auto countIt = modelVoronoiNodeCountByModelId.find(runtimeModelId);
+        const auto countIt = voronoiNodeCounts.find(runtimeModelId);
         const auto bufferIt = modelVoronoiNodeBufferByModelId.find(runtimeModelId);
-        if (countIt == modelVoronoiNodeCountByModelId.end() ||
+        if (countIt == voronoiNodeCounts.end() ||
             countIt->second == 0 ||
             bufferIt == modelVoronoiNodeBufferByModelId.end() ||
             !bufferIt->second) {
@@ -556,15 +609,17 @@ bool HeatSystem::initializeVoronoiMaterialNodes() {
         return false;
     }
 
-    for (const auto& [id, nodeBuffer] : modelVoronoiNodeBufferByModelId) {
-        if (!nodeBuffer) continue;
+    for (const auto& [id, voronoiNodeBuffer] : modelVoronoiNodeBufferByModelId) {
+        if (!voronoiNodeBuffer) continue;
         HeatModelRuntime* heatModelPtr = runtime.getModelByRuntimeId(id);
         if (!heatModelPtr) continue;
 
-        auto countIt = modelVoronoiNodeCountByModelId.find(id);
-        auto seedFlagsIt = modelVoronoiSeedFlagsByModelId.find(id);
-        auto offsetIt = modelVoronoiNodeBufferOffsetByModelId.find(id);
-        if (countIt == modelVoronoiNodeCountByModelId.end() || seedFlagsIt == modelVoronoiSeedFlagsByModelId.end() || offsetIt == modelVoronoiNodeBufferOffsetByModelId.end()) continue;
+        auto countIt = simNodeCounts.find(id);
+        auto nodeBufferIt = modelSimNodeBufferByModelId.find(id);
+        auto offsetIt = modelSimNodeBufferOffsetByModelId.find(id);
+        if (countIt == simNodeCounts.end() ||
+            nodeBufferIt == modelSimNodeBufferByModelId.end() ||
+            offsetIt == modelSimNodeBufferOffsetByModelId.end()) continue;
 
         float d = heatModelPtr->getDensity();
         float s = heatModelPtr->getSpecificHeat();
@@ -573,6 +628,7 @@ bool HeatSystem::initializeVoronoiMaterialNodes() {
         float f = heatModelPtr->getFixedTemperatureValue();
 
         uint32_t modelNodeCount = countIt->second;
+        VkBuffer simNodeBuffer = nodeBufferIt->second;
         VkDeviceSize nodeBufferSize = modelNodeCount * sizeof(voronoi::Node);
         VkDeviceSize nodeBufferOffset = offsetIt->second;
 
@@ -586,15 +642,13 @@ bool HeatSystem::initializeVoronoiMaterialNodes() {
 
         VkCommandBuffer cmd = renderCommandPool.beginCommands();
         VkBufferCopy region{nodeBufferOffset, stagingOff, nodeBufferSize};
-        vkCmdCopyBuffer(cmd, nodeBuffer, stagingBuf, 1, &region);
+        vkCmdCopyBuffer(cmd, simNodeBuffer, stagingBuf, 1, &region);
         renderCommandPool.endCommands(cmd);
 
         const voronoi::Node* nodes = static_cast<const voronoi::Node*>(stagingMapped);
 
         std::vector<heat::MaterialNode> materialNodes(modelNodeCount);
         for (uint32_t localNodeIndex = 0; localNodeIndex < modelNodeCount; ++localNodeIndex) {
-            if (localNodeIndex < seedFlagsIt->second.size() && (seedFlagsIt->second[localNodeIndex] & 1u) != 0u) continue;
-
             heat::MaterialNode& materialNode = materialNodes[localNodeIndex];
             materialNode.density = d;
             materialNode.specificHeat = s;
@@ -619,4 +673,3 @@ bool HeatSystem::rebuildVoronoiRuntime() {
     if (modelRuntimeModelIds.empty() || modelVoronoiNodeBufferByModelId.empty()) return false;
     return initializeVoronoiMaterialNodes();
 }
-

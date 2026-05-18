@@ -27,7 +27,6 @@ void ContactSystem::setParams(float minNormalDot, float contactRadius) {
 }
 
 void ContactSystem::setModelAState(
-    uint32_t modelId,
     const std::array<float, 16>& localToWorld,
     const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
     uint32_t runtimeModelId) {
@@ -35,11 +34,10 @@ void ContactSystem::setModelAState(
         return;
     }
 
-    runtime->setModelAState(modelId, localToWorld, intrinsicMesh, runtimeModelId);
+    runtime->setModelAState(localToWorld, intrinsicMesh, runtimeModelId);
 }
 
 void ContactSystem::setModelBState(
-    uint32_t modelId,
     const std::array<float, 16>& localToWorld,
     const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
     uint32_t runtimeModelId) {
@@ -47,7 +45,7 @@ void ContactSystem::setModelBState(
         return;
     }
 
-    runtime->setModelBState(modelId, localToWorld, intrinsicMesh, runtimeModelId);
+    runtime->setModelBState(localToWorld, intrinsicMesh, runtimeModelId);
 }
 
 void ContactSystem::setModelBTriangleIndices(const std::vector<uint32_t>& triangleIndices) {

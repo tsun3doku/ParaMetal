@@ -34,8 +34,8 @@
 
 namespace {
 
-QString nodeTypeDisplayName(const NodeTypeId& typeId) {
-    const NodeTypeDefinition* definition = NodeGraphRegistry::findNodeById(typeId);
+QString nodeTypeDisplayName(const NodeTypeId& typeId, const NodeGraphRegistry* registry) {
+    const NodeTypeDefinition* definition = registry ? registry->findNodeType(typeId) : nullptr;
     if (definition) {
         return QString::fromStdString(definition->displayName);
     }
@@ -158,7 +158,7 @@ bool NodePanel::setNode(NodeGraphNodeId nodeId) {
     currentNodeId = nodeId;
     currentNodeTypeId = getNodeTypeId(node.typeId);
 
-    titleLabel->setText(nodeTypeDisplayName(currentNodeTypeId));
+    titleLabel->setText(nodeTypeDisplayName(currentNodeTypeId, nodeGraphBridge ? &nodeGraphBridge->getRegistry() : nullptr));
     subtitleLabel->setText(nodeTypeDescription(currentNodeTypeId));
     statusLabel->clear();
 

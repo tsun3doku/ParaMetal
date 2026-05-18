@@ -1,4 +1,4 @@
-﻿#pragma once 
+#pragma once 
 
 // Prevent Windows macros from interfering with GLM
 #ifdef min
@@ -46,7 +46,7 @@ private:
     glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);         // Up vector     
     glm::vec3 lookAt;
     
-    glm::quat orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Identity quaternion
+    glm::quat orientation = glm::angleAxis(glm::radians(30.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 
     glm::vec3 velocity = glm::vec3(0.0f);               
 

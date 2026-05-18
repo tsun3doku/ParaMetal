@@ -16,6 +16,8 @@ private:
     static void populateOutputPayloads(
         NodeGraphKernelContext& context,
         const std::vector<NodeDataHandle>& heatModelHandles,
+        const std::vector<NodeDataHandle>& voronoiHandles,
+        const std::vector<NodeDataHandle>& contactHandles,
         const std::vector<HeatMaterialBinding>& materialBindings,
         uint64_t voronoiPayloadHash,
         uint64_t contactPayloadHash,

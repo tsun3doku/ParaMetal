@@ -8,10 +8,11 @@
 #include <unordered_map>
 #include <vector>
 
+class NodeGraphTypeRegistry;
 class NodePayloadRegistry;
 
 struct NodeDataBlock {
-    NodePayloadType dataType = NodePayloadType::None;
+    uint8_t dataType = 0;
     NodeDataHandle payloadHandle{};
     double scalarFloatValue = 0.0;
     int64_t scalarIntValue = 0;
@@ -38,5 +39,4 @@ struct NodeGraphEvaluationState {
     std::unordered_map<uint64_t, EvaluatedSocketValue> outputBySocket;
 };
 
-void populateMetadata(NodeDataBlock& dataBlock, const NodePayloadRegistry* registry = nullptr);
-void buildOutputs(const NodeGraphNode& node, const std::vector<const NodeDataBlock*>& inputs, std::vector<NodeDataBlock>& outputs);
+void populateMetadata(NodeDataBlock& dataBlock, const NodeGraphTypeRegistry* typeRegistry = nullptr, const NodePayloadRegistry* payloadRegistry = nullptr);

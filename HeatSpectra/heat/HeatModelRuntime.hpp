@@ -1,6 +1,7 @@
 #pragma once
 
 #include "heat/HeatGpuStructs.hpp"
+#include "heat/HeatSystemPresets.hpp"
 #include "mesh/remesher/SupportingHalfedge.hpp"
 
 #include <array>
@@ -54,8 +55,10 @@ public:
         VkDeviceSize stencilBufferOffset,
         VkBuffer valueWeightBuffer,
         VkDeviceSize valueWeightBufferOffset,
+        size_t valueWeightCount,
         VkBuffer gradientWeightBuffer,
-        VkDeviceSize gradientWeightBufferOffset);
+        VkDeviceSize gradientWeightBufferOffset,
+        size_t gradientWeightCount);
 
     void updateAllDescriptors(
         VkDescriptorSetLayout surfaceLayout,
@@ -72,26 +75,24 @@ public:
     VkDescriptorSet getSurfaceGradientComputeSetA() const { return surfaceGradientComputeSetA; }
     VkDescriptorSet getSurfaceGradientComputeSetB() const { return surfaceGradientComputeSetB; }
 
-    void injectFixedTemperature(VkBuffer tempBuffer, VkDeviceSize tempBufferOffset, uint32_t nodeCount, float temperature) const;
-
     const SupportingHalfedge::IntrinsicMesh& getIntrinsicMesh() const { return intrinsicMesh; }
 
     bool createMaterialBuffer(const std::vector<heat::MaterialNode>& materialNodes);
     VkBuffer getMaterialBuffer() const { return materialBuffer; }
     VkDeviceSize getMaterialBufferOffset() const { return materialBufferOffset; }
 
-    void setVoronoiResources(
+    void setSimResources(
         VkBuffer nodeBuffer, VkDeviceSize nodeOffset, uint32_t nodeCount,
-        VkBuffer gmlsBuffer, VkDeviceSize gmlsOffset,
-        VkBuffer seedBuffer, VkDeviceSize seedOffset);
+        VkBuffer gmlsBuffer, VkDeviceSize gmlsOffset, uint32_t gmlsCount);
+    void setVoronoiToSimNodeId(const std::vector<uint32_t>& mapping);
 
-    VkBuffer getVoronoiNodeBuffer() const { return voronoiNodeBuffer; }
-    VkDeviceSize getVoronoiNodeOffset() const { return voronoiNodeOffset; }
-    uint32_t getVoronoiNodeCount() const { return voronoiNodeCount; }
-    VkBuffer getGMLSInterfaceBuffer() const { return gmlsInterfaceBuffer; }
-    VkDeviceSize getGMLSInterfaceOffset() const { return gmlsInterfaceOffset; }
-    VkBuffer getVoronoiSeedFlagsBuffer() const { return voronoiSeedFlagsBuffer; }
-    VkDeviceSize getVoronoiSeedFlagsOffset() const { return voronoiSeedFlagsOffset; }
+    VkBuffer getSimNodeBuffer() const { return simNodeBuffer; }
+    VkDeviceSize getSimNodeOffset() const { return simNodeOffset; }
+    VkBuffer getSimGMLSInterfaceBuffer() const { return simGMLSInterfaceBuffer; }
+    VkDeviceSize getSimGMLSInterfaceOffset() const { return simGMLSInterfaceOffset; }
+    uint32_t mapVoronoiNodeToSim(uint32_t voronoiNodeId) const {
+        return voronoiNodeId < voronoiToSimNodeId.size() ? voronoiToSimNodeId[voronoiNodeId] : UINT32_MAX;
+    }
 
     VkDescriptorSet getVoronoiDescriptorSetA() const { return voronoiDescriptorSetA; }
     VkDescriptorSet getVoronoiDescriptorSetB() const { return voronoiDescriptorSetB; }
@@ -116,12 +117,12 @@ private:
     CommandPool& renderCommandPool;
     size_t intrinsicVertexCount = 0;
 
-    float density = 1000.0f;
-    float specificHeat = 1000.0f;
-    float conductivity = 1.0f;
+    float density = HeatSimDefaults::density;
+    float specificHeat = HeatSimDefaults::specificHeat;
+    float conductivity = HeatSimDefaults::conductivity;
 
     uint32_t boundaryCondition = 0;
-    float fixedTemperatureValue = 1.0f;
+    float fixedTemperatureValue = HeatSimDefaults::ambientTemperature;
     VkBuffer surfaceBuffer = VK_NULL_HANDLE;
     VkDeviceSize surfaceBufferOffset = 0;
 
@@ -129,8 +130,10 @@ private:
     VkDeviceSize gmlsSurfaceStencilBufferOffset = 0;
     VkBuffer gmlsSurfaceWeightBuffer = VK_NULL_HANDLE;
     VkDeviceSize gmlsSurfaceWeightBufferOffset = 0;
+    size_t gmlsSurfaceWeightCount = 0;
     VkBuffer gmlsSurfaceGradientWeightBuffer = VK_NULL_HANDLE;
     VkDeviceSize gmlsSurfaceGradientWeightBufferOffset = 0;
+    size_t gmlsSurfaceGradientWeightCount = 0;
 
     VkBuffer surfaceGradientBuffer = VK_NULL_HANDLE;
     VkDeviceSize surfaceGradientBufferOffset = 0;
@@ -143,13 +146,11 @@ private:
     VkBuffer materialBuffer = VK_NULL_HANDLE;
     VkDeviceSize materialBufferOffset = 0;
 
-    uint32_t voronoiNodeCount = 0;
-    VkBuffer voronoiNodeBuffer = VK_NULL_HANDLE;
-    VkDeviceSize voronoiNodeOffset = 0;
-    VkBuffer gmlsInterfaceBuffer = VK_NULL_HANDLE;
-    VkDeviceSize gmlsInterfaceOffset = 0;
-    VkBuffer voronoiSeedFlagsBuffer = VK_NULL_HANDLE;
-    VkDeviceSize voronoiSeedFlagsOffset = 0;
+    VkBuffer simNodeBuffer = VK_NULL_HANDLE;
+    VkDeviceSize simNodeOffset = 0;
+    VkBuffer simGMLSInterfaceBuffer = VK_NULL_HANDLE;
+    VkDeviceSize simGMLSInterfaceOffset = 0;
+    std::vector<uint32_t> voronoiToSimNodeId;
 
     VkDescriptorSet voronoiDescriptorSetA = VK_NULL_HANDLE;
     VkDescriptorSet voronoiDescriptorSetB = VK_NULL_HANDLE;
@@ -161,6 +162,7 @@ private:
     VkBuffer contactAccumulatorBuffer = VK_NULL_HANDLE;
     VkDeviceSize contactAccumulatorBufferOffset = 0;
     uint32_t simNodeCount = 0;
+    uint32_t simGMLSInterfaceCount = 0;
     bool initialized = false;
 
     std::unique_ptr<StencilKDTree> stencilKDTree;

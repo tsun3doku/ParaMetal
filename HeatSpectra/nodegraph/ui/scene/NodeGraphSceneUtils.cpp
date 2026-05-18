@@ -2,28 +2,6 @@
 
 namespace nodegraphsceneutils {
 
-NodeGraphEdgeId findIncomingEdgeForInput(
-    const NodeGraphState& state,
-    NodeGraphNodeId nodeId,
-    NodeGraphSocketId socketId) {
-    for (const NodeGraphEdge& edge : state.edges) {
-        if (edge.toNode == nodeId && edge.toSocket == socketId) {
-            return edge.id;
-        }
-    }
-
-    return {};
-}
-
-const NodeGraphNode* findStateNodeById(const NodeGraphState& state, NodeGraphNodeId nodeId) {
-    for (const NodeGraphNode& node : state.nodes) {
-        if (node.id == nodeId) {
-            return &node;
-        }
-    }
-    return nullptr;
-}
-
 int findSocketIndexById(const std::vector<NodeGraphSocket>& sockets, NodeGraphSocketId socketId) {
     for (std::size_t index = 0; index < sockets.size(); ++index) {
         if (sockets[index].id == socketId) {

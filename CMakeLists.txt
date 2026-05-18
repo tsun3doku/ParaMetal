@@ -85,6 +85,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/HeatSpectra/libs/nanoflann/include
     ${CMAKE_CURRENT_SOURCE_DIR}/HeatSpectra/libs/tinyobjloader
     ${CMAKE_CURRENT_SOURCE_DIR}/HeatSpectra/libs/tinyply/source
+    ${CMAKE_CURRENT_SOURCE_DIR}/HeatSpectra/libs/entt/src
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE

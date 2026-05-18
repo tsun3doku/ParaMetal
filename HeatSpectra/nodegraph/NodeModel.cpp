@@ -1,4 +1,5 @@
 #include "NodeModel.hpp"
+#include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
 
@@ -40,15 +41,15 @@ void NodeModel::execute(NodeGraphKernelContext& context) const {
         outputValue.dataType = outputSocket.contract.producedPayloadType;
 
         if (!payloadRegistry ||
-            outputValue.dataType != NodePayloadType::Geometry ||
+            outputValue.dataType != payloadtypes::Geometry ||
             !hasGeometry) {
-            populateMetadata(outputValue, payloadRegistry);
+            populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
 
-        const uint64_t payloadKey = makeSocketKey(context.node.id, outputSocket.id);
+        const uint64_t payloadKey = NodeSocketKey(context.node.id, outputSocket.id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, geometry);
-        populateMetadata(outputValue, payloadRegistry);
+        populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 

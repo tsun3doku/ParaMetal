@@ -25,11 +25,9 @@ static_assert(sizeof(ContactSampleEntry) == 16, "ContactSampleEntry must match G
 struct ContactSampleWeight {
     uint32_t cellIndex;
     float weight;
-    uint32_t _pad0;
-    uint32_t _pad1;
 };
 
-static_assert(sizeof(ContactSampleWeight) == 16, "ContactSampleWeight must match GPU stride");
+static_assert(sizeof(ContactSampleWeight) == 8, "ContactSampleWeight must match GPU stride");
 
 struct PushConstant {
     uint32_t couplingKind;

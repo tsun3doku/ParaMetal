@@ -1,16 +1,18 @@
-﻿#include "SurfelRenderer.hpp"
+#include "SurfelRenderer.hpp"
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/UniformBufferManager.hpp"
 #include "vulkan/VulkanImage.hpp"
 #include "util/file_utils.h"
+#include "vulkan/VulkanBuffer.hpp"
+#include "vulkan/CommandBufferManager.hpp"
 
 #include <array>
 #include <cmath>
 #include <iostream>
 
-SurfelRenderer::SurfelRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager)
-    : vulkanDevice(device), memoryAllocator(allocator), uniformBufferManager(uniformBufferManager) {
+SurfelRenderer::SurfelRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, CommandPool& commandPool)
+    : vulkanDevice(device), memoryAllocator(allocator), uniformBufferManager(uniformBufferManager), commandPool(commandPool) {
 }
 
 SurfelRenderer::~SurfelRenderer() {
@@ -57,31 +59,27 @@ void SurfelRenderer::createCircleGeometry(int segments) {
     vertexCount = static_cast<uint32_t>(vertices.size());
     indexCount = static_cast<uint32_t>(indices.size());
     
-    // Create vertex buffer
-    VkDeviceSize vertexBufferSize = vertices.size() * sizeof(glm::vec3);
-    auto vertexBufferResult = memoryAllocator.allocate(
-        vertexBufferSize,
+    uploadDeviceBuffer(
+        memoryAllocator,
+        commandPool,
+        vertices.data(),
+        vertices.size() * sizeof(glm::vec3),
         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+        vulkanDevice.getPhysicalDeviceProperties().limits.minUniformBufferOffsetAlignment,
+        vertexBuffer,
+        vertexBufferOffset
     );
-    vertexBuffer = vertexBufferResult.first;
-    vertexBufferOffset = vertexBufferResult.second;
     
-    void* vertexData = memoryAllocator.getMappedPointer(vertexBuffer, vertexBufferOffset);
-    memcpy(vertexData, vertices.data(), vertexBufferSize);
-    
-    // Create index buffer
-    VkDeviceSize indexBufferSize = indices.size() * sizeof(uint32_t);
-    auto indexBufferResult = memoryAllocator.allocate(
-        indexBufferSize,
+    uploadDeviceBuffer(
+        memoryAllocator,
+        commandPool,
+        indices.data(),
+        indices.size() * sizeof(uint32_t),
         VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+        vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment,
+        indexBuffer,
+        indexBufferOffset
     );
-    indexBuffer = indexBufferResult.first;
-    indexBufferOffset = indexBufferResult.second;
-    
-    void* indexData = memoryAllocator.getMappedPointer(indexBuffer, indexBufferOffset);
-    memcpy(indexData, indices.data(), indexBufferSize);
 }
 
 void SurfelRenderer::createSurfelBuffers(uint32_t maxFramesInFlight) {
@@ -92,16 +90,14 @@ void SurfelRenderer::createSurfelBuffers(uint32_t maxFramesInFlight) {
     VkDeviceSize uniformBufferSize = sizeof(Surfel);
     
     for (size_t i = 0; i < uniformBuffers.size(); i++) {
-        auto uniformBufferResult = memoryAllocator.allocate(
+        createUniformBuffer(
+            memoryAllocator,
+            vulkanDevice,
             uniformBufferSize,
-            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            256  
+            uniformBuffers[i],
+            uniformBufferOffsets[i],
+            &mappedUniforms[i]
         );
-        uniformBuffers[i] = uniformBufferResult.first;
-        uniformBufferOffsets[i] = uniformBufferResult.second;
-        
-        mappedUniforms[i] = memoryAllocator.getMappedPointer(uniformBuffers[i], uniformBufferOffsets[i]);
     }
 }
 
@@ -444,20 +440,11 @@ void SurfelRenderer::cleanup() {
     }
     
     for (size_t i = 0; i < uniformBuffers.size(); i++) {
-        if (uniformBuffers[i] != VK_NULL_HANDLE) {
-            memoryAllocator.free(uniformBuffers[i], uniformBufferOffsets[i]);
-        }
+        freeBuffer(memoryAllocator, uniformBuffers[i], uniformBufferOffsets[i]);
     }
     
-    if (vertexBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(vertexBuffer, vertexBufferOffset);
-        vertexBuffer = VK_NULL_HANDLE;
-    }
-    
-    if (indexBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(indexBuffer, indexBufferOffset);
-        indexBuffer = VK_NULL_HANDLE;
-    }
+    freeBuffer(memoryAllocator, vertexBuffer, vertexBufferOffset);
+    freeBuffer(memoryAllocator, indexBuffer, indexBufferOffset);
     
     uniformBuffers.clear();
     uniformBufferOffsets.clear();

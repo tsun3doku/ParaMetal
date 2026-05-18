@@ -1,9 +1,8 @@
-﻿#pragma once
+#pragma once
 
 #include "nodegraph/NodeGraphBridge.hpp"
 #include "nodegraph/NodeGraphEditor.hpp"
 
-#include <functional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -21,23 +20,23 @@ class NodeGraphNodeItem;
 class NodeGraphSocketItem;
 
 class NodeGraphScene : public QGraphicsScene {
+    Q_OBJECT
 public:
-    using NodeActivatedCallback = std::function<void(NodeGraphNodeId, const QPointF&)>;
-    using NodeSelectionChangedCallback = std::function<void(NodeGraphNodeId)>;
-    using StatusCallback = std::function<void(const QString&)>;
-
     explicit NodeGraphScene(QObject* parent = nullptr);
 
     void setBridge(NodeGraphBridge* bridge);
-    void setNodeActivatedCallback(NodeActivatedCallback callback);
-    void setNodeSelectionChangedCallback(NodeSelectionChangedCallback callback);
-    void setStatusCallback(StatusCallback callback);
     void applyPendingChanges();
     void setSelectedNode(NodeGraphNodeId nodeId);
     void clearNodeSelection();
     bool copySelectedNodes();
     bool pasteCopiedNodes();
     bool removeSelectedNodes();
+
+signals:
+    void nodeActivated(NodeGraphNodeId nodeId);
+    void nodeSelectionChanged(NodeGraphNodeId nodeId);
+    void statusReported(const QString& text);
+    void graphPopulated();
 
 protected:
     void drawBackground(QPainter* painter, const QRectF& rect) override;
@@ -54,9 +53,6 @@ private:
 
     NodeGraphBridge* bridge = nullptr;
     NodeGraphEditor editor;
-    NodeActivatedCallback nodeActivatedCallback;
-    NodeSelectionChangedCallback nodeSelectionChangedCallback;
-    StatusCallback statusCallback;
     uint64_t lastSeenRevision = 0;
     QGraphicsPathItem* activeDragLine = nullptr;
     QPointF activeDragStartPos{};
@@ -106,6 +102,6 @@ private:
     static bool extractSocketFromItem(const QGraphicsItem* item, NodeGraphNodeId& outNodeId, NodeGraphSocketId& outSocketId, NodeGraphSocketDirection& outDirection);
     bool socketAtScenePos(const QPointF& scenePos, NodeGraphNodeId& outNodeId, NodeGraphSocketId& outSocketId, NodeGraphSocketDirection& outDirection) const;
     bool handleNodeCapClick(const QPointF& scenePos);
-    void reportStatus(const QString& text) const;
+    void reportStatus(const QString& text);
     static NodeGraphNodeId itemNodeId(const QGraphicsItem* item);
 };

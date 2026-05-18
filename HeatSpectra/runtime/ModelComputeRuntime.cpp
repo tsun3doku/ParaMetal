@@ -161,6 +161,9 @@ uint32_t ModelComputeRuntime::materializeSocketImmediate(uint64_t socketKey, con
     }
 
     const uint32_t runtimeModelId = loadModelImmediate(modelPath, existingRuntimeModelId);
+    if (runtimeModelId != 0) {
+        resourceManager.setModelVisible(runtimeModelId, false);
+    }
 
     std::lock_guard<std::mutex> bindingsLock(bindingsMutex);
     if (existingRuntimeModelId != 0 && existingRuntimeModelId != runtimeModelId) {

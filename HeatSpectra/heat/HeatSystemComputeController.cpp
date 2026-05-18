@@ -3,6 +3,7 @@
 #include <iostream>
 #include "HeatSystem.hpp"
 #include "heat/HeatModelRuntime.hpp"
+#include "runtime/RuntimeProducts.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/ModelRegistry.hpp"
 #include "vulkan/VulkanDevice.hpp"
@@ -19,34 +20,43 @@ HeatSystemComputeController::HeatSystemComputeController(VulkanDevice& vulkanDev
 
 void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const Config& config) {
     system.clearVoronoiInputs();
-    if (!config.modelVoronoiNodeCountByModelId.empty()) {
-        for (const auto& [runtimeModelId, nodeCount] : config.modelVoronoiNodeCountByModelId) {
+    if (!config.simNodeCounts.empty()) {
+        for (const auto& [runtimeModelId, simNodeCount] : config.simNodeCounts) {
+            (void)simNodeCount;
             const auto nodesIt = config.modelVoronoiNodesByModelId.find(runtimeModelId);
-            const auto nodeBufferIt = config.modelVoronoiNodeBufferByModelId.find(runtimeModelId);
-            const auto nodeBufferOffsetIt = config.modelVoronoiNodeBufferOffsetByModelId.find(runtimeModelId);
-            const auto gmlsInterfaceIt = config.modelGMLSInterfaceBufferByModelId.find(runtimeModelId);
-            const auto gmlsInterfaceOffsetIt = config.modelGMLSInterfaceBufferOffsetByModelId.find(runtimeModelId);
-            const auto seedFlagsBufferIt = config.modelSeedFlagsBufferByModelId.find(runtimeModelId);
-            const auto seedFlagsBufferOffsetIt = config.modelSeedFlagsBufferOffsetByModelId.find(runtimeModelId);
-            const auto countIt = config.modelVoronoiNodeCountByModelId.find(runtimeModelId);
+            const auto voronoiNodeBufferIt = config.modelVoronoiNodeBufferByModelId.find(runtimeModelId);
+            const auto voronoiNodeBufferOffsetIt = config.modelVoronoiNodeBufferOffsetByModelId.find(runtimeModelId);
+            const auto simNodeBufferIt = config.modelSimNodeBufferByModelId.find(runtimeModelId);
+            const auto simNodeBufferOffsetIt = config.modelSimNodeBufferOffsetByModelId.find(runtimeModelId);
+            const auto simGmlsInterfaceIt = config.modelSimGMLSInterfaceBufferByModelId.find(runtimeModelId);
+            const auto simGmlsInterfaceOffsetIt = config.modelSimGMLSInterfaceBufferOffsetByModelId.find(runtimeModelId);
+            const auto simGmlsInterfaceCountIt = config.simGMLSInterfaceCounts.find(runtimeModelId);
+            const auto voronoiCountIt = config.voronoiNodeCounts.find(runtimeModelId);
+            const auto simCountIt = config.simNodeCounts.find(runtimeModelId);
             const auto gmlsStencilIt = config.modelGMLSSurfaceStencilBufferByModelId.find(runtimeModelId);
             const auto gmlsStencilOffsetIt = config.modelGMLSSurfaceStencilBufferOffsetByModelId.find(runtimeModelId);
             const auto gmlsWeightIt = config.modelGMLSSurfaceWeightBufferByModelId.find(runtimeModelId);
             const auto gmlsWeightOffsetIt = config.modelGMLSSurfaceWeightBufferOffsetByModelId.find(runtimeModelId);
+            const auto gmlsWeightCountIt = config.modelGMLSSurfaceWeightCountByModelId.find(runtimeModelId);
             const auto gmlsGradientIt = config.modelGMLSSurfaceGradientWeightBufferByModelId.find(runtimeModelId);
             const auto gmlsGradientOffsetIt = config.modelGMLSSurfaceGradientWeightBufferOffsetByModelId.find(runtimeModelId);
+            const auto gmlsGradientCountIt = config.modelGMLSSurfaceGradientWeightCountByModelId.find(runtimeModelId);
             const auto seedFlagsIt = config.modelVoronoiSeedFlagsByModelId.find(runtimeModelId);
             const auto seedPositionsIt = config.modelVoronoiSeedPositionsByModelId.find(runtimeModelId);
+            const auto voronoiToSimIt = config.modelVoronoiToSimByModelId.find(runtimeModelId);
             
-            if (countIt == config.modelVoronoiNodeCountByModelId.end() ||
-                nodeBufferIt == config.modelVoronoiNodeBufferByModelId.end() ||
-                nodeBufferOffsetIt == config.modelVoronoiNodeBufferOffsetByModelId.end() ||
-                gmlsInterfaceIt == config.modelGMLSInterfaceBufferByModelId.end() ||
-                gmlsInterfaceOffsetIt == config.modelGMLSInterfaceBufferOffsetByModelId.end() ||
-                seedFlagsBufferIt == config.modelSeedFlagsBufferByModelId.end() ||
-                seedFlagsBufferOffsetIt == config.modelSeedFlagsBufferOffsetByModelId.end() ||
+            if (voronoiCountIt == config.voronoiNodeCounts.end() ||
+                simCountIt == config.simNodeCounts.end() ||
+                voronoiNodeBufferIt == config.modelVoronoiNodeBufferByModelId.end() ||
+                voronoiNodeBufferOffsetIt == config.modelVoronoiNodeBufferOffsetByModelId.end() ||
+                simNodeBufferIt == config.modelSimNodeBufferByModelId.end() ||
+                simNodeBufferOffsetIt == config.modelSimNodeBufferOffsetByModelId.end() ||
+                simGmlsInterfaceIt == config.modelSimGMLSInterfaceBufferByModelId.end() ||
+                simGmlsInterfaceOffsetIt == config.modelSimGMLSInterfaceBufferOffsetByModelId.end() ||
+                simGmlsInterfaceCountIt == config.simGMLSInterfaceCounts.end() ||
                 seedFlagsIt == config.modelVoronoiSeedFlagsByModelId.end() ||
-                seedPositionsIt == config.modelVoronoiSeedPositionsByModelId.end()) {
+                seedPositionsIt == config.modelVoronoiSeedPositionsByModelId.end() ||
+                voronoiToSimIt == config.modelVoronoiToSimByModelId.end()) {
                 std::cerr << "[HeatSystemComputeController] addVoronoiModelInput SKIP runtimeModelId=" << runtimeModelId << std::endl;
                 continue;
             }
@@ -54,21 +64,26 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
             system.addVoronoiModelInput(
                 runtimeModelId,
                 nodesIt->second,
-                countIt->second,
-                nodeBufferIt->second,
-                nodeBufferOffsetIt->second,
-                gmlsInterfaceIt->second,
-                gmlsInterfaceOffsetIt->second,
-                seedFlagsBufferIt->second,
-                seedFlagsBufferOffsetIt->second,
+                voronoiCountIt->second,
+                voronoiNodeBufferIt->second,
+                voronoiNodeBufferOffsetIt->second,
+                simCountIt->second,
+                simNodeBufferIt->second,
+                simNodeBufferOffsetIt->second,
+                simGmlsInterfaceIt->second,
+                simGmlsInterfaceOffsetIt->second,
+                simGmlsInterfaceCountIt->second,
                 (gmlsStencilIt != config.modelGMLSSurfaceStencilBufferByModelId.end()) ? gmlsStencilIt->second : VK_NULL_HANDLE,
                 (gmlsStencilOffsetIt != config.modelGMLSSurfaceStencilBufferOffsetByModelId.end()) ? gmlsStencilOffsetIt->second : 0,
                 (gmlsWeightIt != config.modelGMLSSurfaceWeightBufferByModelId.end()) ? gmlsWeightIt->second : VK_NULL_HANDLE,
                 (gmlsWeightOffsetIt != config.modelGMLSSurfaceWeightBufferOffsetByModelId.end()) ? gmlsWeightOffsetIt->second : 0,
+                (gmlsWeightCountIt != config.modelGMLSSurfaceWeightCountByModelId.end()) ? gmlsWeightCountIt->second : 0,
                 (gmlsGradientIt != config.modelGMLSSurfaceGradientWeightBufferByModelId.end()) ? gmlsGradientIt->second : VK_NULL_HANDLE,
                 (gmlsGradientOffsetIt != config.modelGMLSSurfaceGradientWeightBufferOffsetByModelId.end()) ? gmlsGradientOffsetIt->second : 0,
+                (gmlsGradientCountIt != config.modelGMLSSurfaceGradientWeightCountByModelId.end()) ? gmlsGradientCountIt->second : 0,
                 seedFlagsIt->second,
-                seedPositionsIt->second);
+                seedPositionsIt->second,
+                voronoiToSimIt->second);
         }
     }
     system.setHeatModels(
@@ -222,48 +237,17 @@ std::vector<ComputePass*> HeatSystemComputeController::getActiveSystems() const 
     return systems;
 }
 
-bool HeatSystemComputeController::exportProduct(uint64_t socketKey, HeatProduct& outProduct) const {
-    outProduct = {};
-
-    const auto configIt = configuredConfigs.find(socketKey);
-    if (configIt == configuredConfigs.end()) {
-        return false;
-    }
-
+const HeatSystem* HeatSystemComputeController::getSystem(uint64_t socketKey) const {
     const auto systemIt = activeSystems.find(socketKey);
     if (systemIt == activeSystems.end() || !systemIt->second->system) {
-        return false;
+        return nullptr;
     }
-    const HeatSystem& system = *systemIt->second->system;
-    outProduct.active = system.getIsActive();
-    outProduct.paused = system.getIsPaused();
+    return systemIt->second->system.get();
+}
 
-    const auto& activeModels = system.getActiveModels();
-    outProduct.modelRuntimeModelIds.reserve(activeModels.size());
-    outProduct.modelSurfaceBuffers.reserve(activeModels.size());
-    outProduct.modelSurfaceBufferOffsets.reserve(activeModels.size());
-    outProduct.modelSurfacePointCounts.reserve(activeModels.size());
-    outProduct.modelSurfaceGradientBuffers.reserve(activeModels.size());
-    outProduct.modelSurfaceGradientBufferOffsets.reserve(activeModels.size());
-    for (uint32_t runtimeModelId : configIt->second.modelRuntimeModelIds) {
-        const HeatModelRuntime* heatModel = system.getModelByRuntimeId(runtimeModelId);
-        if (!heatModel ||
-            runtimeModelId == 0 ||
-            heatModel->getSurfaceBuffer() == VK_NULL_HANDLE ||
-            heatModel->getIntrinsicVertexCount() == 0) {
-            continue;
-        }
-
-        outProduct.modelRuntimeModelIds.push_back(runtimeModelId);
-        outProduct.modelSurfaceBuffers.push_back(heatModel->getSurfaceBuffer());
-        outProduct.modelSurfaceBufferOffsets.push_back(heatModel->getSurfaceBufferOffset());
-        outProduct.modelSurfacePointCounts.push_back(static_cast<uint32_t>(heatModel->getIntrinsicVertexCount()));
-        outProduct.modelSurfaceGradientBuffers.push_back(heatModel->getSurfaceGradientBuffer());
-        outProduct.modelSurfaceGradientBufferOffsets.push_back(heatModel->getSurfaceGradientBufferOffset());
-    }
-
-    outProduct.productHash = buildProductHash(outProduct);
-    return outProduct.isValid();
+const HeatSystemComputeController::Config* HeatSystemComputeController::getConfig(uint64_t socketKey) const {
+    const auto configIt = configuredConfigs.find(socketKey);
+    return configIt != configuredConfigs.end() ? &configIt->second : nullptr;
 }
 
 void HeatSystemComputeController::destroyHeatSystem(uint64_t socketKey) {
@@ -275,4 +259,82 @@ void HeatSystemComputeController::destroyHeatSystem(uint64_t socketKey) {
         }
         activeSystems.erase(it);
     }
+}
+
+uint64_t buildComputeHash(const HeatSystemComputeController::Config& config) {
+    uint64_t hash = NodeGraphHash::start();
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(config.active ? 1u : 0u));
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(config.paused ? 1u : 0u));
+    NodeGraphHash::combinePod(hash, config.contactThermalConductance);
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(config.modelIntrinsicMeshes.size()));
+    for (const SupportingHalfedge::IntrinsicMesh& mesh : config.modelIntrinsicMeshes) {
+        NodeGraphHash::combinePodVector(hash, mesh.vertices);
+        NodeGraphHash::combinePodVector(hash, mesh.indices);
+        NodeGraphHash::combinePodVector(hash, mesh.faceIds);
+        NodeGraphHash::combinePodVector(hash, mesh.triangles);
+    }
+    NodeGraphHash::combinePodVector(hash, config.modelRuntimeModelIds);
+    NodeGraphHash::combinePodVector(hash, config.supportingHalfedgeViews);
+    NodeGraphHash::combinePodVector(hash, config.supportingAngleViews);
+    NodeGraphHash::combinePodVector(hash, config.halfedgeViews);
+    NodeGraphHash::combinePodVector(hash, config.edgeViews);
+    NodeGraphHash::combinePodVector(hash, config.triangleViews);
+    NodeGraphHash::combinePodVector(hash, config.lengthViews);
+    NodeGraphHash::combinePodVector(hash, config.inputHalfedgeViews);
+    NodeGraphHash::combinePodVector(hash, config.inputEdgeViews);
+    NodeGraphHash::combinePodVector(hash, config.inputTriangleViews);
+    NodeGraphHash::combinePodVector(hash, config.inputLengthViews);
+
+    auto mixPodMap = [&hash](const auto& map) {
+        NodeGraphHash::combine(hash, static_cast<uint64_t>(map.size()));
+        for (const auto& [id, value] : map) {
+            NodeGraphHash::combinePod(hash, id);
+            NodeGraphHash::combinePod(hash, value);
+        }
+    };
+    mixPodMap(config.modelTemperatureByRuntimeId);
+    mixPodMap(config.modelBoundaryConditions);
+    mixPodMap(config.modelFixedTemperatureValues);
+    mixPodMap(config.modelDensity);
+    mixPodMap(config.modelSpecificHeat);
+    mixPodMap(config.modelConductivity);
+    mixPodMap(config.modelVoronoiNodeBufferByModelId);
+    mixPodMap(config.modelVoronoiNodeBufferOffsetByModelId);
+    mixPodMap(config.modelSimNodeBufferByModelId);
+    mixPodMap(config.modelSimNodeBufferOffsetByModelId);
+    mixPodMap(config.modelSimGMLSInterfaceBufferByModelId);
+    mixPodMap(config.modelSimGMLSInterfaceBufferOffsetByModelId);
+    mixPodMap(config.voronoiNodeCounts);
+    mixPodMap(config.simNodeCounts);
+    mixPodMap(config.simGMLSInterfaceCounts);
+    mixPodMap(config.modelGMLSSurfaceStencilBufferByModelId);
+    mixPodMap(config.modelGMLSSurfaceStencilBufferOffsetByModelId);
+    mixPodMap(config.modelGMLSSurfaceWeightBufferByModelId);
+    mixPodMap(config.modelGMLSSurfaceWeightBufferOffsetByModelId);
+    mixPodMap(config.modelGMLSSurfaceGradientWeightBufferByModelId);
+    mixPodMap(config.modelGMLSSurfaceGradientWeightBufferOffsetByModelId);
+
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(config.modelVoronoiToSimByModelId.size()));
+    for (const auto& [id, mapping] : config.modelVoronoiToSimByModelId) {
+        NodeGraphHash::combinePod(hash, id);
+        NodeGraphHash::combinePodVector(hash, mapping);
+    }
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(config.modelVoronoiSeedFlagsByModelId.size()));
+    for (const auto& [id, flags] : config.modelVoronoiSeedFlagsByModelId) {
+        NodeGraphHash::combinePod(hash, id);
+        NodeGraphHash::combinePodVector(hash, flags);
+    }
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(config.modelVoronoiSeedPositionsByModelId.size()));
+    for (const auto& [id, positions] : config.modelVoronoiSeedPositionsByModelId) {
+        NodeGraphHash::combinePod(hash, id);
+        NodeGraphHash::combinePodVector(hash, positions);
+    }
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(config.contactCouplings.size()));
+    for (const ContactCoupling& coupling : config.contactCouplings) {
+        NodeGraphHash::combine(hash, coupling.modelARuntimeModelId);
+        NodeGraphHash::combine(hash, coupling.modelBRuntimeModelId);
+        NodeGraphHash::combinePodVector(hash, coupling.modelBTriangleIndices);
+        NodeGraphHash::combine(hash, coupling.contactPairCount);
+    }
+    return hash;
 }

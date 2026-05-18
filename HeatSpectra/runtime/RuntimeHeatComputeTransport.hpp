@@ -4,8 +4,9 @@
 #include <unordered_set>
 
 #include "contact/ContactTypes.hpp"
+#include "heat/HeatModelRuntime.hpp"
+#include "heat/HeatSystem.hpp"
 #include "heat/HeatSystemComputeController.hpp"
-#include "heat/HeatSystemPresets.hpp"
 #include "runtime/RuntimeECS.hpp"
 #include "runtime/RuntimePackages.hpp"
 
@@ -26,13 +27,21 @@ public:
 
         std::unordered_set<uint64_t> nextSocketKeys;
 
-        auto view = registry.view<HeatPackage>();
+        auto view = registry.view<HeatPackage>(entt::exclude<Stale>);
         for (auto entity : view) {
             uint64_t socketKey = static_cast<uint64_t>(entity);
             const auto& package = registry.get<HeatPackage>(entity);
-            auto hashIt = appliedPackageHash.find(socketKey);
-            if (hashIt != appliedPackageHash.end() && hashIt->second == package.packageHash) {
+
+            const uint64_t inputHash = buildConfigInputHash(socketKey, package);
+            auto hashIt = appliedConfigInputHash.find(socketKey);
+            if (inputHash != 0 && hashIt != appliedConfigInputHash.end() && hashIt->second == inputHash) {
                 nextSocketKeys.insert(socketKey);
+                continue;
+            }
+
+            if (!package.authored.active) {
+                controller->disable(socketKey);
+                appliedConfigInputHash.erase(socketKey);
                 continue;
             }
 
@@ -44,11 +53,10 @@ public:
             nextSocketKeys.insert(socketKey);
         }
 
-        for (uint64_t socketKey : activeSocketKeys) {
-            if (nextSocketKeys.find(socketKey) == nextSocketKeys.end()) {
-                controller->disable(socketKey);
-                appliedPackageHash.erase(socketKey);
-            }
+        for (auto entity : registry.view<HeatPackage, Stale>()) {
+            uint64_t socketKey = static_cast<uint64_t>(entity);
+            controller->disable(socketKey);
+            appliedConfigInputHash.erase(socketKey);
         }
 
         activeSocketKeys = std::move(nextSocketKeys);
@@ -59,25 +67,18 @@ public:
             return;
         }
 
-        std::vector<uint64_t> removals;
-        auto productView = ecsRegistry->view<HeatProduct>();
-        for (auto entity : productView) {
-            const uint64_t socketKey = static_cast<uint64_t>(entity);
-            if (activeSocketKeys.find(socketKey) == activeSocketKeys.end()) {
-                removals.push_back(socketKey);
-            }
-        }
-
-        for (uint64_t socketKey : removals) {
-            removePublishedProduct(socketKey);
+        auto staleProductView = ecsRegistry->view<HeatProduct, Stale>();
+        for (auto entity : staleProductView) {
+            removePublishedProduct(static_cast<uint64_t>(entity));
         }
 
         for (uint64_t socketKey : activeSocketKeys) {
             auto entity = static_cast<ECSEntity>(socketKey);
             const auto& package = ecsRegistry->get<HeatPackage>(entity);
-            auto hashIt = appliedPackageHash.find(socketKey);
+            const uint64_t inputHash = buildConfigInputHash(socketKey, package);
+            auto hashIt = appliedConfigInputHash.find(socketKey);
             const HeatProduct* product = tryGetProduct<HeatProduct>(*ecsRegistry, socketKey);
-            if (!product || hashIt == appliedPackageHash.end() || hashIt->second != package.packageHash) {
+            if (!product || hashIt == appliedConfigInputHash.end() || hashIt->second != inputHash) {
                 publishProduct(socketKey);
             }
         }
@@ -91,10 +92,10 @@ private:
         if (!package.authored.active) {
             return false;
         }
-        if (package.voronoiProducts.empty()) {
+        if (package.authored.voronoiHandles.empty()) {
             return false;
         }
-        if (package.remeshProducts.empty()) {
+        if (package.resolvedRemeshHandles.empty()) {
             return false;
         }
 
@@ -103,41 +104,30 @@ private:
         outConfig.paused = package.authored.paused;
         outConfig.resetRequested = package.authored.resetRequested;
         outConfig.contactThermalConductance = package.authored.contactThermalConductance;
+        outConfig.modelIntrinsicMeshes.reserve(package.resolvedRemeshHandles.size());
+        outConfig.modelRuntimeModelIds.reserve(package.resolvedRemeshHandles.size());
+        outConfig.modelTemperatureByRuntimeId.reserve(package.resolvedRemeshHandles.size());
+        outConfig.modelBoundaryConditions.reserve(package.resolvedRemeshHandles.size());
+        outConfig.modelFixedTemperatureValues.reserve(package.resolvedRemeshHandles.size());
 
-        // Collect all model payloads from HeatPackage.models
-        std::vector<RemeshProduct const*> modelProducts;
-
-        for (size_t i = 0; i < package.remeshProducts.size(); ++i) {
-            const ProductHandle& remeshProductHandle = package.remeshProducts[i];
-            const RemeshProduct* product = tryGetProduct<RemeshProduct>(*ecsRegistry, remeshProductHandle.outputSocketKey);
+        for (size_t i = 0; i < package.resolvedRemeshHandles.size(); ++i) {
+            const RemeshProduct* product = tryGetProduct<RemeshProduct>(*ecsRegistry, package.resolvedRemeshHandles[i].key);
             if (!product || product->runtimeModelId == 0) {
                 return false;
             }
-            modelProducts.push_back(product);
-        }
 
-        outConfig.modelIntrinsicMeshes.reserve(modelProducts.size());
-        outConfig.modelRuntimeModelIds.reserve(modelProducts.size());
-        outConfig.modelTemperatureByRuntimeId.reserve(modelProducts.size());
-        outConfig.modelBoundaryConditions.reserve(modelProducts.size());
-        outConfig.modelFixedTemperatureValues.reserve(modelProducts.size());
-
-        for (size_t i = 0; i < modelProducts.size(); ++i) {
-            const RemeshProduct* product = modelProducts[i];
-            const HeatModelData& modelData = package.models[i];
             outConfig.modelIntrinsicMeshes.push_back(product->intrinsicMesh);
             outConfig.modelRuntimeModelIds.push_back(product->runtimeModelId);
-            outConfig.modelTemperatureByRuntimeId[product->runtimeModelId] = modelData.initialTemperature;
-            outConfig.modelBoundaryConditions[product->runtimeModelId] = static_cast<uint32_t>(modelData.boundaryCondition);
-            outConfig.modelFixedTemperatureValues[product->runtimeModelId] = modelData.fixedTemperatureValue;
-            outConfig.modelDensity[product->runtimeModelId] = modelData.density;
-            outConfig.modelSpecificHeat[product->runtimeModelId] = modelData.specificHeat;
-            outConfig.modelConductivity[product->runtimeModelId] = modelData.conductivity;
-
+            outConfig.modelTemperatureByRuntimeId[product->runtimeModelId] = package.resolvedInitialTemperature[i];
+            outConfig.modelBoundaryConditions[product->runtimeModelId] = package.resolvedBoundaryConditions[i];
+            outConfig.modelFixedTemperatureValues[product->runtimeModelId] = package.resolvedFixedTemperatureValues[i];
+            outConfig.modelDensity[product->runtimeModelId] = package.resolvedDensity[i];
+            outConfig.modelSpecificHeat[product->runtimeModelId] = package.resolvedSpecificHeat[i];
+            outConfig.modelConductivity[product->runtimeModelId] = package.resolvedConductivity[i];
         }
 
         // Collect topology buffers from all models
-        const size_t modelCount = modelProducts.size();
+        const size_t modelCount = package.resolvedRemeshHandles.size();
         outConfig.supportingHalfedgeViews.resize(modelCount, VK_NULL_HANDLE);
         outConfig.supportingAngleViews.resize(modelCount, VK_NULL_HANDLE);
         outConfig.halfedgeViews.resize(modelCount, VK_NULL_HANDLE);
@@ -150,7 +140,7 @@ private:
         outConfig.inputLengthViews.resize(modelCount, VK_NULL_HANDLE);
 
         for (size_t i = 0; i < modelCount; ++i) {
-            const RemeshProduct* product = modelProducts[i];
+            const RemeshProduct* product = tryGetProduct<RemeshProduct>(*ecsRegistry, package.resolvedRemeshHandles[i].key);
             outConfig.supportingHalfedgeViews[i] = product->supportingHalfedgeView;
             outConfig.supportingAngleViews[i] = product->supportingAngleView;
             outConfig.halfedgeViews[i] = product->halfedgeView;
@@ -164,14 +154,14 @@ private:
         }
 
         // Collect Voronoi products - each model gets its own independent buffers
-        for (const ProductHandle& voronoiProductHandle : package.voronoiProducts) {
-            const VoronoiProduct* product = tryGetProduct<VoronoiProduct>(*ecsRegistry, voronoiProductHandle.outputSocketKey);
+        for (const NodeDataHandle& voronoiHandle : package.authored.voronoiHandles) {
+            const VoronoiProduct* product = tryGetProduct<VoronoiProduct>(*ecsRegistry, voronoiHandle.key);
             if (!product) {
-                continue;
+                return false;
             }
 
-            for (const VoronoiSurfaceProduct& surfaceProduct : product->surfaces) {
-                const uint32_t runtimeModelId = surfaceProduct.runtimeModelId;
+            for (size_t i = 0; i < product->modelRuntimeModelIds.size(); ++i) {
+                const uint32_t runtimeModelId = product->modelRuntimeModelIds[i];
                 if (runtimeModelId == 0) {
                     continue;
                 }
@@ -190,40 +180,31 @@ private:
                 outConfig.modelVoronoiNodesByModelId[runtimeModelId] = product->mappedVoronoiNodes;
                 outConfig.modelVoronoiNodeBufferByModelId[runtimeModelId] = product->nodeBuffer;
                 outConfig.modelVoronoiNodeBufferOffsetByModelId[runtimeModelId] = product->nodeBufferOffset;
-                outConfig.modelGMLSInterfaceBufferByModelId[runtimeModelId] = product->gmlsInterfaceBuffer;
-                outConfig.modelGMLSInterfaceBufferOffsetByModelId[runtimeModelId] = product->gmlsInterfaceBufferOffset;
-                outConfig.modelSeedFlagsBufferByModelId[runtimeModelId] = product->seedFlagsBuffer;
-                outConfig.modelSeedFlagsBufferOffsetByModelId[runtimeModelId] = product->seedFlagsBufferOffset;
-                outConfig.modelVoronoiNodeCountByModelId[runtimeModelId] = surfaceProduct.nodeCount;
-                outConfig.modelGMLSSurfaceStencilBufferByModelId[runtimeModelId] = surfaceProduct.gmlsSurfaceStencilBuffer;
-                outConfig.modelGMLSSurfaceStencilBufferOffsetByModelId[runtimeModelId] = surfaceProduct.gmlsSurfaceStencilBufferOffset;
-                outConfig.modelGMLSSurfaceWeightBufferByModelId[runtimeModelId] = surfaceProduct.gmlsSurfaceWeightBuffer;
-                outConfig.modelGMLSSurfaceWeightBufferOffsetByModelId[runtimeModelId] = surfaceProduct.gmlsSurfaceWeightBufferOffset;
-                outConfig.modelGMLSSurfaceGradientWeightBufferByModelId[runtimeModelId] = surfaceProduct.gmlsSurfaceGradientWeightBuffer;
-                outConfig.modelGMLSSurfaceGradientWeightBufferOffsetByModelId[runtimeModelId] = surfaceProduct.gmlsSurfaceGradientWeightBufferOffset;
-                outConfig.modelVoronoiSeedFlagsByModelId[runtimeModelId] = surfaceProduct.seedFlags;
-                outConfig.modelVoronoiSeedPositionsByModelId[runtimeModelId] = surfaceProduct.seedPositions;
-
-                
-                // Collect surface topology views from VoronoiProduct surfaces
-                outConfig.surfaceSupportingHalfedgeViews.push_back(surfaceProduct.supportingHalfedgeView);
-                outConfig.surfaceSupportingAngleViews.push_back(surfaceProduct.supportingAngleView);
-                outConfig.surfaceHalfedgeViews.push_back(surfaceProduct.halfedgeView);
-                outConfig.surfaceEdgeViews.push_back(surfaceProduct.edgeView);
-                outConfig.surfaceTriangleViews.push_back(surfaceProduct.triangleView);
-                outConfig.surfaceLengthViews.push_back(surfaceProduct.lengthView);
-                outConfig.surfaceInputHalfedgeViews.push_back(surfaceProduct.inputHalfedgeView);
-                outConfig.surfaceInputEdgeViews.push_back(surfaceProduct.inputEdgeView);
-                outConfig.surfaceInputTriangleViews.push_back(surfaceProduct.inputTriangleView);
-                outConfig.surfaceInputLengthViews.push_back(surfaceProduct.inputLengthView);
-                outConfig.surfaceRuntimeModelIds.push_back(runtimeModelId);
+                outConfig.modelSimNodeBufferByModelId[runtimeModelId] = product->simNodeBuffer;
+                outConfig.modelSimNodeBufferOffsetByModelId[runtimeModelId] = product->simNodeBufferOffset;
+                outConfig.modelSimGMLSInterfaceBufferByModelId[runtimeModelId] = product->simGMLSInterfaceBuffer;
+                outConfig.modelSimGMLSInterfaceBufferOffsetByModelId[runtimeModelId] = product->simGMLSInterfaceBufferOffset;
+                outConfig.simGMLSInterfaceCounts[runtimeModelId] = product->simGMLSInterfaceCount;
+                outConfig.voronoiNodeCounts[runtimeModelId] = product->nodeCount;
+                outConfig.simNodeCounts[runtimeModelId] = product->simNodeCount;
+                outConfig.modelVoronoiToSimByModelId[runtimeModelId] = product->voronoiToSim;
+                outConfig.modelGMLSSurfaceStencilBufferByModelId[runtimeModelId] = product->modelGMLSSurfaceStencilBuffers[i];
+                outConfig.modelGMLSSurfaceStencilBufferOffsetByModelId[runtimeModelId] = product->modelGMLSSurfaceStencilBufferOffsets[i];
+                outConfig.modelGMLSSurfaceWeightBufferByModelId[runtimeModelId] = product->modelGMLSSurfaceWeightBuffers[i];
+                outConfig.modelGMLSSurfaceWeightBufferOffsetByModelId[runtimeModelId] = product->modelGMLSSurfaceWeightBufferOffsets[i];
+                outConfig.modelGMLSSurfaceWeightCountByModelId[runtimeModelId] = product->modelGMLSSurfaceWeightCounts[i];
+                outConfig.modelGMLSSurfaceGradientWeightBufferByModelId[runtimeModelId] = product->modelGMLSSurfaceGradientWeightBuffers[i];
+                outConfig.modelGMLSSurfaceGradientWeightBufferOffsetByModelId[runtimeModelId] = product->modelGMLSSurfaceGradientWeightBufferOffsets[i];
+                outConfig.modelGMLSSurfaceGradientWeightCountByModelId[runtimeModelId] = product->modelGMLSSurfaceGradientWeightCounts[i];
+                outConfig.modelVoronoiSeedFlagsByModelId[runtimeModelId] = product->modelSeedFlags[i];
+                outConfig.modelVoronoiSeedPositionsByModelId[runtimeModelId] = product->modelSeedPositions[i];
             }
         }
 
-        for (const ProductHandle& contactProductHandle : package.contactProducts) {
-            const ContactProduct* product = tryGetProduct<ContactProduct>(*ecsRegistry, contactProductHandle.outputSocketKey);
+        for (const NodeDataHandle& contactHandle : package.authored.contactHandles) {
+            const ContactProduct* product = tryGetProduct<ContactProduct>(*ecsRegistry, contactHandle.key);
             if (!product) {
-                continue;
+                return false;
             }
             outConfig.contactCouplings.push_back(product->coupling);
         }
@@ -231,6 +212,33 @@ private:
 
         outConfig.computeHash = buildComputeHash(outConfig);
         return true;
+    }
+
+    uint64_t buildConfigInputHash(uint64_t socketKey, const HeatPackage& package) const {
+        (void)socketKey;
+        uint64_t hash = package.packageHash;
+        for (size_t i = 0; i < package.resolvedRemeshHandles.size(); ++i) {
+            const RemeshProduct* product = tryGetProduct<RemeshProduct>(*ecsRegistry, package.resolvedRemeshHandles[i].key);
+            if (!product) {
+                return 0;
+            }
+            NodeGraphHash::combine(hash, product->productHash);
+        }
+        for (const NodeDataHandle& voronoiHandle : package.authored.voronoiHandles) {
+            const VoronoiProduct* product = tryGetProduct<VoronoiProduct>(*ecsRegistry, voronoiHandle.key);
+            if (!product) {
+                return 0;
+            }
+            NodeGraphHash::combine(hash, product->productHash);
+        }
+        for (const NodeDataHandle& contactHandle : package.authored.contactHandles) {
+            const ContactProduct* product = tryGetProduct<ContactProduct>(*ecsRegistry, contactHandle.key);
+            if (!product) {
+                return 0;
+            }
+            NodeGraphHash::combine(hash, product->productHash);
+        }
+        return hash;
     }
 
     void removePublishedProduct(uint64_t socketKey) {
@@ -248,7 +256,7 @@ private:
         }
 
         HeatProduct product{};
-        if (!controller->exportProduct(socketKey, product)) {
+        if (!buildProduct(socketKey, product)) {
             auto entity = static_cast<ECSEntity>(socketKey);
             ecsRegistry->remove<HeatProduct>(entity);
             return;
@@ -257,11 +265,53 @@ private:
         auto entity = static_cast<ECSEntity>(socketKey);
         const auto& package = ecsRegistry->get<HeatPackage>(entity);
         ecsRegistry->emplace_or_replace<HeatProduct>(entity, product);
-        appliedPackageHash[socketKey] = package.packageHash;
+        appliedConfigInputHash[socketKey] = buildConfigInputHash(socketKey, package);
+    }
+
+    bool buildProduct(uint64_t socketKey, HeatProduct& outProduct) const {
+        outProduct = {};
+        if (!controller || socketKey == 0) {
+            return false;
+        }
+
+        const HeatSystem* system = controller->getSystem(socketKey);
+        const HeatSystemComputeController::Config* config = controller->getConfig(socketKey);
+        if (!system || !config) {
+            return false;
+        }
+
+        outProduct.active = system->getIsActive();
+        outProduct.paused = system->getIsPaused();
+        outProduct.modelRuntimeModelIds.reserve(config->modelRuntimeModelIds.size());
+        outProduct.modelSurfaceBuffers.reserve(config->modelRuntimeModelIds.size());
+        outProduct.modelSurfaceBufferOffsets.reserve(config->modelRuntimeModelIds.size());
+        outProduct.modelSurfacePointCounts.reserve(config->modelRuntimeModelIds.size());
+        outProduct.modelSurfaceGradientBuffers.reserve(config->modelRuntimeModelIds.size());
+        outProduct.modelSurfaceGradientBufferOffsets.reserve(config->modelRuntimeModelIds.size());
+
+        for (uint32_t runtimeModelId : config->modelRuntimeModelIds) {
+            const HeatModelRuntime* heatModel = system->getModelByRuntimeId(runtimeModelId);
+            if (!heatModel ||
+                runtimeModelId == 0 ||
+                heatModel->getSurfaceBuffer() == VK_NULL_HANDLE ||
+                heatModel->getIntrinsicVertexCount() == 0) {
+                continue;
+            }
+
+            outProduct.modelRuntimeModelIds.push_back(runtimeModelId);
+            outProduct.modelSurfaceBuffers.push_back(heatModel->getSurfaceBuffer());
+            outProduct.modelSurfaceBufferOffsets.push_back(heatModel->getSurfaceBufferOffset());
+            outProduct.modelSurfacePointCounts.push_back(static_cast<uint32_t>(heatModel->getIntrinsicVertexCount()));
+            outProduct.modelSurfaceGradientBuffers.push_back(heatModel->getSurfaceGradientBuffer());
+            outProduct.modelSurfaceGradientBufferOffsets.push_back(heatModel->getSurfaceGradientBufferOffset());
+        }
+
+        outProduct.productHash = buildProductHash(outProduct);
+        return outProduct.isValid();
     }
 
     HeatSystemComputeController* controller = nullptr;
     ECSRegistry* ecsRegistry = nullptr;
     std::unordered_set<uint64_t> activeSocketKeys;
-    std::unordered_map<uint64_t, uint64_t> appliedPackageHash;
+    std::unordered_map<uint64_t, uint64_t> appliedConfigInputHash;
 };

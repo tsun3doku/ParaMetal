@@ -2,10 +2,85 @@
 #include "NodeGraphKernels.hpp"
 #include "NodeGraphParamUtils.hpp"
 #include "NodeGraphRegistry.hpp"
+#include "NodeGraphTypes.hpp"
+
 #include <algorithm>
 #include <iterator>
 #include <unordered_set>
+#include <vector>
 #include <sstream>
+
+bool findFirstUpstreamNodeByType(const NodeGraphState& state, NodeGraphNodeId startNodeId, const NodeTypeId& targetTypeId, NodeGraphNodeId& outNodeId) {
+    outNodeId = {};
+    if (!startNodeId.isValid()) {
+        return false;
+    }
+
+    std::vector<NodeGraphNodeId> stack{startNodeId};
+    std::unordered_set<uint32_t> visitedNodeIds;
+    visitedNodeIds.insert(startNodeId.value);
+
+    while (!stack.empty()) {
+        const NodeGraphNodeId currentNodeId = stack.back();
+        stack.pop_back();
+
+        const NodeGraphNode* currentNode = state.node(currentNodeId);
+        if (!currentNode) {
+            continue;
+        }
+
+        for (const NodeGraphSocket& inputSocket : currentNode->inputs) {
+            if (inputSocket.valueType != NodeGraphValueType::Mesh) {
+                continue;
+            }
+
+            const NodeGraphEdge* incomingEdge = state.incomingEdge(currentNodeId, inputSocket.id);
+            if (!incomingEdge || !incomingEdge->fromNode.isValid()) {
+                continue;
+            }
+            if (!visitedNodeIds.insert(incomingEdge->fromNode.value).second) {
+                continue;
+            }
+
+            const NodeGraphNode* upstreamNode = state.node(incomingEdge->fromNode);
+            if (!upstreamNode) {
+                continue;
+            }
+            if (getNodeTypeId(upstreamNode->typeId) == targetTypeId) {
+                outNodeId = upstreamNode->id;
+                return true;
+            }
+
+            stack.push_back(upstreamNode->id);
+        }
+    }
+
+    return false;
+}
+
+bool findFirstUpstreamNodeByType(const NodeGraphState& state, uint64_t outputSocketKey, const NodeTypeId& targetTypeId, NodeGraphNodeId& outNodeId) {
+    outNodeId = {};
+
+    NodeGraphNodeId producerNodeId{};
+    NodeGraphSocketId producerSocketId{};
+    const NodeSocketKey key(outputSocketKey);
+    producerNodeId = key.node();
+    producerSocketId = key.socket();
+    if (!producerNodeId.isValid() || !producerSocketId.isValid()) {
+        return false;
+    }
+
+    const NodeGraphNode* producerNode = state.node(producerNodeId);
+    if (!producerNode) {
+        return false;
+    }
+    if (getNodeTypeId(producerNode->typeId) == targetTypeId) {
+        outNodeId = producerNode->id;
+        return true;
+    }
+
+    return findFirstUpstreamNodeByType(state, producerNodeId, targetTypeId, outNodeId);
+}
 
 bool validateNodeGraphParamValue(const NodeGraphParamDefinition& definition, const NodeGraphParamValue& value);
 
@@ -46,98 +121,17 @@ bool validateNodeGraphParamFieldValues(
 
 } // namespace
 
-uint64_t makeSocketKey(NodeGraphNodeId nodeId, NodeGraphSocketId socketId) {
-    return (static_cast<uint64_t>(nodeId.value) << 32) | static_cast<uint64_t>(socketId.value);
-}
-
-bool tryDecodeSocketKey(uint64_t socketKey, NodeGraphNodeId& outNodeId, NodeGraphSocketId& outSocketId) {
-    outNodeId = {};
-    outSocketId = {};
-    if (socketKey == 0) {
-        return false;
-    }
-
-    const uint32_t nodeValue = static_cast<uint32_t>(socketKey >> 32);
-    const uint32_t socketValue = static_cast<uint32_t>(socketKey & 0xffffffffu);
-    if (nodeValue == 0 || socketValue == 0) {
-        return false;
-    }
-
-    outNodeId = NodeGraphNodeId{nodeValue};
-    outSocketId = NodeGraphSocketId{socketValue};
-    return true;
-}
-
-const NodeGraphNode* findNodeInState(const NodeGraphState& state, NodeGraphNodeId nodeId) {
-    for (const NodeGraphNode& node : state.nodes) {
-        if (node.id == nodeId) {
-            return &node;
-        }
-    }
-    return nullptr;
-}
-
-const NodeGraphEdge* findIncomingEdgeInState(
-    const NodeGraphState& state,
-    NodeGraphNodeId toNodeId,
-    NodeGraphSocketId toSocketId) {
-    for (const NodeGraphEdge& edge : state.edges) {
-        if (edge.toNode == toNodeId && edge.toSocket == toSocketId) {
-            return &edge;
-        }
-    }
-    return nullptr;
-}
-
-const NodeGraphSocket* findInputSocket(const NodeGraphNode& node, const char* socketName) {
-    for (const NodeGraphSocket& inputSocket : node.inputs) {
-        if (inputSocket.direction != NodeGraphSocketDirection::Input) {
-            continue;
-        }
-        if (inputSocket.name == socketName) {
-            return &inputSocket;
-        }
-    }
-    return nullptr;
-}
-
-const NodeGraphSocket* findInputSocket(const NodeGraphNode& node, NodeGraphValueType valueType) {
-    for (const NodeGraphSocket& inputSocket : node.inputs) {
-        if (inputSocket.direction != NodeGraphSocketDirection::Input) {
-            continue;
-        }
-        if (inputSocket.valueType == valueType) {
-            return &inputSocket;
-        }
-    }
-    return nullptr;
-}
-
-const NodeGraphSocket* findOutputSocketProducingPayload(const NodeGraphNode& node, NodePayloadType payloadType) {
-    for (const NodeGraphSocket& outputSocket : node.outputs) {
-        if (outputSocket.direction != NodeGraphSocketDirection::Output) {
-            continue;
-        }
-
-        if (producesPayload(outputSocket, payloadType)) {
-            return &outputSocket;
-        }
-    }
-
-    return nullptr;
-}
-
 const EvaluatedSocketValue* readEvaluatedInput(
     const NodeGraphNode& node,
     NodeGraphSocketId inputSocketId,
     const NodeGraphKernelExecutionState& executionState) {
-    const auto edgeIt = executionState.incomingEdgeByInputSocket.find(makeSocketKey(node.id, inputSocketId));
+    const auto edgeIt = executionState.incomingEdgeByInputSocket.find(NodeSocketKey(node.id, inputSocketId).value);
     if (edgeIt == executionState.incomingEdgeByInputSocket.end() || !edgeIt->second) {
         return nullptr;
     }
 
     const NodeGraphEdge& edge = *edgeIt->second;
-    const auto valueIt = executionState.outputBySocket.find(makeSocketKey(edge.fromNode, edge.fromSocket));
+    const auto valueIt = executionState.outputBySocket.find(NodeSocketKey(edge.fromNode, edge.fromSocket).value);
     if (valueIt == executionState.outputBySocket.end()) {
         return nullptr;
     }
@@ -150,7 +144,7 @@ std::vector<const EvaluatedSocketValue*> readEvaluatedInputs(
     NodeGraphSocketId inputSocketId,
     const NodeGraphKernelExecutionState& executionState) {
     std::vector<const EvaluatedSocketValue*> results;
-    const auto edgesIt = executionState.incomingEdgesByInputSocket.find(makeSocketKey(node.id, inputSocketId));
+    const auto edgesIt = executionState.incomingEdgesByInputSocket.find(NodeSocketKey(node.id, inputSocketId).value);
     if (edgesIt == executionState.incomingEdgesByInputSocket.end() || edgesIt->second.empty()) {
         return results;
     }
@@ -158,7 +152,7 @@ std::vector<const EvaluatedSocketValue*> readEvaluatedInputs(
     results.reserve(edgesIt->second.size());
     for (const NodeGraphEdge* edge : edgesIt->second) {
         if (!edge) continue;
-        const auto valueIt = executionState.outputBySocket.find(makeSocketKey(edge->fromNode, edge->fromSocket));
+        const auto valueIt = executionState.outputBySocket.find(NodeSocketKey(edge->fromNode, edge->fromSocket).value);
         if (valueIt != executionState.outputBySocket.end()) {
             results.push_back(&valueIt->second);
         }
@@ -176,10 +170,7 @@ const NodeDataBlock* readInputValue(const EvaluatedSocketValue* input) {
 }
 
 NodeTypeId getNodeTypeId(const NodeTypeId& requestedTypeId) {
-    if (const NodeTypeDefinition* definition = NodeGraphRegistry::findNodeById(requestedTypeId)) {
-        return definition->id;
-    }
-    return nodegraphtypes::Custom;
+    return requestedTypeId.empty() ? nodegraphtypes::Custom : requestedTypeId;
 }
 
 std::string displayNodeLabel(const NodeGraphNode& node) {
@@ -349,11 +340,3 @@ bool tryGetNodeParamString(const NodeGraphNode& node, uint32_t paramId, std::str
     return true;
 }
 
-bool tryGetNodeParamEnum(const NodeGraphNode& node, uint32_t paramId, std::string& outValue) {
-    const NodeGraphParamValue* parameter = findNodeParamValue(node, paramId);
-    if (!parameter || parameter->type != NodeGraphParamType::Enum) {
-        return false;
-    }
-    outValue = parameter->enumValue;
-    return true;
-}

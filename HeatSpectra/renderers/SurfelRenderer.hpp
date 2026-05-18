@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
@@ -8,6 +8,7 @@
 class VulkanDevice;
 class MemoryAllocator;
 class UniformBufferManager;
+class CommandPool;
 
 class SurfelRenderer {
 public:
@@ -16,7 +17,7 @@ public:
         float surfelRadius;
     };
 
-    SurfelRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager);
+    SurfelRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, CommandPool& commandPool);
     ~SurfelRenderer();
 
     void initialize(VkRenderPass renderPass, uint32_t maxFramesInFlight);
@@ -40,6 +41,7 @@ private:
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
     UniformBufferManager& uniformBufferManager;
+    CommandPool& commandPool;
 
     // Circle geometry
     VkBuffer vertexBuffer = VK_NULL_HANDLE;

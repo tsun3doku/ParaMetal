@@ -8,7 +8,6 @@
 #include "domain/GeometryData.hpp"
 #include "domain/ContactData.hpp"
 #include "domain/HeatData.hpp"
-#include "domain/HeatModelData.hpp"
 #include "domain/RemeshData.hpp"
 #include "domain/VoronoiData.hpp"
 #include "mesh/remesher/SupportingHalfedge.hpp"
@@ -57,7 +56,7 @@ struct RemeshPackage {
     float stepSize = 0.25f;
     DisplaySettings display{};
     NodeDataHandle remeshHandle{};
-    ProductHandle modelProductHandle{};
+    NodeDataHandle sourceMeshHandle{};
 
     bool matches(const RemeshPackage& other) const {
         return packageHash == other.packageHash &&
@@ -80,10 +79,11 @@ struct VoronoiPackage {
 
     uint64_t packageHash = 0;
     VoronoiData authored;
+    NodeDataHandle voronoiHandle{};
     DisplaySettings display{};
     std::vector<std::array<float, 16>> modelLocalToWorlds;
-    std::vector<ProductHandle> modelProducts;
-    std::vector<ProductHandle> modelRemeshProducts;
+    std::vector<NodeDataHandle> modelMeshHandles;
+    std::vector<NodeDataHandle> modelRemeshHandles;
 
     bool matches(const VoronoiPackage& other) const {
         return packageHash == other.packageHash &&
@@ -105,12 +105,18 @@ struct HeatPackage {
 
     uint64_t packageHash = 0;
     HeatData authored;
+    NodeDataHandle heatHandle{};
     DisplaySettings display{};
-    std::vector<ProductHandle> voronoiProducts;
-    std::vector<ProductHandle> contactProducts;
-    std::vector<ProductHandle> modelProducts;
-    std::vector<ProductHandle> remeshProducts;
-    std::vector<HeatModelData> models;
+
+    // Pre-resolved by compiler 
+    std::vector<NodeDataHandle> resolvedRemeshHandles;       
+    std::vector<NodeDataHandle> resolvedModelHandles;       
+    std::vector<float> resolvedDensity;
+    std::vector<float> resolvedSpecificHeat;
+    std::vector<float> resolvedConductivity;
+    std::vector<float> resolvedInitialTemperature;
+    std::vector<uint32_t> resolvedBoundaryConditions;
+    std::vector<float> resolvedFixedTemperatureValues;
 
     bool matches(const HeatPackage& other) const {
         return packageHash == other.packageHash &&
@@ -131,6 +137,7 @@ struct ContactPackage {
 
     uint64_t packageHash = 0;
     ContactData authored;
+    NodeDataHandle contactHandle{};
     DisplaySettings display{};
     std::array<float, 16> modelALocalToWorld{
         1.0f, 0.0f, 0.0f, 0.0f,
@@ -144,10 +151,8 @@ struct ContactPackage {
         0.0f, 0.0f, 1.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f
     };
-    ProductHandle modelAModelProduct{};
-    ProductHandle modelBModelProduct{};
-    ProductHandle modelARemeshProduct{};
-    ProductHandle modelBRemeshProduct{};
+    NodeDataHandle modelAMeshHandle{};
+    NodeDataHandle modelBMeshHandle{};
 
     bool matches(const ContactPackage& other) const {
         return packageHash == other.packageHash &&

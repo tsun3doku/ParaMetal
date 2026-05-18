@@ -26,7 +26,7 @@ public:
             return;
         }
 
-        auto view = registry.view<RemeshPackage>();
+        auto view = registry.view<RemeshPackage>(entt::exclude<Stale>);
         for (auto entity : view) {
             uint64_t socketKey = static_cast<uint64_t>(entity);
             if (visibleKeys && visibleKeys->find(socketKey) == visibleKeys->end()) {
@@ -41,7 +41,11 @@ public:
         }
 
         controller->apply(socketKey, config);
-    }
+        }
+
+        for (auto entity : registry.view<RemeshPackage, Stale>()) {
+            controller->remove(static_cast<uint64_t>(entity));
+        }
     }
 
     void finalizeSync() {
@@ -69,11 +73,11 @@ private:
         if (!computeProduct || !computeProduct->isValid()) {
             return false;
         }
-        if (package.modelProductHandle.outputSocketKey == 0) {
+        if (package.sourceMeshHandle.key == 0) {
             return false;
         }
 
-        const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, package.modelProductHandle.outputSocketKey);
+        const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, package.sourceMeshHandle.key);
         if (!modelProduct || modelProduct->runtimeModelId == 0) {
             return false;
         }

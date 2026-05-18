@@ -8,8 +8,6 @@ struct ContactIndex {
 struct ContactSampleWeight {
     uint cellIndex;
     float weight;
-    uint _pad0;
-    uint _pad1;
 };
 
 struct ContactPushConstant {

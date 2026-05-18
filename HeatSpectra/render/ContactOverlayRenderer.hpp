@@ -11,6 +11,7 @@
 class MemoryAllocator;
 class UniformBufferManager;
 class VulkanDevice;
+class CommandPool;
 
 namespace render {
 
@@ -19,7 +20,8 @@ public:
     ContactOverlayRenderer(
         VulkanDevice& device,
         MemoryAllocator& allocator,
-        UniformBufferManager& uniformBufferManager);
+        UniformBufferManager& uniformBufferManager,
+        CommandPool& commandPool);
     ~ContactOverlayRenderer();
 
     void initialize(VkRenderPass renderPass, uint32_t subpass, uint32_t maxFramesInFlight);

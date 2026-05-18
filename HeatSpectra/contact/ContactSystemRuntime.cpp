@@ -27,11 +27,9 @@ void ContactSystemRuntime::setParams(float updatedMinNormalDot, float updatedCon
 }
 
 void ContactSystemRuntime::setModelAState(
-    uint32_t modelId,
     const std::array<float, 16>& localToWorld,
     const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
     uint32_t runtimeModelId) {
-    modelAId = modelId;
     modelALocalToWorld = localToWorld;
     modelAIntrinsicMesh = intrinsicMesh;
     modelARuntimeModelId = runtimeModelId;
@@ -39,11 +37,9 @@ void ContactSystemRuntime::setModelAState(
 }
 
 void ContactSystemRuntime::setModelBState(
-    uint32_t modelId,
     const std::array<float, 16>& localToWorld,
     const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
     uint32_t runtimeModelId) {
-    modelBId = modelId;
     modelBLocalToWorld = localToWorld;
     modelBIntrinsicMesh = intrinsicMesh;
     modelBRuntimeModelId = runtimeModelId;
@@ -56,11 +52,7 @@ void ContactSystemRuntime::setModelBTriangleIndices(const std::vector<uint32_t>&
 }
 
 void ContactSystemRuntime::clearPairBuffer(MemoryAllocator& memoryAllocator) {
-    if (contactPairBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(contactPairBuffer, contactPairBufferOffset);
-        contactPairBuffer = VK_NULL_HANDLE;
-        contactPairBufferOffset = 0;
-    }
+    freeBuffer(memoryAllocator, contactPairBuffer, contactPairBufferOffset);
     coupling.contactPairCount = 0;
     coupling.contactPairs.clear();
 }
@@ -74,11 +66,7 @@ bool ContactSystemRuntime::recreateContactPairBuffer(
     void** mappedData,
     const void* data,
     VkDeviceSize size) {
-    if (buffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(buffer, offset);
-        buffer = VK_NULL_HANDLE;
-        offset = 0;
-    }
+    freeBuffer(memoryAllocator, buffer, offset);
 
     if (data == nullptr || size == 0) {
         if (mappedData) {
@@ -115,7 +103,6 @@ void ContactSystemRuntime::clear(MemoryAllocator& memoryAllocator) {
     clearComputedState(memoryAllocator);
     minNormalDot = 0.0f;
     contactRadius = 0.0f;
-    modelAId = 0;
     modelALocalToWorld = {
         1.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 1.0f, 0.0f, 0.0f,
@@ -124,7 +111,6 @@ void ContactSystemRuntime::clear(MemoryAllocator& memoryAllocator) {
     };
     modelAIntrinsicMesh = {};
     modelARuntimeModelId = 0;
-    modelBId = 0;
     modelBLocalToWorld = {
         1.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 1.0f, 0.0f, 0.0f,
@@ -141,8 +127,6 @@ bool ContactSystemRuntime::hasValidBinding() const {
     return modelARuntimeModelId != 0 &&
         modelBRuntimeModelId != 0 &&
         modelARuntimeModelId != modelBRuntimeModelId &&
-        modelAId != 0 &&
-        modelBId != 0 &&
         !modelAIntrinsicMesh.vertices.empty() &&
         !modelBIntrinsicMesh.vertices.empty() &&
         !modelBTriangleIndices.empty();
@@ -150,8 +134,8 @@ bool ContactSystemRuntime::hasValidBinding() const {
 
 bool ContactSystemRuntime::computeContactPairs(std::vector<ContactPair>& outPairs) {
     outPairs.clear();
-    if (modelAId == 0 ||
-        modelBId == 0 ||
+    if (modelARuntimeModelId == 0 ||
+        modelBRuntimeModelId == 0 ||
         modelAIntrinsicMesh.vertices.empty() ||
         modelBIntrinsicMesh.vertices.empty()) {
         return false;

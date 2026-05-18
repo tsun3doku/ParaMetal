@@ -39,7 +39,6 @@ private:
         uint32_t maxNeighbors);
     bool buildGMLSInterfaceBuffer(VoronoiSystemRuntime& runtime, uint32_t maxNeighbors);
     bool rebuildOccupancyPointBuffer(VoronoiSystemRuntime& runtime) const;
-    void freeBuffer(VkBuffer& buffer, VkDeviceSize& offset);
 
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;

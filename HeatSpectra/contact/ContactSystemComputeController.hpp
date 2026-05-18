@@ -20,7 +20,6 @@ public:
     struct Config {
         float minNormalDot = -0.65f;
         float contactRadius = 0.01f;
-        uint32_t modelAId = 0;
         std::array<float, 16> modelALocalToWorld{
             1.0f, 0.0f, 0.0f, 0.0f,
             0.0f, 1.0f, 0.0f, 0.0f,
@@ -28,7 +27,6 @@ public:
             0.0f, 0.0f, 0.0f, 1.0f
         };
         SupportingHalfedge::IntrinsicMesh modelAIntrinsicMesh;
-        uint32_t modelBId = 0;
         std::array<float, 16> modelBLocalToWorld{
             1.0f, 0.0f, 0.0f, 0.0f,
             0.0f, 1.0f, 0.0f, 0.0f,
@@ -45,8 +43,6 @@ public:
             return modelARuntimeModelId != 0 &&
                 modelBRuntimeModelId != 0 &&
                 modelARuntimeModelId != modelBRuntimeModelId &&
-                modelAId != 0 &&
-                modelBId != 0 &&
                 !modelAIntrinsicMesh.vertices.empty() &&
                 !modelBIntrinsicMesh.vertices.empty() &&
                 !modelBTriangleIndices.empty();
@@ -62,7 +58,8 @@ public:
     void configure(uint64_t socketKey, const Config& config);
     void disable(uint64_t socketKey);
     void disableAll();
-    bool exportProduct(uint64_t socketKey, ContactProduct& outProduct);
+    ContactSystem* getSystem(uint64_t socketKey) const;
+    const Config* getConfig(uint64_t socketKey) const;
 
 private:
     VulkanDevice& vulkanDevice;
@@ -73,23 +70,21 @@ private:
 };
 
 inline uint64_t buildComputeHash(const ContactSystemComputeController::Config& config) {
-    uint64_t hash = 1469598103934665603ull;
-    hash = RuntimeProductHash::mixPod(hash, config.minNormalDot);
-    hash = RuntimeProductHash::mixPod(hash, config.contactRadius);
-    hash = RuntimeProductHash::mixPod(hash, config.modelAId);
-    hash = RuntimeProductHash::mixPod(hash, config.modelALocalToWorld);
-    hash = RuntimeProductHash::mixPodVector(hash, config.modelAIntrinsicMesh.vertices);
-    hash = RuntimeProductHash::mixPodVector(hash, config.modelAIntrinsicMesh.indices);
-    hash = RuntimeProductHash::mixPodVector(hash, config.modelAIntrinsicMesh.faceIds);
-    hash = RuntimeProductHash::mixPodVector(hash, config.modelAIntrinsicMesh.triangles);
-    hash = RuntimeProductHash::mixPod(hash, config.modelBId);
-    hash = RuntimeProductHash::mixPod(hash, config.modelBLocalToWorld);
-    hash = RuntimeProductHash::mixPodVector(hash, config.modelBIntrinsicMesh.vertices);
-    hash = RuntimeProductHash::mixPodVector(hash, config.modelBIntrinsicMesh.indices);
-    hash = RuntimeProductHash::mixPodVector(hash, config.modelBIntrinsicMesh.faceIds);
-    hash = RuntimeProductHash::mixPodVector(hash, config.modelBIntrinsicMesh.triangles);
-    hash = RuntimeProductHash::mixPod(hash, config.modelARuntimeModelId);
-    hash = RuntimeProductHash::mixPod(hash, config.modelBRuntimeModelId);
-    hash = RuntimeProductHash::mixPodVector(hash, config.modelBTriangleIndices);
+    uint64_t hash = NodeGraphHash::start();
+    NodeGraphHash::combinePod(hash, config.minNormalDot);
+    NodeGraphHash::combinePod(hash, config.contactRadius);
+    NodeGraphHash::combinePod(hash, config.modelALocalToWorld);
+    NodeGraphHash::combinePodVector(hash, config.modelAIntrinsicMesh.vertices);
+    NodeGraphHash::combinePodVector(hash, config.modelAIntrinsicMesh.indices);
+    NodeGraphHash::combinePodVector(hash, config.modelAIntrinsicMesh.faceIds);
+    NodeGraphHash::combinePodVector(hash, config.modelAIntrinsicMesh.triangles);
+    NodeGraphHash::combinePod(hash, config.modelBLocalToWorld);
+    NodeGraphHash::combinePodVector(hash, config.modelBIntrinsicMesh.vertices);
+    NodeGraphHash::combinePodVector(hash, config.modelBIntrinsicMesh.indices);
+    NodeGraphHash::combinePodVector(hash, config.modelBIntrinsicMesh.faceIds);
+    NodeGraphHash::combinePodVector(hash, config.modelBIntrinsicMesh.triangles);
+    NodeGraphHash::combine(hash, config.modelARuntimeModelId);
+    NodeGraphHash::combine(hash, config.modelBRuntimeModelId);
+    NodeGraphHash::combinePodVector(hash, config.modelBTriangleIndices);
     return hash;
 }

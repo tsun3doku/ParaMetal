@@ -5,7 +5,6 @@
 #include "NodeGraphBridge.hpp"
 #include "NodePayloadRegistry.hpp"
 
-#include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -48,7 +47,7 @@ void NodeGraphRuntime::propagateSkippedNodeOutputs(
         ? makeErrorSocketValue(error)
         : makeMissingSocketValue();
     for (const NodeGraphSocket& outputSocket : node.outputs) {
-        state.outputBySocket[makeSocketKey(node.id, outputSocket.id)] = skippedValue;
+        state.outputBySocket[NodeSocketKey(node.id, outputSocket.id).value] = skippedValue;
     }
 }
 
@@ -65,14 +64,14 @@ bool NodeGraphRuntime::evaluateNodeInputs(
 
     for (std::size_t inputIndex = 0; inputIndex < node.inputs.size(); ++inputIndex) {
         const NodeGraphSocket& inputSocket = node.inputs[inputIndex];
-        const auto edgeIt = incomingEdgeByInputSocket.find(makeSocketKey(node.id, inputSocket.id));
+        const auto edgeIt = incomingEdgeByInputSocket.find(NodeSocketKey(node.id, inputSocket.id).value);
         if (edgeIt == incomingEdgeByInputSocket.end() || !edgeIt->second) {
             outStatus = EvaluatedSocketStatus::Missing;
             return false;
         }
 
         const NodeGraphEdge& edge = *edgeIt->second;
-        const auto outputIt = state.outputBySocket.find(makeSocketKey(edge.fromNode, edge.fromSocket));
+        const auto outputIt = state.outputBySocket.find(NodeSocketKey(edge.fromNode, edge.fromSocket).value);
         if (outputIt == state.outputBySocket.end()) {
             outStatus = EvaluatedSocketStatus::Missing;
             return false;
@@ -92,14 +91,6 @@ bool NodeGraphRuntime::evaluateNodeInputs(
     return true;
 }
 
-void NodeGraphRuntime::rebuildNodeById() {
-    nodeById.clear();
-    nodeById.reserve(graphState.nodes.size() * 2);
-    for (const NodeGraphNode& node : graphState.nodes) {
-        nodeById[node.id.value] = &node;
-    }
-}
-
 void NodeGraphRuntime::applyDelta(const NodeGraphDelta& delta) {
     if (!delta.changes.empty()) {
         bool shouldClearCaches = false;
@@ -115,7 +106,6 @@ void NodeGraphRuntime::applyDelta(const NodeGraphDelta& delta) {
             }
             applyChange(change);
         }
-        rebuildNodeById();
         if (shouldClearCaches) {
             clearNodeCaches();
             if (runtimeServices.payloadRegistry) {
@@ -135,60 +125,24 @@ void NodeGraphRuntime::applyChange(const NodeGraphChange& change) {
         graphState.edges.clear();
         break;
     case NodeGraphChangeType::NodeUpsert: {
-        auto nodeIt = std::find_if(
-            graphState.nodes.begin(),
-            graphState.nodes.end(),
-            [&change](const NodeGraphNode& node) {
-                return node.id == change.node.id;
-            });
-        if (nodeIt != graphState.nodes.end()) {
-            *nodeIt = change.node;
-        } else {
-            graphState.nodes.push_back(change.node);
-        }
+        graphState.nodes[change.node.id.value] = change.node;
         break;
     }
     case NodeGraphChangeType::NodeRemoved:
-        graphState.nodes.erase(
-            std::remove_if(
-                graphState.nodes.begin(),
-                graphState.nodes.end(),
-                [&change](const NodeGraphNode& node) {
-                    return node.id == change.nodeId;
-                }),
-            graphState.nodes.end());
-        graphState.edges.erase(
-            std::remove_if(
-                graphState.edges.begin(),
-                graphState.edges.end(),
-                [&change](const NodeGraphEdge& edge) {
-                    return edge.fromNode == change.nodeId || edge.toNode == change.nodeId;
-                }),
-            graphState.edges.end());
-        break;
-    case NodeGraphChangeType::EdgeUpsert: {
-        auto edgeIt = std::find_if(
-            graphState.edges.begin(),
-            graphState.edges.end(),
-            [&change](const NodeGraphEdge& edge) {
-                return edge.id == change.edge.id;
-            });
-        if (edgeIt != graphState.edges.end()) {
-            *edgeIt = change.edge;
-        } else {
-            graphState.edges.push_back(change.edge);
+        graphState.nodes.erase(change.nodeId.value);
+        for (auto it = graphState.edges.begin(); it != graphState.edges.end(); ) {
+            if (it->second.fromNode == change.nodeId || it->second.toNode == change.nodeId) {
+                it = graphState.edges.erase(it);
+            } else {
+                ++it;
+            }
         }
         break;
-    }
+    case NodeGraphChangeType::EdgeUpsert:
+        graphState.edges[change.edge.id.value] = change.edge;
+        break;
     case NodeGraphChangeType::EdgeRemoved:
-        graphState.edges.erase(
-            std::remove_if(
-                graphState.edges.begin(),
-                graphState.edges.end(),
-                [&change](const NodeGraphEdge& edge) {
-                    return edge.id == change.edgeId;
-                }),
-            graphState.edges.end());
+        graphState.edges.erase(change.edgeId.value);
         break;
     }
 }
@@ -201,10 +155,10 @@ void NodeGraphRuntime::tick(NodeGraphEvaluationState* outState, const NodeGraphC
         }
         return;
     }
-    executeDataflow(outState, compiled);
+    execute(outState, compiled);
 }
 
-void NodeGraphRuntime::executeDataflow(NodeGraphEvaluationState* outState, const NodeGraphCompiled& compiled) {
+void NodeGraphRuntime::execute(NodeGraphEvaluationState* outState, const NodeGraphCompiled& compiled) {
     if (graphState.nodes.size() > 0 && compiled.executionOrder.size() != graphState.nodes.size()) {
         if (outState) {
             outState->sourceSocketByInputSocket.clear();
@@ -221,22 +175,22 @@ void NodeGraphRuntime::executeDataflow(NodeGraphEvaluationState* outState, const
     NodeGraphEvaluationState state{};
     state.sourceSocketByInputSocket.reserve(graphState.edges.size() * 2);
     state.outputBySocket.reserve(graphState.edges.size() * 2);
-    for (const NodeGraphEdge& edge : graphState.edges) {
-        const uint64_t inputKey = makeSocketKey(edge.toNode, edge.toSocket);
+    for (const auto& [id, edge] : graphState.edges) {
+        const uint64_t inputKey = NodeSocketKey(edge.toNode, edge.toSocket).value;
         incomingEdgeByInputSocket[inputKey] = &edge;
         incomingEdgesByInputSocket[inputKey].push_back(&edge);
-        const uint64_t sourceKey = makeSocketKey(edge.fromNode, edge.fromSocket);
+        const uint64_t sourceKey = NodeSocketKey(edge.fromNode, edge.fromSocket).value;
         state.sourceSocketByInputSocket[inputKey] = sourceKey;
         state.sourceSocketsByInputSocket[inputKey].push_back(sourceKey);
     }
 
     for (NodeGraphNodeId nodeId : executionOrder) {
-        const auto nodeIt = nodeById.find(nodeId.value);
-        if (nodeIt == nodeById.end() || !nodeIt->second) {
+        auto it = graphState.nodes.find(nodeId.value);
+        if (it == graphState.nodes.end()) {
             continue;
         }
 
-        const NodeGraphNode& node = *nodeIt->second;
+        const NodeGraphNode& node = it->second;
         const NodeTypeId typeId = getNodeTypeId(node.typeId);
 
         std::vector<const EvaluatedSocketValue*> inputValues;
@@ -289,7 +243,35 @@ void NodeGraphRuntime::executeDataflow(NodeGraphEvaluationState* outState, const
                         inputDataValues[inputIndex] = &inputValue->data;
                     }
                 }
-                buildOutputs(node, inputDataValues, outputValues);
+                {
+                    std::unordered_map<std::string, std::string> mergedMetadata;
+                    std::vector<NodeGraphNodeId> mergedLineage;
+                    std::unordered_set<uint32_t> seenNodeIds;
+                    for (const NodeDataBlock* input : inputDataValues) {
+                        if (!input) continue;
+                        for (const auto& metadataEntry : input->metadata) {
+                            mergedMetadata[metadataEntry.first] = metadataEntry.second;
+                        }
+                        for (NodeGraphNodeId lineageNodeId : input->lineageNodeIds) {
+                            if (!lineageNodeId.isValid()) continue;
+                            if (seenNodeIds.insert(lineageNodeId.value).second) {
+                                mergedLineage.push_back(lineageNodeId);
+                            }
+                        }
+                    }
+                    if (node.id.isValid() && seenNodeIds.insert(node.id.value).second) {
+                        mergedLineage.push_back(node.id);
+                    }
+                    mergedMetadata["graph.producer_node_id"] = std::to_string(node.id.value);
+                    mergedMetadata["graph.producer_type_id"] = getNodeTypeId(node.typeId);
+                    mergedMetadata["graph.lineage_depth"] = std::to_string(mergedLineage.size());
+                    for (NodeDataBlock& output : outputValues) {
+                        output = {};
+                        output.metadata = mergedMetadata;
+                        output.lineageNodeIds = mergedLineage;
+                        populateMetadata(output, nullptr, nullptr);
+                    }
+                }
                 kernels.executeNode(node, kernelState, inputValues, outputValues);
 
                 if (canHash) {
@@ -299,7 +281,7 @@ void NodeGraphRuntime::executeDataflow(NodeGraphEvaluationState* outState, const
             }
 
             for (std::size_t outputIndex = 0; outputIndex < node.outputs.size(); ++outputIndex) {
-                state.outputBySocket[makeSocketKey(node.id, node.outputs[outputIndex].id)] =
+                state.outputBySocket[NodeSocketKey(node.id, node.outputs[outputIndex].id).value] =
                     makeValueSocketValue(outputValues[outputIndex]);
             }
         }
@@ -326,7 +308,7 @@ void NodeGraphRuntime::invalidateNodeCaches(const std::unordered_set<uint32_t>& 
     bool changed = true;
     while (changed) {
         changed = false;
-        for (const NodeGraphEdge& edge : graphState.edges) {
+        for (const auto& [id, edge] : graphState.edges) {
             if (!edge.fromNode.isValid() || !edge.toNode.isValid()) {
                 continue;
             }

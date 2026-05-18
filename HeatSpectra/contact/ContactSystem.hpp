@@ -1,7 +1,7 @@
 #pragma once
 
 #include "contact/ContactTypes.hpp"
-#include "runtime/RuntimeProducts.hpp"
+#include "mesh/remesher/SupportingHalfedge.hpp"
 #include "vulkan/CommandBufferManager.hpp"
 
 #include <cstdint>
@@ -19,12 +19,10 @@ public:
 
     void setParams(float minNormalDot, float contactRadius);
     void setModelAState(
-        uint32_t modelId,
         const std::array<float, 16>& localToWorld,
         const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
         uint32_t runtimeModelId);
     void setModelBState(
-        uint32_t modelId,
         const std::array<float, 16>& localToWorld,
         const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
         uint32_t runtimeModelId);

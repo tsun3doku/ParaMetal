@@ -12,6 +12,7 @@
 class MemoryAllocator;
 class UniformBufferManager;
 class VulkanDevice;
+class CommandPool;
 
 namespace render {
 
@@ -20,7 +21,8 @@ public:
     HeatOverlayRenderer(
         VulkanDevice& device,
         MemoryAllocator& allocator,
-        UniformBufferManager& uniformBufferManager);
+        UniformBufferManager& uniformBufferManager,
+        CommandPool& commandPool);
     ~HeatOverlayRenderer();
 
     void initialize(VkRenderPass renderPass, uint32_t maxFramesInFlight);

@@ -8,7 +8,7 @@
 #include "HeatSystemRuntime.hpp"
 #include "HeatSystemPresets.hpp"
 #include "mesh/remesher/SupportingHalfedge.hpp"
-#include "runtime/RuntimeProducts.hpp"
+#include "voronoi/VoronoiGpuStructs.hpp"
 
 #include <memory>
 #include <unordered_map>
@@ -70,21 +70,26 @@ public:
     void addVoronoiModelInput(
         uint32_t runtimeModelId,
         const voronoi::Node* nodes,
-        uint32_t nodeCount,
-        VkBuffer nodeBuffer,
-        VkDeviceSize nodeBufferOffset,
-        VkBuffer gmlsInterfaceBuffer,
-        VkDeviceSize gmlsInterfaceBufferOffset,
-        VkBuffer seedFlagsBuffer,
-        VkDeviceSize seedFlagsBufferOffset,
+        uint32_t voronoiNodeCount,
+        VkBuffer voronoiNodeBuffer,
+        VkDeviceSize voronoiNodeBufferOffset,
+        uint32_t simNodeCount,
+        VkBuffer simNodeBuffer,
+        VkDeviceSize simNodeBufferOffset,
+        VkBuffer simGMLSInterfaceBuffer,
+        VkDeviceSize simGMLSInterfaceBufferOffset,
+        uint32_t simGMLSInterfaceCount,
         VkBuffer gmlsSurfaceStencilBuffer,
         VkDeviceSize gmlsSurfaceStencilBufferOffset,
         VkBuffer gmlsSurfaceWeightBuffer,
         VkDeviceSize gmlsSurfaceWeightBufferOffset,
+        size_t gmlsSurfaceWeightCount,
         VkBuffer gmlsSurfaceGradientWeightBuffer,
         VkDeviceSize gmlsSurfaceGradientWeightBufferOffset,
+        size_t gmlsSurfaceGradientWeightCount,
         const std::vector<uint32_t>& seedFlags,
-        const std::vector<glm::vec3>& seedPositions);
+        const std::vector<glm::vec3>& seedPositions,
+        const std::vector<uint32_t>& voronoiToSim);
 
     void readbackTemperatures(uint32_t frameIndex);
 
@@ -116,17 +121,22 @@ private:
     std::unordered_map<uint32_t, const voronoi::Node*> modelVoronoiNodesByModelId;
     std::unordered_map<uint32_t, VkBuffer> modelVoronoiNodeBufferByModelId;
     std::unordered_map<uint32_t, VkDeviceSize> modelVoronoiNodeBufferOffsetByModelId;
-    std::unordered_map<uint32_t, VkBuffer> modelGMLSInterfaceBufferByModelId;
-    std::unordered_map<uint32_t, VkDeviceSize> modelGMLSInterfaceBufferOffsetByModelId;
-    std::unordered_map<uint32_t, VkBuffer> modelSeedFlagsBufferByModelId;
-    std::unordered_map<uint32_t, VkDeviceSize> modelSeedFlagsBufferOffsetByModelId;
-    std::unordered_map<uint32_t, uint32_t> modelVoronoiNodeCountByModelId;
+    std::unordered_map<uint32_t, VkBuffer> modelSimNodeBufferByModelId;
+    std::unordered_map<uint32_t, VkDeviceSize> modelSimNodeBufferOffsetByModelId;
+    std::unordered_map<uint32_t, VkBuffer> modelSimGMLSInterfaceBufferByModelId;
+    std::unordered_map<uint32_t, VkDeviceSize> modelSimGMLSInterfaceBufferOffsetByModelId;
+    std::unordered_map<uint32_t, uint32_t> voronoiNodeCounts;
+    std::unordered_map<uint32_t, uint32_t> simNodeCounts;
+    std::unordered_map<uint32_t, uint32_t> simGMLSInterfaceCounts;
+    std::unordered_map<uint32_t, std::vector<uint32_t>> modelVoronoiToSimByModelId;
     std::unordered_map<uint32_t, VkBuffer> modelGMLSSurfaceStencilBufferByModelId;
     std::unordered_map<uint32_t, VkDeviceSize> modelGMLSSurfaceStencilBufferOffsetByModelId;
     std::unordered_map<uint32_t, VkBuffer> modelGMLSSurfaceWeightBufferByModelId;
     std::unordered_map<uint32_t, VkDeviceSize> modelGMLSSurfaceWeightBufferOffsetByModelId;
+    std::unordered_map<uint32_t, size_t> modelGMLSSurfaceWeightCountByModelId;
     std::unordered_map<uint32_t, VkBuffer> modelGMLSSurfaceGradientWeightBufferByModelId;
     std::unordered_map<uint32_t, VkDeviceSize> modelGMLSSurfaceGradientWeightBufferOffsetByModelId;
+    std::unordered_map<uint32_t, size_t> modelGMLSSurfaceGradientWeightCountByModelId;
     std::unordered_map<uint32_t, std::vector<uint32_t>> modelVoronoiSeedFlagsByModelId;
     std::unordered_map<uint32_t, std::vector<glm::vec3>> modelVoronoiSeedPositionsByModelId;
 
