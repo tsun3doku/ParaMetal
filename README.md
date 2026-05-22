@@ -24,6 +24,8 @@ This project is a work in progress. Functionality, performance and physical accu
 - [CMake](https://cmake.org/download/) 
 - [Qt 6](https://www.qt.io/download) (Core, Gui, Widgets components)
 - [Vulkan SDK](https://vulkan.lunarg.com/) 1.3 or higher
+- [Python 3](https://www.python.org/downloads/) (Development headers required)
+- [Pybind11](https://github.com/pybind/pybind11)
 
 ### Build Steps
 
