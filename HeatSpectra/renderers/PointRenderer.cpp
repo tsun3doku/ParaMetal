@@ -1,9 +1,9 @@
-﻿#include "PointRenderer.hpp"
+#include "PointRenderer.hpp"
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/UniformBufferManager.hpp"
 #include "vulkan/VulkanImage.hpp"
 #include "util/Structs.hpp"
-#include "util/File_utils.h"
+#include "util/file_utils.h"
 
 #include <array>
 #include <cstring>
