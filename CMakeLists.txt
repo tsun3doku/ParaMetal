@@ -98,7 +98,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
-    Qt6::GuiPrivate
     Vulkan::Vulkan
     OpenMP::OpenMP_CXX
     pybind11::embed
