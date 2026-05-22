@@ -1,5 +1,7 @@
 #include "HeatSystem.hpp"
 
+#include <cstring>
+
 #include "heat/HeatModelRuntime.hpp"
 #include "HeatSystemResources.hpp"
 #include "HeatSystemSimStage.hpp"
