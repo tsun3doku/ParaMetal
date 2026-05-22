@@ -279,7 +279,6 @@ xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindows.dll" "$(OutDir)p
     <ClCompile Include="renderers\HashGridRenderer.cpp" />
     <ClCompile Include="renderers\HeatSurfaceRenderer.cpp" />
     <ClCompile Include="renderers\VectorArrowRenderer.cpp" />
-    <ClCompile Include="util\HDR.cpp" />
     <ClCompile Include="heat\HeatModelRuntime.cpp" />
     <ClCompile Include="heat\HeatContactRuntime.cpp" />
     <ClCompile Include="voronoi\VoronoiSystemBuildStage.cpp" />
@@ -564,7 +563,6 @@ xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindows.dll" "$(OutDir)p
     <ClInclude Include="renderers\HashGridRenderer.hpp" />
     <ClInclude Include="renderers\HeatSurfaceRenderer.hpp" />
     <ClInclude Include="renderers\VectorArrowRenderer.hpp" />
-    <ClInclude Include="util\HDR.hpp" />
     <ClInclude Include="voronoi\VoronoiSystemBuildStage.hpp" />
     <ClInclude Include="voronoi\VoronoiDomain.hpp" />
     <ClInclude Include="voronoi\VoronoiModelRuntime.hpp" />
