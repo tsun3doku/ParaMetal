@@ -4,7 +4,7 @@
 #include "mesh/remesher/iODT.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/VulkanBuffer.hpp"
-#include "util/File_utils.h"
+#include "util/file_utils.h"
 #include "util/Structs.hpp"
 #include "vulkan/UniformBufferManager.hpp"
 #include "vulkan/VulkanDevice.hpp"

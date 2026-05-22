@@ -1,9 +1,9 @@
-﻿#include <array>
+#include <array>
 #include <iostream>
 #include <vector>
 
 #include "util/Structs.hpp"
-#include "util/File_utils.h"
+#include "util/file_utils.h"
 #include "vulkan/VulkanImage.hpp"
 #include "vulkan/UniformBufferManager.hpp"
 #include "vulkan/VulkanDevice.hpp"
