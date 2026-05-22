@@ -119,24 +119,29 @@ void VulkanDevice::createLogicalDevice(VkSurfaceKHR surface) {
         queueCreateInfos.push_back(queueCreateInfo);
     }
 
+    VkPhysicalDeviceVulkan12Features supportedVulkan12Features{};
+    supportedVulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+
+    VkPhysicalDeviceFeatures2 supportedFeatures2{};
+    supportedFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    supportedFeatures2.pNext = &supportedVulkan12Features;
+    vkGetPhysicalDeviceFeatures2(physicalDevice, &supportedFeatures2);
+
     VkPhysicalDeviceVulkan12Features vulkan12Features{};
     vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-    vulkan12Features.descriptorIndexing = VK_TRUE;
-    vulkan12Features.descriptorBindingUniformBufferUpdateAfterBind = VK_TRUE;
-    vulkan12Features.descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE;
-    vulkan12Features.descriptorBindingUpdateUnusedWhilePending = VK_TRUE;
-
-    VkPhysicalDeviceFeatures supportedFeatures{};
-    vkGetPhysicalDeviceFeatures(physicalDevice, &supportedFeatures);
+    vulkan12Features.descriptorIndexing = supportedVulkan12Features.descriptorIndexing;
+    vulkan12Features.descriptorBindingUniformBufferUpdateAfterBind = supportedVulkan12Features.descriptorBindingUniformBufferUpdateAfterBind;
+    vulkan12Features.descriptorBindingStorageBufferUpdateAfterBind = supportedVulkan12Features.descriptorBindingStorageBufferUpdateAfterBind;
+    vulkan12Features.descriptorBindingUpdateUnusedWhilePending = supportedVulkan12Features.descriptorBindingUpdateUnusedWhilePending;
 
     VkPhysicalDeviceFeatures deviceFeatures{};
-    deviceFeatures.sampleRateShading = supportedFeatures.sampleRateShading;
-    deviceFeatures.samplerAnisotropy = supportedFeatures.samplerAnisotropy;
-    deviceFeatures.wideLines = supportedFeatures.wideLines;
-    deviceFeatures.fillModeNonSolid = supportedFeatures.fillModeNonSolid;
-    deviceFeatures.independentBlend = supportedFeatures.independentBlend;
-    deviceFeatures.geometryShader = supportedFeatures.geometryShader;
-    deviceFeatures.shaderFloat64 = supportedFeatures.shaderFloat64;
+    deviceFeatures.sampleRateShading = supportedFeatures2.features.sampleRateShading;
+    deviceFeatures.samplerAnisotropy = supportedFeatures2.features.samplerAnisotropy;
+    deviceFeatures.wideLines = supportedFeatures2.features.wideLines;
+    deviceFeatures.fillModeNonSolid = supportedFeatures2.features.fillModeNonSolid;
+    deviceFeatures.independentBlend = supportedFeatures2.features.independentBlend;
+    deviceFeatures.geometryShader = supportedFeatures2.features.geometryShader;
+    deviceFeatures.shaderFloat64 = supportedFeatures2.features.shaderFloat64;
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
