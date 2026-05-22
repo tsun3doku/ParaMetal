@@ -75,6 +75,15 @@ void VulkanDevice::cleanup() {
     ownsDevice = false;
 }
 
+static int scoreDeviceType(VkPhysicalDeviceType type) {
+    switch (type) {
+        case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:     return 1000;
+        case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:    return 100;
+        case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:       return 50;
+        default:                                        return 0;
+    }
+}
+
 void VulkanDevice::pickPhysicalDevice(VkInstance instance, VkSurfaceKHR surface) {
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
@@ -86,18 +95,26 @@ void VulkanDevice::pickPhysicalDevice(VkInstance instance, VkSurfaceKHR surface)
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
 
+    int bestScore = -1;
     for (const VkPhysicalDevice candidate : devices) {
-        if (isDeviceSuitable(candidate, surface)) {
+        if (!isDeviceSuitable(candidate, surface)) {
+            continue;
+        }
+
+        VkPhysicalDeviceProperties props{};
+        vkGetPhysicalDeviceProperties(candidate, &props);
+
+        const int score = scoreDeviceType(props.deviceType);
+        if (score > bestScore) {
+            bestScore = score;
             physicalDevice = candidate;
-            break;
+            physicalDeviceProperties = props;
         }
     }
 
     if (physicalDevice == VK_NULL_HANDLE) {
         throw std::runtime_error("Failed to find a suitable GPU");
     }
-
-    vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
 }
 
 void VulkanDevice::createLogicalDevice(VkSurfaceKHR surface) {
