@@ -7,6 +7,7 @@
 #include "nodegraph/ui/scene/NodeGraphScene.hpp"
 #include "nodegraph/ui/widgets/NodePanel.hpp"
 #include "nodegraph/NodeGraphBridge.hpp"
+#include "py/PyTerminalWidget.hpp"
 #include "runtime/RuntimeInterfaces.hpp"
 #include "scene/SceneController.hpp"
 #include "scene/ModelSelection.hpp"
@@ -25,6 +26,7 @@
 #include <QPainter>
 #include <QPoint>
 #include <QSplitter>
+#include <QTimer>
 #include <QTransform>
 #include <QVBoxLayout>
 #include <QWheelEvent>
@@ -72,6 +74,10 @@ int nodeCategorySortKey(NodeGraphNodeCategory category) {
 NodeGraphEditorWidget::NodeGraphEditorWidget(QWidget* parent)
     : QWidget(parent) {
     createUi();
+
+    refreshTimer = new QTimer(this);
+    connect(refreshTimer, &QTimer::timeout, this, &NodeGraphEditorWidget::refreshGraph);
+    refreshTimer->start(50);
 }
 
 void NodeGraphEditorWidget::setRuntimeQuery(const RuntimeQuery* runtimeQueryPtr) {
@@ -128,16 +134,30 @@ void NodeGraphEditorWidget::createUi() {
     nodePanel = new NodePanel(this);
     nodePanel->bind(bridge, runtimeQuery);
 
-    QSplitter* splitter = new QSplitter(Qt::Vertical, this);
-    ui::configureSplitter(*splitter);
-    splitter->addWidget(nodePanel);
-    splitter->addWidget(canvas);
-    splitter->setStretchFactor(0, 1);
-    splitter->setStretchFactor(1, 1);
-    splitter->setCollapsible(0, false);
-    splitter->setCollapsible(1, false);
-    splitter->setSizes({100000, 100000});
-    rootLayout->addWidget(splitter, 1);
+    pyTerminal = new PyTerminalWidget(this);
+
+    // Right side: nodePanel above canvas
+    QSplitter* rightSplitter = new QSplitter(Qt::Vertical, this);
+    ui::configureSplitter(*rightSplitter);
+    rightSplitter->addWidget(nodePanel);
+    rightSplitter->addWidget(canvas);
+    rightSplitter->setStretchFactor(0, 1);
+    rightSplitter->setStretchFactor(1, 3);
+    rightSplitter->setCollapsible(0, false);
+    rightSplitter->setCollapsible(1, false);
+    rightSplitter->setSizes({100000, 300000});
+
+    // Main horizontal splitter: terminal on left, nodePanel+canvas on right
+    QSplitter* mainSplitter = new QSplitter(Qt::Horizontal, this);
+    ui::configureSplitter(*mainSplitter);
+    mainSplitter->addWidget(pyTerminal);
+    mainSplitter->addWidget(rightSplitter);
+    mainSplitter->setStretchFactor(0, 0);
+    mainSplitter->setStretchFactor(1, 1);
+    mainSplitter->setCollapsible(0, true);
+    mainSplitter->setCollapsible(1, false);
+    mainSplitter->setSizes({220, 380});
+    rootLayout->addWidget(mainSplitter, 1);
 
     connect(graphScene, &NodeGraphScene::nodeActivated,
             this, &NodeGraphEditorWidget::openInspectorForNode);

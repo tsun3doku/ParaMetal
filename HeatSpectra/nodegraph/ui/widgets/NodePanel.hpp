@@ -7,6 +7,7 @@
 
 class NodeGraphBridge;
 class RuntimeQuery;
+class QFrame;
 class QLabel;
 class QPushButton;
 class QStackedWidget;
@@ -47,7 +48,9 @@ private:
     NodeGraphNodeId currentNodeId{};
     NodeTypeId currentNodeTypeId = nodegraphtypes::Custom;
 
-    QLabel* titleLabel = nullptr;
+    QFrame* headerBar = nullptr;
+    QLabel* iconLabel = nullptr;
+    QLabel* headerTitleLabel = nullptr;
     QLabel* subtitleLabel = nullptr;
     QLabel* statusLabel = nullptr;
 

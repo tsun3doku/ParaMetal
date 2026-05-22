@@ -1,6 +1,8 @@
 #include "MainQt.h"
 #include "App.h"
 #include "nodegraph/ui/scene/NodeGraphEditorWidget.hpp"
+#include "py/PyBridge.hpp"
+#include "py/PyTerminalWidget.hpp"
 #include "util/UiTheme.hpp"
 #include "VulkanWindow.hpp"
 
@@ -28,7 +30,7 @@
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowTitle("HeatSpectra");
-    resize(1280, 720);
+    resize(1600, 900);
     setStyleSheet(QString::fromStdString(ui::appStyleSheet()));
 
     createMenuBar();
@@ -66,7 +68,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     mainSplitter->setStretchFactor(0, 0);
     mainSplitter->setStretchFactor(1, 1);
-    mainSplitter->setSizes({520, 760});
+    mainSplitter->setSizes({600, 1000});
 
     setCentralWidget(centralHost);
     connect(mainSplitter, &QSplitter::splitterMoved, this, [this](int, int) {
@@ -163,6 +165,14 @@ void MainWindow::createMenuBar() {
         setNodeGraphVisible(checked);
     });
     viewMenu->addAction(nodeGraphAction);
+
+    pyTerminalAction = new QAction("Python &Terminal", this);
+    pyTerminalAction->setCheckable(true);
+    pyTerminalAction->setChecked(true);
+    connect(pyTerminalAction, &QAction::toggled, this, [this](bool checked) {
+        setPyTerminalVisible(checked);
+    });
+    viewMenu->addAction(pyTerminalAction);
 }
 
 void MainWindow::createNodeGraphEditorWidget() {
@@ -219,6 +229,7 @@ void MainWindow::syncNodeGraphBridge() {
 
     nodeGraphEditor->setBridge(bridge);
     boundNodeGraphBridge = bridge;
+    pybridge::setBridge(bridge);
     nodeGraphEditor->syncSelection();
 }
 
@@ -245,6 +256,20 @@ void MainWindow::setNodeGraphVisible(bool visible) {
     nodeGraphEditor->hide();
 }
 
+void MainWindow::setPyTerminalVisible(bool visible) {
+    if (!nodeGraphEditor) {
+        return;
+    }
+    PyTerminalWidget* term = nodeGraphEditor->getPyTerminal();
+    if (!term) {
+        return;
+    }
+    if (visible) {
+        term->show();
+    } else {
+        term->hide();
+    }
+}
 
 void MainWindow::closeEvent(QCloseEvent* event) {
     if (app) {

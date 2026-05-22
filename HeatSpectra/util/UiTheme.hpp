@@ -8,9 +8,9 @@
 namespace ui {
 
 inline constexpr int SplitterVisualThickness = 7;
-inline constexpr QColor SplitterBaseColor = QColor(100, 100, 110);
-inline constexpr QColor SplitterHoverColor = QColor(180, 180, 180);
-inline constexpr QColor SplitterBorderColor = QColor(70, 70, 80);
+inline constexpr QColor SplitterBaseColor = QColor(46, 46, 52);
+inline constexpr QColor SplitterHoverColor = QColor(58, 57, 60);
+inline constexpr QColor SplitterBorderColor = QColor(58, 57, 60);
 inline constexpr int ScrollBarThickness = 12;
 inline constexpr int ScrollBarMargin = 2;
 inline constexpr int ScrollBarRadius = 4;

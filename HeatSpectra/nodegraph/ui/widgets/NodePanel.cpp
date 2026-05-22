@@ -1,4 +1,5 @@
 #include "NodePanel.hpp"
+#include "nodegraph/NodeGraphIconRegistry.hpp"
 #include "nodegraph/NodeGraphRegistry.hpp"
 #include "nodegraph/NodeGraphUtils.hpp"
 
@@ -158,9 +159,17 @@ bool NodePanel::setNode(NodeGraphNodeId nodeId) {
     currentNodeId = nodeId;
     currentNodeTypeId = getNodeTypeId(node.typeId);
 
-    titleLabel->setText(nodeTypeDisplayName(currentNodeTypeId, nodeGraphBridge ? &nodeGraphBridge->getRegistry() : nullptr));
+    headerTitleLabel->setText(nodeTypeDisplayName(currentNodeTypeId, nodeGraphBridge ? &nodeGraphBridge->getRegistry() : nullptr));
     subtitleLabel->setText(nodeTypeDescription(currentNodeTypeId));
     statusLabel->clear();
+
+    QPixmap icon = NodeGraphIconRegistry::iconForType(currentNodeTypeId, 24.0);
+    if (!icon.isNull()) {
+        iconLabel->setPixmap(icon.scaled(24, 24, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        iconLabel->show();
+    } else {
+        iconLabel->hide();
+    }
 
     if (currentNodeTypeId == nodegraphtypes::Model) {
         pageStack->setCurrentWidget(modelPage);
@@ -217,6 +226,39 @@ void NodePanel::hideEvent(QHideEvent* event) {
 void NodePanel::buildUi() {
     QVBoxLayout* root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
+    root->setSpacing(0);
+
+    // Fixed header bar (same height/style as terminal title bar)
+    headerBar = new QFrame(this);
+    headerBar->setFixedHeight(32);
+    headerBar->setStyleSheet(QStringLiteral(
+        "QFrame {"
+        "  background: %1;"
+        "  border-bottom: 1px solid %2;"
+        "}"
+        "QLabel {"
+        "  color: %3;"
+        "  font-size: 13px;"
+        "  font-weight: 600;"
+        "}"
+    ).arg(nodegraphwidgets::colorPanelBackground.name(),
+          nodegraphwidgets::colorPanelCardBorder.name(),
+          nodegraphwidgets::colorTextHeading.name()));
+    QHBoxLayout* headerLayout = new QHBoxLayout(headerBar);
+    headerLayout->setContentsMargins(10, 0, 10, 0);
+    headerLayout->setSpacing(8);
+
+    iconLabel = new QLabel(headerBar);
+    iconLabel->setFixedSize(24, 24);
+    iconLabel->setStyleSheet(QStringLiteral("border: none; background: transparent;"));
+    iconLabel->hide();
+    headerLayout->addWidget(iconLabel);
+
+    headerTitleLabel = new QLabel(headerBar);
+    headerTitleLabel->setText(QStringLiteral("No Node Selected"));
+    headerLayout->addWidget(headerTitleLabel);
+    headerLayout->addStretch(1);
+    root->addWidget(headerBar);
 
     QScrollArea* scrollArea = new QScrollArea(this);
     scrollArea->setWidgetResizable(true);
@@ -234,11 +276,6 @@ void NodePanel::buildUi() {
         nodegraphwidgets::panelContentMarginBottom);
     contentLayout->setSpacing(nodegraphwidgets::panelContentSpacing);
     scrollArea->setWidget(inspectorContent);
-
-    titleLabel = new QLabel(inspectorContent);
-    titleLabel->setObjectName("NodePanelTitle");
-    titleLabel->setText("No Node Selected");
-    contentLayout->addWidget(titleLabel);
 
     subtitleLabel = new QLabel(inspectorContent);
     subtitleLabel->setObjectName("NodePanelSubtitle");

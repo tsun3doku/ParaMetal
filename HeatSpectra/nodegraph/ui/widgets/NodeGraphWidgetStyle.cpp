@@ -169,7 +169,7 @@ void applyNodePanelStyle(QWidget* panel) {
     stylesheet += "  background: " + colorAccent.name() + ";";
     stylesheet += "  border: 1px solid " + colorAccent.name() + ";";
     stylesheet += "}";
-    stylesheet += "QLineEdit, QComboBox, QTextEdit {";
+    stylesheet += "QLineEdit, QComboBox, QTextEdit, QPlainTextEdit {";
     stylesheet += "  background: " + colorInputBackground.name() + ";";
     stylesheet += "  color: " + colorTextInput.name() + ";";
     stylesheet += "  border: 1px solid " + colorInputBorder.name() + ";";
