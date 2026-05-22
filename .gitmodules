@@ -10,3 +10,6 @@
 [submodule "HeatSpectra/libs/entt"]
 	path = HeatSpectra/libs/entt
 	url = https://github.com/skypjack/entt.git
+[submodule "HeatSpectra/libs/pybind11"]
+	path = HeatSpectra/libs/pybind11
+	url = https://github.com/pybind/pybind11.git

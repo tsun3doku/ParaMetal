@@ -573,6 +573,36 @@
     <ClCompile Include="nodegraph\NodeGraphInit.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="py\PyBridge.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="py\PyGraphBindings.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="py\PyIdBindings.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="py\PyInterpreter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="py\PyModule.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="py\PyParamBindings.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="py\PyRegistryBindings.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="py\PySyntaxHighlighter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="py\PyTerminalWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="py\PyGraphTypes.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\grid.vert">
@@ -1106,12 +1136,6 @@
     <ClInclude Include="nodegraph\NodeGraph.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="nodegraph\ui\scene\NodeGraphCanvas.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="nodegraph\ui\scene\NodeGraphEditorWidget.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="nodegraph\NodeGraphEditor.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1203,9 +1227,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\ui\widgets\NodeGraphSliderRow.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="nodegraph\ui\scene\NodeGraphScene.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\ui\scene\NodeGraphSceneStyle.hpp">
@@ -1355,9 +1376,33 @@
     <ClInclude Include="nodegraph\NodeGraphInit.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="py\PyBridge.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="py\PyInterpreter.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="py\PyGraphTypes.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="app\MainQt.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="nodegraph\ui\scene\NodeGraphCanvas.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="nodegraph\ui\scene\NodeGraphEditorWidget.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="nodegraph\ui\scene\NodeGraphScene.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="py\PySyntaxHighlighter.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="py\PyTerminalWidget.hpp">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>

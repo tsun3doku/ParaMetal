@@ -1,0 +1,185 @@
+#include "PyInterpreter.hpp"
+#include <Python.h>
+#ifdef slots
+#undef slots
+#endif
+
+#include <pybind11/embed.h>
+
+namespace py = pybind11;
+
+static const char* CAPTURE_SETUP = R"PY(
+import sys
+from io import StringIO
+__heatspectra_stdout = StringIO()
+__heatspectra_stderr = StringIO()
+__heatspectra_old_stdout = sys.stdout
+__heatspectra_old_stderr = sys.stderr
+sys.stdout = __heatspectra_stdout
+sys.stderr = __heatspectra_stderr
+)PY";
+
+static const char* CAPTURE_FLUSH = R"PY(
+__heatspectra_stdout_value = __heatspectra_stdout.getvalue()
+__heatspectra_stderr_value = __heatspectra_stderr.getvalue()
+__heatspectra_stdout.truncate(0)
+__heatspectra_stdout.seek(0)
+__heatspectra_stderr.truncate(0)
+__heatspectra_stderr.seek(0)
+)PY";
+
+struct PyCtx {
+    std::unique_ptr<py::scoped_interpreter> interpreter;
+    PyObject* interactive_interp = nullptr;
+};
+
+static PyCtx* getCtx(void* impl) {
+    return static_cast<PyCtx*>(impl);
+}
+
+PyInterpreter::PyInterpreter()
+    : impl(new PyCtx()) {}
+
+PyInterpreter::~PyInterpreter() {
+    shutdown();
+    delete getCtx(impl);
+}
+
+bool PyInterpreter::initialize() {
+    PyCtx* ctx = getCtx(impl);
+    if (ctx->interpreter) {
+        return true;
+    }
+    try {
+        ctx->interpreter = std::make_unique<py::scoped_interpreter>();
+
+        PyRun_SimpleString(CAPTURE_SETUP);
+        PyRun_SimpleString("import code, __main__; __heatspectra_interp = code.InteractiveInterpreter(__main__.__dict__)");
+
+        PyObject* main = PyImport_AddModule("__main__");
+        if (main) {
+            ctx->interactive_interp = PyObject_GetAttrString(main, "__heatspectra_interp");
+        }
+
+        PyRun_SimpleString("import heatspectra as hs");
+        PyRun_SimpleString(R"PY(
+def api():
+    print("""
+HeatSpectra Python API
+======================
+
+Module:  import heatspectra as hs
+Graph:    g = hs.get_graph()
+
+Graph Methods:
+  g.add_node(type, name='', x=0, y=0)  -> Node
+  g.remove_node(node_id)
+  g.get_node(name)                    -> Node
+  g.nodes                             -> list[Node]
+  g.connect(output_socket, input_socket)
+  g.disconnect(edge_id)
+  g.registry                          -> Registry
+
+Node Properties:
+  node.name
+  node.type
+
+Node Methods:
+  node.get(param_name)                -> value
+  node.set(param_name, value)
+  node.input(name)                    -> Socket
+  node.output(name)                   -> Socket
+  node.inputs                         -> list[Socket]
+  node.outputs                        -> list[Socket]
+
+Socket Properties:
+  socket.name
+  socket.type
+
+Examples:
+  g = hs.get_graph()
+  n = g.add_node('transform', 'MyTransform', 100, 100)
+  n.set('scale', 2.0)
+  out = n.output('Geometry')
+  inp = n.input('Geometry')
+  g.connect(out, inp)
+""")
+
+def registry():
+    for t in hs.get_graph().registry.all_node_types:
+        print(f"  {t.id}  ({t.display_name})")
+)PY");
+
+        return true;
+    } catch (const py::error_already_set&) {
+        return false;
+    }
+}
+
+void PyInterpreter::shutdown() {
+    if (!impl) return;
+    PyCtx* ctx = getCtx(impl);
+    if (ctx->interactive_interp) {
+        Py_DECREF(ctx->interactive_interp);
+        ctx->interactive_interp = nullptr;
+    }
+    ctx->interpreter.reset();
+}
+
+bool PyInterpreter::isInitialized() const {
+    PyCtx* ctx = getCtx(impl);
+    return ctx && ctx->interpreter != nullptr;
+}
+
+bool PyInterpreter::runSource(const std::string& source) {
+    PyCtx* ctx = getCtx(impl);
+    if (!ctx || !ctx->interpreter || !ctx->interactive_interp) {
+        return false;
+    }
+
+    PyObject* result = PyObject_CallMethod(
+        ctx->interactive_interp, "runsource", "s", source.c_str());
+
+    bool incomplete = false;
+    if (result) {
+        incomplete = (result == Py_True);
+        Py_DECREF(result);
+    } else {
+        PyErr_Clear();
+    }
+
+    // Flush capture buffers
+    PyRun_SimpleString(CAPTURE_FLUSH);
+    return incomplete;
+}
+
+static std::string readPythonVariable(const char* name) {
+    PyObject* main = PyImport_AddModule("__main__");
+    if (!main) return "";
+    PyObject* dict = PyModule_GetDict(main);
+    if (!dict) return "";
+    PyObject* val = PyDict_GetItemString(dict, name);
+    if (!val || !PyUnicode_Check(val)) return "";
+    Py_ssize_t len = 0;
+    const char* str = PyUnicode_AsUTF8AndSize(val, &len);
+    if (!str) return "";
+    return std::string(str, static_cast<size_t>(len));
+}
+
+std::string PyInterpreter::consumeOutput() {
+    return readPythonVariable("__heatspectra_stdout_value");
+}
+
+std::string PyInterpreter::consumeError() {
+    return readPythonVariable("__heatspectra_stderr_value");
+}
+
+std::string PyInterpreter::pythonVersion() const {
+    const char* ver = Py_GetVersion();
+    if (!ver) return "";
+
+    const char* end = ver;
+    while (*end && *end != ' ') ++end;
+
+    return std::string(ver, static_cast<size_t>(end - ver));
+}
