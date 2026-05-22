@@ -126,14 +126,17 @@ void VulkanDevice::createLogicalDevice(VkSurfaceKHR surface) {
     vulkan12Features.descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE;
     vulkan12Features.descriptorBindingUpdateUnusedWhilePending = VK_TRUE;
 
+    VkPhysicalDeviceFeatures supportedFeatures{};
+    vkGetPhysicalDeviceFeatures(physicalDevice, &supportedFeatures);
+
     VkPhysicalDeviceFeatures deviceFeatures{};
-    deviceFeatures.sampleRateShading = VK_TRUE;
-    deviceFeatures.samplerAnisotropy = VK_TRUE;
-    deviceFeatures.wideLines = VK_TRUE;
-    deviceFeatures.fillModeNonSolid = VK_TRUE;
-    deviceFeatures.independentBlend = VK_TRUE;
-    deviceFeatures.geometryShader = VK_TRUE;
-    deviceFeatures.shaderFloat64 = VK_TRUE;
+    deviceFeatures.sampleRateShading = supportedFeatures.sampleRateShading;
+    deviceFeatures.samplerAnisotropy = supportedFeatures.samplerAnisotropy;
+    deviceFeatures.wideLines = supportedFeatures.wideLines;
+    deviceFeatures.fillModeNonSolid = supportedFeatures.fillModeNonSolid;
+    deviceFeatures.independentBlend = supportedFeatures.independentBlend;
+    deviceFeatures.geometryShader = supportedFeatures.geometryShader;
+    deviceFeatures.shaderFloat64 = supportedFeatures.shaderFloat64;
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
