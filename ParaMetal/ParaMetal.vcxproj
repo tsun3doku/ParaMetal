@@ -1,0 +1,683 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{9bfe6f85-d71f-4073-8e49-92df29da8ec3}</ProjectGuid>
+    <RootNamespace>ParaMetal</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <Keyword>QtVS_v304</Keyword>
+    <QtMsBuild Condition="'$(QtMsBuild)'=='' OR !Exists('$(QtMsBuild)\qt.targets')">$(MSBuildProjectDirectory)\QtMsBuild</QtMsBuild>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <IntDir>$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+    <IntDir>$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <IntDir>$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+    <IntDir>$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <Import Project="$(QtMsBuild)\qt_defaults.props" Condition="Exists('$(QtMsBuild)\qt_defaults.props')" />
+  <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" />
+  <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" />
+  <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <QtInstall>6.9.3_msvc2022_64</QtInstall>
+    <QtModules>core;gui;widgets</QtModules>
+  </PropertyGroup>
+  <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <QtInstall>6.9.3_msvc2022_64</QtInstall>
+    <QtModules>core;gui;widgets</QtModules>
+  </PropertyGroup>
+  <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') OR !Exists('$(QtMsBuild)\Qt.props')">
+    <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
+  </Target>
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(QtMsBuild)\Qt.props" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(QtMsBuild)\Qt.props" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(QtMsBuild)\Qt.props" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(QtMsBuild)\Qt.props" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <IncludePath>$(SolutionDir)ParaMetal\libs;$(IncludePath)</IncludePath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <IncludePath>$(SolutionDir)ParaMetal\libs;$(IncludePath)</IncludePath>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>
+      </PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;$(ProjectDir)libs/isotropicremesher/src;$(ProjectDir)libs/tinyply/source;$(VULKAN_SDK)/Include;$(ProjectDir)libs/glfw-3.4.bin.WIN64/include;$(ProjectDir)libs/glm;$(ProjectDir)libs/stb;$(ProjectDir)libs/tinyobjloader;$(ProjectDir)libs/nanoflann;$(ProjectDir)libs/entt/single_include;$(ProjectDir)libs/pybind11/include;C:\Users\tsundoku\AppData\Local\Programs\Python\Python312\include;C:\Qt\6.9.3\msvc2022_64\include\QtGui\6.9.3;C:\Qt\6.9.3\msvc2022_64\include\QtGui\6.9.3\QtGui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <OpenMPSupport>true</OpenMPSupport>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(ProjectDir)libs/glfw-3.4.bin.WIN64/lib-vc2022;$(VULKAN_SDK)/Lib;C:\Users\tsundoku\AppData\Local\Programs\Python\Python312\libs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>vulkan-1.lib;python312.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PreBuildEvent>
+      <Command>
+      </Command>
+    </PreBuildEvent>
+    <PreLinkEvent>
+      <Command>
+      </Command>
+    </PreLinkEvent>
+    <PostBuildEvent>
+      <Command>xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\bin\Qt6Cored.dll" "$(OutDir)"
+xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\bin\Qt6Guid.dll" "$(OutDir)"
+xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\bin\Qt6Widgetsd.dll" "$(OutDir)"
+if not exist "$(OutDir)platforms\" mkdir "$(OutDir)platforms\"
+xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindowsd.dll" "$(OutDir)platforms\"</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;$(ProjectDir)libs/isotropicremesher/src;$(ProjectDir)libs/tinyply/source;$(VULKAN_SDK)/Include;$(ProjectDir)libs/glfw-3.4.bin.WIN64/include;$(ProjectDir)libs/glm;$(ProjectDir)libs/stb;$(ProjectDir)libs/tinyobjloader;$(ProjectDir)libs/entt/single_include;$(ProjectDir)libs/pybind11/include;C:\Users\tsundoku\AppData\Local\Programs\Python\Python312\include;C:\Qt\6.9.3\msvc2022_64\include\QtGui\6.9.3;C:\Qt\6.9.3\msvc2022_64\include\QtGui\6.9.3\QtGui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <OpenMPSupport>true</OpenMPSupport>
+      <Optimization>MaxSpeed</Optimization>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(ProjectDir)libs/glfw-3.4.bin.WIN64/lib-vc2022;$(VULKAN_SDK)/Lib;C:\Users\tsundoku\AppData\Local\Programs\Python\Python312\libs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>vulkan-1.lib;python312.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PreBuildEvent>
+      <Command>
+      </Command>
+    </PreBuildEvent>
+    <PreLinkEvent>
+      <Command>
+      </Command>
+    </PreLinkEvent>
+    <PostBuildEvent>
+      <Command>xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\bin\Qt6Core.dll" "$(OutDir)"
+xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\bin\Qt6Gui.dll" "$(OutDir)"
+xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\bin\Qt6Widgets.dll" "$(OutDir)"
+if not exist "$(OutDir)platforms\" mkdir "$(OutDir)platforms\"
+xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindows.dll" "$(OutDir)platforms\"</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="nodegraph\NodeGraphRegistry.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphTypeRegistry.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphInit.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphParamUtils.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphUtils.cpp" />
+    <ClCompile Include="py\PyGraphTypes.cpp" />
+    <ClCompile Include="scene\Camera.cpp" />
+    <ClCompile Include="scene\CameraController.cpp" />
+    <ClCompile Include="scene\MousePicker.cpp" />
+    <ClCompile Include="vulkan\CommandBufferManager.cpp" />
+    <ClCompile Include="framegraph\FrameController.cpp" />
+    <ClCompile Include="framegraph\FrameUpdateStage.cpp" />
+    <ClCompile Include="framegraph\FrameComputeStage.cpp" />
+    <ClCompile Include="framegraph\FrameGraphicsStage.cpp" />
+    <ClCompile Include="framegraph\FrameStats.cpp" />
+    <ClCompile Include="render\RenderRuntime.cpp" />
+    <ClCompile Include="runtime\VulkanCoreContext.cpp" />
+    <ClCompile Include="runtime\SceneContext.cpp" />
+    <ClCompile Include="runtime\RenderContext.cpp" />
+    <ClCompile Include="runtime\ModelComputeRuntime.cpp" />
+    <ClCompile Include="runtime\ModelDisplayController.cpp" />
+    <ClCompile Include="runtime\ContactDisplayController.cpp" />
+    <ClCompile Include="runtime\HeatDisplayController.cpp" />
+    <ClCompile Include="runtime\RemeshDisplayController.cpp" />
+    <ClCompile Include="runtime\RemeshController.cpp" />
+    <ClCompile Include="runtime\RemeshSystem.cpp" />
+    <ClCompile Include="runtime\RuntimePackageCompiler.cpp" />
+    <ClCompile Include="runtime\RuntimeModelComputeTransport.cpp" />
+    <ClCompile Include="runtime\RuntimeModelDisplayTransport.cpp" />
+    <ClCompile Include="runtime\RuntimeVoronoiComputeTransport.cpp" />
+    <ClCompile Include="runtime\VoronoiDisplayController.cpp" />
+    <ClCompile Include="runtime\RuntimeController.cpp" />
+    <ClCompile Include="runtime\RenderSettingsManager.cpp" />
+    <ClCompile Include="runtime\RenderSettingsController.cpp" />
+    <ClCompile Include="runtime\RuntimeInputController.cpp" />
+    <ClCompile Include="runtime\RuntimeRenderController.cpp" />
+    <ClCompile Include="runtime\RuntimeSystems.cpp" />
+    <ClCompile Include="scene\SceneController.cpp" />
+    <ClCompile Include="vulkan\MemoryPool.cpp" />
+    <ClCompile Include="vulkan\VulkanInstanceContext.cpp" />
+    <ClCompile Include="mesh\\remesher\\CommonSubdivision.cpp" />
+    <ClCompile Include="contact\ContactSampling.cpp" />
+    <ClCompile Include="contact\ContactSystemComputeStage.cpp" />
+    <ClCompile Include="contact\ContactSystemComputeController.cpp" />
+    <ClCompile Include="contact\ContactSystem.cpp" />
+    <ClCompile Include="renderers\ContactLineRenderer.cpp" />
+    <ClCompile Include="framegraph\FrameSync.cpp" />
+    <ClCompile Include="framegraph\FrameGraph.cpp" />
+    <ClCompile Include="framegraph\FrameGraphCompile.cpp" />
+    <ClCompile Include="framegraph\VkFrameGraphRuntime.cpp" />
+    <ClCompile Include="framegraph\VkFrameGraphBackend.cpp" />
+    <ClCompile Include="util\GlyphText.cpp" />
+    <ClCompile Include="render\SceneRenderer.cpp" />
+    <ClCompile Include="render\ContactOverlayRenderer.cpp" />
+    <ClCompile Include="render\HeatOverlayRenderer.cpp" />
+    <ClCompile Include="render\VoronoiOverlayRenderer.cpp" />
+    <ClCompile Include="render\GeometryPass.cpp" />
+    <ClCompile Include="render\LightingPass.cpp" />
+    <ClCompile Include="render\OverlayPass.cpp" />
+    <ClCompile Include="render\BlendPass.cpp" />
+    <ClCompile Include="mesh\\remesher\\GeodesicTracer.cpp" />
+    <ClCompile Include="scene\GizmoController.cpp" />
+    <ClCompile Include="renderers\GizmoRenderer.cpp" />
+    <ClCompile Include="spatial\Grid.cpp" />
+    <ClCompile Include="spatial\GridLabel.cpp" />
+    <ClCompile Include="renderers\TimingRenderer.cpp" />
+    <ClCompile Include="mesh\\remesher\\HalfEdgeMesh.cpp" />
+    <ClCompile Include="spatial\HashGrid.cpp" />
+    <ClCompile Include="renderers\HashGridRenderer.cpp" />
+    <ClCompile Include="renderers\HeatSurfaceRenderer.cpp" />
+    <ClCompile Include="renderers\VectorArrowRenderer.cpp" />
+    <ClCompile Include="heat\HeatModelRuntime.cpp" />
+    <ClCompile Include="heat\HeatContactRuntime.cpp" />
+    <ClCompile Include="voronoi\VoronoiSystemBuildStage.cpp" />
+    <ClCompile Include="voronoi\VoronoiModelRuntime.cpp" />
+    <ClCompile Include="heat\HeatSystemPresets.cpp" />
+    <ClCompile Include="heat\HeatSystemComputeController.cpp" />
+    <ClCompile Include="heat\HeatSystem.cpp" />
+    <ClCompile Include="heat\VoronoiSystem.cpp" />
+    <ClCompile Include="heat\VoronoiSystemRuntime.cpp" />
+    <ClCompile Include="heat\VoronoiSystemComputeController.cpp" />
+    <ClCompile Include="heat\HeatSystemRuntime.cpp" />
+    <ClCompile Include="heat\HeatSystemSimRuntime.cpp" />
+    <ClCompile Include="heat\HeatSystemVoronoiStage.cpp" />
+    <ClCompile Include="contact\ContactSystemRuntime.cpp" />
+    <ClCompile Include="heat\HeatSystemSimStage.cpp" />
+    <ClCompile Include="heat\HeatSystemSurfaceStage.cpp" />
+    <ClCompile Include="heat\HeatSystemDebugStage.cpp" />
+    <ClCompile Include="scene\LightingSystem.cpp" />
+    <ClCompile Include="scene\MaterialSystem.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphBridge.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphController.cpp" />
+    <ClCompile Include="nodegraph\NodeGraph.cpp" />
+    <ClCompile Include="nodegraph\ui\scene\NodeGraphCanvas.cpp" />
+    <ClCompile Include="nodegraph\ui\scene\NodeGraphEditorWidget.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphEditor.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphDataTypes.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphHash.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphRuntime.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphKernels.cpp" />
+    <ClCompile Include="nodegraph\NodePayloadRegistry.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphDebugCache.cpp" />
+    <ClCompile Include="nodegraph\NodeModel.cpp" />
+    <ClCompile Include="nodegraph\NodeModelParams.cpp" />
+    <ClCompile Include="nodegraph\NodeModelTransform.cpp" />
+    <ClCompile Include="nodegraph\ui\widgets\NodeModelPanel.cpp" />
+    <ClCompile Include="nodegraph\NodeTransform.cpp" />
+    <ClCompile Include="nodegraph\NodeTransformParams.cpp" />
+    <ClCompile Include="nodegraph\ui\widgets\NodeTransformPanel.cpp" />
+    <ClCompile Include="nodegraph\NodeGroup.cpp" />
+    <ClCompile Include="nodegraph\ui\widgets\NodeGroupPanel.cpp" />
+    <ClCompile Include="nodegraph\NodeContactParams.cpp" />
+    <ClCompile Include="nodegraph\NodeRemesh.cpp" />
+    <ClCompile Include="nodegraph\NodeRemeshParams.cpp" />
+    <ClCompile Include="nodegraph\ui\widgets\NodeRemeshPanel.cpp" />
+    <ClCompile Include="nodegraph\NodeVoronoiParams.cpp" />
+    <ClCompile Include="nodegraph\ui\widgets\NodeVoronoiPanel.cpp" />
+    <ClCompile Include="nodegraph\NodeHeatModel.cpp" />
+    <ClCompile Include="nodegraph\NodeHeatModelParams.cpp" />
+    <ClCompile Include="nodegraph\ui\widgets\NodeHeatModelPanel.cpp" />
+    <ClCompile Include="nodegraph\NodeContact.cpp" />
+    <ClCompile Include="nodegraph\NodeVoronoi.cpp" />
+    <ClCompile Include="nodegraph\NodeHeatSolve.cpp" />
+    <ClCompile Include="nodegraph\NodeHeatSolveParams.cpp" />
+    <ClCompile Include="nodegraph\NodeHeatMaterialPresets.cpp" />
+    <ClCompile Include="nodegraph\ui\widgets\NodeContactPanel.cpp" />
+    <ClCompile Include="nodegraph\ui\widgets\NodeHeatSolverPanel.cpp" />
+    <ClCompile Include="nodegraph\ui\widgets\NodePanelBase.cpp" />
+    <ClCompile Include="nodegraph\ui\widgets\NodePanelUtils.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphDisplay.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphCompiler.cpp" />
+    <ClCompile Include="nodegraph\ui\widgets\NodePanel.cpp" />
+    <ClCompile Include="nodegraph\ui\widgets\NodeGraphWidgetStyle.cpp" />
+    <ClCompile Include="nodegraph\ui\widgets\NodeGraphSliderItem.cpp" />
+    <ClCompile Include="nodegraph\ui\widgets\NodeGraphSliderRow.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphIconRegistry.cpp" />
+    <ClCompile Include="nodegraph\ui\scene\NodeGraphNodeItem.cpp" />
+    <ClCompile Include="nodegraph\ui\scene\NodeGraphScene.cpp" />
+    <ClCompile Include="nodegraph\ui\scene\NodeGraphSceneStyle.cpp" />
+    <ClCompile Include="nodegraph\ui\scene\NodeGraphSceneUtils.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphValidator.cpp" />
+    <ClCompile Include="voronoi\LloydCompute.cpp" />
+    <ClCompile Include="voronoi\VoronoiCandidateCompute.cpp" />
+    <ClCompile Include="voronoi\VoronoiGeoCompute.cpp" />
+    <ClCompile Include="scene\InputController.cpp" />
+    <ClCompile Include="mesh\\remesher\\iODT.cpp" />
+    <ClCompile Include="app\App.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="scene\ModelSelection.cpp" />
+    <ClCompile Include="renderers\PointRenderer.cpp" />
+    <ClCompile Include="mesh\\remesher\\SupportingHalfedge.cpp" />
+    <ClCompile Include="renderers\SurfelRenderer.cpp" />
+    <ClCompile Include="spatial\TriangleHashGrid.cpp" />
+    <ClCompile Include="voronoi\VoronoiIntegrator.cpp" />
+    <ClCompile Include="renderers\VoronoiRenderer.cpp" />
+    <ClCompile Include="renderers\IntrinsicRenderer.cpp" />
+    <ClCompile Include="renderers\OutlineRenderer.cpp" />
+    <ClCompile Include="voronoi\VoronoiSeeder.cpp" />
+    <ClCompile Include="spatial\VoxelGrid.cpp" />
+    <ClCompile Include="vulkan\VulkanBuffer.cpp" />
+    <ClCompile Include="app\SwapchainStage.cpp" />
+    <ClCompile Include="app\SwapchainManager.cpp" />
+    <ClCompile Include="app\VulkanWindow.cpp" />
+    <ClCompile Include="render\MainRenderGraph.cpp" />
+    <ClCompile Include="app\MainQt.cpp" />
+    <ClCompile Include="py\PyBridge.cpp" />
+    <ClCompile Include="py\PyGraphBindings.cpp" />
+    <ClCompile Include="py\PyIdBindings.cpp" />
+    <ClCompile Include="py\PyInterpreter.cpp" />
+    <ClCompile Include="py\PyModule.cpp" />
+    <ClCompile Include="py\PyParamBindings.cpp" />
+    <ClCompile Include="py\PyRegistryBindings.cpp" />
+    <ClCompile Include="py\PySyntaxHighlighter.cpp" />
+    <ClCompile Include="py\PyTerminalWidget.cpp" />
+    <ClCompile Include="vulkan\MemoryAllocator.cpp" />
+    <ClCompile Include="scene\Model.cpp" />
+    <ClCompile Include="scene\ModelUploader.cpp" />
+    <ClCompile Include="vulkan\ModelRegistry.cpp" />
+    <ClCompile Include="mesh\\remesher\\Remesher.cpp" />
+    <ClCompile Include="mesh\\remesher\\SignPostMesh.cpp" />
+    <ClCompile Include="vulkan\VulkanDevice.cpp" />
+    <ClCompile Include="util\file_utils.cpp" />
+    <ClCompile Include="vulkan\UniformBufferManager.cpp" />
+    <ClCompile Include="vulkan\VulkanImage.cpp" />
+    <ClCompile Include="renderers\WireframeRenderer.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\blend.frag" />
+    <None Include="shaders\blend.vert" />
+    <None Include="shaders\contact_lines.frag" />
+    <None Include="shaders\contact_lines.vert" />
+    <None Include="shaders\gbuffer.frag" />
+    <None Include="shaders\gbuffer.vert" />
+    <None Include="shaders\gizmo.frag" />
+    <None Include="shaders\gizmo.vert" />
+    <None Include="shaders\grid.frag" />
+    <None Include="shaders\grid.vert" />
+    <None Include="shaders\grid_label.frag" />
+    <None Include="shaders\grid_label.vert" />
+    <None Include="shaders\hash_grid_build.comp" />
+    <None Include="shaders\hash_grid_vis.frag" />
+    <None Include="shaders\hash_grid_vis.vert" />
+    <None Include="shaders\heat_buffer.frag" />
+    <None Include="shaders\heat_source.frag" />
+    <None Include="shaders\heat_source.vert" />
+    <None Include="shaders\heat_geometry.slang" />
+    <None Include="shaders\contact.slang" />
+    <None Include="shaders\heat_source.comp" />
+    <None Include="shaders\heat_surface_gradient.slang" />
+    <None Include="shaders\heat_surface_temp.slang" />
+    <None Include="shaders\heat_tetra.comp" />
+    <None Include="shaders\heat_voronoi.comp" />
+    <None Include="shaders\intrinsic_normals.frag" />
+    <None Include="shaders\intrinsic_normals.geom" />
+    <None Include="shaders\intrinsic_normals.vert" />
+    <None Include="shaders\intrinsic_supporting.frag" />
+    <None Include="shaders\intrinsic_supporting.geom" />
+    <None Include="shaders\intrinsic_supporting.vert" />
+    <None Include="shaders\intrinsic_vertex_normals.frag" />
+    <None Include="shaders\intrinsic_vertex_normals.geom" />
+    <None Include="shaders\intrinsic_vertex_normals.vert" />
+    <None Include="shaders\lighting.frag" />
+    <None Include="shaders\lighting.vert" />
+    <None Include="shaders\outline.frag" />
+    <None Include="shaders\outline.vert" />
+    <None Include="shaders\point_cloud.frag" />
+    <None Include="shaders\point_cloud.vert" />
+    <None Include="shaders\surfel_debug.frag" />
+    <None Include="shaders\surfel_debug.vert" />
+    <None Include="shaders\timing_overlay.frag" />
+    <None Include="shaders\timing_overlay.vert" />
+    <None Include="shaders\vector_arrow.frag" />
+    <None Include="shaders\vector_arrow.vert" />
+    <None Include="shaders\voronoi_candidates_intrinsic.slang" />
+    <None Include="shaders\voronoi_surface.frag" />
+    <None Include="shaders\voronoi_surface.geom" />
+    <None Include="shaders\voronoi_surface.vert" />
+    <None Include="shaders\wireframe.frag" />
+    <None Include="shaders\wireframe.vert" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="app\App.h" />
+    <ClInclude Include="app\AppTypes.hpp" />
+    <ClInclude Include="app\SwapchainStage.hpp" />
+    <ClInclude Include="app\SwapchainManager.hpp" />
+    <ClInclude Include="app\VulkanWindow.hpp" />
+    <ClInclude Include="contact\ContactSystemComputeStage.hpp" />
+    <ClInclude Include="contact\ContactTypes.hpp" />
+    <ClInclude Include="contact\ContactGpuStructs.hpp" />
+    <ClInclude Include="domain\ContactData.hpp" />
+    <ClInclude Include="domain\GeometryData.hpp" />
+    <ClInclude Include="domain\HeatData.hpp" />
+    <ClInclude Include="domain\HeatModelData.hpp" />
+    <ClInclude Include="domain\RemeshData.hpp" />
+    <ClInclude Include="domain\VoronoiData.hpp" />
+    <ClInclude Include="contact\ContactSampling.hpp" />
+    <ClInclude Include="heat\HeatContactRuntime.hpp" />
+    <ClInclude Include="heat\HeatModelRuntime.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphCoreTypes.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphPayloadTypes.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphRegistry.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphTypeRegistry.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphInit.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphParamUtils.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphUtils.hpp" />
+    <ClInclude Include="nodegraph\NodePayloadRegistry.hpp" />
+    <ClInclude Include="nodegraph\ui\widgets\NodeGraphWidgetStyle.hpp" />
+    <ClInclude Include="py\PyGraphTypes.hpp" />
+    <ClInclude Include="runtime\RuntimeContactComputeTransport.hpp" />
+    <ClInclude Include="runtime\ContactDisplayController.hpp" />
+    <ClInclude Include="runtime\HeatDisplayController.hpp" />
+    <ClInclude Include="runtime\RuntimeHeatComputeTransport.hpp" />
+    <ClInclude Include="runtime\RuntimeHeatDisplayTransport.hpp" />
+    <ClInclude Include="runtime\RemeshController.hpp" />
+    <ClInclude Include="runtime\RemeshSystem.hpp" />
+    <ClInclude Include="runtime\ModelComputeRuntime.hpp" />
+    <ClInclude Include="runtime\ModelDisplayController.hpp" />
+    <ClInclude Include="runtime\RemeshDisplayController.hpp" />
+    <ClInclude Include="render\ContactOverlayRenderer.hpp" />
+    <ClInclude Include="render\VoronoiOverlayRenderer.hpp" />
+    <ClInclude Include="runtime\RuntimeModelComputeTransport.hpp" />
+    <ClInclude Include="runtime\RuntimeModelDisplayTransport.hpp" />
+    <ClInclude Include="runtime\RuntimeVoronoiComputeTransport.hpp" />
+    <ClInclude Include="runtime\RuntimeVoronoiDisplayTransport.hpp" />
+    <ClInclude Include="runtime\VoronoiDisplayController.hpp" />
+    <ClInclude Include="runtime\RuntimeProducts.hpp" />
+    <ClInclude Include="runtime\RuntimeContactDisplayTransport.hpp" />
+    <ClInclude Include="runtime\RuntimeRemeshDisplayTransport.hpp" />
+    <ClInclude Include="runtime\RuntimeRemeshComputeTransport.hpp" />
+    <ClInclude Include="vulkan\CommandBufferManager.hpp" />
+    <ClInclude Include="framegraph\FrameController.hpp" />
+    <ClInclude Include="framegraph\FrameTypes.hpp" />
+    <ClInclude Include="framegraph\FrameUpdateStage.hpp" />
+    <ClInclude Include="framegraph\ComputePass.hpp" />
+    <ClInclude Include="framegraph\FrameComputeStage.hpp" />
+    <ClInclude Include="framegraph\FrameGraphicsStage.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphIconRegistry.hpp" />
+    <ClInclude Include="nodegraph\ui\scene\NodeGraphNodeItem.hpp" />
+    <ClInclude Include="nodegraph\ui\scene\NodeGraphSocketItem.hpp" />
+    <ClInclude Include="framegraph\FrameStats.hpp" />
+    <ClInclude Include="render\RenderConfig.hpp" />
+    <ClInclude Include="render\RenderSettings.hpp" />
+    <ClInclude Include="render\RenderRuntime.hpp" />
+    <ClInclude Include="runtime\VulkanCoreContext.hpp" />
+    <ClInclude Include="runtime\SceneContext.hpp" />
+    <ClInclude Include="runtime\RenderContext.hpp" />
+    <ClInclude Include="runtime\RuntimePackageCompiler.hpp" />
+    <ClInclude Include="runtime\RuntimePackages.hpp" />
+    <ClInclude Include="runtime\RuntimeController.hpp" />
+    <ClInclude Include="runtime\RenderSettingsManager.hpp" />
+    <ClInclude Include="runtime\RenderSettingsController.hpp" />
+    <ClInclude Include="runtime\RuntimeInputController.hpp" />
+    <ClInclude Include="runtime\RuntimeRenderController.hpp" />
+    <ClInclude Include="runtime\RuntimeSystems.hpp" />
+    <ClInclude Include="runtime\RuntimeInterfaces.hpp" />
+    <ClInclude Include="runtime\RuntimeECS.hpp" />
+    <ClInclude Include="render\WindowRuntimeState.hpp" />
+    <ClInclude Include="scene\SceneController.hpp" />
+    <ClInclude Include="vulkan\MemoryPool.hpp" />
+    <ClInclude Include="vulkan\VulkanInstanceContext.hpp" />
+    <ClInclude Include="mesh\\remesher\\CommonSubdivision.hpp" />
+    <ClInclude Include="contact\ContactSystemComputeController.hpp" />
+    <ClInclude Include="contact\ContactSystem.hpp" />
+    <ClInclude Include="renderers\ContactLineRenderer.hpp" />
+    <ClInclude Include="framegraph\FrameSync.hpp" />
+    <ClInclude Include="framegraph\FrameGraph.hpp" />
+    <ClInclude Include="framegraph\FrameGraphPasses.hpp" />
+    <ClInclude Include="framegraph\FrameGraphTypes.hpp" />
+    <ClInclude Include="framegraph\FrameGraphResources.hpp" />
+    <ClInclude Include="framegraph\VkFrameGraphRuntime.hpp" />
+    <ClInclude Include="framegraph\VkFrameGraphBackend.hpp" />
+    <ClInclude Include="render\MainRenderGraph.hpp" />
+    <ClInclude Include="framegraph\FramePass.hpp" />
+    <ClInclude Include="scene\SceneView.hpp" />
+    <ClInclude Include="util\GlyphText.hpp" />
+    <ClInclude Include="render\SceneRenderer.hpp" />
+    <ClInclude Include="render\HeatOverlayRenderer.hpp" />
+    <ClInclude Include="render\GeometryPass.hpp" />
+    <ClInclude Include="render\LightingPass.hpp" />
+    <ClInclude Include="render\OverlayPass.hpp" />
+    <ClInclude Include="render\BlendPass.hpp" />
+    <ClInclude Include="mesh\\remesher\\GeodesicTracer.hpp" />
+    <ClInclude Include="util\GeometryUtils.hpp" />
+    <ClInclude Include="scene\GizmoController.hpp" />
+    <ClInclude Include="renderers\GizmoRenderer.hpp" />
+    <ClInclude Include="spatial\Grid.hpp" />
+    <ClInclude Include="spatial\GridLabel.hpp" />
+    <ClInclude Include="renderers\TimingRenderer.hpp" />
+    <ClInclude Include="mesh\\remesher\\HalfEdgeMesh.hpp" />
+    <ClInclude Include="spatial\HashGrid.hpp" />
+    <ClInclude Include="renderers\HashGridRenderer.hpp" />
+    <ClInclude Include="renderers\HeatSurfaceRenderer.hpp" />
+    <ClInclude Include="renderers\VectorArrowRenderer.hpp" />
+    <ClInclude Include="voronoi\VoronoiSystemBuildStage.hpp" />
+    <ClInclude Include="voronoi\VoronoiDomain.hpp" />
+    <ClInclude Include="voronoi\VoronoiModelRuntime.hpp" />
+    <ClInclude Include="voronoi\VoronoiGpuStructs.hpp" />
+    <ClInclude Include="voronoi\VoronoiResources.hpp" />
+    <ClInclude Include="voronoi\VoronoiStageContext.hpp" />
+    <ClInclude Include="heat\HeatSystemPresets.hpp" />
+    <ClInclude Include="heat\HeatSystemComputeController.hpp" />
+    <ClInclude Include="heat\HeatGpuStructs.hpp" />
+    <ClInclude Include="heat\HeatSystem.hpp" />
+    <ClInclude Include="heat\VoronoiSystem.hpp" />
+    <ClInclude Include="heat\VoronoiSystemRuntime.hpp" />
+    <ClInclude Include="heat\VoronoiSystemComputeController.hpp" />
+    <ClInclude Include="heat\HeatSystemRuntime.hpp" />
+    <ClInclude Include="heat\HeatSystemResources.hpp" />
+    <ClInclude Include="heat\HeatSystemStageContext.hpp" />
+    <ClInclude Include="heat\HeatSystemVoronoiStage.hpp" />
+    <ClInclude Include="contact\ContactSystemRuntime.hpp" />
+    <ClInclude Include="heat\HeatSystemSimStage.hpp" />
+    <ClInclude Include="heat\HeatSystemSurfaceStage.hpp" />
+    <ClInclude Include="heat\HeatSystemDebugStage.hpp" />
+    <ClInclude Include="scene\LightingSystem.hpp" />
+    <ClInclude Include="scene\MaterialSystem.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphBridge.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphController.hpp" />
+    <ClInclude Include="nodegraph\NodeGraph.hpp" />
+    <QtMoc Include="nodegraph\ui\scene\NodeGraphCanvas.hpp" />
+    <QtMoc Include="nodegraph\ui\scene\NodeGraphEditorWidget.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphEditor.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphDataTypes.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphHash.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphRuntime.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphDebugCache.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphKernels.hpp" />
+    <ClInclude Include="nodegraph\NodeModel.hpp" />
+    <ClInclude Include="nodegraph\NodeModelParams.hpp" />
+    <ClInclude Include="nodegraph\NodeModelTransform.hpp" />
+    <ClInclude Include="nodegraph\ui\widgets\NodeModelPanel.hpp" />
+    <ClInclude Include="nodegraph\NodeTransform.hpp" />
+    <ClInclude Include="nodegraph\NodeTransformParams.hpp" />
+    <ClInclude Include="nodegraph\ui\widgets\NodeTransformPanel.hpp" />
+    <ClInclude Include="nodegraph\NodeGroup.hpp" />
+    <ClInclude Include="nodegraph\ui\widgets\NodeGroupPanel.hpp" />
+    <ClInclude Include="nodegraph\NodeContactParams.hpp" />
+    <ClInclude Include="nodegraph\NodeRemesh.hpp" />
+    <ClInclude Include="nodegraph\NodeRemeshParams.hpp" />
+    <ClInclude Include="nodegraph\ui\widgets\NodeRemeshPanel.hpp" />
+    <ClInclude Include="nodegraph\NodeVoronoiParams.hpp" />
+    <ClInclude Include="nodegraph\ui\widgets\NodeVoronoiPanel.hpp" />
+    <ClInclude Include="nodegraph\NodeHeatModel.hpp" />
+    <ClInclude Include="nodegraph\NodeHeatModelParams.hpp" />
+    <ClInclude Include="nodegraph\ui\widgets\NodeHeatModelPanel.hpp" />
+    <ClInclude Include="nodegraph\NodeContact.hpp" />
+    <ClInclude Include="nodegraph\NodeVoronoi.hpp" />
+    <ClInclude Include="nodegraph\NodeHeatSolve.hpp" />
+    <ClInclude Include="nodegraph\NodeHeatSolveParams.hpp" />
+    <ClInclude Include="nodegraph\NodeHeatMaterialPresets.hpp" />
+    <ClInclude Include="nodegraph\ui\widgets\NodeContactPanel.hpp" />
+    <ClInclude Include="nodegraph\ui\widgets\NodeHeatSolverPanel.hpp" />
+    <ClInclude Include="nodegraph\ui\widgets\NodePanelBase.hpp" />
+    <ClInclude Include="nodegraph\ui\widgets\NodePanelUtils.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphDisplay.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphCompiler.hpp" />
+    <ClInclude Include="nodegraph\ui\widgets\NodePanel.hpp" />
+    <ClInclude Include="nodegraph\ui\widgets\NodeGraphSliderItem.hpp" />
+    <ClInclude Include="nodegraph\ui\widgets\NodeGraphSliderRow.hpp" />
+    <QtMoc Include="nodegraph\ui\scene\NodeGraphScene.hpp" />
+    <ClInclude Include="nodegraph\ui\scene\NodeGraphSceneStyle.hpp" />
+    <ClInclude Include="nodegraph\ui\scene\NodeGraphSceneUtils.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphTypes.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphValidator.hpp" />
+    <ClInclude Include="voronoi\LloydCompute.hpp" />
+    <ClInclude Include="voronoi\VoronoiCandidateCompute.hpp" />
+    <ClInclude Include="voronoi\VoronoiGeoCompute.hpp" />
+    <ClInclude Include="scene\InputController.hpp" />
+    <ClInclude Include="mesh\\remesher\\iODT.hpp" />
+    <ClInclude Include="libs\nanoflann\include\nanoflann.hpp" />
+    <ClInclude Include="renderers\PointRenderer.hpp" />
+    <ClInclude Include="util\predicates.h" />
+    <ClInclude Include="spatial\TriangleHashGrid.hpp" />
+    <ClInclude Include="voronoi\VoronoiAdapters.hpp" />
+    <ClInclude Include="voronoi\VoronoiIntegrator.hpp" />
+    <ClInclude Include="renderers\VoronoiRenderer.hpp" />
+    <ClInclude Include="renderers\IntrinsicRenderer.hpp" />
+    <ClInclude Include="renderers\OutlineRenderer.hpp" />
+    <ClInclude Include="voronoi\VoronoiSeeder.hpp" />
+    <ClInclude Include="spatial\VoxelGrid.hpp" />
+    <ClInclude Include="renderers\WireframeRenderer.hpp" />
+    <QtMoc Include="app\MainQt.h" />
+    <ClInclude Include="vulkan\MemoryAllocator.hpp" />
+    <ClInclude Include="scene\Model.hpp" />
+    <ClInclude Include="scene\ModelUploader.hpp" />
+    <ClInclude Include="scene\ModelSelection.hpp" />
+    <ClInclude Include="vulkan\ModelRegistry.hpp" />
+    <ClInclude Include="mesh\\remesher\\Remesher.hpp" />
+    <ClInclude Include="mesh\\remesher\\SignPostMesh.hpp" />
+    <ClInclude Include="mesh\\remesher\\SupportingHalfedge.hpp" />
+    <ClInclude Include="renderers\SurfelRenderer.hpp" />
+    <ClInclude Include="vulkan\VulkanBuffer.hpp" />
+    <ClInclude Include="vulkan\VulkanDevice.hpp" />
+    <ClInclude Include="scene\Camera.hpp" />
+    <ClInclude Include="scene\CameraController.hpp" />
+    <ClInclude Include="scene\MousePicker.hpp" />
+    <ClInclude Include="util\file_utils.h" />
+    <ClInclude Include="util\Structs.hpp" />
+    <ClInclude Include="util\UiTheme.hpp" />
+    <ClInclude Include="vulkan\UniformBufferManager.hpp" />
+    <ClInclude Include="vulkan\VulkanImage.hpp" />
+    <ClInclude Include="py\PyBridge.hpp" />
+    <ClInclude Include="py\PyInterpreter.hpp" />
+    <QtMoc Include="py\PySyntaxHighlighter.hpp" />
+    <QtMoc Include="py\PyTerminalWidget.hpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Import Project="$(QtMsBuild)\qt.targets" Condition="Exists('$(QtMsBuild)\qt.targets')" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

@@ -2,11 +2,11 @@
 /build/
 /out/
 /x64/
-/HeatSpectra/x64/
+/ParaMetal/x64/
 /Debug/
 /Release/
-/HeatSpectra/Debug/
-/HeatSpectra/Release/
+/ParaMetal/Debug/
+/ParaMetal/Release/
 
 # CMake generated files
 /CMakeFiles/
@@ -36,4 +36,4 @@
 *.ilk
 
 # Third party
-HeatSpectra/libs/glm/doc/
+ParaMetal/libs/glm/doc/
