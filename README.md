@@ -48,8 +48,8 @@ This project is a work in progress. Functionality, performance and physical accu
 
 1. Required packages:
    ```bash
-  sudo dnf install cmake gcc-c++ qt6-qtbase-devel vulkan-loader-devel vulkan-headers
-  python3-devel pybind11-devel
+   sudo dnf install cmake gcc-c++ qt6-qtbase-devel vulkan-loader-devel vulkan-headers
+   python3-devel pybind11-devel
    ```
 2. Clone the repository with submodules:
    ```bash
@@ -59,11 +59,11 @@ This project is a work in progress. Functionality, performance and physical accu
 
 3. Build:
    ```bash
-  mkdir build && cd build
-  cmake ..
-  cmake --build . -j$(nproc)
-  ```
-  Run:
+   mkdir build && cd build
+   cmake ..
+   cmake --build . -j$(nproc)
+   ```
+   Run:
    ```bash
-  ./ParaMetal
+   ./ParaMetal
    ```
