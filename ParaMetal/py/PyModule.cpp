@@ -2,11 +2,6 @@
 
 #include "nodegraph/NodeGraphBridge.hpp"
 
-#include <Python.h>
-#ifdef slots
-#undef slots
-#endif
-
 #include <pybind11/embed.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -19,8 +14,8 @@ void bindParams(py::module_& m);
 void bindRegistry(py::module_& m);
 void bindGraph(py::module_& m);
 
-PYBIND11_EMBEDDED_MODULE(heatspectra, m) {
-    m.doc() = "HeatSpectra Python API";
+PYBIND11_EMBEDDED_MODULE(parametal, m) {
+    m.doc() = "ParaMetal Python API";
 
     bindIds(m);
     bindParams(m);

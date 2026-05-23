@@ -23,11 +23,11 @@ static const char* iconFolderForType(const NodeTypeId& typeId) {
 static std::vector<std::filesystem::path> iconFolderCandidates(const std::string& folder) {
     return {
         std::filesystem::path("textures/icons") / folder,
-        std::filesystem::path("HeatSpectra/textures/icons") / folder,
+        std::filesystem::path("ParaMetal/textures/icons") / folder,
         std::filesystem::path("../textures/icons") / folder,
         std::filesystem::path("../../textures/icons") / folder,
-        std::filesystem::path("../HeatSpectra/textures/icons") / folder,
-        std::filesystem::path("../../HeatSpectra/textures/icons") / folder
+        std::filesystem::path("../ParaMetal/textures/icons") / folder,
+        std::filesystem::path("../../ParaMetal/textures/icons") / folder
     };
 }
 

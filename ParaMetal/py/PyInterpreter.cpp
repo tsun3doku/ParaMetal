@@ -1,8 +1,4 @@
 #include "PyInterpreter.hpp"
-#include <Python.h>
-#ifdef slots
-#undef slots
-#endif
 
 #include <pybind11/embed.h>
 
@@ -11,21 +7,21 @@ namespace py = pybind11;
 static const char* CAPTURE_SETUP = R"PY(
 import sys
 from io import StringIO
-__heatspectra_stdout = StringIO()
-__heatspectra_stderr = StringIO()
-__heatspectra_old_stdout = sys.stdout
-__heatspectra_old_stderr = sys.stderr
-sys.stdout = __heatspectra_stdout
-sys.stderr = __heatspectra_stderr
+__parametal_stdout = StringIO()
+__parametal_stderr = StringIO()
+__parametal_old_stdout = sys.stdout
+__parametal_old_stderr = sys.stderr
+sys.stdout = __parametal_stdout
+sys.stderr = __parametal_stderr
 )PY";
 
 static const char* CAPTURE_FLUSH = R"PY(
-__heatspectra_stdout_value = __heatspectra_stdout.getvalue()
-__heatspectra_stderr_value = __heatspectra_stderr.getvalue()
-__heatspectra_stdout.truncate(0)
-__heatspectra_stdout.seek(0)
-__heatspectra_stderr.truncate(0)
-__heatspectra_stderr.seek(0)
+__parametal_stdout_value = __parametal_stdout.getvalue()
+__parametal_stderr_value = __parametal_stderr.getvalue()
+__parametal_stdout.truncate(0)
+__parametal_stdout.seek(0)
+__parametal_stderr.truncate(0)
+__parametal_stderr.seek(0)
 )PY";
 
 struct PyCtx {
@@ -54,18 +50,18 @@ bool PyInterpreter::initialize() {
         ctx->interpreter = std::make_unique<py::scoped_interpreter>();
 
         PyRun_SimpleString(CAPTURE_SETUP);
-        PyRun_SimpleString("import code, __main__; __heatspectra_interp = code.InteractiveInterpreter(__main__.__dict__)");
+        PyRun_SimpleString("import code, __main__; __parametal_interp = code.InteractiveInterpreter(__main__.__dict__)");
 
         PyObject* main = PyImport_AddModule("__main__");
         if (main) {
-            ctx->interactive_interp = PyObject_GetAttrString(main, "__heatspectra_interp");
+            ctx->interactive_interp = PyObject_GetAttrString(main, "__parametal_interp");
         }
 
-        PyRun_SimpleString("import heatspectra as hs");
+        PyRun_SimpleString("import parametal as hs");
         PyRun_SimpleString(R"PY(
 def api():
     print("""
-HeatSpectra Python API
+ParaMetal Python API
 ======================
 
 Module:  import heatspectra as hs
@@ -167,11 +163,11 @@ static std::string readPythonVariable(const char* name) {
 }
 
 std::string PyInterpreter::consumeOutput() {
-    return readPythonVariable("__heatspectra_stdout_value");
+    return readPythonVariable("__parametal_stdout_value");
 }
 
 std::string PyInterpreter::consumeError() {
-    return readPythonVariable("__heatspectra_stderr_value");
+    return readPythonVariable("__parametal_stderr_value");
 }
 
 std::string PyInterpreter::pythonVersion() const {

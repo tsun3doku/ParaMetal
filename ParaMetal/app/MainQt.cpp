@@ -29,7 +29,7 @@
 #endif
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
-    setWindowTitle("HeatSpectra");
+    setWindowTitle("ParaMetal");
     resize(1600, 900);
     setStyleSheet(QString::fromStdString(ui::appStyleSheet()));
 

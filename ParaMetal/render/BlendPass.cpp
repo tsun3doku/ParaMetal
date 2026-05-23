@@ -22,11 +22,11 @@ namespace {
 std::string resolveBackgroundPath() {
     const std::array<const char*, 6> candidates = {
         "textures/background.png",
-        "HeatSpectra/textures/background.png",
+        "ParaMetal/textures/background.png",
         "../textures/background.png",
         "../../textures/background.png",
-        "../HeatSpectra/textures/background.png",
-        "../../HeatSpectra/textures/background.png"
+        "../ParaMetal/textures/background.png",
+        "../../ParaMetal/textures/background.png"
     };
 
     for (const char* candidate : candidates) {

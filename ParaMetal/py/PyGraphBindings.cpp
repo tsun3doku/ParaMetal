@@ -1,10 +1,5 @@
 #include "PyGraphTypes.hpp"
 
-#include <Python.h>
-#ifdef slots
-#undef slots
-#endif
-
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 

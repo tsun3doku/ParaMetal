@@ -1,10 +1,5 @@
 #include "nodegraph/NodeGraphCoreTypes.hpp"
 
-#include <Python.h>
-#ifdef slots
-#undef slots
-#endif
-
 #include <pybind11/pybind11.h>
 
 namespace py = pybind11;

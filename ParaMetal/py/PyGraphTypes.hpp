@@ -1,11 +1,6 @@
 #pragma once
 
 // Python binding-only header. Do NOT include from Qt UI files.
-#include <Python.h>
-#ifdef slots
-#undef slots
-#endif
-
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 

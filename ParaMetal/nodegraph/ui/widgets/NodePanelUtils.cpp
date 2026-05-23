@@ -304,7 +304,7 @@ std::vector<std::string> resolveCandidateModelPaths(const std::string& modelPath
     if (!rawPath.is_absolute()) {
         const std::filesystem::path currentPath = std::filesystem::current_path();
         addCandidate(currentPath / rawPath);
-        addCandidate(currentPath / "HeatSpectra" / rawPath);
+        addCandidate(currentPath / "ParaMetal" / rawPath);
     }
 
     return candidates;
