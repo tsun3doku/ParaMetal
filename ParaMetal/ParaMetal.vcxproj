@@ -163,7 +163,13 @@
 xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\bin\Qt6Guid.dll" "$(OutDir)"
 xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\bin\Qt6Widgetsd.dll" "$(OutDir)"
 if not exist "$(OutDir)platforms\" mkdir "$(OutDir)platforms\"
-xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindowsd.dll" "$(OutDir)platforms\"</Command>
+xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindowsd.dll" "$(OutDir)platforms\"
+if not exist "$(OutDir)shaders\" mkdir "$(OutDir)shaders\"
+xcopy /y /d /e /i "$(ProjectDir)shaders" "$(OutDir)shaders"
+if not exist "$(OutDir)models\" mkdir "$(OutDir)models\"
+xcopy /y /d /e /i "$(ProjectDir)models" "$(OutDir)models"
+if not exist "$(OutDir)textures\" mkdir "$(OutDir)textures\"
+xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -204,7 +210,13 @@ xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindowsd.dll" "$(OutDir)
 xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\bin\Qt6Gui.dll" "$(OutDir)"
 xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\bin\Qt6Widgets.dll" "$(OutDir)"
 if not exist "$(OutDir)platforms\" mkdir "$(OutDir)platforms\"
-xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindows.dll" "$(OutDir)platforms\"</Command>
+xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindows.dll" "$(OutDir)platforms\"
+if not exist "$(OutDir)shaders\" mkdir "$(OutDir)shaders\"
+xcopy /y /d /e /i "$(ProjectDir)shaders" "$(OutDir)shaders"
+if not exist "$(OutDir)models\" mkdir "$(OutDir)models\"
+xcopy /y /d /e /i "$(ProjectDir)models" "$(OutDir)models"
+if not exist "$(OutDir)textures\" mkdir "$(OutDir)textures\"
+xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
