@@ -7,7 +7,7 @@
 
 class HalfEdgeMesh {
 public:
-	static const uint32_t INVALID_INDEX = static_cast<uint32_t>(-1);
+	static constexpr uint32_t INVALID_INDEX = static_cast<uint32_t>(-1);
 
 	struct HalfEdge;
 

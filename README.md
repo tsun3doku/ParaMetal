@@ -45,18 +45,19 @@ This project is a work in progress. Functionality, performance and physical accu
 3. Run the program within build/release 
 
 ### Build Steps for Linux (RHEL/CentOS/Fedora)
-  Required packages:
+
+1. Required packages:
   ```bash
   sudo dnf install cmake gcc-c++ qt6-qtbase-devel vulkan-loader-devel vulkan-headers
   python3-devel pybind11-devel
   ```
-
+2. Clone the repository with submodules:
   ```bash
    git clone --recursive https://github.com/tsun3doku/HeatSpectra.git
    cd HeatSpectra
   ```
 
-  Build:
+3. Build:
   ```bash
   mkdir build && cd build
   cmake ..
