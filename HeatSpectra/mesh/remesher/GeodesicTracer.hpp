@@ -6,7 +6,7 @@ class SignpostMesh;
 
 class GeodesicTracer {
 public:
-    static const uint32_t INVALID_INDEX = static_cast<uint32_t>(-1);
+    static constexpr uint32_t INVALID_INDEX = static_cast<uint32_t>(-1);
     static constexpr double BARY_SNAP_TOL = 1e-5;
     GeodesicTracer(SignpostMesh& mesh);
 
