@@ -27,7 +27,7 @@ This project is a work in progress. Functionality, performance and physical accu
 - [Python 3](https://www.python.org/downloads/) (Development headers required)
 - [Pybind11](https://github.com/pybind/pybind11)
 
-### Build Steps
+### Build Steps For Windows
 
 1. Clone the repository with submodules:
    ```bash
@@ -42,5 +42,27 @@ This project is a work in progress. Functionality, performance and physical accu
    cmake --build . --config Release
    ```
 
-3. Run the program within build/release
+3. Run the program within build/release 
 
+### Build Steps for Linux (RHEL/CentOS/Fedora)
+  Required packages:
+  ```bash
+  sudo dnf install cmake gcc-c++ qt6-qtbase-devel vulkan-loader-devel vulkan-headers
+  python3-devel pybind11-devel
+  ```
+
+  ```bash
+   git clone --recursive https://github.com/tsun3doku/HeatSpectra.git
+   cd HeatSpectra
+  ```
+
+  Build:
+  ```bash
+  mkdir build && cd build
+  cmake ..
+  cmake --build . -j$(nproc)
+  ```
+  Run:
+  ```bash
+  ./HeatSpectra
+  ```
