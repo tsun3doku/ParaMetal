@@ -91,11 +91,21 @@ void NodeModelPanel::browseModelFile() {
         initialPath = QDir::currentPath();
     }
 
+#ifdef Q_OS_LINUX
+    const QString selectedFilePath = QFileDialog::getOpenFileName(
+        this,
+        "Select Model File",
+        initialPath,
+        "OBJ Files (*.obj);;All Files (*.*)",
+        nullptr,
+        QFileDialog::DontUseNativeDialog);
+#else
     const QString selectedFilePath = QFileDialog::getOpenFileName(
         this,
         "Select Model File",
         initialPath,
         "OBJ Files (*.obj);;All Files (*.*)");
+#endif
     if (selectedFilePath.isEmpty()) {
         return;
     }

@@ -45,7 +45,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     ui::configureSplitter(*mainSplitter);
     mainSplitter->setOpaqueResize(true);
     mainSplitter->setChildrenCollapsible(false);
+#ifdef Q_OS_WIN
     mainSplitter->setAttribute(Qt::WA_NativeWindow, true);
+#endif    
     hostLayout->addWidget(mainSplitter);
 
     if (nodeGraphEditor) {
