@@ -1,5 +1,11 @@
 # ParaMetal
 
+[![Website](https://img.shields.io/badge/web-parametal.com-blue)](https://parametal.com/)
+[![GitHub release](https://img.shields.io/github/v/release/tsun3doku/ParaMetal)](https://
+  github.com/tsun3doku/ParaMetal/releases)
+[![License](https://img.shields.io/github/license/tsun3doku/ParaMetal)](https://
+  github.com/tsun3doku/ParaMetal)
+
 ![Heat Transfer](ParaMetal/docs/heat.gif)
 
 This project allows the visualization of heat transfer between two or more 3D closed surface geometry. The simulation is deterministic, transient and operates in realtime using stable pre-processing methods. 
