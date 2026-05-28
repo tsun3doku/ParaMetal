@@ -14,7 +14,7 @@ void RuntimeVoronoiComputeTransport::sync(const ECSRegistry& registry) {
         uint64_t socketKey = static_cast<uint64_t>(entity);
         const auto& package = registry.get<VoronoiPackage>(entity);
 
-        if (!package.authored.active || package.modelMeshHandles.empty()) {
+        if (!package.authored.active || package.modelMeshHandle.key == 0 || package.modelRemeshHandle.key == 0) {
             controller->disable(socketKey);
             appliedConfigInputHash.erase(socketKey);
             continue;
@@ -52,7 +52,7 @@ bool RuntimeVoronoiComputeTransport::tryBuildConfig(
     if (socketKey == 0 || !ecsRegistry) {
         return false;
     }
-    if (!package.authored.active || package.modelMeshHandles.empty()) {
+    if (!package.authored.active || package.modelMeshHandle.key == 0 || package.modelRemeshHandle.key == 0) {
         return false;
     }
 
@@ -61,40 +61,26 @@ bool RuntimeVoronoiComputeTransport::tryBuildConfig(
     outConfig.cellSize = package.authored.cellSize;
     outConfig.voxelResolution = package.authored.voxelResolution;
 
-    for (size_t modelIndex = 0; modelIndex < package.modelMeshHandles.size(); ++modelIndex) {
-        if (modelIndex >= package.modelRemeshHandles.size()) {
-            return false;
-        }
-
-        const uint64_t remeshEntityId = package.modelRemeshHandles[modelIndex].key;
-        const RemeshProduct* remeshProduct =
-            tryGetProduct<RemeshProduct>(*ecsRegistry, remeshEntityId);
-        if (!remeshProduct) {
-            return false;
-        }
-
-        const uint64_t modelEntityId = package.modelMeshHandles[modelIndex].key;
-        const ModelProduct* modelProduct =
-            tryGetProduct<ModelProduct>(*ecsRegistry, modelEntityId);
-        if (!modelProduct) {
-            return false;
-        }
-
-        outConfig.receiverRuntimeModelIds.push_back(remeshProduct->runtimeModelId);
-        outConfig.receiverNodeModelIds.push_back(0);
-        outConfig.receiverGeometryPositions.push_back(remeshProduct->geometryPositions);
-        outConfig.receiverGeometryTriangleIndices.push_back(remeshProduct->geometryTriangleIndices);
-        outConfig.receiverIntrinsicMeshes.push_back(remeshProduct->intrinsicMesh);
-        outConfig.receiverIntrinsicTriangleIndices.push_back(remeshProduct->intrinsicMesh.indices);
-        outConfig.receiverSurfaceVertices.emplace_back().reserve(remeshProduct->intrinsicMesh.vertices.size());
-        for (const SupportingHalfedge::IntrinsicVertex& intrinsicVertex : remeshProduct->intrinsicMesh.vertices) {
-            VoronoiModelRuntime::SurfaceVertex vertex{};
-            vertex.position = glm::vec4(intrinsicVertex.position, 1.0f);
-            vertex.normal = glm::vec4(intrinsicVertex.normal, 0.0f);
-            outConfig.receiverSurfaceVertices.back().push_back(vertex);
-        }
-        outConfig.meshModelMatrices.push_back(NodeModelTransform::toMat4(package.modelLocalToWorlds[modelIndex]));
+    const RemeshProduct* remeshProduct = tryGetProduct<RemeshProduct>(*ecsRegistry, package.modelRemeshHandle.key);
+    const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, package.modelMeshHandle.key);
+    if (!remeshProduct || !modelProduct || remeshProduct->runtimeModelId == 0) {
+        return false;
     }
+
+    outConfig.receiverRuntimeModelId = remeshProduct->runtimeModelId;
+    outConfig.receiverNodeModelId = 0;
+    outConfig.receiverGeometryPositions = remeshProduct->geometryPositions;
+    outConfig.receiverGeometryTriangleIndices = remeshProduct->geometryTriangleIndices;
+    outConfig.receiverIntrinsicMesh = remeshProduct->intrinsicMesh;
+    outConfig.receiverIntrinsicTriangleIndices = remeshProduct->intrinsicMesh.indices;
+    outConfig.receiverSurfaceVertices.reserve(remeshProduct->intrinsicMesh.vertices.size());
+    for (const SupportingHalfedge::IntrinsicVertex& intrinsicVertex : remeshProduct->intrinsicMesh.vertices) {
+        VoronoiModelRuntime::SurfaceVertex vertex{};
+        vertex.position = glm::vec4(intrinsicVertex.position, 1.0f);
+        vertex.normal = glm::vec4(intrinsicVertex.normal, 0.0f);
+        outConfig.receiverSurfaceVertices.push_back(vertex);
+    }
+    outConfig.meshModelMatrix = NodeModelTransform::toMat4(package.modelLocalToWorld);
 
     outConfig.computeHash = buildComputeHash(outConfig);
     return true;
@@ -158,18 +144,13 @@ void RuntimeVoronoiComputeTransport::publishProduct(uint64_t socketKey) {
 uint64_t RuntimeVoronoiComputeTransport::buildConfigInputHash(uint64_t socketKey, const VoronoiPackage& package) const {
     (void)socketKey;
     uint64_t hash = package.packageHash;
-    for (size_t modelIndex = 0; modelIndex < package.modelMeshHandles.size(); ++modelIndex) {
-        if (modelIndex >= package.modelRemeshHandles.size()) {
-            return 0;
-        }
-        const RemeshProduct* remeshProduct = tryGetProduct<RemeshProduct>(*ecsRegistry, package.modelRemeshHandles[modelIndex].key);
-        const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, package.modelMeshHandles[modelIndex].key);
-        if (!remeshProduct || !modelProduct) {
-            return 0;
-        }
-        NodeGraphHash::combine(hash, remeshProduct->productHash);
-        NodeGraphHash::combine(hash, modelProduct->productHash);
+    const RemeshProduct* remeshProduct = tryGetProduct<RemeshProduct>(*ecsRegistry, package.modelRemeshHandle.key);
+    const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, package.modelMeshHandle.key);
+    if (!remeshProduct || !modelProduct) {
+        return 0;
     }
+    NodeGraphHash::combine(hash, remeshProduct->productHash);
+    NodeGraphHash::combine(hash, modelProduct->productHash);
     return hash;
 }
 
@@ -212,44 +193,28 @@ bool RuntimeVoronoiComputeTransport::buildProduct(uint64_t socketKey, VoronoiPro
     outProduct.voronoiToSim = voronoiSystem->runtimeRef().getVoronoiToSim();
     outProduct.simToVoronoi = voronoiSystem->runtimeRef().getSimToVoronoi();
 
-    const auto& modelRuntimes = voronoiSystem->getModelRuntimes();
+    const VoronoiModelRuntime* modelRuntime = voronoiSystem->getModelRuntime();
+    if (!modelRuntime) {
+        return false;
+    }
     const auto& domainSeedFlags = voronoiSystem->runtimeRef().getSeedFlags();
     const auto& domainSeedPositions = voronoiSystem->runtimeRef().getSeedPositions();
 
-    outProduct.modelRuntimeModelIds.reserve(modelRuntimes.size());
-    outProduct.modelCandidateBuffers.reserve(modelRuntimes.size());
-    outProduct.modelCandidateBufferOffsets.reserve(modelRuntimes.size());
-    outProduct.modelGMLSSurfaceStencilBuffers.reserve(modelRuntimes.size());
-    outProduct.modelGMLSSurfaceStencilBufferOffsets.reserve(modelRuntimes.size());
-    outProduct.modelGMLSSurfaceWeightBuffers.reserve(modelRuntimes.size());
-    outProduct.modelGMLSSurfaceWeightBufferOffsets.reserve(modelRuntimes.size());
-    outProduct.modelGMLSSurfaceGradientWeightBuffers.reserve(modelRuntimes.size());
-    outProduct.modelGMLSSurfaceGradientWeightBufferOffsets.reserve(modelRuntimes.size());
-    outProduct.modelSeedFlags.reserve(modelRuntimes.size());
-    outProduct.modelSeedPositions.reserve(modelRuntimes.size());
-
-    for (const auto& modelRuntime : modelRuntimes) {
-        if (!modelRuntime) {
-            continue;
-        }
-        outProduct.modelRuntimeModelIds.push_back(modelRuntime->getRuntimeModelId());
-        outProduct.modelCandidateBuffers.push_back(modelRuntime->getVoronoiCandidateBuffer());
-        outProduct.modelCandidateBufferOffsets.push_back(modelRuntime->getVoronoiCandidateBufferOffset());
-        outProduct.modelGMLSSurfaceStencilBuffers.push_back(modelRuntime->getGMLSSurfaceStencilBuffer());
-        outProduct.modelGMLSSurfaceStencilBufferOffsets.push_back(modelRuntime->getGMLSSurfaceStencilBufferOffset());
-        outProduct.modelGMLSSurfaceWeightBuffers.push_back(modelRuntime->getGMLSSurfaceWeightBuffer());
-        outProduct.modelGMLSSurfaceWeightBufferOffsets.push_back(modelRuntime->getGMLSSurfaceWeightBufferOffset());
-        outProduct.modelGMLSSurfaceWeightCounts.push_back(modelRuntime->getGMLSSurfaceWeightCount());
-        outProduct.modelGMLSSurfaceGradientWeightBuffers.push_back(modelRuntime->getGMLSSurfaceGradientWeightBuffer());
-        outProduct.modelGMLSSurfaceGradientWeightBufferOffsets.push_back(modelRuntime->getGMLSSurfaceGradientWeightBufferOffset());
-        outProduct.modelGMLSSurfaceGradientWeightCounts.push_back(modelRuntime->getGMLSSurfaceGradientWeightCount());
-        outProduct.modelSeedFlags.push_back(domainSeedFlags);
-        std::vector<glm::vec3> seedPositions;
-        seedPositions.reserve(domainSeedPositions.size());
-        for (const glm::vec4& pos : domainSeedPositions) {
-            seedPositions.push_back(glm::vec3(pos));
-        }
-        outProduct.modelSeedPositions.push_back(std::move(seedPositions));
+    outProduct.runtimeModelId = modelRuntime->getRuntimeModelId();
+    outProduct.candidateBuffer = modelRuntime->getVoronoiCandidateBuffer();
+    outProduct.candidateBufferOffset = modelRuntime->getVoronoiCandidateBufferOffset();
+    outProduct.gmlsSurfaceStencilBuffer = modelRuntime->getGMLSSurfaceStencilBuffer();
+    outProduct.gmlsSurfaceStencilBufferOffset = modelRuntime->getGMLSSurfaceStencilBufferOffset();
+    outProduct.gmlsSurfaceWeightBuffer = modelRuntime->getGMLSSurfaceWeightBuffer();
+    outProduct.gmlsSurfaceWeightBufferOffset = modelRuntime->getGMLSSurfaceWeightBufferOffset();
+    outProduct.gmlsSurfaceWeightCount = modelRuntime->getGMLSSurfaceWeightCount();
+    outProduct.gmlsSurfaceGradientWeightBuffer = modelRuntime->getGMLSSurfaceGradientWeightBuffer();
+    outProduct.gmlsSurfaceGradientWeightBufferOffset = modelRuntime->getGMLSSurfaceGradientWeightBufferOffset();
+    outProduct.gmlsSurfaceGradientWeightCount = modelRuntime->getGMLSSurfaceGradientWeightCount();
+    outProduct.seedFlags = domainSeedFlags;
+    outProduct.seedPositions.reserve(domainSeedPositions.size());
+    for (const glm::vec4& pos : domainSeedPositions) {
+        outProduct.seedPositions.push_back(glm::vec3(pos));
     }
 
     outProduct.productHash = buildProductHash(outProduct);

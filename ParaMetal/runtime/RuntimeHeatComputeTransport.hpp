@@ -153,52 +153,50 @@ private:
             outConfig.inputLengthViews[i] = product->inputLengthView;
         }
 
-        // Collect Voronoi products - each model gets its own independent buffers
+        // Collect per-model Voronoi products. Heat is the aggregation layer.
         for (const NodeDataHandle& voronoiHandle : package.authored.voronoiHandles) {
             const VoronoiProduct* product = tryGetProduct<VoronoiProduct>(*ecsRegistry, voronoiHandle.key);
             if (!product) {
                 return false;
             }
 
-            for (size_t i = 0; i < product->modelRuntimeModelIds.size(); ++i) {
-                const uint32_t runtimeModelId = product->modelRuntimeModelIds[i];
-                if (runtimeModelId == 0) {
-                    continue;
-                }
-
-                bool modelKnown = false;
-                for (uint32_t mIdx = 0; mIdx < static_cast<uint32_t>(outConfig.modelRuntimeModelIds.size()); ++mIdx) {
-                    if (outConfig.modelRuntimeModelIds[mIdx] == runtimeModelId) {
-                        modelKnown = true;
-                        break;
-                    }
-                }
-                if (!modelKnown) {
-                    continue;
-                }
-
-                outConfig.modelVoronoiNodesByModelId[runtimeModelId] = product->mappedVoronoiNodes;
-                outConfig.modelVoronoiNodeBufferByModelId[runtimeModelId] = product->nodeBuffer;
-                outConfig.modelVoronoiNodeBufferOffsetByModelId[runtimeModelId] = product->nodeBufferOffset;
-                outConfig.modelSimNodeBufferByModelId[runtimeModelId] = product->simNodeBuffer;
-                outConfig.modelSimNodeBufferOffsetByModelId[runtimeModelId] = product->simNodeBufferOffset;
-                outConfig.modelSimGMLSInterfaceBufferByModelId[runtimeModelId] = product->simGMLSInterfaceBuffer;
-                outConfig.modelSimGMLSInterfaceBufferOffsetByModelId[runtimeModelId] = product->simGMLSInterfaceBufferOffset;
-                outConfig.simGMLSInterfaceCounts[runtimeModelId] = product->simGMLSInterfaceCount;
-                outConfig.voronoiNodeCounts[runtimeModelId] = product->nodeCount;
-                outConfig.simNodeCounts[runtimeModelId] = product->simNodeCount;
-                outConfig.modelVoronoiToSimByModelId[runtimeModelId] = product->voronoiToSim;
-                outConfig.modelGMLSSurfaceStencilBufferByModelId[runtimeModelId] = product->modelGMLSSurfaceStencilBuffers[i];
-                outConfig.modelGMLSSurfaceStencilBufferOffsetByModelId[runtimeModelId] = product->modelGMLSSurfaceStencilBufferOffsets[i];
-                outConfig.modelGMLSSurfaceWeightBufferByModelId[runtimeModelId] = product->modelGMLSSurfaceWeightBuffers[i];
-                outConfig.modelGMLSSurfaceWeightBufferOffsetByModelId[runtimeModelId] = product->modelGMLSSurfaceWeightBufferOffsets[i];
-                outConfig.modelGMLSSurfaceWeightCountByModelId[runtimeModelId] = product->modelGMLSSurfaceWeightCounts[i];
-                outConfig.modelGMLSSurfaceGradientWeightBufferByModelId[runtimeModelId] = product->modelGMLSSurfaceGradientWeightBuffers[i];
-                outConfig.modelGMLSSurfaceGradientWeightBufferOffsetByModelId[runtimeModelId] = product->modelGMLSSurfaceGradientWeightBufferOffsets[i];
-                outConfig.modelGMLSSurfaceGradientWeightCountByModelId[runtimeModelId] = product->modelGMLSSurfaceGradientWeightCounts[i];
-                outConfig.modelVoronoiSeedFlagsByModelId[runtimeModelId] = product->modelSeedFlags[i];
-                outConfig.modelVoronoiSeedPositionsByModelId[runtimeModelId] = product->modelSeedPositions[i];
+            const uint32_t runtimeModelId = product->runtimeModelId;
+            if (runtimeModelId == 0) {
+                continue;
             }
+
+            bool modelKnown = false;
+            for (uint32_t mIdx = 0; mIdx < static_cast<uint32_t>(outConfig.modelRuntimeModelIds.size()); ++mIdx) {
+                if (outConfig.modelRuntimeModelIds[mIdx] == runtimeModelId) {
+                    modelKnown = true;
+                    break;
+                }
+            }
+            if (!modelKnown) {
+                continue;
+            }
+
+            outConfig.modelVoronoiNodesByModelId[runtimeModelId] = product->mappedVoronoiNodes;
+            outConfig.modelVoronoiNodeBufferByModelId[runtimeModelId] = product->nodeBuffer;
+            outConfig.modelVoronoiNodeBufferOffsetByModelId[runtimeModelId] = product->nodeBufferOffset;
+            outConfig.modelSimNodeBufferByModelId[runtimeModelId] = product->simNodeBuffer;
+            outConfig.modelSimNodeBufferOffsetByModelId[runtimeModelId] = product->simNodeBufferOffset;
+            outConfig.modelSimGMLSInterfaceBufferByModelId[runtimeModelId] = product->simGMLSInterfaceBuffer;
+            outConfig.modelSimGMLSInterfaceBufferOffsetByModelId[runtimeModelId] = product->simGMLSInterfaceBufferOffset;
+            outConfig.simGMLSInterfaceCounts[runtimeModelId] = product->simGMLSInterfaceCount;
+            outConfig.voronoiNodeCounts[runtimeModelId] = product->nodeCount;
+            outConfig.simNodeCounts[runtimeModelId] = product->simNodeCount;
+            outConfig.modelVoronoiToSimByModelId[runtimeModelId] = product->voronoiToSim;
+            outConfig.modelGMLSSurfaceStencilBufferByModelId[runtimeModelId] = product->gmlsSurfaceStencilBuffer;
+            outConfig.modelGMLSSurfaceStencilBufferOffsetByModelId[runtimeModelId] = product->gmlsSurfaceStencilBufferOffset;
+            outConfig.modelGMLSSurfaceWeightBufferByModelId[runtimeModelId] = product->gmlsSurfaceWeightBuffer;
+            outConfig.modelGMLSSurfaceWeightBufferOffsetByModelId[runtimeModelId] = product->gmlsSurfaceWeightBufferOffset;
+            outConfig.modelGMLSSurfaceWeightCountByModelId[runtimeModelId] = product->gmlsSurfaceWeightCount;
+            outConfig.modelGMLSSurfaceGradientWeightBufferByModelId[runtimeModelId] = product->gmlsSurfaceGradientWeightBuffer;
+            outConfig.modelGMLSSurfaceGradientWeightBufferOffsetByModelId[runtimeModelId] = product->gmlsSurfaceGradientWeightBufferOffset;
+            outConfig.modelGMLSSurfaceGradientWeightCountByModelId[runtimeModelId] = product->gmlsSurfaceGradientWeightCount;
+            outConfig.modelVoronoiSeedFlagsByModelId[runtimeModelId] = product->seedFlags;
+            outConfig.modelVoronoiSeedPositionsByModelId[runtimeModelId] = product->seedPositions;
         }
 
         for (const NodeDataHandle& contactHandle : package.authored.contactHandles) {

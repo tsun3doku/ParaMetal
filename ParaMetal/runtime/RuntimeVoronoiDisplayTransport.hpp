@@ -85,55 +85,33 @@ private:
         outConfig.occupancyPointBufferOffset = computeProduct->occupancyPointBufferOffset;
         outConfig.occupancyPointCount = computeProduct->occupancyPointCount;
         if (package.display.showVoronoi) {
-            for (size_t i = 0; i < package.modelMeshHandles.size(); ++i) {
-                if (i >= computeProduct->modelRuntimeModelIds.size()) {
-                    break;
-                }
-                const uint64_t modelEntityId = package.modelMeshHandles[i].key;
-                const uint64_t remeshEntityId = package.modelRemeshHandles[i].key;
-                const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, modelEntityId);
-                const RemeshProduct* remeshProduct = tryGetProduct<RemeshProduct>(*ecsRegistry, remeshEntityId);
-                if (!modelProduct || !remeshProduct) {
-                    continue;
-                }
-
-                size_t voronoiIdx = 0;
-                for (; voronoiIdx < computeProduct->modelRuntimeModelIds.size(); ++voronoiIdx) {
-                    if (computeProduct->modelRuntimeModelIds[voronoiIdx] == modelProduct->runtimeModelId) {
-                        break;
-                    }
-                }
-                if (voronoiIdx >= computeProduct->modelRuntimeModelIds.size()) {
-                    continue;
-                }
-
-                outConfig.modelRuntimeModelIds.push_back(modelProduct->runtimeModelId);
-                outConfig.modelCandidateBuffers.push_back(computeProduct->modelCandidateBuffers[voronoiIdx]);
-                outConfig.modelCandidateBufferOffsets.push_back(computeProduct->modelCandidateBufferOffsets[voronoiIdx]);
-                outConfig.modelGMLSSurfaceStencilBuffers.push_back(computeProduct->modelGMLSSurfaceStencilBuffers[voronoiIdx]);
-                outConfig.modelGMLSSurfaceStencilBufferOffsets.push_back(computeProduct->modelGMLSSurfaceStencilBufferOffsets[voronoiIdx]);
-                outConfig.modelGMLSSurfaceWeightBuffers.push_back(computeProduct->modelGMLSSurfaceWeightBuffers[voronoiIdx]);
-                outConfig.modelGMLSSurfaceWeightBufferOffsets.push_back(computeProduct->modelGMLSSurfaceWeightBufferOffsets[voronoiIdx]);
-                outConfig.modelGMLSSurfaceGradientWeightBuffers.push_back(computeProduct->modelGMLSSurfaceGradientWeightBuffers[voronoiIdx]);
-                outConfig.modelGMLSSurfaceGradientWeightBufferOffsets.push_back(computeProduct->modelGMLSSurfaceGradientWeightBufferOffsets[voronoiIdx]);
-                outConfig.modelSupportingHalfedgeViews.push_back(remeshProduct->supportingHalfedgeView);
-                outConfig.modelSupportingAngleViews.push_back(remeshProduct->supportingAngleView);
-                outConfig.modelHalfedgeViews.push_back(remeshProduct->halfedgeView);
-                outConfig.modelEdgeViews.push_back(remeshProduct->edgeView);
-                outConfig.modelTriangleViews.push_back(remeshProduct->triangleView);
-                outConfig.modelLengthViews.push_back(remeshProduct->lengthView);
-                outConfig.modelInputHalfedgeViews.push_back(remeshProduct->inputHalfedgeView);
-                outConfig.modelInputEdgeViews.push_back(remeshProduct->inputEdgeView);
-                outConfig.modelInputTriangleViews.push_back(remeshProduct->inputTriangleView);
-                outConfig.modelInputLengthViews.push_back(remeshProduct->inputLengthView);
-                outConfig.modelIntrinsicVertexCounts.push_back(remeshProduct->intrinsicVertexCount);
-                outConfig.modelVertexBuffers.push_back(modelProduct->vertexBuffer);
-                outConfig.modelVertexBufferOffsets.push_back(modelProduct->vertexBufferOffset);
-                outConfig.modelIndexBuffers.push_back(modelProduct->indexBuffer);
-                outConfig.modelIndexBufferOffsets.push_back(modelProduct->indexBufferOffset);
-                outConfig.modelIndexCounts.push_back(modelProduct->indexCount);
-                outConfig.modelMatrices.push_back(modelProduct->modelMatrix);
+            const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, package.modelMeshHandle.key);
+            const RemeshProduct* remeshProduct = tryGetProduct<RemeshProduct>(*ecsRegistry, package.modelRemeshHandle.key);
+            if (!modelProduct || !remeshProduct || modelProduct->runtimeModelId != computeProduct->runtimeModelId) {
+                return false;
             }
+
+            outConfig.bindingKey = socketKey;
+            outConfig.runtimeModelId = computeProduct->runtimeModelId;
+            outConfig.candidateBuffer = computeProduct->candidateBuffer;
+            outConfig.candidateBufferOffset = computeProduct->candidateBufferOffset;
+            outConfig.supportingHalfedgeView = remeshProduct->supportingHalfedgeView;
+            outConfig.supportingAngleView = remeshProduct->supportingAngleView;
+            outConfig.halfedgeView = remeshProduct->halfedgeView;
+            outConfig.edgeView = remeshProduct->edgeView;
+            outConfig.triangleView = remeshProduct->triangleView;
+            outConfig.lengthView = remeshProduct->lengthView;
+            outConfig.inputHalfedgeView = remeshProduct->inputHalfedgeView;
+            outConfig.inputEdgeView = remeshProduct->inputEdgeView;
+            outConfig.inputTriangleView = remeshProduct->inputTriangleView;
+            outConfig.inputLengthView = remeshProduct->inputLengthView;
+            outConfig.intrinsicVertexCount = remeshProduct->intrinsicVertexCount;
+            outConfig.vertexBuffer = modelProduct->vertexBuffer;
+            outConfig.vertexBufferOffset = modelProduct->vertexBufferOffset;
+            outConfig.indexBuffer = modelProduct->indexBuffer;
+            outConfig.indexBufferOffset = modelProduct->indexBufferOffset;
+            outConfig.indexCount = modelProduct->indexCount;
+            outConfig.modelMatrix = modelProduct->modelMatrix;
         }
         outConfig.displayHash = buildDisplayHash(outConfig, computeProduct->productHash);
         return true;

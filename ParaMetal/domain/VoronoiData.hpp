@@ -15,9 +15,9 @@ struct VoronoiData {
     uint64_t payloadHash = 0;
     float cellSize = 0.005f;
     int voxelResolution = 128;
-    std::vector<NodeDataHandle> modelMeshHandles;
-    std::vector<uint64_t> modelPayloadHashes;
-    std::vector<NodeDataHandle> modelPayloadHandles; // Original payload handles (GeometryData or HeatModelData)
+    NodeDataHandle modelMeshHandle;
+    uint64_t modelPayloadHash = 0;
+    NodeDataHandle modelPayloadHandle; // Original payload handle (GeometryData or HeatModelData)
     bool active = false;
 
     void sealPayload();

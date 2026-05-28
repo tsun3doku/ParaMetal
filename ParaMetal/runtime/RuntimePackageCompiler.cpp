@@ -45,14 +45,9 @@ static uint64_t buildVoronoiPackageHash(const VoronoiPackage& package, const ECS
     NodeGraphHash::combine(hash, 3u);
     NodeGraphHash::combine(hash, package.authored.payloadHash);
     NodeGraphHash::combine(hash, package.voronoiHandle.key);
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(package.modelMeshHandles.size()));
-    for (const NodeDataHandle& handle : package.modelMeshHandles) {
-        NodeGraphHash::combine(hash, handle.key);
-    }
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(package.modelRemeshHandles.size()));
-    for (const NodeDataHandle& handle : package.modelRemeshHandles) {
-        NodeGraphHash::combine(hash, handle.key);
-    }
+    NodeGraphHash::combine(hash, package.modelMeshHandle.key);
+    NodeGraphHash::combine(hash, package.modelRemeshHandle.key);
+    NodeGraphHash::combinePod(hash, package.modelLocalToWorld);
     return hash;
 }
 
@@ -143,32 +138,18 @@ VoronoiPackage RuntimePackageCompiler::buildVoronoiPackage(
     package.authored = voronoi;
     package.voronoiHandle = voronoiHandle;
 
-    if (!payloadRegistry || !voronoi.active || voronoi.modelMeshHandles.empty()) {
+    if (!payloadRegistry || !voronoi.active || voronoi.modelMeshHandle.key == 0) {
         return package;
     }
 
-    package.modelMeshHandles.reserve(voronoi.modelMeshHandles.size());
-    package.modelRemeshHandles.reserve(voronoi.modelMeshHandles.size());
-    package.modelLocalToWorlds.reserve(voronoi.modelMeshHandles.size());
-
-    std::set<NodeDataHandle> seenMeshHandles;
-    for (size_t i = 0; i < voronoi.modelMeshHandles.size(); ++i) {
-        const NodeDataHandle& meshHandle = voronoi.modelMeshHandles[i];
-
-        if (!seenMeshHandles.insert(meshHandle).second) {
-            continue;
-        }
-
-        NodeDataHandle modelHandle;
-        const GeometryData* resolvedGeometry = payloadRegistry->resolveGeometry(meshHandle, &modelHandle);
-        if (!resolvedGeometry || modelHandle.key == 0) {
-            continue;
-        }
-
-        package.modelLocalToWorlds.push_back(resolvedGeometry->localToWorld);
-        package.modelMeshHandles.push_back(modelHandle);
-        package.modelRemeshHandles.push_back(meshHandle);
+    NodeDataHandle modelHandle;
+    const GeometryData* resolvedGeometry = payloadRegistry->resolveGeometry(voronoi.modelMeshHandle, &modelHandle);
+    if (!resolvedGeometry || modelHandle.key == 0) {
+        return package;
     }
+    package.modelLocalToWorld = resolvedGeometry->localToWorld;
+    package.modelMeshHandle = modelHandle;
+    package.modelRemeshHandle = voronoi.modelMeshHandle;
 
     const VoronoiNodeParams nodeParams = readVoronoiNodeParams(node);
     package.display.showVoronoi = nodeParams.preview.showVoronoi;

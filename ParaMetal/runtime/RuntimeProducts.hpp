@@ -123,19 +123,19 @@ struct VoronoiProduct {
     VkDeviceSize occupancyPointBufferOffset = 0;
     uint32_t occupancyPointCount = 0;
 
-    std::vector<uint32_t> modelRuntimeModelIds;
-    std::vector<VkBuffer> modelCandidateBuffers;
-    std::vector<VkDeviceSize> modelCandidateBufferOffsets;
-    std::vector<VkBuffer> modelGMLSSurfaceStencilBuffers;
-    std::vector<VkDeviceSize> modelGMLSSurfaceStencilBufferOffsets;
-    std::vector<VkBuffer> modelGMLSSurfaceWeightBuffers;
-    std::vector<VkDeviceSize> modelGMLSSurfaceWeightBufferOffsets;
-    std::vector<size_t> modelGMLSSurfaceWeightCounts;
-    std::vector<VkBuffer> modelGMLSSurfaceGradientWeightBuffers;
-    std::vector<VkDeviceSize> modelGMLSSurfaceGradientWeightBufferOffsets;
-    std::vector<size_t> modelGMLSSurfaceGradientWeightCounts;
-    std::vector<std::vector<uint32_t>> modelSeedFlags;
-    std::vector<std::vector<glm::vec3>> modelSeedPositions;
+    uint32_t runtimeModelId = 0;
+    VkBuffer candidateBuffer = VK_NULL_HANDLE;
+    VkDeviceSize candidateBufferOffset = 0;
+    VkBuffer gmlsSurfaceStencilBuffer = VK_NULL_HANDLE;
+    VkDeviceSize gmlsSurfaceStencilBufferOffset = 0;
+    VkBuffer gmlsSurfaceWeightBuffer = VK_NULL_HANDLE;
+    VkDeviceSize gmlsSurfaceWeightBufferOffset = 0;
+    size_t gmlsSurfaceWeightCount = 0;
+    VkBuffer gmlsSurfaceGradientWeightBuffer = VK_NULL_HANDLE;
+    VkDeviceSize gmlsSurfaceGradientWeightBufferOffset = 0;
+    size_t gmlsSurfaceGradientWeightCount = 0;
+    std::vector<uint32_t> seedFlags;
+    std::vector<glm::vec3> seedPositions;
     std::vector<uint32_t> voronoiToSim;
     std::vector<uint32_t> simToVoronoi;
 
@@ -147,7 +147,9 @@ struct VoronoiProduct {
             nodeBuffer != VK_NULL_HANDLE &&
             simNodeBuffer != VK_NULL_HANDLE &&
             voronoiNeighborIndicesBuffer != VK_NULL_HANDLE &&
-            seedPositionBuffer != VK_NULL_HANDLE;
+            seedPositionBuffer != VK_NULL_HANDLE &&
+            runtimeModelId != 0 &&
+            candidateBuffer != VK_NULL_HANDLE;
     }
 
 };
@@ -256,15 +258,9 @@ inline uint64_t buildProductHash(const VoronoiProduct& product) {
     uint64_t hash = NodeGraphHash::start();
     NodeGraphHash::combine(hash, product.nodeCount);
     NodeGraphHash::combine(hash, product.simNodeCount);
-    NodeGraphHash::combinePodVector(hash, product.modelRuntimeModelIds);
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(product.modelSeedFlags.size()));
-    for (const auto& flags : product.modelSeedFlags) {
-        NodeGraphHash::combinePodVector(hash, flags);
-    }
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(product.modelSeedPositions.size()));
-    for (const auto& positions : product.modelSeedPositions) {
-        NodeGraphHash::combinePodVector(hash, positions);
-    }
+    NodeGraphHash::combine(hash, product.runtimeModelId);
+    NodeGraphHash::combinePodVector(hash, product.seedFlags);
+    NodeGraphHash::combinePodVector(hash, product.seedPositions);
     NodeGraphHash::combine(hash, product.occupancyPointCount);
     NodeGraphHash::combinePodVector(hash, product.voronoiToSim);
     NodeGraphHash::combinePodVector(hash, product.simToVoronoi);
@@ -291,28 +287,16 @@ inline uint64_t buildProductHash(const VoronoiProduct& product) {
     NodeGraphHash::combine(hash, product.seedPositionBufferOffset);
     combineVkHandle(hash, product.occupancyPointBuffer);
     NodeGraphHash::combine(hash, product.occupancyPointBufferOffset);
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(product.modelCandidateBuffers.size()));
-    for (size_t i = 0; i < product.modelCandidateBuffers.size(); ++i) {
-        combineVkHandle(hash, product.modelCandidateBuffers[i]);
-        NodeGraphHash::combine(hash, product.modelCandidateBufferOffsets[i]);
-    }
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(product.modelGMLSSurfaceStencilBuffers.size()));
-    for (size_t i = 0; i < product.modelGMLSSurfaceStencilBuffers.size(); ++i) {
-        combineVkHandle(hash, product.modelGMLSSurfaceStencilBuffers[i]);
-        NodeGraphHash::combine(hash, product.modelGMLSSurfaceStencilBufferOffsets[i]);
-    }
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(product.modelGMLSSurfaceWeightBuffers.size()));
-    for (size_t i = 0; i < product.modelGMLSSurfaceWeightBuffers.size(); ++i) {
-        combineVkHandle(hash, product.modelGMLSSurfaceWeightBuffers[i]);
-        NodeGraphHash::combine(hash, product.modelGMLSSurfaceWeightBufferOffsets[i]);
-        NodeGraphHash::combine(hash, product.modelGMLSSurfaceWeightCounts[i]);
-    }
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(product.modelGMLSSurfaceGradientWeightBuffers.size()));
-    for (size_t i = 0; i < product.modelGMLSSurfaceGradientWeightBuffers.size(); ++i) {
-        combineVkHandle(hash, product.modelGMLSSurfaceGradientWeightBuffers[i]);
-        NodeGraphHash::combine(hash, product.modelGMLSSurfaceGradientWeightBufferOffsets[i]);
-        NodeGraphHash::combine(hash, product.modelGMLSSurfaceGradientWeightCounts[i]);
-    }
+    combineVkHandle(hash, product.candidateBuffer);
+    NodeGraphHash::combine(hash, product.candidateBufferOffset);
+    combineVkHandle(hash, product.gmlsSurfaceStencilBuffer);
+    NodeGraphHash::combine(hash, product.gmlsSurfaceStencilBufferOffset);
+    combineVkHandle(hash, product.gmlsSurfaceWeightBuffer);
+    NodeGraphHash::combine(hash, product.gmlsSurfaceWeightBufferOffset);
+    NodeGraphHash::combine(hash, product.gmlsSurfaceWeightCount);
+    combineVkHandle(hash, product.gmlsSurfaceGradientWeightBuffer);
+    NodeGraphHash::combine(hash, product.gmlsSurfaceGradientWeightBufferOffset);
+    NodeGraphHash::combine(hash, product.gmlsSurfaceGradientWeightCount);
     return hash;
 }
 

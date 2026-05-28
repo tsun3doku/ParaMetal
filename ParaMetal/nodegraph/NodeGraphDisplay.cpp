@@ -84,15 +84,11 @@ void NodeGraphDisplay::addDisplayKeys(
     if (registry.all_of<VoronoiPackage>(entity)) {
         selectedKeys.insert(socketKey);
         const auto& package = registry.get<VoronoiPackage>(entity);
-        for (const NodeDataHandle& handle : package.modelMeshHandles) {
-            if (handle.key != 0) {
-                selectedKeys.insert(handle.key);
-            }
+        if (package.modelMeshHandle.key != 0) {
+            selectedKeys.insert(package.modelMeshHandle.key);
         }
-        for (const NodeDataHandle& handle : package.modelRemeshHandles) {
-            if (handle.key != 0) {
-                selectedKeys.insert(handle.key);
-            }
+        if (package.modelRemeshHandle.key != 0) {
+            selectedKeys.insert(package.modelRemeshHandle.key);
         }
         return;
     }

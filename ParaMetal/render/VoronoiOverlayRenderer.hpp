@@ -1,5 +1,6 @@
 #pragma once
 
+#include "renderers/VoronoiRenderer.hpp"
 #include "runtime/VoronoiDisplayController.hpp"
 
 #include <cstdint>
@@ -10,7 +11,6 @@
 class PointRenderer;
 class UniformBufferManager;
 class VulkanDevice;
-class VoronoiRenderer;
 class CommandPool;
 class MemoryAllocator;
 
@@ -29,9 +29,13 @@ public:
     void cleanup();
 
 private:
+    void rebuildBindings();
+
     std::unique_ptr<VoronoiRenderer> voronoiRenderer;
     std::unique_ptr<PointRenderer> pointRenderer;
     std::unordered_map<uint64_t, VoronoiDisplayController::Config> configsBySocket;
+    std::vector<VoronoiRenderer::VoronoiRenderBinding> voronoiBindings;
+    uint32_t maxFramesInFlight = 0;
     bool initialized = false;
 };
 

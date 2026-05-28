@@ -91,9 +91,9 @@ void NodeHeatSolve::execute(NodeGraphKernelContext& context) const {
     uint64_t combinedVoronoiHash = 0;
     for (const VoronoiData* voronoi : voronoiInputs) {
         combinedVoronoiHash ^= voronoi->payloadHash;
-        for (const NodeDataHandle& handle : voronoi->modelPayloadHandles) {
-            if (seenModelHandles.insert(handle).second) {
-                heatModelHandles.push_back(handle);
+        if (voronoi->modelPayloadHandle.key != 0) {
+            if (seenModelHandles.insert(voronoi->modelPayloadHandle).second) {
+                heatModelHandles.push_back(voronoi->modelPayloadHandle);
             }
         }
     }

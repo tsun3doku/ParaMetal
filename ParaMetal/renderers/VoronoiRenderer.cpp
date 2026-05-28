@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstring>
 #include <iostream>
+#include <unordered_set>
 
 VoronoiRenderer::VoronoiRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uboManager, CommandPool& commandPool)
     : vulkanDevice(device), allocator(allocator), uniformBufferManager(uboManager), renderCommandPool(commandPool) {
@@ -210,7 +211,6 @@ void VoronoiRenderer::initialize(VkRenderPass renderPass, uint32_t maxFramesInFl
     if (!createWireframeTexture() ||
         !createDescriptorSetLayout() ||
         !createDescriptorPool(maxFramesInFlight) ||
-        !createDescriptorSets(maxFramesInFlight) ||
         !createPipeline(renderPass)) {
         cleanup();
         return;
@@ -351,22 +351,25 @@ bool VoronoiRenderer::createDescriptorSetLayout() {
 }
 
 bool VoronoiRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
+    const uint32_t maxRenderableVoronoiBindings = 64;
+    const uint32_t totalSets = maxFramesInFlight * maxRenderableVoronoiBindings;
+
     std::array<VkDescriptorPoolSize, 4> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = maxFramesInFlight;
+    poolSizes[0].descriptorCount = totalSets;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[1].descriptorCount = maxFramesInFlight * 3; 
+    poolSizes[1].descriptorCount = totalSets * 3;
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
-    poolSizes[2].descriptorCount = maxFramesInFlight * 10;
+    poolSizes[2].descriptorCount = totalSets * 10;
     poolSizes[3].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[3].descriptorCount = maxFramesInFlight;
+    poolSizes[3].descriptorCount = totalSets;
 
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = maxFramesInFlight;
+    poolInfo.maxSets = totalSets;
 
     if (vkCreateDescriptorPool(vulkanDevice.getDevice(), &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
         std::cerr << "VoronoiRenderer: Failed to create descriptor pool" << std::endl;
@@ -376,51 +379,40 @@ bool VoronoiRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
     return true;
 }
 
-bool VoronoiRenderer::createDescriptorSets(uint32_t maxFramesInFlight) {
-    std::vector<VkDescriptorSetLayout> layouts(maxFramesInFlight, descriptorSetLayout);
-    
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = descriptorPool;
-    allocInfo.descriptorSetCount = maxFramesInFlight;
-    allocInfo.pSetLayouts = layouts.data();
+bool VoronoiRenderer::updateDescriptorSetForBinding(
+    const VoronoiRenderBinding& binding,
+    uint32_t maxFramesInFlight,
+    std::vector<VkDescriptorSet>& targetSets,
+    bool forceReallocate) {
+    if (forceReallocate || targetSets.empty() || targetSets.size() != maxFramesInFlight) {
+        targetSets.clear();
+        targetSets.resize(maxFramesInFlight);
 
-    descriptorSets.resize(maxFramesInFlight);
-    if (vkAllocateDescriptorSets(vulkanDevice.getDevice(), &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
-        descriptorSets.clear();
-        std::cerr << "VoronoiRenderer: Failed to allocate descriptor sets" << std::endl;
-        return false;
+        std::vector<VkDescriptorSetLayout> layouts(maxFramesInFlight, descriptorSetLayout);
+
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool = descriptorPool;
+        allocInfo.descriptorSetCount = maxFramesInFlight;
+        allocInfo.pSetLayouts = layouts.data();
+
+        if (vkAllocateDescriptorSets(vulkanDevice.getDevice(), &allocInfo, targetSets.data()) != VK_SUCCESS) {
+            targetSets.clear();
+            return false;
+        }
     }
 
-    return true;
-}
+    for (uint32_t frameIndex = 0; frameIndex < maxFramesInFlight; ++frameIndex) {
+        std::array<VkWriteDescriptorSet, 15> descriptorWrites{};
 
-void VoronoiRenderer::updateDescriptors(uint32_t frameIndex,
-    uint32_t vertexCount, VkBuffer seedBuffer, VkDeviceSize seedOffset,
-    VkBuffer neighborBuffer, VkDeviceSize neighborOffset,
-    VkBufferView supportingHalfedgeView, VkBufferView supportingAngleView,
-    VkBufferView halfedgeView, VkBufferView edgeView,
-    VkBufferView triangleView, VkBufferView lengthView,
-    VkBufferView inputHalfedgeView, VkBufferView inputEdgeView,
-    VkBufferView inputTriangleView, VkBufferView inputLengthView,
-    VkBuffer candidateBuffer, VkDeviceSize candidateOffset) {
-    currentVertexCount = vertexCount;
-    currentCandidateBuffer = candidateBuffer;
-    
-    if (frameIndex >= descriptorSets.size()) {
-        return;
-    }
-
-    std::array<VkWriteDescriptorSet, 15> descriptorWrites{};
-
-    // Binding 0: UBO
-    VkDescriptorBufferInfo uboInfo{};
-    uboInfo.buffer = uniformBufferManager.getUniformBuffers()[frameIndex];
-    uboInfo.offset = uniformBufferManager.getUniformBufferOffsets()[frameIndex];
-    uboInfo.range = sizeof(UniformBufferObject);
+        // Binding 0: UBO
+        VkDescriptorBufferInfo uboInfo{};
+        uboInfo.buffer = uniformBufferManager.getUniformBuffers()[frameIndex];
+        uboInfo.offset = uniformBufferManager.getUniformBufferOffsets()[frameIndex];
+        uboInfo.range = sizeof(UniformBufferObject);
     
     descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrites[0].dstSet = descriptorSets[frameIndex];
+    descriptorWrites[0].dstSet = targetSets[frameIndex];
     descriptorWrites[0].dstBinding = 0;
     descriptorWrites[0].dstArrayElement = 0;
     descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -429,12 +421,12 @@ void VoronoiRenderer::updateDescriptors(uint32_t frameIndex,
 
     // Binding 2: Seed positions
     VkDescriptorBufferInfo seedInfo{};
-    seedInfo.buffer = seedBuffer;
-    seedInfo.offset = seedOffset;
+    seedInfo.buffer = binding.seedBuffer;
+    seedInfo.offset = binding.seedOffset;
     seedInfo.range = VK_WHOLE_SIZE;
     
     descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrites[1].dstSet = descriptorSets[frameIndex];
+    descriptorWrites[1].dstSet = targetSets[frameIndex];
     descriptorWrites[1].dstBinding = 2;
     descriptorWrites[1].dstArrayElement = 0;
     descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -443,12 +435,12 @@ void VoronoiRenderer::updateDescriptors(uint32_t frameIndex,
     
     // Binding 4: Voronoi neighbors
     VkDescriptorBufferInfo neighborInfo{};
-    neighborInfo.buffer = neighborBuffer;
-    neighborInfo.offset = neighborOffset;
+    neighborInfo.buffer = binding.neighborBuffer;
+    neighborInfo.offset = binding.neighborOffset;
     neighborInfo.range = VK_WHOLE_SIZE;
     
     descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrites[2].dstSet = descriptorSets[frameIndex];
+    descriptorWrites[2].dstSet = targetSets[frameIndex];
     descriptorWrites[2].dstBinding = 4;
     descriptorWrites[2].dstArrayElement = 0;
     descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -456,26 +448,26 @@ void VoronoiRenderer::updateDescriptors(uint32_t frameIndex,
     descriptorWrites[2].pBufferInfo = &neighborInfo;
 
     VkDescriptorBufferInfo candidateInfo{};
-    candidateInfo.buffer = candidateBuffer;
-    candidateInfo.offset = candidateOffset;
+    candidateInfo.buffer = binding.candidateBuffer;
+    candidateInfo.offset = binding.candidateOffset;
     candidateInfo.range = VK_WHOLE_SIZE;
 
     VkBufferView supportingViews[10] = {
-        supportingHalfedgeView,
-        supportingAngleView,
-        halfedgeView,
-        edgeView,
-        triangleView,
-        lengthView,
-        inputHalfedgeView,
-        inputEdgeView,
-        inputTriangleView,
-        inputLengthView
+        binding.supportingHalfedgeView,
+        binding.supportingAngleView,
+        binding.halfedgeView,
+        binding.edgeView,
+        binding.triangleView,
+        binding.lengthView,
+        binding.inputHalfedgeView,
+        binding.inputEdgeView,
+        binding.inputTriangleView,
+        binding.inputLengthView
     };
 
     for (int i = 0; i < 10; ++i) {
         descriptorWrites[3 + i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[3 + i].dstSet = descriptorSets[frameIndex];
+        descriptorWrites[3 + i].dstSet = targetSets[frameIndex];
         descriptorWrites[3 + i].dstBinding = 6 + i;
         descriptorWrites[3 + i].dstArrayElement = 0;
         descriptorWrites[3 + i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
@@ -484,7 +476,7 @@ void VoronoiRenderer::updateDescriptors(uint32_t frameIndex,
     }
 
     descriptorWrites[13].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrites[13].dstSet = descriptorSets[frameIndex];
+    descriptorWrites[13].dstSet = targetSets[frameIndex];
     descriptorWrites[13].dstBinding = 16;
     descriptorWrites[13].dstArrayElement = 0;
     descriptorWrites[13].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -497,14 +489,52 @@ void VoronoiRenderer::updateDescriptors(uint32_t frameIndex,
     wireframeInfo.sampler = wireframeTextureSampler;
 
     descriptorWrites[14].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrites[14].dstSet = descriptorSets[frameIndex];
+    descriptorWrites[14].dstSet = targetSets[frameIndex];
     descriptorWrites[14].dstBinding = 17;
     descriptorWrites[14].dstArrayElement = 0;
     descriptorWrites[14].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     descriptorWrites[14].descriptorCount = 1;
     descriptorWrites[14].pImageInfo = &wireframeInfo;
 
-    vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+        vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+    }
+
+    return true;
+}
+
+void VoronoiRenderer::updateDescriptors(const std::vector<VoronoiRenderBinding>& bindings, uint32_t maxFramesInFlight, bool forceReallocate) {
+    if (!initialized) {
+        return;
+    }
+
+    if (forceReallocate && descriptorPool != VK_NULL_HANDLE) {
+        vkResetDescriptorPool(vulkanDevice.getDevice(), descriptorPool, 0);
+        voronoiDescriptorSets.clear();
+    }
+
+    std::unordered_set<uint64_t> liveBindings;
+    liveBindings.reserve(bindings.size());
+    for (const VoronoiRenderBinding& binding : bindings) {
+        if (binding.bindingKey == 0 || binding.runtimeModelId == 0 || binding.candidateBuffer == VK_NULL_HANDLE) {
+            continue;
+        }
+        liveBindings.insert(binding.bindingKey);
+
+        auto& bindingSets = voronoiDescriptorSets[binding.bindingKey];
+        if (!updateDescriptorSetForBinding(binding, maxFramesInFlight, bindingSets, forceReallocate)) {
+            voronoiDescriptorSets.erase(binding.bindingKey);
+            std::cerr << "VoronoiRenderer: Failed to allocate/update descriptor sets bindingKey="
+                      << binding.bindingKey << std::endl;
+        }
+    }
+
+    for (auto it = voronoiDescriptorSets.begin(); it != voronoiDescriptorSets.end();) {
+        if (liveBindings.find(it->first) == liveBindings.end()) {
+            it = voronoiDescriptorSets.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 bool VoronoiRenderer::createPipeline(VkRenderPass renderPass) {
@@ -676,29 +706,40 @@ bool VoronoiRenderer::createPipeline(VkRenderPass renderPass) {
     return true;
 }
 
-void VoronoiRenderer::render(VkCommandBuffer cmd, VkBuffer vertexBuffer, VkDeviceSize vertexOffset,
-    VkBuffer indexBuffer, VkDeviceSize indexOffset, uint32_t indexCount, 
-    uint32_t frameIndex, const glm::mat4& modelMatrix) {
-    if (!initialized || currentCandidateBuffer == VK_NULL_HANDLE || frameIndex >= descriptorSets.size()) {
-        return;
-    }
-    
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, 
-                           &descriptorSets[frameIndex], 0, nullptr);
-    
+void VoronoiRenderer::drawBinding(VkCommandBuffer cmd, VkDescriptorSet descriptorSet, const VoronoiRenderBinding& binding) const {
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+
     GeometryPushConstant pushConstant{};
-    pushConstant.modelMatrix = modelMatrix;
+    pushConstant.modelMatrix = binding.modelMatrix;
     pushConstant.alpha = 1.0f; 
     vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 
                       0, sizeof(GeometryPushConstant), &pushConstant);
     
-    VkBuffer vertexBuffers[] = {vertexBuffer};
-    VkDeviceSize offsets[] = {vertexOffset};
+    VkBuffer vertexBuffers[] = {binding.vertexBuffer};
+    VkDeviceSize offsets[] = {binding.vertexOffset};
     vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
-    vkCmdBindIndexBuffer(cmd, indexBuffer, indexOffset, VK_INDEX_TYPE_UINT32);
+    vkCmdBindIndexBuffer(cmd, binding.indexBuffer, binding.indexOffset, VK_INDEX_TYPE_UINT32);
     
-    vkCmdDrawIndexed(cmd, indexCount, 1, 0, 0, 0);
+    vkCmdDrawIndexed(cmd, binding.indexCount, 1, 0, 0, 0);
+}
+
+void VoronoiRenderer::render(VkCommandBuffer cmd, uint32_t frameIndex, const std::vector<VoronoiRenderBinding>& bindings) const {
+    if (!initialized || pipeline == VK_NULL_HANDLE || pipelineLayout == VK_NULL_HANDLE) {
+        return;
+    }
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+    for (const VoronoiRenderBinding& binding : bindings) {
+        if (binding.bindingKey == 0 || binding.runtimeModelId == 0 || binding.indexCount == 0) {
+            continue;
+        }
+        auto it = voronoiDescriptorSets.find(binding.bindingKey);
+        if (it == voronoiDescriptorSets.end() || frameIndex >= it->second.size()) {
+            continue;
+        }
+        drawBinding(cmd, it->second[frameIndex], binding);
+    }
 }
 
 void VoronoiRenderer::cleanup() {
@@ -715,6 +756,7 @@ void VoronoiRenderer::cleanup() {
     if (descriptorPool != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(vulkanDevice.getDevice(), descriptorPool, nullptr);
         descriptorPool = VK_NULL_HANDLE;
+        voronoiDescriptorSets.clear();
     }
     
     if (descriptorSetLayout != VK_NULL_HANDLE) {
@@ -739,6 +781,6 @@ void VoronoiRenderer::cleanup() {
         wireframeTextureMemory = VK_NULL_HANDLE;
     }
     
-    descriptorSets.clear();
+    voronoiDescriptorSets.clear();
     initialized = false;
 }

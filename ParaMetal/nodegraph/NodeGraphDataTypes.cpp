@@ -95,7 +95,7 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodeGraphTypeRegistry* typ
         const VoronoiData* voronoiData = registry ? registry->get<VoronoiData>(dataBlock.payloadHandle) : nullptr;
         dataBlock.metadata["voronoi.active"] = (voronoiData && voronoiData->active) ? "true" : "false";
         dataBlock.metadata["voronoi.model_count"] =
-            std::to_string(voronoiData ? voronoiData->modelMeshHandles.size() : 0u);
+            std::to_string((voronoiData && voronoiData->modelMeshHandle.key != 0) ? 1u : 0u);
         dataBlock.metadata["voronoi.cell_size"] =
             voronoiData ? std::to_string(voronoiData->cellSize) : std::string();
         dataBlock.metadata["voronoi.voxel_resolution"] =
@@ -107,4 +107,3 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodeGraphTypeRegistry* typ
         dataBlock.metadata.erase("voronoi.voxel_resolution");
     }
 }
-

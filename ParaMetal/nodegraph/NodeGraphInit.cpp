@@ -168,7 +168,7 @@ NodeTypeDefinition buildVoronoiNode() {
         "Voronoi",
         NodeGraphNodeCategory::System,
         {
-            makeInputSocket("Mesh", NodeGraphValueType::Mesh, true),
+            makeInputSocket("Mesh", NodeGraphValueType::Mesh),
             makeOutputSocket("Volume", NodeGraphValueType::Volume, payloadtypes::Voronoi),
         },
         {

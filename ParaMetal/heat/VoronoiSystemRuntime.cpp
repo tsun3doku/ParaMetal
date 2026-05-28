@@ -11,7 +11,6 @@
 
 #include <iostream>
 #include <limits>
-#include <unordered_set>
 
 void VoronoiSystemRuntime::invalidateMaterialization() {
     voronoiReady = false;
@@ -214,73 +213,63 @@ void VoronoiSystemRuntime::setReceiverGeometry(
     VulkanDevice& vulkanDevice,
     MemoryAllocator& memoryAllocator,
     CommandPool& renderCommandPool,
-    const std::vector<uint32_t>& receiverNodeModelIds,
-    const std::vector<std::vector<glm::vec3>>& receiverGeometryPositions,
-    const std::vector<std::vector<uint32_t>>& receiverGeometryTriangleIndices,
-    const std::vector<SupportingHalfedge::IntrinsicMesh>& receiverIntrinsicMeshes,
-    const std::vector<std::vector<VoronoiModelRuntime::SurfaceVertex>>& receiverSurfaceVertices,
-    const std::vector<std::vector<uint32_t>>& receiverIntrinsicTriangleIndices,
-    const std::vector<uint32_t>& receiverModelIds,
-    const std::vector<glm::mat4>& meshModelMatrices) {
+    uint32_t receiverNodeModelId,
+    const std::vector<glm::vec3>& receiverGeometryPositions,
+    const std::vector<uint32_t>& receiverGeometryTriangleIndices,
+    const SupportingHalfedge::IntrinsicMesh& receiverIntrinsicMesh,
+    const std::vector<VoronoiModelRuntime::SurfaceVertex>& receiverSurfaceVertices,
+    const std::vector<uint32_t>& receiverIntrinsicTriangleIndices,
+    uint32_t receiverModelId,
+    const glm::mat4& meshModelMatrix) {
     invalidateMaterialization();
 
-    for (auto& modelRuntime : modelRuntimes) {
-        if (modelRuntime) {
-            modelRuntime->cleanup();
-        }
+    if (modelRuntime) {
+        modelRuntime->cleanup();
     }
-    modelRuntimes.clear();
+    modelRuntime.reset();
 
-    const size_t receiverCount = receiverModelIds.size();
-
-    std::unordered_set<uint32_t> seenReceiverIds;
-    for (std::size_t index = 0; index < receiverCount; ++index) {
-        const uint32_t receiverId = receiverModelIds[index];
-        if (receiverId == 0 || !seenReceiverIds.insert(receiverId).second) {
-            continue;
-        }
-
-        auto modelRuntime = std::make_unique<VoronoiModelRuntime>(
-            vulkanDevice,
-            memoryAllocator,
-            receiverId,
-            meshModelMatrices[index],
-            VoronoiModelRuntime::CpuData{
-                receiverNodeModelIds[index],
-                receiverIntrinsicMeshes[index],
-                receiverGeometryPositions[index],
-                receiverGeometryTriangleIndices[index],
-                receiverSurfaceVertices[index],
-                receiverIntrinsicTriangleIndices[index]
-            },
-            renderCommandPool);
-        if (!modelRuntime->createVoronoiBuffers()) {
-            std::cerr << "[VoronoiSystemRuntime] Failed to create Voronoi buffers for runtimeModelId="
-                      << receiverId << std::endl;
-            modelRuntime->cleanup();
-            continue;
-        }
-
-        if (!modelRuntime->createSurfaceBuffers()) {
-            std::cerr << "[VoronoiSystemRuntime] Failed to create surface buffers for runtimeModelId="
-                      << receiverId << std::endl;
-            modelRuntime->cleanup();
-            continue;
-        }
-
-        modelRuntimes.push_back(std::move(modelRuntime));
+    if (receiverModelId == 0) {
+        return;
     }
+
+    auto nextModelRuntime = std::make_unique<VoronoiModelRuntime>(
+        vulkanDevice,
+        memoryAllocator,
+        receiverModelId,
+        meshModelMatrix,
+        VoronoiModelRuntime::CpuData{
+            receiverNodeModelId,
+            receiverIntrinsicMesh,
+            receiverGeometryPositions,
+            receiverGeometryTriangleIndices,
+            receiverSurfaceVertices,
+            receiverIntrinsicTriangleIndices
+        },
+        renderCommandPool);
+    if (!nextModelRuntime->createVoronoiBuffers()) {
+        std::cerr << "[VoronoiSystemRuntime] Failed to create Voronoi buffers for runtimeModelId="
+                  << receiverModelId << std::endl;
+        nextModelRuntime->cleanup();
+        return;
+    }
+
+    if (!nextModelRuntime->createSurfaceBuffers()) {
+        std::cerr << "[VoronoiSystemRuntime] Failed to create surface buffers for runtimeModelId="
+                  << receiverModelId << std::endl;
+        nextModelRuntime->cleanup();
+        return;
+    }
+
+    modelRuntime = std::move(nextModelRuntime);
 }
 
 void VoronoiSystemRuntime::clearReceiverGeometry() {
     invalidateMaterialization();
 
-    for (auto& modelRuntime : modelRuntimes) {
-        if (modelRuntime) {
-            modelRuntime->cleanup();
-        }
+    if (modelRuntime) {
+        modelRuntime->cleanup();
     }
-    modelRuntimes.clear();
+    modelRuntime.reset();
 }
 
 void VoronoiSystemRuntime::setParams(float updatedCellSize, int updatedVoxelResolution) {
@@ -352,10 +341,8 @@ void VoronoiSystemRuntime::cleanup(MemoryAllocator& memoryAllocator) {
     freeBuffer(resources.voxelOffsetsBuffer, resources.voxelOffsetsBufferOffset);
     resources.voronoiNodeCount = 0;
 
-    for (auto& modelRuntime : modelRuntimes) {
-        if (modelRuntime) {
-            modelRuntime->cleanup();
-        }
+    if (modelRuntime) {
+        modelRuntime->cleanup();
     }
-    modelRuntimes.clear();
+    modelRuntime.reset();
 }

@@ -104,10 +104,7 @@ void VoronoiData::sealPayload() {
     NodeGraphHash::combine(hash, static_cast<uint64_t>(active ? 1u : 0u));
     NodeGraphHash::combineFloat(hash, cellSize);
     NodeGraphHash::combine(hash, static_cast<uint64_t>(voxelResolution));
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(modelPayloadHashes.size()));
-    for (uint64_t modelPayloadHash : modelPayloadHashes) {
-        NodeGraphHash::combine(hash, modelPayloadHash);
-    }
+    NodeGraphHash::combine(hash, modelPayloadHash);
     payloadHash = hash;
 }
 
