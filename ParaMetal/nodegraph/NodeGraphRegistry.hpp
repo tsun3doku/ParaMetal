@@ -72,6 +72,7 @@ constexpr uint32_t ShowHeatOverlay = 8;
 constexpr uint32_t ContactThermalConductance = 9;
 constexpr uint32_t ShowFluxVectors = 10;
 constexpr uint32_t FluxVectorScale = 11;
+constexpr uint32_t ShowHeatPalette = 12;
 }
 
 namespace voronoi {

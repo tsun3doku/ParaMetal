@@ -1,6 +1,7 @@
 #pragma once
 
 #include "renderers/HeatSurfaceRenderer.hpp"
+#include "renderers/HeatPaletteRenderer.hpp"
 #include "renderers/VectorArrowRenderer.hpp"
 #include "runtime/HeatDisplayController.hpp"
 
@@ -28,15 +29,19 @@ public:
     void initialize(VkRenderPass renderPass, uint32_t maxFramesInFlight);
     void apply(uint64_t socketKey, const HeatDisplayController::Config& config);
     void remove(uint64_t socketKey);
-    void render(VkCommandBuffer commandBuffer, uint32_t frameIndex);
+    void renderWorld(VkCommandBuffer commandBuffer, uint32_t frameIndex);
+    void renderScreen(VkCommandBuffer commandBuffer, uint32_t frameIndex, VkExtent2D extent);
     void cleanup();
 
 private:
     void rebuildBindings();
 
+    VulkanDevice& vulkanDevice;
+    CommandPool& commandPool;
     MemoryAllocator& memoryAllocator;
     std::unique_ptr<HeatSurfaceRenderer> surfaceRenderer;
     std::unique_ptr<VectorArrowRenderer> vectorArrowRenderer;
+    std::unique_ptr<HeatPaletteRenderer> heatPaletteRenderer;
     std::unordered_map<uint64_t, HeatDisplayController::Config> configsBySocket;
     std::vector<HeatSurfaceRenderer::SurfaceRenderBinding> surfaceBindings;
     std::vector<VectorArrowRenderer::VectorRenderBinding> fluxVectorBindings;

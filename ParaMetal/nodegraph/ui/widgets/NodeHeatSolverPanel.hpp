@@ -46,6 +46,7 @@ private:
     NodeGraphSliderRow* heatContactThermalConductanceRow = nullptr;
     QCheckBox* heatOverlayCheckBox = nullptr;
     QCheckBox* fluxVectorsCheckBox = nullptr;
+    QCheckBox* heatPaletteCheckBox = nullptr;
     NodeGraphSliderRow* fluxVectorScaleRow = nullptr;
     QPushButton* heatSolveSettingsApplyButton = nullptr;
     QComboBox* heatBindingGroupComboBox = nullptr;

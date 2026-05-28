@@ -31,13 +31,6 @@ private:
         glm::vec2 texCoord;
     };
 
-    struct GlyphInstance {
-        glm::vec2 centerPx;
-        glm::vec2 sizePx;
-        glm::vec4 charUV;
-        glm::vec4 color;
-    };
-
     void createQuadVertexBuffer();
     void createInstanceBuffers(uint32_t maxFramesInFlight);
     void createFontAtlas();
@@ -71,7 +64,7 @@ private:
 
     GlyphText glyphText;
     std::vector<std::string> activeLines;
-    std::vector<GlyphInstance> glyphInstances;
+    std::vector<GlyphText::GlyphInstance> glyphInstances;
     uint32_t glyphCount = 0;
     uint32_t maxGlyphCapacity = 512;
 };

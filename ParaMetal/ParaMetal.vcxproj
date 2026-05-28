@@ -290,6 +290,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="spatial\HashGrid.cpp" />
     <ClCompile Include="renderers\HashGridRenderer.cpp" />
     <ClCompile Include="renderers\HeatSurfaceRenderer.cpp" />
+    <ClCompile Include="renderers\HeatPaletteRenderer.cpp" />
     <ClCompile Include="renderers\VectorArrowRenderer.cpp" />
     <ClCompile Include="heat\HeatModelRuntime.cpp" />
     <ClCompile Include="heat\HeatContactRuntime.cpp" />
@@ -425,6 +426,9 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <None Include="shaders\hash_grid_vis.frag" />
     <None Include="shaders\hash_grid_vis.vert" />
     <None Include="shaders\heat_buffer.frag" />
+    <None Include="shaders\heat_palette.glsl" />
+    <None Include="shaders\heat_palette_bar.vert" />
+    <None Include="shaders\heat_palette_bar.frag" />
     <None Include="shaders\heat_source.frag" />
     <None Include="shaders\heat_source.vert" />
     <None Include="shaders\heat_geometry.slang" />
@@ -574,6 +578,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="spatial\HashGrid.hpp" />
     <ClInclude Include="renderers\HashGridRenderer.hpp" />
     <ClInclude Include="renderers\HeatSurfaceRenderer.hpp" />
+    <ClInclude Include="renderers\HeatPaletteRenderer.hpp" />
     <ClInclude Include="renderers\VectorArrowRenderer.hpp" />
     <ClInclude Include="voronoi\VoronoiSystemBuildStage.hpp" />
     <ClInclude Include="voronoi\VoronoiDomain.hpp" />

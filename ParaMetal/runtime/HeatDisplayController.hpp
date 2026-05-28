@@ -17,7 +17,10 @@ public:
     struct Config {
         bool showHeatOverlay = false;
         bool showFluxVectors = false;
+        bool showHeatPalette = false;
         float fluxVectorScale = 1.0f;
+        float heatPaletteMinTemp = 0.0f;
+        float heatPaletteMaxTemp = 100.0f;
         bool authoredActive = false;
         bool active = false;
         bool paused = false;
@@ -34,7 +37,7 @@ public:
         uint64_t displayHash = 0;
 
         bool anyVisible() const {
-            return showHeatOverlay || showFluxVectors;
+            return showHeatOverlay || showFluxVectors || showHeatPalette;
         }
 
         bool isValid() const {
@@ -67,7 +70,10 @@ inline uint64_t buildDisplayHash(const HeatDisplayController::Config& config, ui
     uint64_t hash = NodeGraphHash::start();
     NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showHeatOverlay ? 1u : 0u));
     NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showFluxVectors ? 1u : 0u));
+    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showHeatPalette ? 1u : 0u));
     NodeGraphHash::combinePod(hash, config.fluxVectorScale);
+    NodeGraphHash::combinePod(hash, config.heatPaletteMinTemp);
+    NodeGraphHash::combinePod(hash, config.heatPaletteMaxTemp);
     NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.authoredActive ? 1u : 0u));
     NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.active ? 1u : 0u));
     NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.paused ? 1u : 0u));

@@ -214,7 +214,7 @@ void OverlayPass::record(const FrameContext& context, const SceneView& view, con
         contactOverlayRenderer->render(commandBuffer, currentFrame, extent);
     }
     if (heatOverlayRenderer) {
-        heatOverlayRenderer->render(commandBuffer, currentFrame);
+        heatOverlayRenderer->renderWorld(commandBuffer, currentFrame);
     }
     if (voronoiOverlayRenderer) {
         voronoiOverlayRenderer->renderSurface(commandBuffer, currentFrame);
@@ -280,6 +280,10 @@ void OverlayPass::record(const FrameContext& context, const SceneView& view, con
         const glm::vec3 gizmoPosition = gizmoController.calculateGizmoPosition(resourceManager, modelSelection);
         const float gizmoScale = gizmoRenderer->calculateGizmoScale(resourceManager, modelSelection);
         gizmoRenderer->render(commandBuffer, gizmoPosition, extent, gizmoScale, view, gizmoController);
+    }
+
+    if (heatOverlayRenderer) {
+        heatOverlayRenderer->renderScreen(commandBuffer, currentFrame, extent);
     }
 }
 
