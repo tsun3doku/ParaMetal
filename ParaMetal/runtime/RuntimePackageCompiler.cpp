@@ -190,6 +190,7 @@ HeatPackage RuntimePackageCompiler::buildHeatPackage(
     const HeatSolveNodeParams nodeParams = readHeatSolveNodeParams(node);
     package.display.showHeatOverlay = nodeParams.preview.showHeatOverlay;
     package.display.showFluxVectors = nodeParams.preview.showFluxVectors;
+    package.display.showHeatPalette = nodeParams.preview.showHeatPalette;
     package.display.fluxVectorScale = static_cast<float>(nodeParams.preview.fluxVectorScale);
 
     if (payloadRegistry) {

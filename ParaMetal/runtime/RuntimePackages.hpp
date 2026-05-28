@@ -96,10 +96,13 @@ struct HeatPackage {
     struct DisplaySettings {
         bool showHeatOverlay = false;
         bool showFluxVectors = false;
+        bool showHeatPalette = false;
         float fluxVectorScale = 1.0f;
+        float heatPaletteMinTemp = 0.0f;
+        float heatPaletteMaxTemp = 100.0f;
 
         bool anyVisible() const {
-            return showHeatOverlay || showFluxVectors;
+            return showHeatOverlay || showFluxVectors || showHeatPalette;
         }
     };
 
@@ -122,7 +125,10 @@ struct HeatPackage {
         return packageHash == other.packageHash &&
             display.showHeatOverlay == other.display.showHeatOverlay &&
             display.showFluxVectors == other.display.showFluxVectors &&
-            display.fluxVectorScale == other.display.fluxVectorScale;
+            display.showHeatPalette == other.display.showHeatPalette &&
+            display.fluxVectorScale == other.display.fluxVectorScale &&
+            display.heatPaletteMinTemp == other.display.heatPaletteMinTemp &&
+            display.heatPaletteMaxTemp == other.display.heatPaletteMaxTemp;
     }
 };
 

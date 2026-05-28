@@ -11,6 +11,7 @@ struct NodeGraphNode;
 struct HeatPreviewSettings {
     bool showHeatOverlay = false;
     bool showFluxVectors = false;
+    bool showHeatPalette = false;
     double fluxVectorScale = 1.0;
 };
 

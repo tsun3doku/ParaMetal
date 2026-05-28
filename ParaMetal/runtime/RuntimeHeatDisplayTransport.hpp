@@ -75,7 +75,10 @@ private:
         outConfig = {};
         outConfig.showHeatOverlay = package.display.showHeatOverlay;
         outConfig.showFluxVectors = package.display.showFluxVectors;
+        outConfig.showHeatPalette = package.display.showHeatPalette;
         outConfig.fluxVectorScale = package.display.fluxVectorScale;
+        outConfig.heatPaletteMinTemp = package.display.heatPaletteMinTemp;
+        outConfig.heatPaletteMaxTemp = package.display.heatPaletteMaxTemp;
         outConfig.authoredActive = package.authored.active;
         outConfig.active = computeProduct->active;
         outConfig.paused = computeProduct->paused;

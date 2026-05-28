@@ -82,7 +82,7 @@ void TimingRenderer::createQuadVertexBuffer() {
 }
 
 void TimingRenderer::createInstanceBuffers(uint32_t maxFramesInFlight) {
-    const VkDeviceSize size = sizeof(GlyphInstance) * maxGlyphCapacity;
+    const VkDeviceSize size = sizeof(GlyphText::GlyphInstance) * maxGlyphCapacity;
 
     instanceBuffers.resize(maxFramesInFlight, VK_NULL_HANDLE);
     instanceBufferMemories.resize(maxFramesInFlight, VK_NULL_HANDLE);
@@ -309,7 +309,7 @@ void TimingRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpassInd
 
     VkVertexInputBindingDescription instanceBinding{};
     instanceBinding.binding = 1;
-    instanceBinding.stride = sizeof(GlyphInstance);
+    instanceBinding.stride = sizeof(GlyphText::GlyphInstance);
     instanceBinding.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
     std::array<VkVertexInputBindingDescription, 2> bindings = { vertexBinding, instanceBinding };
@@ -317,10 +317,10 @@ void TimingRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpassInd
     std::array<VkVertexInputAttributeDescription, 6> attrs{};
     attrs[0] = { 0, 0, VK_FORMAT_R32G32_SFLOAT, static_cast<uint32_t>(offsetof(QuadVertex, position)) };
     attrs[1] = { 1, 0, VK_FORMAT_R32G32_SFLOAT, static_cast<uint32_t>(offsetof(QuadVertex, texCoord)) };
-    attrs[2] = { 2, 1, VK_FORMAT_R32G32_SFLOAT, static_cast<uint32_t>(offsetof(GlyphInstance, centerPx)) };
-    attrs[3] = { 3, 1, VK_FORMAT_R32G32_SFLOAT, static_cast<uint32_t>(offsetof(GlyphInstance, sizePx)) };
-    attrs[4] = { 4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<uint32_t>(offsetof(GlyphInstance, charUV)) };
-    attrs[5] = { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<uint32_t>(offsetof(GlyphInstance, color)) };
+    attrs[2] = { 2, 1, VK_FORMAT_R32G32_SFLOAT, static_cast<uint32_t>(offsetof(GlyphText::GlyphInstance, centerPx)) };
+    attrs[3] = { 3, 1, VK_FORMAT_R32G32_SFLOAT, static_cast<uint32_t>(offsetof(GlyphText::GlyphInstance, sizePx)) };
+    attrs[4] = { 4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<uint32_t>(offsetof(GlyphText::GlyphInstance, charUV)) };
+    attrs[5] = { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<uint32_t>(offsetof(GlyphText::GlyphInstance, color)) };
 
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -445,7 +445,7 @@ void TimingRenderer::buildGlyphInstances() {
             const GlyphText::CharInfo& info = glyphText.getCharInfo(c);
 
             if (info.width > 0.0f && info.height > 0.0f) {
-                GlyphInstance glyph{};
+                GlyphText::GlyphInstance glyph{};
                 glyph.centerPx = glm::vec2(
                     cursorX + (info.xoffset * scale) + (0.5f * info.width * scale),
                     lineTop + (info.yoffset * scale) + (0.5f * info.height * scale));
@@ -486,7 +486,7 @@ void TimingRenderer::setLines(const std::vector<std::string>& lines) {
             continue;
 
         if (!glyphInstances.empty()) {
-            std::memcpy(mapped, glyphInstances.data(), sizeof(GlyphInstance) * glyphInstances.size());
+            std::memcpy(mapped, glyphInstances.data(), sizeof(GlyphText::GlyphInstance) * glyphInstances.size());
         }
     }
 }

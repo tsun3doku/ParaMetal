@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <glm/glm.hpp>
 
@@ -15,6 +15,13 @@ public:
         float xadvance = 0.0f;
         float xoffset = 0.0f;
         float yoffset = 0.0f;
+    };
+
+    struct GlyphInstance {
+        glm::vec2 centerPx;
+        glm::vec2 sizePx;
+        glm::vec4 charUV;
+        glm::vec4 color;
     };
 
     GlyphText(

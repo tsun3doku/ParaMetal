@@ -71,6 +71,9 @@ NodeHeatSolverPanel::NodeHeatSolverPanel(QWidget* parent)
     fluxVectorsCheckBox = new QCheckBox("Flux Vectors", this);
     layout->addWidget(fluxVectorsCheckBox);
 
+    heatPaletteCheckBox = new QCheckBox("Heat Palette", this);
+    layout->addWidget(heatPaletteCheckBox);
+
     fluxVectorScaleRow = new NodeGraphSliderRow("Flux Vector Scale", this);
     fluxVectorScaleRow->setRange(0.0, 10.0);
     fluxVectorScaleRow->setDecimals(2);
@@ -180,6 +183,25 @@ NodeHeatSolverPanel::NodeHeatSolverPanel(QWidget* parent)
 
         setStatus("Heat settings applied.");
     });
+    connect(heatPaletteCheckBox, &QCheckBox::toggled, this, [this](bool checked) {
+        if (isSyncing()) {
+            return;
+        }
+
+        HeatSolveNodeParams params{};
+        if (!tryLoadNodeParams(params)) {
+            setStatus("Cannot update heat palette settings for this node.");
+            return;
+        }
+
+        params.preview.showHeatPalette = checked;
+        if (!writeNodeParams(params)) {
+            setStatus("Failed to update heat palette settings.");
+            return;
+        }
+
+        setStatus("Heat settings applied.");
+    });
     fluxVectorScaleRow->setValueChangedCallback([this](double value) {
         if (isSyncing()) {
             return;
@@ -261,6 +283,7 @@ void NodeHeatSolverPanel::refreshFromNode() {
     heatContactThermalConductanceRow->setValue(params.contactThermalConductance);
     heatOverlayCheckBox->setChecked(params.preview.showHeatOverlay);
     fluxVectorsCheckBox->setChecked(params.preview.showFluxVectors);
+    heatPaletteCheckBox->setChecked(params.preview.showHeatPalette);
     fluxVectorScaleRow->setValue(params.preview.fluxVectorScale);
 
     const std::vector<HeatMaterialBindingRow>& bindingRows = params.materialBindingRows;
