@@ -81,9 +81,14 @@ struct VoronoiPackage {
     VoronoiData authored;
     NodeDataHandle voronoiHandle{};
     DisplaySettings display{};
-    std::vector<std::array<float, 16>> modelLocalToWorlds;
-    std::vector<NodeDataHandle> modelMeshHandles;
-    std::vector<NodeDataHandle> modelRemeshHandles;
+    std::array<float, 16> modelLocalToWorld{
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f
+    };
+    NodeDataHandle modelMeshHandle{};
+    NodeDataHandle modelRemeshHandle{};
 
     bool matches(const VoronoiPackage& other) const {
         return packageHash == other.packageHash &&

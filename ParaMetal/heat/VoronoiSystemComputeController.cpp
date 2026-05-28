@@ -55,14 +55,14 @@ void VoronoiSystemComputeController::configure(uint64_t socketKey, const Config&
 
     if (system) {
         system->setReceiverGeometry(
-            config.receiverNodeModelIds,
+            config.receiverNodeModelId,
             config.receiverGeometryPositions,
             config.receiverGeometryTriangleIndices,
-            config.receiverIntrinsicMeshes,
+            config.receiverIntrinsicMesh,
             config.receiverSurfaceVertices,
             config.receiverIntrinsicTriangleIndices,
-            config.receiverRuntimeModelIds,
-            config.meshModelMatrices);
+            config.receiverRuntimeModelId,
+            config.meshModelMatrix);
         system->setParams(config.cellSize, config.voxelResolution);
         system->ensureConfigured();
     }

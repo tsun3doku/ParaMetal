@@ -26,7 +26,9 @@ void VoronoiOverlayRenderer::initialize(VkRenderPass renderPass, uint32_t subpas
 
     voronoiRenderer->initialize(renderPass, maxFramesInFlight);
     pointRenderer->initialize(renderPass, subpass, maxFramesInFlight);
+    this->maxFramesInFlight = maxFramesInFlight;
     initialized = true;
+    rebuildBindings();
 }
 
 void VoronoiOverlayRenderer::apply(uint64_t socketKey, const VoronoiDisplayController::Config& config) {
@@ -36,6 +38,7 @@ void VoronoiOverlayRenderer::apply(uint64_t socketKey, const VoronoiDisplayContr
     }
 
     configsBySocket[socketKey] = config;
+    rebuildBindings();
 }
 
 void VoronoiOverlayRenderer::remove(uint64_t socketKey) {
@@ -44,6 +47,48 @@ void VoronoiOverlayRenderer::remove(uint64_t socketKey) {
     }
 
     configsBySocket.erase(socketKey);
+    rebuildBindings();
+}
+
+void VoronoiOverlayRenderer::rebuildBindings() {
+    voronoiBindings.clear();
+    for (const auto& [socketKey, config] : configsBySocket) {
+        if (!config.showVoronoi) {
+            continue;
+        }
+
+        VoronoiRenderer::VoronoiRenderBinding binding{};
+        binding.bindingKey = config.bindingKey != 0 ? config.bindingKey : socketKey;
+        binding.runtimeModelId = config.runtimeModelId;
+        binding.vertexCount = static_cast<uint32_t>(config.intrinsicVertexCount);
+        binding.seedBuffer = config.seedPositionBuffer;
+        binding.seedOffset = config.seedPositionBufferOffset;
+        binding.neighborBuffer = config.neighborIndicesBuffer;
+        binding.neighborOffset = config.neighborIndicesBufferOffset;
+        binding.supportingHalfedgeView = config.supportingHalfedgeView;
+        binding.supportingAngleView = config.supportingAngleView;
+        binding.halfedgeView = config.halfedgeView;
+        binding.edgeView = config.edgeView;
+        binding.triangleView = config.triangleView;
+        binding.lengthView = config.lengthView;
+        binding.inputHalfedgeView = config.inputHalfedgeView;
+        binding.inputEdgeView = config.inputEdgeView;
+        binding.inputTriangleView = config.inputTriangleView;
+        binding.inputLengthView = config.inputLengthView;
+        binding.candidateBuffer = config.candidateBuffer;
+        binding.candidateOffset = config.candidateBufferOffset;
+        binding.vertexBuffer = config.vertexBuffer;
+        binding.vertexOffset = config.vertexBufferOffset;
+        binding.indexBuffer = config.indexBuffer;
+        binding.indexOffset = config.indexBufferOffset;
+        binding.indexCount = config.indexCount;
+        binding.modelMatrix = config.modelMatrix;
+        voronoiBindings.push_back(binding);
+    }
+
+    if (voronoiRenderer && initialized) {
+        voronoiRenderer->updateDescriptors(voronoiBindings, maxFramesInFlight, true);
+    }
 }
 
 void VoronoiOverlayRenderer::renderSurface(VkCommandBuffer commandBuffer, uint32_t frameIndex) {
@@ -51,44 +96,7 @@ void VoronoiOverlayRenderer::renderSurface(VkCommandBuffer commandBuffer, uint32
         return;
     }
 
-    for (const auto& [socketKey, config] : configsBySocket) {
-        (void)socketKey;
-        if (!config.showVoronoi) {
-            continue;
-        }
-
-        for (size_t i = 0; i < config.modelRuntimeModelIds.size(); ++i) {
-            voronoiRenderer->updateDescriptors(
-                frameIndex,
-                static_cast<uint32_t>(config.modelIntrinsicVertexCounts[i]),
-                config.seedPositionBuffer,
-                config.seedPositionBufferOffset,
-                config.neighborIndicesBuffer,
-                config.neighborIndicesBufferOffset,
-                config.modelSupportingHalfedgeViews[i],
-                config.modelSupportingAngleViews[i],
-                config.modelHalfedgeViews[i],
-                config.modelEdgeViews[i],
-                config.modelTriangleViews[i],
-                config.modelLengthViews[i],
-                config.modelInputHalfedgeViews[i],
-                config.modelInputEdgeViews[i],
-                config.modelInputTriangleViews[i],
-                config.modelInputLengthViews[i],
-                config.modelCandidateBuffers[i],
-                config.modelCandidateBufferOffsets[i]);
-
-            voronoiRenderer->render(
-                commandBuffer,
-                config.modelVertexBuffers[i],
-                config.modelVertexBufferOffsets[i],
-                config.modelIndexBuffers[i],
-                config.modelIndexBufferOffsets[i],
-                config.modelIndexCounts[i],
-                frameIndex,
-                config.modelMatrices[i]);
-        }
-    }
+    voronoiRenderer->render(commandBuffer, frameIndex, voronoiBindings);
 }
 
 void VoronoiOverlayRenderer::renderPoints(VkCommandBuffer commandBuffer, uint32_t frameIndex, VkExtent2D extent) {
@@ -115,6 +123,8 @@ void VoronoiOverlayRenderer::renderPoints(VkCommandBuffer commandBuffer, uint32_
 
 void VoronoiOverlayRenderer::cleanup() {
     configsBySocket.clear();
+    voronoiBindings.clear();
+    maxFramesInFlight = 0;
     initialized = false;
     if (voronoiRenderer) {
         voronoiRenderer->cleanup();

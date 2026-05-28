@@ -28,34 +28,29 @@ public:
         VkDeviceSize occupancyPointBufferOffset = 0;
         uint32_t occupancyPointCount = 0;
 
-        std::vector<uint32_t> modelRuntimeModelIds;
-        std::vector<VkBuffer> modelCandidateBuffers;
-        std::vector<VkDeviceSize> modelCandidateBufferOffsets;
-        std::vector<VkBuffer> modelGMLSSurfaceStencilBuffers;
-        std::vector<VkDeviceSize> modelGMLSSurfaceStencilBufferOffsets;
-        std::vector<VkBuffer> modelGMLSSurfaceWeightBuffers;
-        std::vector<VkDeviceSize> modelGMLSSurfaceWeightBufferOffsets;
-        std::vector<VkBuffer> modelGMLSSurfaceGradientWeightBuffers;
-        std::vector<VkDeviceSize> modelGMLSSurfaceGradientWeightBufferOffsets;
+        uint64_t bindingKey = 0;
+        uint32_t runtimeModelId = 0;
+        VkBuffer candidateBuffer = VK_NULL_HANDLE;
+        VkDeviceSize candidateBufferOffset = 0;
 
-        std::vector<VkBufferView> modelSupportingHalfedgeViews;
-        std::vector<VkBufferView> modelSupportingAngleViews;
-        std::vector<VkBufferView> modelHalfedgeViews;
-        std::vector<VkBufferView> modelEdgeViews;
-        std::vector<VkBufferView> modelTriangleViews;
-        std::vector<VkBufferView> modelLengthViews;
-        std::vector<VkBufferView> modelInputHalfedgeViews;
-        std::vector<VkBufferView> modelInputEdgeViews;
-        std::vector<VkBufferView> modelInputTriangleViews;
-        std::vector<VkBufferView> modelInputLengthViews;
-        std::vector<size_t> modelIntrinsicVertexCounts;
+        VkBufferView supportingHalfedgeView = VK_NULL_HANDLE;
+        VkBufferView supportingAngleView = VK_NULL_HANDLE;
+        VkBufferView halfedgeView = VK_NULL_HANDLE;
+        VkBufferView edgeView = VK_NULL_HANDLE;
+        VkBufferView triangleView = VK_NULL_HANDLE;
+        VkBufferView lengthView = VK_NULL_HANDLE;
+        VkBufferView inputHalfedgeView = VK_NULL_HANDLE;
+        VkBufferView inputEdgeView = VK_NULL_HANDLE;
+        VkBufferView inputTriangleView = VK_NULL_HANDLE;
+        VkBufferView inputLengthView = VK_NULL_HANDLE;
+        size_t intrinsicVertexCount = 0;
 
-        std::vector<VkBuffer> modelVertexBuffers;
-        std::vector<VkDeviceSize> modelVertexBufferOffsets;
-        std::vector<VkBuffer> modelIndexBuffers;
-        std::vector<VkDeviceSize> modelIndexBufferOffsets;
-        std::vector<uint32_t> modelIndexCounts;
-        std::vector<glm::mat4> modelMatrices;
+        VkBuffer vertexBuffer = VK_NULL_HANDLE;
+        VkDeviceSize vertexBufferOffset = 0;
+        VkBuffer indexBuffer = VK_NULL_HANDLE;
+        VkDeviceSize indexBufferOffset = 0;
+        uint32_t indexCount = 0;
+        glm::mat4 modelMatrix{1.0f};
 
         uint64_t displayHash = 0;
 
@@ -67,7 +62,8 @@ public:
             return nodeCount != 0 &&
                 nodeBuffer != VK_NULL_HANDLE &&
                 seedPositionBuffer != VK_NULL_HANDLE &&
-                neighborIndicesBuffer != VK_NULL_HANDLE;
+                neighborIndicesBuffer != VK_NULL_HANDLE &&
+                runtimeModelId != 0;
         }
 
     };
@@ -88,31 +84,26 @@ inline uint64_t buildDisplayHash(const VoronoiDisplayController::Config& config,
     NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showVoronoi ? 1u : 0u));
     NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showPoints ? 1u : 0u));
     NodeGraphHash::combine(hash, productHash);
-    NodeGraphHash::combinePodVector(hash, config.modelRuntimeModelIds);
-    NodeGraphHash::combinePodVector(hash, config.modelCandidateBuffers);
-    NodeGraphHash::combinePodVector(hash, config.modelCandidateBufferOffsets);
-    NodeGraphHash::combinePodVector(hash, config.modelGMLSSurfaceStencilBuffers);
-    NodeGraphHash::combinePodVector(hash, config.modelGMLSSurfaceStencilBufferOffsets);
-    NodeGraphHash::combinePodVector(hash, config.modelGMLSSurfaceWeightBuffers);
-    NodeGraphHash::combinePodVector(hash, config.modelGMLSSurfaceWeightBufferOffsets);
-    NodeGraphHash::combinePodVector(hash, config.modelGMLSSurfaceGradientWeightBuffers);
-    NodeGraphHash::combinePodVector(hash, config.modelGMLSSurfaceGradientWeightBufferOffsets);
-    NodeGraphHash::combinePodVector(hash, config.modelSupportingHalfedgeViews);
-    NodeGraphHash::combinePodVector(hash, config.modelSupportingAngleViews);
-    NodeGraphHash::combinePodVector(hash, config.modelHalfedgeViews);
-    NodeGraphHash::combinePodVector(hash, config.modelEdgeViews);
-    NodeGraphHash::combinePodVector(hash, config.modelTriangleViews);
-    NodeGraphHash::combinePodVector(hash, config.modelLengthViews);
-    NodeGraphHash::combinePodVector(hash, config.modelInputHalfedgeViews);
-    NodeGraphHash::combinePodVector(hash, config.modelInputEdgeViews);
-    NodeGraphHash::combinePodVector(hash, config.modelInputTriangleViews);
-    NodeGraphHash::combinePodVector(hash, config.modelInputLengthViews);
-    NodeGraphHash::combinePodVector(hash, config.modelIntrinsicVertexCounts);
-    NodeGraphHash::combinePodVector(hash, config.modelVertexBuffers);
-    NodeGraphHash::combinePodVector(hash, config.modelVertexBufferOffsets);
-    NodeGraphHash::combinePodVector(hash, config.modelIndexBuffers);
-    NodeGraphHash::combinePodVector(hash, config.modelIndexBufferOffsets);
-    NodeGraphHash::combinePodVector(hash, config.modelIndexCounts);
-    NodeGraphHash::combinePodVector(hash, config.modelMatrices);
+    NodeGraphHash::combine(hash, config.bindingKey);
+    NodeGraphHash::combine(hash, config.runtimeModelId);
+    NodeGraphHash::combinePod(hash, config.candidateBuffer);
+    NodeGraphHash::combine(hash, config.candidateBufferOffset);
+    NodeGraphHash::combinePod(hash, config.supportingHalfedgeView);
+    NodeGraphHash::combinePod(hash, config.supportingAngleView);
+    NodeGraphHash::combinePod(hash, config.halfedgeView);
+    NodeGraphHash::combinePod(hash, config.edgeView);
+    NodeGraphHash::combinePod(hash, config.triangleView);
+    NodeGraphHash::combinePod(hash, config.lengthView);
+    NodeGraphHash::combinePod(hash, config.inputHalfedgeView);
+    NodeGraphHash::combinePod(hash, config.inputEdgeView);
+    NodeGraphHash::combinePod(hash, config.inputTriangleView);
+    NodeGraphHash::combinePod(hash, config.inputLengthView);
+    NodeGraphHash::combine(hash, config.intrinsicVertexCount);
+    NodeGraphHash::combinePod(hash, config.vertexBuffer);
+    NodeGraphHash::combine(hash, config.vertexBufferOffset);
+    NodeGraphHash::combinePod(hash, config.indexBuffer);
+    NodeGraphHash::combine(hash, config.indexBufferOffset);
+    NodeGraphHash::combine(hash, config.indexCount);
+    NodeGraphHash::combinePod(hash, config.modelMatrix);
     return hash;
 }

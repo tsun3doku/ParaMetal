@@ -31,19 +31,18 @@ public:
     bool isReady() const { return runtime.isReady(); }
 
     void setReceiverGeometry(
-        const std::vector<uint32_t>& receiverNodeModelIds,
-        const std::vector<std::vector<glm::vec3>>& receiverGeometryPositions,
-        const std::vector<std::vector<uint32_t>>& receiverGeometryTriangleIndices,
-        const std::vector<SupportingHalfedge::IntrinsicMesh>& receiverIntrinsicMeshes,
-        const std::vector<std::vector<VoronoiModelRuntime::SurfaceVertex>>& receiverSurfaceVertices,
-        const std::vector<std::vector<uint32_t>>& receiverIntrinsicTriangleIndices,
-        const std::vector<uint32_t>& receiverModelIds,
-        const std::vector<glm::mat4>& meshModelMatrices);
+        uint32_t receiverNodeModelId,
+        const std::vector<glm::vec3>& receiverGeometryPositions,
+        const std::vector<uint32_t>& receiverGeometryTriangleIndices,
+        const SupportingHalfedge::IntrinsicMesh& receiverIntrinsicMesh,
+        const std::vector<VoronoiModelRuntime::SurfaceVertex>& receiverSurfaceVertices,
+        const std::vector<uint32_t>& receiverIntrinsicTriangleIndices,
+        uint32_t receiverModelId,
+        const glm::mat4& meshModelMatrix);
     void clearReceiverGeometry();
     void setParams(float cellSize, int voxelResolution);
     bool ensureConfigured();
 
-    const std::vector<std::unique_ptr<VoronoiModelRuntime>>& getModelRuntimes() const { return runtime.getModelRuntimes(); }
     VoronoiModelRuntime* getModelRuntime() const { return runtime.getModelRuntime(); }
     uint32_t getVoronoiNodeCount() const { return runtime.getVoronoiNodeCount(); }
 

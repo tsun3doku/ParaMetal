@@ -39,26 +39,26 @@ void VoronoiSystem::failInitialization(const char* stage) {
 }
 
 void VoronoiSystem::setReceiverGeometry(
-    const std::vector<uint32_t>& receiverNodeModelIds,
-    const std::vector<std::vector<glm::vec3>>& receiverGeometryPositions,
-    const std::vector<std::vector<uint32_t>>& receiverGeometryTriangleIndices,
-    const std::vector<SupportingHalfedge::IntrinsicMesh>& receiverIntrinsicMeshes,
-    const std::vector<std::vector<VoronoiModelRuntime::SurfaceVertex>>& receiverSurfaceVertices,
-    const std::vector<std::vector<uint32_t>>& receiverIntrinsicTriangleIndices,
-    const std::vector<uint32_t>& receiverModelIds,
-    const std::vector<glm::mat4>& meshModelMatrices) {
+    uint32_t receiverNodeModelId,
+    const std::vector<glm::vec3>& receiverGeometryPositions,
+    const std::vector<uint32_t>& receiverGeometryTriangleIndices,
+    const SupportingHalfedge::IntrinsicMesh& receiverIntrinsicMesh,
+    const std::vector<VoronoiModelRuntime::SurfaceVertex>& receiverSurfaceVertices,
+    const std::vector<uint32_t>& receiverIntrinsicTriangleIndices,
+    uint32_t receiverModelId,
+    const glm::mat4& meshModelMatrix) {
     runtime.setReceiverGeometry(
         vulkanDevice,
         memoryAllocator,
         renderCommandPool,
-        receiverNodeModelIds,
+        receiverNodeModelId,
         receiverGeometryPositions,
         receiverGeometryTriangleIndices,
-        receiverIntrinsicMeshes,
+        receiverIntrinsicMesh,
         receiverSurfaceVertices,
         receiverIntrinsicTriangleIndices,
-        receiverModelIds,
-        meshModelMatrices);
+        receiverModelId,
+        meshModelMatrix);
 
 }
 
@@ -137,36 +137,39 @@ void VoronoiSystem::dispatchVoronoiCandidateUpdates() {
     size_t skippedZeroFaces = 0;
     size_t skippedMissingCandidateBuffer = 0;
 
-    for (const auto& modelRuntime : runtime.getModelRuntimes()) {
-        const uint32_t receiverModelId = modelRuntime->getRuntimeModelId();
-        uint32_t faceCount = static_cast<uint32_t>(modelRuntime->getIntrinsicTriangleCount());
-        if (modelRuntime->getSurfaceBuffer() == VK_NULL_HANDLE) {
-            ++skippedMissingGeometryRuntime;
-            continue;
-        }
-        if (faceCount == 0) {
-            ++skippedZeroFaces;
-            continue;
-        }
-        if (modelRuntime->getVoronoiCandidateBuffer() == VK_NULL_HANDLE) {
-            ++skippedMissingCandidateBuffer;
-            continue;
-        }
-
-        VoronoiCandidateCompute::Bindings bindings{};
-        bindings.vertexBuffer = modelRuntime->getSurfaceBuffer();
-        bindings.vertexBufferOffset = modelRuntime->getSurfaceBufferOffset();
-        bindings.faceIndexBuffer = modelRuntime->getTriangleIndicesBuffer();
-        bindings.faceIndexBufferOffset = modelRuntime->getTriangleIndicesBufferOffset();
-        bindings.seedPositionBuffer = resources.seedPositionBuffer;
-        bindings.seedPositionBufferOffset = resources.seedPositionBufferOffset;
-        bindings.candidateBuffer = modelRuntime->getVoronoiCandidateBuffer();
-        bindings.candidateBufferOffset = modelRuntime->getVoronoiCandidateBufferOffset();
-
-        voronoiCandidateCompute->updateDescriptors(bindings);
-        voronoiCandidateCompute->dispatch(faceCount, runtime.getVoronoiNodeCount());
-        ++dispatchedCount;
+    VoronoiModelRuntime* modelRuntime = runtime.getModelRuntime();
+    if (!modelRuntime) {
+        return;
     }
+    const uint32_t receiverModelId = modelRuntime->getRuntimeModelId();
+    (void)receiverModelId;
+    uint32_t faceCount = static_cast<uint32_t>(modelRuntime->getIntrinsicTriangleCount());
+    if (modelRuntime->getSurfaceBuffer() == VK_NULL_HANDLE) {
+        ++skippedMissingGeometryRuntime;
+        return;
+    }
+    if (faceCount == 0) {
+        ++skippedZeroFaces;
+        return;
+    }
+    if (modelRuntime->getVoronoiCandidateBuffer() == VK_NULL_HANDLE) {
+        ++skippedMissingCandidateBuffer;
+        return;
+    }
+
+    VoronoiCandidateCompute::Bindings bindings{};
+    bindings.vertexBuffer = modelRuntime->getSurfaceBuffer();
+    bindings.vertexBufferOffset = modelRuntime->getSurfaceBufferOffset();
+    bindings.faceIndexBuffer = modelRuntime->getTriangleIndicesBuffer();
+    bindings.faceIndexBufferOffset = modelRuntime->getTriangleIndicesBufferOffset();
+    bindings.seedPositionBuffer = resources.seedPositionBuffer;
+    bindings.seedPositionBufferOffset = resources.seedPositionBufferOffset;
+    bindings.candidateBuffer = modelRuntime->getVoronoiCandidateBuffer();
+    bindings.candidateBufferOffset = modelRuntime->getVoronoiCandidateBufferOffset();
+
+    voronoiCandidateCompute->updateDescriptors(bindings);
+    voronoiCandidateCompute->dispatch(faceCount, runtime.getVoronoiNodeCount());
+    ++dispatchedCount;
 
 }
 

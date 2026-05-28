@@ -70,11 +70,9 @@ void NodeVoronoi::execute(NodeGraphKernelContext& context) const {
         VoronoiData voronoiData{};
         voronoiData.cellSize = static_cast<float>(nodeParams.cellSize);
         voronoiData.voxelResolution = nodeParams.voxelResolution;
-        if (modelMeshHandle.key != 0) {
-            voronoiData.modelMeshHandles.push_back(modelMeshHandle);
-            voronoiData.modelPayloadHashes.push_back(modelPayloadHash);
-            voronoiData.modelPayloadHandles.push_back(modelPayloadHandle);
-        }
+        voronoiData.modelMeshHandle = modelMeshHandle;
+        voronoiData.modelPayloadHash = modelPayloadHash;
+        voronoiData.modelPayloadHandle = modelPayloadHandle;
         voronoiData.active = active;
         const uint64_t payloadKey = NodeSocketKey(context.node.id, context.node.outputs[outputIndex].id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(voronoiData));

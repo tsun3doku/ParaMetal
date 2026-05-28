@@ -27,8 +27,7 @@ public:
     bool isReady() const { return voronoiReady; }
     bool isSeederReady() const { return voronoiSeederReady; }
 
-    const std::vector<std::unique_ptr<VoronoiModelRuntime>>& getModelRuntimes() const { return modelRuntimes; }
-    VoronoiModelRuntime* getModelRuntime() const { return modelRuntimes.empty() ? nullptr : modelRuntimes.front().get(); }
+    VoronoiModelRuntime* getModelRuntime() const { return modelRuntime.get(); }
 
     uint32_t getVoronoiNodeCount() const { return resources.voronoiNodeCount; }
     uint32_t getSimNodeCount() const { return simNodeCount; }
@@ -70,14 +69,14 @@ public:
         VulkanDevice& vulkanDevice,
         MemoryAllocator& memoryAllocator,
         CommandPool& renderCommandPool,
-        const std::vector<uint32_t>& receiverNodeModelIds,
-        const std::vector<std::vector<glm::vec3>>& receiverGeometryPositions,
-        const std::vector<std::vector<uint32_t>>& receiverGeometryTriangleIndices,
-        const std::vector<SupportingHalfedge::IntrinsicMesh>& receiverIntrinsicMeshes,
-        const std::vector<std::vector<VoronoiModelRuntime::SurfaceVertex>>& receiverSurfaceVertices,
-        const std::vector<std::vector<uint32_t>>& receiverIntrinsicTriangleIndices,
-        const std::vector<uint32_t>& receiverModelIds,
-        const std::vector<glm::mat4>& meshModelMatrices);
+        uint32_t receiverNodeModelId,
+        const std::vector<glm::vec3>& receiverGeometryPositions,
+        const std::vector<uint32_t>& receiverGeometryTriangleIndices,
+        const SupportingHalfedge::IntrinsicMesh& receiverIntrinsicMesh,
+        const std::vector<VoronoiModelRuntime::SurfaceVertex>& receiverSurfaceVertices,
+        const std::vector<uint32_t>& receiverIntrinsicTriangleIndices,
+        uint32_t receiverModelId,
+        const glm::mat4& meshModelMatrix);
     void clearReceiverGeometry();
     void setParams(float cellSize, int voxelResolution);
     float getCellSize() const { return cellSize; }
@@ -91,7 +90,7 @@ public:
 private:
     void invalidateMaterialization();
 
-    std::vector<std::unique_ptr<VoronoiModelRuntime>> modelRuntimes;
+    std::unique_ptr<VoronoiModelRuntime> modelRuntime;
     float cellSize = 0.005f;
     int voxelResolution = 128;
 
