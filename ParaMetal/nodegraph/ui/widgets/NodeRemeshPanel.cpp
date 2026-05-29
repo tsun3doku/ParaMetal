@@ -33,7 +33,7 @@ NodeRemeshPanel::NodeRemeshPanel(QWidget* parent)
     layout->addWidget(minAngleRow);
 
     maxEdgeLengthRow = new NodeGraphSliderRow("Max Edge Length", this);
-    maxEdgeLengthRow->setRange(0.001, 10.0);
+    maxEdgeLengthRow->setRange(0.001, 1.0);
     maxEdgeLengthRow->setDecimals(4);
     maxEdgeLengthRow->setValue(maxEdgeLength);
     layout->addWidget(maxEdgeLengthRow);
@@ -54,7 +54,7 @@ NodeRemeshPanel::NodeRemeshPanel(QWidget* parent)
     layout->addWidget(vertexNormalsCheckBox);
 
     normalLengthRow = new NodeGraphSliderRow("Normal Length", this);
-    normalLengthRow->setRange(0.001, 10.0);
+    normalLengthRow->setRange(0.001, 1.0);
     normalLengthRow->setDecimals(3);
     normalLengthRow->setValue(0.05);
     layout->addWidget(normalLengthRow);

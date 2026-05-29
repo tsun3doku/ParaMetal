@@ -19,11 +19,6 @@ struct HeatMaterialPreset {
     float conductivity = 205.0f;
 };
 
-struct HeatMaterialBindingGroup {
-    uint32_t id = 0;
-    std::string name;
-};
-
 const HeatMaterialPreset& heatMaterialPresetById(HeatMaterialPresetId id);
 const char* heatMaterialPresetName(HeatMaterialPresetId id);
 
@@ -32,9 +27,9 @@ struct HeatSimDefaults {
     static constexpr float ambientTemperature = 1.0f;
     
     // Default Material Properties
-    static constexpr float density = 1000.0f;       // kg/m³
-    static constexpr float specificHeat = 1000.0f;  // J/(kg·K)
-    static constexpr float conductivity = 1.0f;     // W/(m·K)
+    static constexpr float density = 1000.0f;       
+    static constexpr float specificHeat = 1000.0f;  
+    static constexpr float conductivity = 1.0f;   
     
     // Simulation Parameters
     static constexpr float contactThermalConductance = 16000.0f;

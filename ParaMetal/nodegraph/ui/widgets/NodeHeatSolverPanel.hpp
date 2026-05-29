@@ -42,7 +42,6 @@ private:
     QPushButton* heatToggleButton = nullptr;
     QPushButton* heatPauseButton = nullptr;
     QPushButton* heatResetButton = nullptr;
-    NodeGraphSliderRow* heatCellSizeRow = nullptr;
     NodeGraphSliderRow* heatContactThermalConductanceRow = nullptr;
     QCheckBox* heatOverlayCheckBox = nullptr;
     QCheckBox* fluxVectorsCheckBox = nullptr;

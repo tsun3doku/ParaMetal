@@ -119,7 +119,7 @@ void NodeHeatSolve::execute(NodeGraphKernelContext& context) const {
         }
     }
 
-    materialBindings = makeHeatPayloadMaterialBindings(params);
+    materialBindings = params.materialBindings;
 
     // Combine all contact payload hashes
     uint64_t combinedContactHash = 0;
@@ -228,7 +228,7 @@ bool NodeHeatSolve::computeInputHash(const NodeGraphKernelHashContext& context, 
     }
 
     const HeatSolveNodeParams params = readHeatSolveNodeParams(context.node);
-    const std::vector<HeatMaterialBinding> materialBindings = makeHeatPayloadMaterialBindings(params);
+    const std::vector<HeatMaterialBinding>& materialBindings = params.materialBindings;
     NodeGraphHash::combine(outHash, static_cast<uint64_t>(materialBindings.size()));
     for (const HeatMaterialBinding& binding : materialBindings) {
         NodeGraphHash::combine(outHash, static_cast<uint64_t>(binding.modelNodeId));
