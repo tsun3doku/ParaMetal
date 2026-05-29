@@ -29,10 +29,10 @@ bool tryResolveHeatPresetId(const std::string& value, HeatMaterialPresetId& outI
     return false;
 }
 
-bool tryMakeMaterialBindingRow(
+bool tryMakeMaterialBinding(
     const std::string& modelNodeIdText,
     const std::string& presetText,
-    HeatMaterialBindingRow& outRow) {
+    HeatMaterialBinding& outRow) {
     uint32_t modelNodeId = 0;
     if (!NodePanelUtils::tryParseUint32Id(modelNodeIdText, modelNodeId) || modelNodeId == 0) {
         return false;
@@ -48,8 +48,8 @@ bool tryMakeMaterialBindingRow(
     return true;
 }
 
-std::vector<HeatMaterialBindingRow> readMaterialBindingRows(const NodeGraphParamValue& value) {
-    std::vector<HeatMaterialBindingRow> rows;
+std::vector<HeatMaterialBinding> readMaterialBindings(const NodeGraphParamValue& value) {
+    std::vector<HeatMaterialBinding> rows;
     if (value.type != NodeGraphParamType::Array) {
         return rows;
     }
@@ -74,8 +74,8 @@ std::vector<HeatMaterialBindingRow> readMaterialBindingRows(const NodeGraphParam
             continue;
         }
 
-        HeatMaterialBindingRow row{};
-        if (!tryMakeMaterialBindingRow(std::to_string(modelNodeId), presetName, row)) {
+        HeatMaterialBinding row{};
+        if (!tryMakeMaterialBinding(std::to_string(modelNodeId), presetName, row)) {
             continue;
         }
         rows.push_back(std::move(row));
@@ -84,14 +84,14 @@ std::vector<HeatMaterialBindingRow> readMaterialBindingRows(const NodeGraphParam
     return rows;
 }
 
-bool writeMaterialBindingRows(NodeGraphParamValue& value, const std::vector<HeatMaterialBindingRow>& rows) {
+bool writeMaterialBindings(NodeGraphParamValue& value, const std::vector<HeatMaterialBinding>& rows) {
     if (value.type != NodeGraphParamType::Array) {
         return false;
     }
 
     value.arrayValues.clear();
     value.arrayValues.reserve(rows.size());
-    for (const HeatMaterialBindingRow& row : rows) {
+    for (const HeatMaterialBinding& row : rows) {
         if (!addArrayElement(
                 value,
                 makeStructParamValue({
@@ -107,21 +107,4 @@ bool writeMaterialBindingRows(NodeGraphParamValue& value, const std::vector<Heat
     }
 
     return true;
-}
-
-HeatMaterialBinding makeHeatMaterialBinding(const HeatMaterialBindingRow& row) {
-    HeatMaterialBinding binding{};
-    binding.modelNodeId = row.modelNodeId;
-    binding.presetId = row.presetId;
-    return binding;
-}
-
-std::vector<HeatMaterialBinding> makeHeatMaterialBindings(const std::vector<HeatMaterialBindingRow>& rows) {
-    std::vector<HeatMaterialBinding> bindings;
-    bindings.reserve(rows.size());
-    for (const HeatMaterialBindingRow& row : rows) {
-        HeatMaterialBinding binding = makeHeatMaterialBinding(row);
-        bindings.push_back(std::move(binding));
-    }
-    return bindings;
 }

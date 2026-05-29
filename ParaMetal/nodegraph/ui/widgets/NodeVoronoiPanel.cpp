@@ -17,7 +17,7 @@ NodeVoronoiPanel::NodeVoronoiPanel(QWidget* parent)
     constexpr int voxelResolution = 128;
 
     cellSizeRow = new NodeGraphSliderRow("Cell Size", this);
-    cellSizeRow->setRange(0.0001, 1.0);
+    cellSizeRow->setRange(0.0001, 0.1);
     cellSizeRow->setDecimals(6);
     cellSizeRow->setValue(cellSize);
     layout->addWidget(cellSizeRow);

@@ -7,17 +7,10 @@
 
 #include "heat/HeatSystemPresets.hpp"
 
-struct HeatMaterialBindingRow {
-    uint32_t modelNodeId = 0;
-    HeatMaterialPresetId presetId = HeatMaterialPresetId::Aluminum;
-};
-
 bool tryResolveHeatPresetId(const std::string& value, HeatMaterialPresetId& outId);
-bool tryMakeMaterialBindingRow(
+bool tryMakeMaterialBinding(
     const std::string& receiverText,
     const std::string& presetText,
-    HeatMaterialBindingRow& outRow);
-std::vector<HeatMaterialBindingRow> readMaterialBindingRows(const NodeGraphParamValue& value);
-bool writeMaterialBindingRows(NodeGraphParamValue& value, const std::vector<HeatMaterialBindingRow>& rows);
-HeatMaterialBinding makeHeatMaterialBinding(const HeatMaterialBindingRow& row);
-std::vector<HeatMaterialBinding> makeHeatMaterialBindings(const std::vector<HeatMaterialBindingRow>& rows);
+    HeatMaterialBinding& outRow);
+std::vector<HeatMaterialBinding> readMaterialBindings(const NodeGraphParamValue& value);
+bool writeMaterialBindings(NodeGraphParamValue& value, const std::vector<HeatMaterialBinding>& rows);

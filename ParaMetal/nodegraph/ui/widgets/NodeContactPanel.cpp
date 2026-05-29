@@ -22,7 +22,7 @@ NodeContactPanel::NodeContactPanel(QWidget* parent)
     layout->addWidget(minNormalDotRow);
 
     contactRadiusRow = new NodeGraphSliderRow("Contact Radius", this);
-    contactRadiusRow->setRange(0.0005, 10.0);
+    contactRadiusRow->setRange(0.0001, 0.1);
     contactRadiusRow->setDecimals(4);
     contactRadiusRow->setValue(0.01);
     layout->addWidget(contactRadiusRow);

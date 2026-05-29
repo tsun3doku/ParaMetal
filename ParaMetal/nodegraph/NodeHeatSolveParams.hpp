@@ -19,12 +19,10 @@ struct HeatSolveNodeParams {
     bool enabled = false;
     bool paused = false;
     bool resetRequested = false;
-    double cellSize = 0.005;
     double contactThermalConductance = 16000.0;
     HeatPreviewSettings preview{};
-    std::vector<HeatMaterialBindingRow> materialBindingRows;
+    std::vector<HeatMaterialBinding> materialBindings;
 };
 
 HeatSolveNodeParams readHeatSolveNodeParams(const NodeGraphNode& node);
 bool writeHeatSolveNodeParams(NodeGraphEditor& editor, NodeGraphNodeId nodeId, const HeatSolveNodeParams& params);
-std::vector<HeatMaterialBinding> makeHeatPayloadMaterialBindings(const HeatSolveNodeParams& params);

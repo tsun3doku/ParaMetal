@@ -50,12 +50,6 @@ NodeHeatSolverPanel::NodeHeatSolverPanel(QWidget* parent)
 
     layout->addWidget(new QLabel("Solver Settings:", this));
 
-    heatCellSizeRow = new NodeGraphSliderRow("Cell Size", this);
-    heatCellSizeRow->setRange(0.0001, 1.0);
-    heatCellSizeRow->setDecimals(4);
-    heatCellSizeRow->setValue(0.005);
-    layout->addWidget(heatCellSizeRow);
-
     heatContactThermalConductanceRow = new NodeGraphSliderRow("Contact Thermal Conductance", this);
     heatContactThermalConductanceRow->setRange(0.0, 100000.0);
     heatContactThermalConductanceRow->setDecimals(0);
@@ -279,18 +273,17 @@ void NodeHeatSolverPanel::refreshFromNode() {
 
     refreshBindingGroupOptions();
     setSyncing(true);
-    heatCellSizeRow->setValue(params.cellSize);
     heatContactThermalConductanceRow->setValue(params.contactThermalConductance);
     heatOverlayCheckBox->setChecked(params.preview.showHeatOverlay);
     fluxVectorsCheckBox->setChecked(params.preview.showFluxVectors);
     heatPaletteCheckBox->setChecked(params.preview.showHeatPalette);
     fluxVectorScaleRow->setValue(params.preview.fluxVectorScale);
 
-    const std::vector<HeatMaterialBindingRow>& bindingRows = params.materialBindingRows;
+    const std::vector<HeatMaterialBinding>& bindingRows = params.materialBindings;
     heatBindingsTable->setRowCount(0);
     heatBindingsTable->setRowCount(static_cast<int>(bindingRows.size()));
     for (int row = 0; row < static_cast<int>(bindingRows.size()); ++row) {
-        const HeatMaterialBindingRow& bindingRow = bindingRows[static_cast<std::size_t>(row)];
+        const HeatMaterialBinding& bindingRow = bindingRows[static_cast<std::size_t>(row)];
         heatBindingsTable->setItem(row, 0, new QTableWidgetItem(QString::number(bindingRow.modelNodeId)));
         heatBindingsTable->setItem(row, 1, new QTableWidgetItem(QString::fromStdString(heatMaterialPresetName(bindingRow.presetId))));
     }
@@ -512,11 +505,6 @@ void NodeHeatSolverPanel::resetHeatSystem() {
         return;
     }
 
-    // Defer the flag-clear to the next event loop tick so the node graph
-    // evaluation has a chance to see resetRequested=true and the controller
-    // can call resetHeatState() before the flag disappears. Writing both
-    // writes synchronously collapses them into a single evaluation that
-    // only ever sees the second (false) value, making reset look like resume.
     QTimer::singleShot(0, this, [this]() {
         HeatSolveNodeParams clearParams{};
         if (tryLoadNodeParams(clearParams)) {
@@ -541,7 +529,6 @@ void NodeHeatSolverPanel::applySolveSettings() {
         return;
     }
 
-    params.cellSize = heatCellSizeRow->value();
     params.contactThermalConductance = heatContactThermalConductanceRow->value();
     if (!writeNodeParams(params)) {
         setStatus("Failed to update solver settings.");
@@ -557,7 +544,7 @@ void NodeHeatSolverPanel::applyMaterialBindings() {
         return;
     }
 
-    std::vector<HeatMaterialBindingRow> rows;
+    std::vector<HeatMaterialBinding> rows;
     rows.reserve(static_cast<std::size_t>(heatBindingsTable->rowCount()));
     for (int row = 0; row < heatBindingsTable->rowCount(); ++row) {
         QTableWidgetItem* groupItem = heatBindingsTable->item(row, 0);
@@ -572,8 +559,8 @@ void NodeHeatSolverPanel::applyMaterialBindings() {
             continue;
         }
 
-        HeatMaterialBindingRow materialRow{};
-        if (!tryMakeMaterialBindingRow(receiverKey, presetName, materialRow)) {
+        HeatMaterialBinding materialRow{};
+        if (!tryMakeMaterialBinding(receiverKey, presetName, materialRow)) {
             continue;
         }
         rows.push_back(materialRow);
@@ -590,7 +577,7 @@ void NodeHeatSolverPanel::applyMaterialBindings() {
         return;
     }
 
-    params.materialBindingRows = std::move(rows);
+    params.materialBindings = std::move(rows);
     if (!writeNodeParams(params)) {
         setStatus("Failed to update material bindings.");
         return;

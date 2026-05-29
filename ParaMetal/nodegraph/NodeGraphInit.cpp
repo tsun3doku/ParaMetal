@@ -181,20 +181,6 @@ NodeTypeDefinition buildVoronoiNode() {
 }
 
 NodeTypeDefinition buildHeatSolveNode() {
-    NodeGraphParamDefinition materialBindingDefinition = makeStructParamDefinition(
-        0,
-        "Material Binding",
-        {
-            makeParamField("receiverModelNodeId", makeIntParamDefinition(0, "Receiver Model Node ID")),
-            makeParamField(
-                "preset",
-                makeEnumParamDefinition(
-                    0,
-                    "Preset",
-                    "Aluminum",
-                    {"Aluminum", "Copper", "Custom", "Iron", "Ceramic"})),
-        });
-
     return {
         nodegraphtypes::HeatSolve,
         "Heat Solve",
@@ -208,8 +194,22 @@ NodeTypeDefinition buildHeatSolveNode() {
             {nodegraphparams::heatsolve::Enabled, "Enabled", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::Paused, "Paused", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::ResetRequested, "Reset Requested", NodeGraphParamType::Bool, 0.0, 0, false, "", true},
-            makeArrayParamDefinition(nodegraphparams::heatsolve::MaterialBindings, "Material Bindings", std::move(materialBindingDefinition)),
-            {nodegraphparams::heatsolve::CellSize, "Cell Size", NodeGraphParamType::Float, 0.005, 0, false, "", false},
+            makeArrayParamDefinition(
+                nodegraphparams::heatsolve::MaterialBindings,
+                "Material Bindings",
+                makeStructParamDefinition(
+                    0,
+                    "Material Binding",
+                    {
+                        makeParamField("receiverModelNodeId", makeIntParamDefinition(0, "Receiver Model Node ID")),
+                        makeParamField(
+                            "preset",
+                            makeEnumParamDefinition(
+                                0,
+                                "Preset",
+                                "Aluminum",
+                                {"Aluminum", "Copper", "Custom", "Iron", "Ceramic"})),
+                    })),
             {nodegraphparams::heatsolve::ShowHeatOverlay, "Show Heat Overlay", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::ContactThermalConductance, "Contact Thermal Conductance", NodeGraphParamType::Float, HeatSimDefaults::contactThermalConductance, 0, false, "", false},
             {nodegraphparams::heatsolve::ShowFluxVectors, "Show Flux Vectors", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
