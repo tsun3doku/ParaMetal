@@ -1,11 +1,70 @@
 #include "NodeGraph.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
+#include "NodeGraphValidator.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <sstream>
 #include <utility>
 
 NodeGraph::NodeGraph(const NodeGraphRegistry* reg) : registry(reg) {}
+
+namespace {
+
+const NodeGraphSocket* findSocket(
+    const NodeGraphNode& node,
+    NodeGraphSocketId socketId,
+    NodeGraphSocketDirection direction) {
+    const std::vector<NodeGraphSocket>& sockets =
+        direction == NodeGraphSocketDirection::Input ? node.inputs : node.outputs;
+    for (const NodeGraphSocket& socket : sockets) {
+        if (socket.id == socketId && socket.direction == direction) {
+            return &socket;
+        }
+    }
+    return nullptr;
+}
+
+bool patchSocketIds(
+    std::vector<NodeGraphSocket>& rebuiltSockets,
+    const std::vector<NodeGraphSocket>& savedSockets,
+    std::string& errorMessage) {
+    if (rebuiltSockets.size() != savedSockets.size()) {
+        errorMessage = "Saved node socket count does not match current node definition.";
+        return false;
+    }
+
+    for (std::size_t i = 0; i < rebuiltSockets.size(); ++i) {
+        const NodeGraphSocket& savedSocket = savedSockets[i];
+        NodeGraphSocket& rebuiltSocket = rebuiltSockets[i];
+        if (rebuiltSocket.name != savedSocket.name ||
+            rebuiltSocket.valueType != savedSocket.valueType ||
+            rebuiltSocket.direction != savedSocket.direction ||
+            rebuiltSocket.contract.producedPayloadType != savedSocket.contract.producedPayloadType ||
+            rebuiltSocket.variadic != savedSocket.variadic ||
+            !savedSocket.id.isValid()) {
+            errorMessage = "Saved node socket metadata does not match current node definition.";
+            return false;
+        }
+        rebuiltSocket.id = savedSocket.id;
+    }
+
+    return true;
+}
+
+uint32_t maxSocketId(const NodeGraphNode& node) {
+    uint32_t maxId = 0;
+    for (const NodeGraphSocket& socket : node.inputs) {
+        maxId = std::max(maxId, socket.id.value);
+    }
+    for (const NodeGraphSocket& socket : node.outputs) {
+        maxId = std::max(maxId, socket.id.value);
+    }
+    return maxId;
+}
+
+} // namespace
 
 NodeGraphNodeId NodeGraph::addNode(const NodeTypeId& typeId, const std::string& title, float x, float y) {
     if (!registry) {
@@ -211,6 +270,141 @@ void NodeGraph::clear() {
     nextSocketId = 1;
     nextEdgeId = 1;
     bumpRevision();
+}
+
+bool NodeGraph::loadSerializedState(
+    const NodeGraphState& state,
+    uint32_t serializedNextNodeId,
+    uint32_t serializedNextSocketId,
+    uint32_t serializedNextEdgeId,
+    std::string& errorMessage) {
+    if (!registry) {
+        errorMessage = "Node graph registry is not available.";
+        return false;
+    }
+
+    NodeGraph candidate(registry);
+
+    uint32_t maxNodeId = 0;
+    uint32_t maxRestoredSocketId = 0;
+    uint32_t maxEdgeId = 0;
+
+    for (const auto& [nodeKey, savedNode] : state.nodes) {
+        if (!savedNode.id.isValid() || nodeKey != savedNode.id.value) {
+            errorMessage = "Saved node has an invalid id.";
+            return false;
+        }
+
+        const NodeTypeDefinition* definition = registry->findNodeType(savedNode.typeId);
+        if (!definition) {
+            errorMessage = "Saved graph references unknown node type: " + savedNode.typeId;
+            return false;
+        }
+
+        NodeGraphNode rebuiltNode{};
+        rebuiltNode.id = savedNode.id;
+        rebuiltNode.typeId = definition->id;
+        rebuiltNode.category = definition->category;
+        rebuiltNode.title = savedNode.title.empty() ? definition->displayName : savedNode.title;
+        rebuiltNode.x = savedNode.x;
+        rebuiltNode.y = savedNode.y;
+        rebuiltNode.displayEnabled = savedNode.displayEnabled;
+        rebuiltNode.frozen = savedNode.frozen;
+        rebuiltNode.inputs = candidate.buildSocketsFromInterface(*definition, NodeGraphSocketDirection::Input);
+        rebuiltNode.outputs = candidate.buildSocketsFromInterface(*definition, NodeGraphSocketDirection::Output);
+
+        if (!patchSocketIds(rebuiltNode.inputs, savedNode.inputs, errorMessage) ||
+            !patchSocketIds(rebuiltNode.outputs, savedNode.outputs, errorMessage)) {
+            std::ostringstream ss;
+            ss << "Node " << savedNode.id.value << ": " << errorMessage;
+            errorMessage = ss.str();
+            return false;
+        }
+
+        for (const NodeGraphParamDefinition& parameterDefinition : definition->parameters) {
+            rebuiltNode.parameters.push_back(makeNodeGraphParamValue(parameterDefinition));
+        }
+
+        for (const NodeGraphParamValue& savedParameter : savedNode.parameters) {
+            const NodeGraphParamDefinition* parameterDefinition = findNodeParamDefinition(*definition, savedParameter.id);
+            if (!parameterDefinition) {
+                continue;
+            }
+
+            NodeGraphParamValue restoredParameter = savedParameter;
+            if (!normalizeNodeGraphParamValue(*parameterDefinition, restoredParameter) ||
+                !validateNodeGraphParamValue(*parameterDefinition, restoredParameter)) {
+                std::ostringstream ss;
+                ss << "Node " << savedNode.id.value << " has an invalid saved parameter value.";
+                errorMessage = ss.str();
+                return false;
+            }
+
+            if (NodeGraphParamValue* existingParameter = findNodeParamValue(rebuiltNode, restoredParameter.id)) {
+                *existingParameter = std::move(restoredParameter);
+            } else {
+                rebuiltNode.parameters.push_back(std::move(restoredParameter));
+            }
+        }
+
+        maxNodeId = std::max(maxNodeId, rebuiltNode.id.value);
+        maxRestoredSocketId = std::max(maxRestoredSocketId, maxSocketId(rebuiltNode));
+        candidate.nodes[rebuiltNode.id.value] = std::move(rebuiltNode);
+    }
+
+    for (const auto& [edgeKey, savedEdge] : state.edges) {
+        if (!savedEdge.id.isValid() || edgeKey != savedEdge.id.value) {
+            errorMessage = "Saved edge has an invalid id.";
+            return false;
+        }
+
+        const NodeGraphNode* fromNode = candidate.findNode(savedEdge.fromNode);
+        const NodeGraphNode* toNode = candidate.findNode(savedEdge.toNode);
+        if (!fromNode || !toNode) {
+            errorMessage = "Saved edge references a missing node.";
+            return false;
+        }
+        if (!findSocket(*fromNode, savedEdge.fromSocket, NodeGraphSocketDirection::Output) ||
+            !findSocket(*toNode, savedEdge.toSocket, NodeGraphSocketDirection::Input)) {
+            errorMessage = "Saved edge references a missing or invalid socket.";
+            return false;
+        }
+
+        std::string validationError;
+        if (!NodeGraphValidator::canCreateConnection(
+                candidate,
+                registry->typeRegistry(),
+                savedEdge.fromNode,
+                savedEdge.fromSocket,
+                savedEdge.toNode,
+                savedEdge.toSocket,
+                validationError)) {
+            errorMessage = "Saved edge is invalid: " + validationError;
+            return false;
+        }
+
+        candidate.edges[savedEdge.id.value] = savedEdge;
+        maxEdgeId = std::max(maxEdgeId, savedEdge.id.value);
+    }
+
+    candidate.nextNodeId = std::max(serializedNextNodeId, maxNodeId + 1);
+    candidate.nextSocketId = std::max(serializedNextSocketId, maxRestoredSocketId + 1);
+    candidate.nextEdgeId = std::max(serializedNextEdgeId, maxEdgeId + 1);
+    candidate.revision = revision + 1;
+
+    nodes = std::move(candidate.nodes);
+    edges = std::move(candidate.edges);
+    nextNodeId = candidate.nextNodeId;
+    nextSocketId = candidate.nextSocketId;
+    nextEdgeId = candidate.nextEdgeId;
+    revision = candidate.revision;
+    return true;
+}
+
+void NodeGraph::getNextIds(uint32_t& outNodeId, uint32_t& outSocketId, uint32_t& outEdgeId) const {
+    outNodeId = nextNodeId;
+    outSocketId = nextSocketId;
+    outEdgeId = nextEdgeId;
 }
 
 const NodeGraphNode* NodeGraph::findNode(NodeGraphNodeId nodeId) const {

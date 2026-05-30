@@ -81,6 +81,20 @@ const NodeGraphBridge* App::getNodeGraphBridge() const {
     return nullptr;
 }
 
+CameraController* App::getCameraController() {
+    if (systems) {
+        return systems->getCameraController();
+    }
+    return nullptr;
+}
+
+const CameraController* App::getCameraController() const {
+    if (systems) {
+        return systems->getCameraController();
+    }
+    return nullptr;
+}
+
 SceneController* App::getSceneController() {
     if (systems) {
         return systems->getSceneController();

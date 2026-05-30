@@ -116,6 +116,16 @@ void NodeGraphEditorWidget::refreshGraph() {
     }
 }
 
+void NodeGraphEditorWidget::resetToDefaultGraph() {
+    if (!bridge) {
+        return;
+    }
+    editor.resetToDefaultGraph();
+    if (graphScene) {
+        graphScene->applyPendingChanges();
+    }
+}
+
 void NodeGraphEditorWidget::syncSelection() {
     syncViewportSelectionToGraph();
 }
@@ -137,13 +147,7 @@ void NodeGraphEditorWidget::createUi() {
 
     pyTerminal = new PyTerminalWidget(this);
     connect(pyTerminal, &PyTerminalWidget::defaultGraphRequested, this, [this]() {
-        if (!bridge) {
-            return;
-        }
-        editor.resetToDefaultGraph();
-        if (graphScene) {
-            graphScene->applyPendingChanges();
-        }
+        resetToDefaultGraph();
     });
 
     // Right side: nodePanel above canvas

@@ -16,6 +16,7 @@
 #include "VulkanCoreContext.hpp"
 
 class NodeGraphBridge;
+class CameraController;
 class ModelSelection;
 class RuntimeQuery;
 class SceneController;
@@ -40,6 +41,8 @@ public:
     const RenderSettingsController* getSettingsController() const;
     NodeGraphBridge* getNodeGraphBridge();
     const NodeGraphBridge* getNodeGraphBridge() const;
+    CameraController* getCameraController();
+    const CameraController* getCameraController() const;
     SceneController* getSceneController();
     const SceneController* getSceneController() const;
     ModelSelection* getModelSelection();

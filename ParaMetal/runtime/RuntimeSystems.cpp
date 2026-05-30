@@ -112,6 +112,14 @@ const NodeGraphBridge* RuntimeSystems::getNodeGraphBridge() const {
     return render.nodeGraphBridge();
 }
 
+CameraController* RuntimeSystems::getCameraController() {
+    return &scene.cameraController();
+}
+
+const CameraController* RuntimeSystems::getCameraController() const {
+    return &scene.cameraController();
+}
+
 SceneController* RuntimeSystems::getSceneController() {
     return render.sceneController();
 }

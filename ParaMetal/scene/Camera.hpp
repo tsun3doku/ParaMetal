@@ -18,6 +18,9 @@ public:
     void processMouseMovement(bool middleButtonPressed, double mouseX, double mouseY, bool shiftPressed = false);  
     void processMouseScroll(double xOffset, double yOffset);    
     void setLookAt(const glm::vec3& target);
+    void setOrientation(const glm::quat& q);
+    void setRadius(float r);
+    void setFov(float f);
     void pan(float dx, float dy);
     void resetRadius();
     glm::vec3 screenToWorldRay(double mouseX, double mouseY, int screenWidth, int screenHeight);
@@ -31,6 +34,22 @@ public:
 
     float getFov() const {
         return currentFov;
+    }
+
+    float getBaseFov() const {
+        return baseFov;
+    }
+
+    glm::vec3 getLookAt() const {
+        return lookAt;
+    }
+
+    glm::quat getOrientation() const {
+        return orientation;
+    }
+
+    float getRadius() const {
+        return radius;
     }
 
     glm::vec3 getForwardDirection() const {
@@ -49,11 +68,6 @@ private:
     glm::quat orientation = glm::angleAxis(glm::radians(30.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 
     glm::vec3 velocity = glm::vec3(0.0f);               
-
-    glm::mat4 getRotationMatrix() const;                
-    glm::mat4 getProjMatrix(float aspectRatio) const {
-    return glm::perspective(glm::radians(currentFov), aspectRatio, nearPlane, farPlane);
-    }
 
     float movementSpeed = 60.0f;
 
