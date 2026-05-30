@@ -230,20 +230,7 @@ void NodePanel::buildUi() {
 
     // Fixed header bar (same height/style as terminal title bar)
     headerBar = new QFrame(this);
-    headerBar->setFixedHeight(32);
-    headerBar->setStyleSheet(QStringLiteral(
-        "QFrame {"
-        "  background: %1;"
-        "  border-bottom: 1px solid %2;"
-        "}"
-        "QLabel {"
-        "  color: %3;"
-        "  font-size: 13px;"
-        "  font-weight: 600;"
-        "}"
-    ).arg(nodegraphwidgets::colorPanelBackground.name(),
-          nodegraphwidgets::colorPanelCardBorder.name(),
-          nodegraphwidgets::colorTextHeading.name()));
+    nodegraphwidgets::styleTitleBar(headerBar);
     QHBoxLayout* headerLayout = new QHBoxLayout(headerBar);
     headerLayout->setContentsMargins(10, 0, 10, 0);
     headerLayout->setSpacing(8);

@@ -12,7 +12,6 @@
 #include "heat/VoronoiSystemComputeController.hpp"
 #include "nodegraph/NodeGraphBridge.hpp"
 #include "nodegraph/NodeGraphController.hpp"
-#include "nodegraph/NodeGraphEditor.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
 #include "runtime/ModelComputeRuntime.hpp"
 #include "runtime/ContactDisplayController.hpp"
@@ -167,8 +166,6 @@ bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, Win
     nodeRuntimeServices.remesher = &remeshControllerState->getRemesher();
 
     nodeGraphBridgeState = std::make_unique<NodeGraphBridge>();
-    NodeGraphEditor defaultGraphEditor(*nodeGraphBridgeState);
-    defaultGraphEditor.resetToDefaultGraph();
     nodeGraphControllerState = std::make_unique<NodeGraphController>(nodeGraphBridgeState.get(), nodeRuntimeServices);
 
     initialized = true;

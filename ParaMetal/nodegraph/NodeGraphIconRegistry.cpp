@@ -7,9 +7,7 @@
 #include <utility>
 #include <vector>
 
-std::unordered_map<IconCacheKey, QPixmap, IconCacheKeyHash> NodeGraphIconRegistry::iconCache{};
-
-static const char* iconFolderForType(const NodeTypeId& typeId) {
+const char* NodeGraphIconRegistry::iconFolderForType(const NodeTypeId& typeId) {
     if (typeId == "contact") return "Contact";
     if (typeId == "heat_solve") return "HeatSystem";
     if (typeId == "model") return "Model";
@@ -20,7 +18,7 @@ static const char* iconFolderForType(const NodeTypeId& typeId) {
     return nullptr;
 }
 
-static std::vector<std::filesystem::path> iconFolderCandidates(const std::string& folder) {
+std::vector<std::filesystem::path> NodeGraphIconRegistry::iconFolderCandidates(const std::string& folder) {
     return {
         std::filesystem::path("textures/icons") / folder,
         std::filesystem::path("ParaMetal/textures/icons") / folder,
@@ -31,7 +29,7 @@ static std::vector<std::filesystem::path> iconFolderCandidates(const std::string
     };
 }
 
-static int parseIconWidth(const std::filesystem::path& path) {
+int NodeGraphIconRegistry::parseIconWidth(const std::filesystem::path& path) {
     const std::string name = path.filename().string();
     if (name.size() < 2 || name.back() != 'w') {
         return 0;
@@ -44,10 +42,12 @@ static int parseIconWidth(const std::filesystem::path& path) {
     }
 }
 
-static std::string resolveIconPath(const std::string& folder, int targetWidth) {
+QString NodeGraphIconRegistry::iconPathForFolder(const QString& folder, qreal targetPixelWidth) {
     std::vector<std::pair<int, std::filesystem::path>> variants;
+    const std::string folderName = folder.toStdString();
+    const int targetWidth = iconWidthCacheKey(targetPixelWidth);
 
-    for (const auto& folderPath : iconFolderCandidates(folder)) {
+    for (const auto& folderPath : iconFolderCandidates(folderName)) {
         if (!std::filesystem::exists(folderPath) || !std::filesystem::is_directory(folderPath)) {
             continue;
         }
@@ -77,7 +77,7 @@ static std::string resolveIconPath(const std::string& folder, int targetWidth) {
     }
 
     if (variants.empty()) {
-        return {};
+        return QString();
     }
 
     std::sort(
@@ -89,11 +89,11 @@ static std::string resolveIconPath(const std::string& folder, int targetWidth) {
 
     for (const auto& variant : variants) {
         if (variant.first >= targetWidth) {
-            return variant.second.string();
+            return QString::fromStdString(variant.second.string());
         }
     }
 
-    return variants.back().second.string();
+    return QString::fromStdString(variants.back().second.string());
 }
 
 bool IconCacheKey::operator==(const IconCacheKey& other) const noexcept {
@@ -112,8 +112,7 @@ QString NodeGraphIconRegistry::iconPathForType(const NodeTypeId& typeId, qreal t
         return QString();
     }
 
-    const std::string path = resolveIconPath(folder, iconWidthCacheKey(targetPixelWidth));
-    return path.empty() ? QString() : QString::fromStdString(path);
+    return iconPathForFolder(QString::fromUtf8(folder), targetPixelWidth);
 }
 
 QPixmap NodeGraphIconRegistry::iconForType(const NodeTypeId& typeId, qreal targetPixelWidth) {

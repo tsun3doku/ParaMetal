@@ -31,6 +31,7 @@
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowTitle("ParaMetal");
     resize(1600, 900);
+    setMinimumSize(700, 400);
     setStyleSheet(QString::fromStdString(ui::appStyleSheet()));
 
     createMenuBar();
@@ -51,7 +52,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     hostLayout->addWidget(mainSplitter);
 
     if (nodeGraphEditor) {
-        nodeGraphEditor->setMinimumWidth(160);
         nodeGraphEditor->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
         mainSplitter->addWidget(nodeGraphEditor);
     }
@@ -70,7 +70,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     mainSplitter->setStretchFactor(0, 0);
     mainSplitter->setStretchFactor(1, 1);
-    mainSplitter->setSizes({600, 1000});
+    mainSplitter->setSizes({700, 900});
 
     setCentralWidget(centralHost);
     connect(mainSplitter, &QSplitter::splitterMoved, this, [this](int, int) {
@@ -232,6 +232,11 @@ void MainWindow::syncNodeGraphBridge() {
     nodeGraphEditor->setBridge(bridge);
     boundNodeGraphBridge = bridge;
     pybridge::setBridge(bridge);
+    if (bridge) {
+        if (PyTerminalWidget* term = nodeGraphEditor->getPyTerminal()) {
+            term->initializeInterpreter();
+        }
+    }
     nodeGraphEditor->syncSelection();
 }
 

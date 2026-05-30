@@ -211,4 +211,64 @@ void applyNodePanelStyle(QWidget* panel) {
     panel->setStyleSheet(stylesheet);
 }
 
+QString actionStripStyleSheet() {
+    QString ss;
+    ss += "QWidget#NodeGraphActionStrip {";
+    ss += "  background: " + colorPanelCardBackground.name() + ";";
+    ss += "  border: 1px solid " + colorInputBorder.name() + ";";
+    ss += "  border-radius: " + px(actionStripBannerRadius) + ";";
+    ss += "}";
+    ss += "QLabel#ActionStripTitle {";
+    ss += "  color: " + colorTextHeading.name() + ";";
+    ss += "  font-size: " + px(panelTabFontSize) + ";";
+    ss += "  font-weight: " + QString::number(panelTitleFontWeight) + ";";
+    ss += "}";
+    ss += "QLabel#ActionStripDescription {";
+    ss += "  color: " + colorTextSecondary.name() + ";";
+    ss += "  font-size: " + px(panelTabFontSize) + ";";
+    ss += "}";
+    ss += "QPushButton#ActionStripButton {";
+    ss += "  background: " + colorButtonBackground.name() + ";";
+    ss += "  color: " + colorTextHeading.name() + ";";
+    ss += "  border: 1px solid " + colorButtonBorder.name() + ";";
+    ss += "  border-radius: " + px(panelWidgetRadius) + ";";
+    ss += "  padding: 6px 10px;";
+    ss += "}";
+    ss += "QPushButton#ActionStripButton:hover {";
+    ss += "  background: " + colorButtonHover.name() + ";";
+    ss += "}";
+    ss += "QPushButton#ActionStripButton:pressed {";
+    ss += "  background: " + colorButtonPressed.name() + ";";
+    ss += "}";
+    ss += "QPushButton#ActionStripDismiss {";
+    ss += "  background: transparent;";
+    ss += "  color: " + colorTextSecondary.name() + ";";
+    ss += "  border: none;";
+    ss += "  padding: 2px;";
+    ss += "  font-size: 18px;";
+    ss += "}";
+    ss += "QPushButton#ActionStripDismiss:hover {";
+    ss += "  color: " + colorTextHeading.name() + ";";
+    ss += "}";
+    return ss;
+}
+
+void styleTitleBar(QFrame* frame) {
+    if (!frame) {
+        return;
+    }
+    frame->setFixedHeight(panelTitleBarHeight);
+    QString ss;
+    ss += "QFrame {";
+    ss += "  background: " + colorPanelBackground.name() + ";";
+    ss += "  border-bottom: 1px solid " + colorPanelCardBorder.name() + ";";
+    ss += "}";
+    ss += "QLabel {";
+    ss += "  color: " + colorTextHeading.name() + ";";
+    ss += "  font-size: " + px(panelTitleBarFontSize) + ";";
+    ss += "  font-weight: " + QString::number(panelTitleBarFontWeight) + ";";
+    ss += "}";
+    frame->setStyleSheet(ss);
+}
+
 }

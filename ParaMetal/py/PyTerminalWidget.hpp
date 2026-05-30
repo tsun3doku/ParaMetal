@@ -9,6 +9,7 @@
 class QPlainTextEdit;
 class QLineEdit;
 class QEvent;
+class NodeGraphActionStrip;
 class PyInterpreter;
 
 class PyTerminalWidget : public QWidget {
@@ -19,6 +20,9 @@ public:
 
     bool initializeInterpreter();
     void shutdownInterpreter();
+
+signals:
+    void defaultGraphRequested();
 
 protected:
     bool eventFilter(QObject* obj, QEvent* event) override;
@@ -35,6 +39,7 @@ private:
 
     QPlainTextEdit* outputEdit = nullptr;
     QLineEdit* inputEdit = nullptr;
+    NodeGraphActionStrip* sampleGraphStrip = nullptr;
     PySyntaxHighlighter* highlighter = nullptr;
 
     std::unique_ptr<PyInterpreter> interpreter;

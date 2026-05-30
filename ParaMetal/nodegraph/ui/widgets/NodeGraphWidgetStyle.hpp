@@ -6,6 +6,7 @@ class QString;
 class QLineEdit;
 class QWidget;
 class QComboBox;
+class QFrame;
 
 namespace nodegraphwidgets {
 
@@ -34,6 +35,9 @@ constexpr int panelFieldVerticalPadding = 6;
 constexpr int panelFieldHorizontalPadding = 8;
 constexpr int panelButtonVerticalPadding = 7;
 constexpr int panelButtonHorizontalPadding = 12;
+constexpr int panelTitleBarHeight = 32;
+constexpr int panelTitleBarFontSize = 13;
+constexpr int panelTitleBarFontWeight = 600;
 constexpr int panelTitleFontSize = 19;
 constexpr int panelTitleFontWeight = 700;
 constexpr int panelSubtitleFontSize = 13;
@@ -42,6 +46,11 @@ constexpr int panelMinimumHeight = 260;
 constexpr int panelDataflowHeight = 140;
 constexpr int panelTableMinimumHeight = 120;
 constexpr int heatStatusTimerIntervalMs = 125;
+
+constexpr int actionStripHeight = 66;
+constexpr int actionStripBannerRadius = 6;
+constexpr int actionStripIconSize = 28;
+constexpr int actionStripDismissSize = 24;
 
 constexpr int sliderRowSpacing = 10;
 constexpr int sliderLabelWidth = 120;
@@ -87,5 +96,7 @@ void styleLineEdit(QLineEdit* edit);
 void styleComboBox(QComboBox* combo);
 QWidget* buildPanelCardPage(QWidget* parent, QWidget* contentWidget);
 void applyNodePanelStyle(QWidget* panel);
+QString actionStripStyleSheet();
+void styleTitleBar(QFrame* frame);
 
 }
