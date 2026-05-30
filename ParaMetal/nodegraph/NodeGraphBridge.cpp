@@ -45,19 +45,6 @@ void NodeGraphBridge::clear() {
     NodeGraphChange resetChange{NodeGraphChangeType::Reset};
     resetChange.reason = NodeGraphChangeReason::Topology;
     changes.push_back(std::move(resetChange));
-    changes.reserve(1 + graphState.nodes.size() + graphState.edges.size());
-    for (const auto& [id, node] : graphState.nodes) {
-        NodeGraphChange change{NodeGraphChangeType::NodeUpsert};
-        change.reason = NodeGraphChangeReason::Topology;
-        change.node = node;
-        changes.push_back(std::move(change));
-    }
-    for (const auto& [id, edge] : graphState.edges) {
-        NodeGraphChange change{NodeGraphChangeType::EdgeUpsert};
-        change.reason = NodeGraphChangeReason::Topology;
-        change.edge = edge;
-        changes.push_back(std::move(change));
-    }
     pushChangesLocked(changes);
 }
 
@@ -317,6 +304,50 @@ bool NodeGraphBridge::canExecute(std::string& reason) const {
 NodeGraphState NodeGraphBridge::state() const {
     std::lock_guard<std::mutex> lock(mutex);
     return graphState;
+}
+
+uint64_t NodeGraphBridge::getRevision() const {
+    std::lock_guard<std::mutex> lock(mutex);
+    return changeRevision;
+}
+
+void NodeGraphBridge::getNextIds(uint32_t& outNodeId, uint32_t& outSocketId, uint32_t& outEdgeId) const {
+    std::lock_guard<std::mutex> lock(mutex);
+    document.getNextIds(outNodeId, outSocketId, outEdgeId);
+}
+
+bool NodeGraphBridge::loadState(
+    const NodeGraphState& state,
+    uint32_t nextNodeId,
+    uint32_t nextSocketId,
+    uint32_t nextEdgeId,
+    std::string& errorMessage) {
+    std::lock_guard<std::mutex> lock(mutex);
+
+    if (!document.loadSerializedState(state, nextNodeId, nextSocketId, nextEdgeId, errorMessage)) {
+        return false;
+    }
+
+    rebuildStateLocked();
+    std::vector<NodeGraphChange> changes;
+    changes.reserve(1 + graphState.nodes.size() + graphState.edges.size());
+    NodeGraphChange resetChange{NodeGraphChangeType::Reset};
+    resetChange.reason = NodeGraphChangeReason::Topology;
+    changes.push_back(std::move(resetChange));
+    for (const auto& [id, node] : graphState.nodes) {
+        NodeGraphChange change{NodeGraphChangeType::NodeUpsert};
+        change.reason = NodeGraphChangeReason::Topology;
+        change.node = node;
+        changes.push_back(std::move(change));
+    }
+    for (const auto& [id, edge] : graphState.edges) {
+        NodeGraphChange change{NodeGraphChangeType::EdgeUpsert};
+        change.reason = NodeGraphChangeReason::Topology;
+        change.edge = edge;
+        changes.push_back(std::move(change));
+    }
+    pushChangesLocked(changes);
+    return true;
 }
 
 bool NodeGraphBridge::resolveGizmoTransformNode(uint64_t outputSocketKey, NodeGraphNodeId& outTransformNodeId) const {

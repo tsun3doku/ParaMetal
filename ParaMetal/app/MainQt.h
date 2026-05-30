@@ -1,6 +1,9 @@
 ﻿#pragma once
 
 #include <QMainWindow>
+#include <QString>
+
+#include <cstdint>
 
 class App;
 class QAction;
@@ -14,6 +17,8 @@ class QCloseEvent;
 class QWidget;
 class VulkanWindow;
 class QSplitter;
+class QMenu;
+class QMenuBar;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -29,15 +34,33 @@ protected:
 
 private:
     void createMenuBar();
+    void createFileMenu(QMenuBar* menuBar);
     void createNodeGraphEditorWidget();
     void syncNodeGraphBridge();
     void setNodeGraphVisible(bool visible);
     void setPyTerminalVisible(bool visible);
     void raiseNativeSplitterHandles();
     void onExit();
+    bool newProject();
+    bool openProject();
+    bool openProjectPath(const QString& path);
+    bool saveProject();
+    bool saveProjectAs();
+    bool saveProjectToPath(const QString& path);
+    bool promptSaveIfModified();
+    void updateWindowTitle();
+    void setProjectModified(bool modified);
+    void addToRecentFiles(const QString& path);
+    void rebuildRecentFilesMenu();
 
     App* app = nullptr;
 
+    QString currentProjectPath;
+    uint64_t lastSavedRevision = 0;
+    bool isModified = false;
+    QAction* saveAction = nullptr;
+    QAction* saveAsAction = nullptr;
+    QMenu* recentFilesMenu = nullptr;
     QAction* nodeGraphAction = nullptr;
     QAction* pyTerminalAction = nullptr;
     VulkanWindow* viewportWindow = nullptr;

@@ -20,6 +20,14 @@ void CameraController::resetFocusToOrigin() {
     camera.resetRadius();
 }
 
+void CameraController::setCameraState(const glm::vec3& lookAt, const glm::quat& orientation, float radius, float fov) {
+    camera.setLookAt(lookAt);
+    camera.setOrientation(orientation);
+    camera.setRadius(radius);
+    camera.update(0.0f);
+    camera.setFov(fov);
+}
+
 void CameraController::tick(float deltaTime) {
     camera.update(deltaTime);
 }

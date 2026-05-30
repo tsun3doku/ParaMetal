@@ -25,6 +25,7 @@ public:
     void setSceneController(const SceneController* sceneController);
     void setModelSelection(ModelSelection* modelSelection);
     void refreshGraph();
+    void resetToDefaultGraph();
 
     PyTerminalWidget* getPyTerminal() const { return pyTerminal; }
     void syncSelection();

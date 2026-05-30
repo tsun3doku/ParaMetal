@@ -35,6 +35,14 @@ public:
     bool canExecute(std::string& reason) const;
 
     NodeGraphState state() const;
+    uint64_t getRevision() const;
+    void getNextIds(uint32_t& outNodeId, uint32_t& outSocketId, uint32_t& outEdgeId) const;
+    bool loadState(
+        const NodeGraphState& state,
+        uint32_t nextNodeId,
+        uint32_t nextSocketId,
+        uint32_t nextEdgeId,
+        std::string& errorMessage);
     NodeGraphRegistry& getRegistry() { return registry; }
     const NodeGraphRegistry& getRegistry() const { return registry; }
     bool resolveGizmoTransformNode(uint64_t outputSocketKey, NodeGraphNodeId& outTransformNodeId) const;

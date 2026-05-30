@@ -30,6 +30,13 @@ public:
     bool removeConnection(NodeGraphEdgeId edgeId);
 
     void clear();
+    bool loadSerializedState(
+        const NodeGraphState& state,
+        uint32_t serializedNextNodeId,
+        uint32_t serializedNextSocketId,
+        uint32_t serializedNextEdgeId,
+        std::string& errorMessage);
+    void getNextIds(uint32_t& outNodeId, uint32_t& outSocketId, uint32_t& outEdgeId) const;
 
     const std::unordered_map<uint32_t, NodeGraphNode>& getNodes() const {
         return nodes;

@@ -314,6 +314,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="nodegraph\NodeGraphBridge.cpp" />
     <ClCompile Include="nodegraph\NodeGraphController.cpp" />
     <ClCompile Include="nodegraph\NodeGraph.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphSave.cpp" />
     <ClCompile Include="nodegraph\ui\scene\NodeGraphCanvas.cpp" />
     <ClCompile Include="nodegraph\ui\scene\NodeGraphEditorWidget.cpp" />
     <ClCompile Include="nodegraph\NodeGraphEditor.cpp" />
@@ -607,6 +608,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="nodegraph\NodeGraphBridge.hpp" />
     <ClInclude Include="nodegraph\NodeGraphController.hpp" />
     <ClInclude Include="nodegraph\NodeGraph.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphSave.hpp" />
     <QtMoc Include="nodegraph\ui\scene\NodeGraphCanvas.hpp" />
     <QtMoc Include="nodegraph\ui\scene\NodeGraphEditorWidget.hpp" />
     <ClInclude Include="nodegraph\NodeGraphEditor.hpp" />

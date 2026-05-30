@@ -9,6 +9,7 @@
 #include "runtime/RuntimeSystems.hpp"
 
 class NodeGraphBridge;
+class CameraController;
 class ModelSelection;
 class RenderSettingsController;
 class RuntimeQuery;
@@ -34,6 +35,8 @@ public:
     const RenderSettingsController* getSettingsController() const;
     NodeGraphBridge* getNodeGraphBridge();
     const NodeGraphBridge* getNodeGraphBridge() const;
+    CameraController* getCameraController();
+    const CameraController* getCameraController() const;
     SceneController* getSceneController();
     const SceneController* getSceneController() const;
     ModelSelection* getModelSelection();

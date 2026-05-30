@@ -32,6 +32,19 @@ void Camera::setLookAt(const glm::vec3& center) {
     lookAt = center;
 }
 
+void Camera::setOrientation(const glm::quat& q) {
+    orientation = glm::normalize(q);
+}
+
+void Camera::setRadius(float r) {
+    radius = glm::clamp(r, minRadius, maxRadius);
+    radiusVelocity = 0.0f;
+}
+
+void Camera::setFov(float f) {
+    baseFov = glm::clamp(f, 1.0f, 120.0f);
+    currentFov = baseFov;
+}
 
 void Camera::processMouseMovement(bool middleButtonPressed, double mouseX, double mouseY, bool shiftPressed) {
     static double lastX = 0.0;
@@ -109,13 +122,9 @@ glm::mat4 Camera::getProjectionMatrix(float aspectRatio) const {
     return glm::perspective(glm::radians(currentFov), aspectRatio, nearPlane, farPlane);
 }
 
-glm::mat4 Camera::getRotationMatrix() const {
-    return glm::mat4_cast(orientation);
-}
-
 glm::vec3 Camera::screenToWorldRay(double mouseX, double mouseY, int screenWidth, int screenHeight) {
-    float x = (2.0f * mouseX) / screenWidth - 1.0f;
-    float y = 1.0f - (2.0f * mouseY) / screenHeight;
+    float x = static_cast<float>((2.0 * mouseX) / screenWidth - 1.0);
+    float y = static_cast<float>(1.0 - (2.0 * mouseY) / screenHeight);
 
     glm::vec4 rayClip = glm::vec4(x, y, -1.0f, 1.0f);
     glm::vec4 rayView = glm::inverse(getProjectionMatrix(screenWidth / (float)screenHeight)) * rayClip;

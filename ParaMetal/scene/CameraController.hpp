@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.h>
 
+#include <glm/gtc/quaternion.hpp>
 #include <glm/vec3.hpp>
 
 class Camera;
@@ -24,6 +25,7 @@ public:
     void setPanSensitivity(float sensitivity);
     void focusOn(const glm::vec3& target);
     void resetFocusToOrigin();
+    void setCameraState(const glm::vec3& lookAt, const glm::quat& orientation, float radius, float fov);
     void tick(float deltaTime);
 
     render::SceneView buildSceneView(VkExtent2D extent) const;
