@@ -492,6 +492,9 @@
     <ClCompile Include="nodegraph\ui\widgets\NodePanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="nodegraph\ui\widgets\NodeGraphActionStrip.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="nodegraph\ui\widgets\NodeGraphWidgetStyle.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -1391,6 +1394,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="nodegraph\ui\scene\NodeGraphScene.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="nodegraph\ui\widgets\NodeGraphActionStrip.hpp">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="py\PySyntaxHighlighter.hpp">

@@ -1,6 +1,8 @@
 #include "PyTerminalWidget.hpp"
 
 #include "PyInterpreter.hpp"
+#include "nodegraph/NodeGraphIconRegistry.hpp"
+#include "nodegraph/ui/widgets/NodeGraphActionStrip.hpp"
 #include "nodegraph/ui/widgets/NodeGraphWidgetStyle.hpp"
 
 #include <QPlainTextEdit>
@@ -10,11 +12,13 @@
 #include <QScrollBar>
 #include <QFrame>
 #include <QLabel>
+#include <QWidget>
 
 PyTerminalWidget::PyTerminalWidget(QWidget* parent)
     : QWidget(parent) {
 
     nodegraphwidgets::applyNodePanelStyle(this);
+    setMinimumWidth(320);
 
     QVBoxLayout* rootLayout = new QVBoxLayout(this);
     rootLayout->setContentsMargins(0, 0, 0, 0);
@@ -22,24 +26,27 @@ PyTerminalWidget::PyTerminalWidget(QWidget* parent)
 
     // Title bar
     QFrame* titleBar = new QFrame(this);
-    titleBar->setFixedHeight(32);
-    titleBar->setStyleSheet(QStringLiteral(
-        "QFrame {"
-        "  background: %1;"
-        "  border-bottom: 1px solid %2;"
-        "}"
-        "QLabel {"
-        "  color: %3;"
-        "  font-size: 13px;"
-        "  font-weight: 600;"
-        "  padding-left: 10px;"
-        "}"
-    ).arg(nodegraphwidgets::colorPanelBackground.name(),
-          nodegraphwidgets::colorPanelCardBorder.name(),
-          nodegraphwidgets::colorTextHeading.name()));
+    nodegraphwidgets::styleTitleBar(titleBar);
     QHBoxLayout* titleLayout = new QHBoxLayout(titleBar);
-    titleLayout->setContentsMargins(0, 0, 0, 0);
-    titleLayout->setSpacing(0);
+    titleLayout->setContentsMargins(10, 0, 0, 0);
+    titleLayout->setSpacing(6);
+
+    QLabel* titleIcon = new QLabel(titleBar);
+    titleIcon->setFixedSize(20, 20);
+    titleIcon->setStyleSheet(QStringLiteral("border: none; background: transparent;"));
+    const QString iconPath = NodeGraphIconRegistry::iconPathForFolder(QStringLiteral("Terminal"), 20.0);
+    if (!iconPath.isEmpty()) {
+        QPixmap icon(iconPath);
+        if (!icon.isNull()) {
+            titleIcon->setPixmap(icon.scaled(
+                20,
+                20,
+                Qt::KeepAspectRatio,
+                Qt::SmoothTransformation));
+        }
+    }
+    titleLayout->addWidget(titleIcon);
+
     QLabel* titleLabel = new QLabel(QStringLiteral("Console"), titleBar);
     titleLayout->addWidget(titleLabel);
     titleLayout->addStretch(1);
@@ -78,15 +85,44 @@ PyTerminalWidget::PyTerminalWidget(QWidget* parent)
     ).arg(nodegraphwidgets::colorPanelCardBorder.name()));
     rootLayout->addWidget(separator);
 
+    QWidget* sampleGraphStripHost = new QWidget(this);
+    sampleGraphStripHost->setObjectName(QStringLiteral("SampleGraphStripHost"));
+    sampleGraphStripHost->setAttribute(Qt::WA_StyledBackground, true);
+    sampleGraphStripHost->setStyleSheet(QStringLiteral(
+        "QWidget#SampleGraphStripHost {"
+        "  background: %1;"
+        "}"
+    ).arg(nodegraphwidgets::colorPanelBackground.name()));
+    QVBoxLayout* sampleGraphStripLayout = new QVBoxLayout(sampleGraphStripHost);
+    sampleGraphStripLayout->setContentsMargins(10, 14, 10, 14);
+    sampleGraphStripLayout->setSpacing(0);
+
+    sampleGraphStrip = new NodeGraphActionStrip(
+        QStringLiteral("Sample graph available"),
+        QStringLiteral("default_graph() creates a sample graph"),
+        QStringLiteral("Run"),
+        QStringLiteral("NodeGraph"),
+        sampleGraphStripHost);
+    sampleGraphStripLayout->addWidget(sampleGraphStrip);
+    rootLayout->addWidget(sampleGraphStripHost);
+
+    QFrame* inputSeparator = new QFrame(this);
+    inputSeparator->setFrameShape(QFrame::HLine);
+    inputSeparator->setFrameShadow(QFrame::Plain);
+    inputSeparator->setFixedHeight(1);
+    inputSeparator->setStyleSheet(QStringLiteral(
+        "QFrame { background: %1; border: none; }"
+    ).arg(nodegraphwidgets::colorPanelCardBorder.name()));
+    rootLayout->addWidget(inputSeparator);
+
     // Input line
     inputEdit = new QLineEdit(this);
-    nodegraphwidgets::styleLineEdit(inputEdit);
     inputEdit->setPlaceholderText(QStringLiteral(">>>"));
     inputEdit->setFont(monoFont);
     inputEdit->setStyleSheet(QStringLiteral(
         "QLineEdit {"
         "  background: %1;"
-        "  color: rgb(243,241,251);"
+        "  color: %2;"
         "  border: none;"
         "  border-radius: 0px;"
         "  padding: 8px 10px;"
@@ -97,10 +133,16 @@ PyTerminalWidget::PyTerminalWidget(QWidget* parent)
         "QLineEdit::placeholder {"
         "  color: rgb(150,150,150);"
         "}"
-    ).arg(nodegraphwidgets::colorPanelBackground.name()));
+    ).arg(nodegraphwidgets::colorPanelBackground.name(),
+          nodegraphwidgets::colorTextInput.name()));
     rootLayout->addWidget(inputEdit);
 
     connect(inputEdit, &QLineEdit::returnPressed, this, &PyTerminalWidget::onInputReturnPressed);
+    connect(sampleGraphStrip, &NodeGraphActionStrip::triggered, this, [this]() {
+        sampleGraphStrip->hide();
+        emit defaultGraphRequested();
+    });
+    connect(sampleGraphStrip, &NodeGraphActionStrip::dismissed, sampleGraphStrip, &NodeGraphActionStrip::hide);
 
     // Custom key handling for history navigation
     inputEdit->installEventFilter(this);
@@ -143,9 +185,10 @@ bool PyTerminalWidget::initializeInterpreter() {
         return false;
     }
     std::string ver = interpreter->pythonVersion();
-    appendOutput(QStringLiteral("Python Console %1\n").arg(QString::fromStdString(ver)));
-    appendOutput(QStringLiteral("Module: heatspectra as hs\n"));
-    appendOutput(QStringLiteral("Help: api(), registry()\n"));
+    appendOutput(QStringLiteral("ParaMetal Console\n"));
+    appendOutput(QStringLiteral("Python %1\n").arg(QString::fromStdString(ver)));
+    appendOutput(QStringLiteral("parametal imported as pm\n\n"));
+    appendOutput(QStringLiteral("Help: api(), registry()\n\n"));
 
     appendPrompt(">>> ");
     return true;

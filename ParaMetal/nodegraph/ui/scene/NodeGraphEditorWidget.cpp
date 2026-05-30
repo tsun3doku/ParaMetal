@@ -124,6 +124,7 @@ void NodeGraphEditorWidget::createUi() {
     QVBoxLayout* rootLayout = new QVBoxLayout(this);
     rootLayout->setContentsMargins(0, 0, 0, 0);
     rootLayout->setSpacing(0);
+    setMinimumWidth(450);
 
     graphScene = new NodeGraphScene(this);
     NodeGraphCanvas* canvas = new NodeGraphCanvas(this);
@@ -135,6 +136,15 @@ void NodeGraphEditorWidget::createUi() {
     nodePanel->bind(bridge, runtimeQuery);
 
     pyTerminal = new PyTerminalWidget(this);
+    connect(pyTerminal, &PyTerminalWidget::defaultGraphRequested, this, [this]() {
+        if (!bridge) {
+            return;
+        }
+        editor.resetToDefaultGraph();
+        if (graphScene) {
+            graphScene->applyPendingChanges();
+        }
+    });
 
     // Right side: nodePanel above canvas
     QSplitter* rightSplitter = new QSplitter(Qt::Vertical, this);
@@ -156,16 +166,12 @@ void NodeGraphEditorWidget::createUi() {
     mainSplitter->setStretchFactor(1, 1);
     mainSplitter->setCollapsible(0, true);
     mainSplitter->setCollapsible(1, false);
-    mainSplitter->setSizes({220, 380});
+    mainSplitter->setSizes({360, 340});
     rootLayout->addWidget(mainSplitter, 1);
 
-    connect(graphScene, &NodeGraphScene::nodeActivated,
-            this, &NodeGraphEditorWidget::openInspectorForNode);
-    connect(graphScene, &NodeGraphScene::nodeSelectionChanged,
-            this, &NodeGraphEditorWidget::handleGraphSelectionChanged);
-    connect(graphScene, &NodeGraphScene::graphPopulated,
-            canvas, &NodeGraphCanvas::centerOnContent,
-            Qt::SingleShotConnection);
+    connect(graphScene, &NodeGraphScene::nodeActivated, this, &NodeGraphEditorWidget::openInspectorForNode);
+    connect(graphScene, &NodeGraphScene::nodeSelectionChanged, this, &NodeGraphEditorWidget::handleGraphSelectionChanged);
+    connect(graphScene, &NodeGraphScene::graphPopulated, canvas, &NodeGraphCanvas::centerOnContent, Qt::SingleShotConnection);
 
     connect(canvas, &NodeGraphCanvas::requestCreateMenu, this, &NodeGraphEditorWidget::onRequestCreateMenu);
     connect(canvas, &NodeGraphCanvas::requestDeleteSelected, this, &NodeGraphEditorWidget::onRequestDeleteSelected);

@@ -57,15 +57,19 @@ bool PyInterpreter::initialize() {
             ctx->interactive_interp = PyObject_GetAttrString(main, "__parametal_interp");
         }
 
-        PyRun_SimpleString("import parametal as hs");
+        PyRun_SimpleString("import parametal as pm");
         PyRun_SimpleString(R"PY(
+def default_graph():
+    pm.default_graph()
+
 def api():
     print("""
 ParaMetal Python API
 ======================
 
-Module:  import heatspectra as hs
-Graph:    g = hs.get_graph()
+Module:  import parametal as pm
+Graph:    g = pm.get_graph()
+Sample:   default_graph()
 
 Graph Methods:
   g.add_node(type, name='', x=0, y=0)  -> Node
@@ -93,7 +97,7 @@ Socket Properties:
   socket.type
 
 Examples:
-  g = hs.get_graph()
+  g = pm.get_graph()
   n = g.add_node('transform', 'MyTransform', 100, 100)
   n.set('scale', 2.0)
   out = n.output('Geometry')
@@ -102,7 +106,7 @@ Examples:
 """)
 
 def registry():
-    for t in hs.get_graph().registry.all_node_types:
+    for t in pm.get_graph().registry.all_node_types:
         print(f"  {t.id}  ({t.display_name})")
 )PY");
 
