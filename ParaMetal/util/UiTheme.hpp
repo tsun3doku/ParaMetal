@@ -11,6 +11,17 @@ inline constexpr int SplitterVisualThickness = 7;
 inline constexpr QColor SplitterBaseColor = QColor(46, 46, 52);
 inline constexpr QColor SplitterHoverColor = QColor(58, 57, 60);
 inline constexpr QColor SplitterBorderColor = QColor(58, 57, 60);
+
+inline constexpr QColor MenuBarBackground = QColor(36, 36, 41);
+inline constexpr QColor MenuBarText = QColor(210, 210, 215);
+inline constexpr QColor MenuBarItemHover = QColor(58, 57, 65);
+inline constexpr QColor MenuBackground = QColor(46, 46, 52);
+inline constexpr QColor MenuBorder = QColor(70, 70, 78);
+inline constexpr QColor MenuItemHover = QColor(72, 71, 82);
+inline constexpr QColor MenuItemSelected = QColor(80, 79, 92);
+inline constexpr QColor MenuText = QColor(210, 210, 215);
+inline constexpr QColor MenuTextDisabled = QColor(110, 110, 118);
+inline constexpr QColor MenuSeparator = QColor(65, 64, 72);
 inline constexpr int ScrollBarThickness = 12;
 inline constexpr int ScrollBarMargin = 2;
 inline constexpr int ScrollBarRadius = 4;
@@ -117,6 +128,49 @@ inline std::string appStyleSheet() {
         "}"
         "QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { "
         "background: transparent; "
+        "}"
+        "QMenuBar { "
+        "background: " + MenuBarBackground.name().toStdString() + "; "
+        "color: " + MenuBarText.name().toStdString() + "; "
+        "border-bottom: 1px solid " + MenuBorder.name().toStdString() + "; "
+        "}"
+        "QMenuBar::item { "
+        "background: transparent; "
+        "padding: 4px 10px; "
+        "}"
+        "QMenuBar::item:selected { "
+        "background: " + MenuBarItemHover.name().toStdString() + "; "
+        "border-radius: 3px; "
+        "}"
+        "QMenuBar::item:pressed { "
+        "background: " + MenuItemSelected.name().toStdString() + "; "
+        "border-radius: 3px; "
+        "}"
+        "QMenu { "
+        "background: " + MenuBackground.name().toStdString() + "; "
+        "color: " + MenuText.name().toStdString() + "; "
+        "border: 1px solid " + MenuBorder.name().toStdString() + "; "
+        "padding: 3px 0px; "
+        "}"
+        "QMenu::item { "
+        "padding: 5px 28px 5px 20px; "
+        "background: transparent; "
+        "}"
+        "QMenu::item:selected { "
+        "background: " + MenuItemHover.name().toStdString() + "; "
+        "}"
+        "QMenu::item:disabled { "
+        "color: " + MenuTextDisabled.name().toStdString() + "; "
+        "}"
+        "QMenu::separator { "
+        "height: 1px; "
+        "background: " + MenuSeparator.name().toStdString() + "; "
+        "margin: 3px 8px; "
+        "}"
+        "QMenu::indicator { "
+        "width: 14px; "
+        "height: 14px; "
+        "margin-left: 4px; "
         "}";
 }
 
