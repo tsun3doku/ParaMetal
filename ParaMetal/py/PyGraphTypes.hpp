@@ -28,22 +28,6 @@ struct PySocket {
     NodeGraphValueType valueType() const;
 };
 
-struct PyEdge {
-    NodeGraphBridge* bridge = nullptr;
-    NodeGraphEdgeId edgeId{};
-
-    PyEdge() = default;
-    PyEdge(NodeGraphBridge* b, NodeGraphEdgeId id);
-
-    NodeGraphNodeId from_node() const;
-    NodeGraphSocketId from_socket() const;
-    NodeGraphNodeId to_node() const;
-    NodeGraphSocketId to_socket() const;
-
-private:
-    NodeGraphEdge getEdge() const;
-};
-
 struct PyNode {
     NodeGraphBridge* bridge = nullptr;
     NodeGraphNodeId nodeId{};
@@ -59,4 +43,21 @@ struct PyNode {
     PySocket output(const std::string& name) const;
     std::vector<PySocket> inputs() const;
     std::vector<PySocket> outputs() const;
+};
+
+struct PyEdge {
+    NodeGraphBridge* bridge = nullptr;
+    NodeGraphEdgeId edgeId{};
+
+    PyEdge() = default;
+    PyEdge(NodeGraphBridge* b, NodeGraphEdgeId id);
+
+    NodeGraphEdgeId edge_id() const { return edgeId; }
+    PyNode from_node() const;
+    PySocket from_socket() const;
+    PyNode to_node() const;
+    PySocket to_socket() const;
+
+private:
+    NodeGraphEdge getEdge() const;
 };

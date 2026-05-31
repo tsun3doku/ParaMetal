@@ -106,8 +106,8 @@ void NodeGraphEditor::resetToDefaultGraph() {
     const NodeGraphSocketId sourceVoronoiGeometryInputId = inputSocketByType(sourceVoronoi.node, NodeGraphValueType::Mesh);
     const NodeGraphSocketId heatSolveVoronoiInputId = inputSocketByType(heatSolve.node, NodeGraphValueType::Volume);
     const NodeGraphSocketId heatSolveContactInputId = inputSocketByType(heatSolve.node, NodeGraphValueType::Field);
-    const NodeGraphSocketId contactEmitterInputId = inputSocketByName(contact.node, "Emitter");
-    const NodeGraphSocketId contactReceiverInputId = inputSocketByName(contact.node, "Receiver");
+    const NodeGraphSocketId contactEmitterInputId = inputSocketByName(contact.node, "SurfaceA");
+    const NodeGraphSocketId contactReceiverInputId = inputSocketByName(contact.node, "SurfaceB");
     const NodeGraphSocketId receiverHeatModelOutputId = firstOutputSocket(receiverHeatModel.node);
     const NodeGraphSocketId sourceHeatModelOutputId = firstOutputSocket(sourceHeatModel.node);
     const NodeGraphSocketId contactOutputId = firstOutputSocket(contact.node);

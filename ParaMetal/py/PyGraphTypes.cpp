@@ -66,10 +66,22 @@ NodeGraphValueType PySocket::valueType() const {
 
 PyEdge::PyEdge(NodeGraphBridge* b, NodeGraphEdgeId id) : bridge(b), edgeId(id) {}
 
-NodeGraphNodeId PyEdge::from_node() const { return edgeId.value ? getEdge().fromNode : NodeGraphNodeId{}; }
-NodeGraphSocketId PyEdge::from_socket() const { return edgeId.value ? getEdge().fromSocket : NodeGraphSocketId{}; }
-NodeGraphNodeId PyEdge::to_node() const { return edgeId.value ? getEdge().toNode : NodeGraphNodeId{}; }
-NodeGraphSocketId PyEdge::to_socket() const { return edgeId.value ? getEdge().toSocket : NodeGraphSocketId{}; }
+PyNode PyEdge::from_node() const {
+    NodeGraphEdge e = getEdge();
+    return PyNode(bridge, e.fromNode);
+}
+PySocket PyEdge::from_socket() const {
+    NodeGraphEdge e = getEdge();
+    return PySocket(bridge, e.fromNode, e.fromSocket);
+}
+PyNode PyEdge::to_node() const {
+    NodeGraphEdge e = getEdge();
+    return PyNode(bridge, e.toNode);
+}
+PySocket PyEdge::to_socket() const {
+    NodeGraphEdge e = getEdge();
+    return PySocket(bridge, e.toNode, e.toSocket);
+}
 
 NodeGraphEdge PyEdge::getEdge() const {
     if (!bridge) return NodeGraphEdge{};

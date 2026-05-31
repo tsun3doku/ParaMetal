@@ -168,6 +168,15 @@ bool PyTerminalWidget::eventFilter(QObject* obj, QEvent* event) {
             inputEdit->setCursorPosition(pos + 4);
             return true;
         }
+        if (keyEvent->key() == Qt::Key_Escape) {
+            // Cancel the current input buffer and reset to a fresh prompt
+            inputEdit->clear();
+            currentBuffer.clear();
+            waitingForMoreInput = false;
+            appendOutput(QStringLiteral("^C\n"));
+            appendPrompt(QStringLiteral(">>> "));
+            return true;
+        }
     }
     return QWidget::eventFilter(obj, event);
 }

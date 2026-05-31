@@ -98,11 +98,19 @@ Socket Properties:
 
 Examples:
   g = pm.get_graph()
-  n = g.add_node('transform', 'MyTransform', 100, 100)
-  n.set('scale', 2.0)
-  out = n.output('Geometry')
-  inp = n.input('Geometry')
-  g.connect(out, inp)
+  a = g.add_node('model', 'My Model', 0, 0)
+  b = g.add_node('transform', 'My Transform', 200, 0)
+  g.connect(a.output('Mesh'), b.input('Mesh'))
+
+  c = g.add_node('contact', '', 400, 0)
+  g.connect(a.output('Mesh'), c.input('SurfaceA'))
+  g.connect(b.output('Mesh'), c.input('SurfaceB'))
+
+  for e in g.edges:
+      print(e)
+
+  e = g.edges[0]
+  g.disconnect(e)
 """)
 
 def registry():
