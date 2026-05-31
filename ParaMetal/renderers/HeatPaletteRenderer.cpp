@@ -1,5 +1,6 @@
 #include "HeatPaletteRenderer.hpp"
 
+#include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/VulkanImage.hpp"
 #include "vulkan/CommandBufferManager.hpp"
@@ -12,8 +13,9 @@
 #include <iostream>
 #include <sstream>
 
-HeatPaletteRenderer::HeatPaletteRenderer(VulkanDevice& vulkanDevice, CommandPool& commandPool)
+HeatPaletteRenderer::HeatPaletteRenderer(VulkanDevice& vulkanDevice, MemoryAllocator& allocator, CommandPool& commandPool)
     : vulkanDevice(vulkanDevice),
+      allocator(allocator),
       commandPool(commandPool) {
 }
 
@@ -349,80 +351,46 @@ void HeatPaletteRenderer::createQuadVertexBuffer() {
 
     const VkDeviceSize size = sizeof(Vertex) * vertices.size();
 
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = size;
-    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    if (vkCreateBuffer(vulkanDevice.getDevice(), &bufferInfo, nullptr, &quadVertexBuffer) != VK_SUCCESS) {
-        std::cerr << "[HeatPaletteRenderer] Failed to create quad vertex buffer" << std::endl;
-        return;
-    }
-
-    VkMemoryRequirements memReq{};
-    vkGetBufferMemoryRequirements(vulkanDevice.getDevice(), quadVertexBuffer, &memReq);
-
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memReq.size;
-    allocInfo.memoryTypeIndex = vulkanDevice.findMemoryType(
-        memReq.memoryTypeBits,
+    auto [buffer, offset] = allocator.allocate(
+        size,
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-    if (vkAllocateMemory(vulkanDevice.getDevice(), &allocInfo, nullptr, &quadVertexBufferMemory) != VK_SUCCESS) {
-        std::cerr << "[HeatPaletteRenderer] Failed to allocate quad vertex buffer memory" << std::endl;
-        vkDestroyBuffer(vulkanDevice.getDevice(), quadVertexBuffer, nullptr);
-        quadVertexBuffer = VK_NULL_HANDLE;
+    if (buffer == VK_NULL_HANDLE) {
+        std::cerr << "[HeatPaletteRenderer] Failed to allocate quad vertex buffer" << std::endl;
         return;
     }
 
-    vkBindBufferMemory(vulkanDevice.getDevice(), quadVertexBuffer, quadVertexBufferMemory, 0);
+    quadVertexBuffer = buffer;
+    quadVertexBufferOffset = offset;
 
-    void* mapped = nullptr;
-    vkMapMemory(vulkanDevice.getDevice(), quadVertexBufferMemory, 0, size, 0, &mapped);
-    std::memcpy(mapped, vertices.data(), static_cast<size_t>(size));
-    vkUnmapMemory(vulkanDevice.getDevice(), quadVertexBufferMemory);
+    void* mapped = allocator.getMappedPointer(buffer, offset);
+    if (mapped) {
+        std::memcpy(mapped, vertices.data(), static_cast<size_t>(size));
+    }
 }
 
 void HeatPaletteRenderer::createTextInstanceBuffers(uint32_t maxFramesInFlight) {
     const VkDeviceSize size = sizeof(GlyphText::GlyphInstance) * maxGlyphCapacity;
 
     textInstanceBuffers.resize(maxFramesInFlight, VK_NULL_HANDLE);
-    textInstanceBufferMemories.resize(maxFramesInFlight, VK_NULL_HANDLE);
+    textInstanceBufferOffsets.resize(maxFramesInFlight, 0);
     textInstanceBuffersMapped.resize(maxFramesInFlight, nullptr);
 
     for (uint32_t i = 0; i < maxFramesInFlight; ++i) {
-        VkBufferCreateInfo bufferInfo{};
-        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = size;
-        bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        if (vkCreateBuffer(vulkanDevice.getDevice(), &bufferInfo, nullptr, &textInstanceBuffers[i]) != VK_SUCCESS) {
-            std::cerr << "[HeatPaletteRenderer] Failed to create instance buffer [" << i << "]" << std::endl;
-            return;
-        }
-
-        VkMemoryRequirements memReq{};
-        vkGetBufferMemoryRequirements(vulkanDevice.getDevice(), textInstanceBuffers[i], &memReq);
-
-        VkMemoryAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocInfo.allocationSize = memReq.size;
-        allocInfo.memoryTypeIndex = vulkanDevice.findMemoryType(
-            memReq.memoryTypeBits,
+        auto [buffer, offset] = allocator.allocate(
+            size,
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-        if (vkAllocateMemory(vulkanDevice.getDevice(), &allocInfo, nullptr, &textInstanceBufferMemories[i]) != VK_SUCCESS) {
-            std::cerr << "[HeatPaletteRenderer] Failed to allocate instance buffer memory [" << i << "]" << std::endl;
-            vkDestroyBuffer(vulkanDevice.getDevice(), textInstanceBuffers[i], nullptr);
-            textInstanceBuffers[i] = VK_NULL_HANDLE;
+        if (buffer == VK_NULL_HANDLE) {
+            std::cerr << "[HeatPaletteRenderer] Failed to allocate instance buffer [" << i << "]" << std::endl;
             return;
         }
 
-        vkBindBufferMemory(vulkanDevice.getDevice(), textInstanceBuffers[i], textInstanceBufferMemories[i], 0);
-        vkMapMemory(vulkanDevice.getDevice(), textInstanceBufferMemories[i], 0, size, 0, &textInstanceBuffersMapped[i]);
+        textInstanceBuffers[i] = buffer;
+        textInstanceBufferOffsets[i] = offset;
+        textInstanceBuffersMapped[i] = allocator.getMappedPointer(buffer, offset);
     }
 }
 
@@ -705,7 +673,7 @@ void HeatPaletteRenderer::render(VkCommandBuffer commandBuffer, uint32_t current
             sizeof(glm::vec2), &viewportSize);
 
         VkBuffer buffers[2] = { quadVertexBuffer, textInstanceBuffers[currentFrame] };
-        VkDeviceSize offsets[2] = { 0, 0 };
+        VkDeviceSize offsets[2] = { quadVertexBufferOffset, textInstanceBufferOffsets[currentFrame] };
         vkCmdBindVertexBuffers(commandBuffer, 0, 2, buffers, offsets);
         vkCmdDraw(commandBuffer, 4, glyphCount, 0, 0);
     }
@@ -726,15 +694,21 @@ void HeatPaletteRenderer::cleanup() {
     if (fontAtlasMemory != VK_NULL_HANDLE) vkFreeMemory(device, fontAtlasMemory, nullptr);
 
     for (size_t i = 0; i < textInstanceBuffers.size(); ++i) {
-        if (textInstanceBufferMemories[i] != VK_NULL_HANDLE && textInstanceBuffersMapped[i] != nullptr) {
-            vkUnmapMemory(device, textInstanceBufferMemories[i]);
+        if (textInstanceBuffers[i] != VK_NULL_HANDLE) {
+            allocator.free(textInstanceBuffers[i], textInstanceBufferOffsets[i]);
         }
-        if (textInstanceBuffers[i] != VK_NULL_HANDLE) vkDestroyBuffer(device, textInstanceBuffers[i], nullptr);
-        if (textInstanceBufferMemories[i] != VK_NULL_HANDLE) vkFreeMemory(device, textInstanceBufferMemories[i], nullptr);
     }
 
-    if (quadVertexBuffer != VK_NULL_HANDLE) vkDestroyBuffer(device, quadVertexBuffer, nullptr);
-    if (quadVertexBufferMemory != VK_NULL_HANDLE) vkFreeMemory(device, quadVertexBufferMemory, nullptr);
+    if (quadVertexBuffer != VK_NULL_HANDLE) {
+        allocator.free(quadVertexBuffer, quadVertexBufferOffset);
+        quadVertexBuffer = VK_NULL_HANDLE;
+    }
+    quadVertexBufferOffset = 0;
+
+    textInstanceBuffers.clear();
+    textInstanceBufferOffsets.clear();
+    textInstanceBuffersMapped.clear();
+    textDescriptorSets.clear();
 
     barPipeline = VK_NULL_HANDLE;
     barPipelineLayout = VK_NULL_HANDLE;
@@ -746,6 +720,4 @@ void HeatPaletteRenderer::cleanup() {
     fontAtlasView = VK_NULL_HANDLE;
     fontAtlasImage = VK_NULL_HANDLE;
     fontAtlasMemory = VK_NULL_HANDLE;
-    quadVertexBuffer = VK_NULL_HANDLE;
-    quadVertexBufferMemory = VK_NULL_HANDLE;
 }

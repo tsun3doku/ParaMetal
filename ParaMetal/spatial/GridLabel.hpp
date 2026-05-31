@@ -7,6 +7,7 @@
 #include <string>
 #include "util/GlyphText.hpp"
 
+class MemoryAllocator;
 class VulkanDevice;
 class UniformBufferManager;
 class CommandPool;
@@ -26,7 +27,7 @@ public:
         glm::vec2 texCoord;
     };
 
-    GridLabel(VulkanDevice& vulkanDevice, UniformBufferManager& uniformBufferManager, uint32_t maxFramesInFlight, VkRenderPass renderPass, CommandPool& commandPool);
+    GridLabel(VulkanDevice& vulkanDevice, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, uint32_t maxFramesInFlight, VkRenderPass renderPass, CommandPool& commandPool);
     ~GridLabel();
 
     void updateLabels(const glm::vec3& gridSize);
@@ -49,14 +50,15 @@ private:
     std::string floatToString(float value, int precision = 1);
 
     VulkanDevice& vulkanDevice;
+    MemoryAllocator& allocator;
     UniformBufferManager& uniformBufferManager;
     CommandPool& commandPool;
 
     VkBuffer quadVertexBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory quadVertexBufferMemory = VK_NULL_HANDLE;
-    
+    VkDeviceSize quadVertexBufferOffset = 0;
+
     std::vector<VkBuffer> instanceBuffers;
-    std::vector<VkDeviceMemory> instanceBufferMemories;
+    std::vector<VkDeviceSize> instanceBufferOffsets;
     std::vector<void*> instanceBuffersMapped;
     
     VkImage fontAtlasImage = VK_NULL_HANDLE;

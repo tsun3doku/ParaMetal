@@ -5,6 +5,7 @@
 #include <vector>
 #include <memory>
 
+class MemoryAllocator;
 class UniformBufferManager;
 class VulkanDevice;
 class GridLabel;
@@ -12,7 +13,7 @@ class CommandPool;
 
 class GridRenderer {
 public:
-    GridRenderer(VulkanDevice& vulkanDevice, UniformBufferManager& uniformBufferManager,
+    GridRenderer(VulkanDevice& vulkanDevice, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager,
                  uint32_t maxFramesInFlight, VkRenderPass renderPass, CommandPool& commandPool);
     ~GridRenderer();
 
@@ -48,6 +49,7 @@ public:
 
 private:
     VulkanDevice& vulkanDevice;
+    MemoryAllocator& allocator;
     UniformBufferManager& uniformBufferManager;
  
     VkDescriptorPool gridDescriptorPool;

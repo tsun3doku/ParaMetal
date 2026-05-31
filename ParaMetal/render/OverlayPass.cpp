@@ -80,7 +80,7 @@ void OverlayPass::create() {
         return;
     }
 
-    timingOverlay = std::make_unique<TimingRenderer>(vulkanDevice, maxFramesInFlight, frameGraphRuntime.getRenderPass(), framegraph::toIndex(passId), renderCommandPool);
+    timingOverlay = std::make_unique<TimingRenderer>(vulkanDevice, memoryAllocator, maxFramesInFlight, frameGraphRuntime.getRenderPass(), framegraph::toIndex(passId), renderCommandPool);
     if (!timingOverlay) {
         std::cerr << "[OverlayPass] Failed to create timing overlay renderer" << std::endl;
         destroy();
@@ -134,7 +134,7 @@ void OverlayPass::create() {
         framegraph::toIndex(passId),
         maxFramesInFlight);
 
-    gridRenderer = std::make_unique<GridRenderer>(vulkanDevice, uniformBufferManager, maxFramesInFlight, frameGraphRuntime.getRenderPass(), renderCommandPool);
+    gridRenderer = std::make_unique<GridRenderer>(vulkanDevice, memoryAllocator, uniformBufferManager, maxFramesInFlight, frameGraphRuntime.getRenderPass(), renderCommandPool);
     if (!gridRenderer) {
         std::cerr << "[OverlayPass] Failed to create grid renderer" << std::endl;
         destroy();

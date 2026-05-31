@@ -11,15 +11,15 @@
 #include "GridLabel.hpp"
 
 
-GridRenderer::GridRenderer(VulkanDevice& vulkanDevice, UniformBufferManager& uniformBufferManager, uint32_t maxFramesInFlight, VkRenderPass renderPass, CommandPool& commandPool)
-    : vulkanDevice(vulkanDevice), uniformBufferManager(uniformBufferManager) {
+GridRenderer::GridRenderer(VulkanDevice& vulkanDevice, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, uint32_t maxFramesInFlight, VkRenderPass renderPass, CommandPool& commandPool)
+    : vulkanDevice(vulkanDevice), allocator(allocator), uniformBufferManager(uniformBufferManager) {
     createGridDescriptorPool(maxFramesInFlight);
     createGridDescriptorSetLayout();
     createGridDescriptorSets(maxFramesInFlight);
 
     createGridPipeline(renderPass);
-    
-    gridLabel = std::make_unique<GridLabel>(vulkanDevice, uniformBufferManager, maxFramesInFlight, renderPass, commandPool);
+
+    gridLabel = std::make_unique<GridLabel>(vulkanDevice, allocator, uniformBufferManager, maxFramesInFlight, renderPass, commandPool);
 }
 
 GridRenderer::~GridRenderer() {

@@ -1,5 +1,6 @@
 ﻿#include "TimingRenderer.hpp"
 
+#include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/VulkanImage.hpp"
 #include "vulkan/CommandBufferManager.hpp"
@@ -13,11 +14,13 @@
 
 TimingRenderer::TimingRenderer(
     VulkanDevice& vulkanDevice,
+    MemoryAllocator& allocator,
     uint32_t maxFramesInFlight,
     VkRenderPass renderPass,
     uint32_t subpassIndex,
     CommandPool& commandPool)
     : vulkanDevice(vulkanDevice),
+      allocator(allocator),
       commandPool(commandPool) {
     if (!glyphText.load()) {
         std::cerr << "[TimingRenderer] Failed to load glyph text" << std::endl;
@@ -45,80 +48,46 @@ void TimingRenderer::createQuadVertexBuffer() {
 
     const VkDeviceSize size = sizeof(QuadVertex) * vertices.size();
 
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = size;
-    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    if (vkCreateBuffer(vulkanDevice.getDevice(), &bufferInfo, nullptr, &quadVertexBuffer) != VK_SUCCESS) {
-        std::cerr << "[TimingRenderer] Failed to create quad vertex buffer" << std::endl;
-        return;
-    }
-
-    VkMemoryRequirements memReq{};
-    vkGetBufferMemoryRequirements(vulkanDevice.getDevice(), quadVertexBuffer, &memReq);
-
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memReq.size;
-    allocInfo.memoryTypeIndex = vulkanDevice.findMemoryType(
-        memReq.memoryTypeBits,
+    auto [buffer, offset] = allocator.allocate(
+        size,
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-    if (vkAllocateMemory(vulkanDevice.getDevice(), &allocInfo, nullptr, &quadVertexBufferMemory) != VK_SUCCESS) {
-        std::cerr << "[TimingRenderer] Failed to allocate quad vertex buffer memory" << std::endl;
-        vkDestroyBuffer(vulkanDevice.getDevice(), quadVertexBuffer, nullptr);
-        quadVertexBuffer = VK_NULL_HANDLE;
+    if (buffer == VK_NULL_HANDLE) {
+        std::cerr << "[TimingRenderer] Failed to allocate quad vertex buffer" << std::endl;
         return;
     }
 
-    vkBindBufferMemory(vulkanDevice.getDevice(), quadVertexBuffer, quadVertexBufferMemory, 0);
+    quadVertexBuffer = buffer;
+    quadVertexBufferOffset = offset;
 
-    void* mapped = nullptr;
-    vkMapMemory(vulkanDevice.getDevice(), quadVertexBufferMemory, 0, size, 0, &mapped);
-    std::memcpy(mapped, vertices.data(), static_cast<size_t>(size));
-    vkUnmapMemory(vulkanDevice.getDevice(), quadVertexBufferMemory);
+    void* mapped = allocator.getMappedPointer(buffer, offset);
+    if (mapped) {
+        std::memcpy(mapped, vertices.data(), static_cast<size_t>(size));
+    }
 }
 
 void TimingRenderer::createInstanceBuffers(uint32_t maxFramesInFlight) {
     const VkDeviceSize size = sizeof(GlyphText::GlyphInstance) * maxGlyphCapacity;
 
     instanceBuffers.resize(maxFramesInFlight, VK_NULL_HANDLE);
-    instanceBufferMemories.resize(maxFramesInFlight, VK_NULL_HANDLE);
+    instanceBufferOffsets.resize(maxFramesInFlight, 0);
     instanceBuffersMapped.resize(maxFramesInFlight, nullptr);
 
     for (uint32_t i = 0; i < maxFramesInFlight; ++i) {
-        VkBufferCreateInfo bufferInfo{};
-        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = size;
-        bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        if (vkCreateBuffer(vulkanDevice.getDevice(), &bufferInfo, nullptr, &instanceBuffers[i]) != VK_SUCCESS) {
-            std::cerr << "[TimingRenderer] Failed to create instance buffer [" << i << "]" << std::endl;
-            return;
-        }
-
-        VkMemoryRequirements memReq{};
-        vkGetBufferMemoryRequirements(vulkanDevice.getDevice(), instanceBuffers[i], &memReq);
-
-        VkMemoryAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocInfo.allocationSize = memReq.size;
-        allocInfo.memoryTypeIndex = vulkanDevice.findMemoryType(
-            memReq.memoryTypeBits,
+        auto [buffer, offset] = allocator.allocate(
+            size,
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-        if (vkAllocateMemory(vulkanDevice.getDevice(), &allocInfo, nullptr, &instanceBufferMemories[i]) != VK_SUCCESS) {
-            std::cerr << "[TimingRenderer] Failed to allocate instance buffer memory [" << i << "]" << std::endl;
-            vkDestroyBuffer(vulkanDevice.getDevice(), instanceBuffers[i], nullptr);
-            instanceBuffers[i] = VK_NULL_HANDLE;
+        if (buffer == VK_NULL_HANDLE) {
+            std::cerr << "[TimingRenderer] Failed to allocate instance buffer [" << i << "]" << std::endl;
             return;
         }
 
-        vkBindBufferMemory(vulkanDevice.getDevice(), instanceBuffers[i], instanceBufferMemories[i], 0);
-        vkMapMemory(vulkanDevice.getDevice(), instanceBufferMemories[i], 0, size, 0, &instanceBuffersMapped[i]);
+        instanceBuffers[i] = buffer;
+        instanceBufferOffsets[i] = offset;
+        instanceBuffersMapped[i] = allocator.getMappedPointer(buffer, offset);
     }
 }
 
@@ -505,7 +474,7 @@ void TimingRenderer::render(VkCommandBuffer commandBuffer, uint32_t currentFrame
     vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::vec2), &viewportSize);
 
     VkBuffer buffers[2] = { quadVertexBuffer, instanceBuffers[currentFrame] };
-    VkDeviceSize offsets[2] = { 0, 0 };
+    VkDeviceSize offsets[2] = { quadVertexBufferOffset, instanceBufferOffsets[currentFrame] };
     vkCmdBindVertexBuffers(commandBuffer, 0, 2, buffers, offsets);
     vkCmdDraw(commandBuffer, 4, glyphCount, 0, 0);
 }
@@ -523,18 +492,22 @@ void TimingRenderer::cleanup() {
     if (fontAtlasMemory != VK_NULL_HANDLE) vkFreeMemory(device, fontAtlasMemory, nullptr);
 
     for (size_t i = 0; i < instanceBuffers.size(); ++i) {
-        if (instanceBufferMemories[i] != VK_NULL_HANDLE && instanceBuffersMapped[i] != nullptr) {
-            vkUnmapMemory(device, instanceBufferMemories[i]);
+        if (instanceBuffers[i] != VK_NULL_HANDLE) {
+            allocator.free(instanceBuffers[i], instanceBufferOffsets[i]);
         }
-        if (instanceBuffers[i] != VK_NULL_HANDLE) vkDestroyBuffer(device, instanceBuffers[i], nullptr);
-        if (instanceBufferMemories[i] != VK_NULL_HANDLE) vkFreeMemory(device, instanceBufferMemories[i], nullptr);
     }
 
-    if (quadVertexBuffer != VK_NULL_HANDLE) vkDestroyBuffer(device, quadVertexBuffer, nullptr);
-    if (quadVertexBufferMemory != VK_NULL_HANDLE) vkFreeMemory(device, quadVertexBufferMemory, nullptr);
+    if (quadVertexBuffer != VK_NULL_HANDLE) {
+        allocator.free(quadVertexBuffer, quadVertexBufferOffset);
+        quadVertexBuffer = VK_NULL_HANDLE;
+    }
+    quadVertexBufferOffset = 0;
 
-    quadVertexBuffer = VK_NULL_HANDLE;
-    quadVertexBufferMemory = VK_NULL_HANDLE;
+    instanceBuffers.clear();
+    instanceBufferOffsets.clear();
+    instanceBuffersMapped.clear();
+    descriptorSets.clear();
+
     pipeline = VK_NULL_HANDLE;
     pipelineLayout = VK_NULL_HANDLE;
     descriptorSetLayout = VK_NULL_HANDLE;

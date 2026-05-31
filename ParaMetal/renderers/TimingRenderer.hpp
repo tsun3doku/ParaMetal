@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+class MemoryAllocator;
 class VulkanDevice;
 class CommandPool;
 
@@ -15,6 +16,7 @@ class TimingRenderer {
 public:
     TimingRenderer(
         VulkanDevice& vulkanDevice,
+        MemoryAllocator& allocator,
         uint32_t maxFramesInFlight,
         VkRenderPass renderPass,
         uint32_t subpassIndex,
@@ -41,13 +43,14 @@ private:
     void buildGlyphInstances();
 
     VulkanDevice& vulkanDevice;
+    MemoryAllocator& allocator;
     CommandPool& commandPool;
 
     VkBuffer quadVertexBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory quadVertexBufferMemory = VK_NULL_HANDLE;
+    VkDeviceSize quadVertexBufferOffset = 0;
 
     std::vector<VkBuffer> instanceBuffers;
-    std::vector<VkDeviceMemory> instanceBufferMemories;
+    std::vector<VkDeviceSize> instanceBufferOffsets;
     std::vector<void*> instanceBuffersMapped;
 
     VkImage fontAtlasImage = VK_NULL_HANDLE;

@@ -8,12 +8,13 @@
 #include <string>
 #include <vector>
 
+class MemoryAllocator;
 class VulkanDevice;
 class CommandPool;
 
 class HeatPaletteRenderer {
 public:
-    HeatPaletteRenderer(VulkanDevice& vulkanDevice, CommandPool& commandPool);
+    HeatPaletteRenderer(VulkanDevice& vulkanDevice, MemoryAllocator& allocator, CommandPool& commandPool);
     ~HeatPaletteRenderer();
 
     void initialize(VkRenderPass renderPass, uint32_t subpassIndex, uint32_t maxFramesInFlight);
@@ -41,6 +42,7 @@ private:
     void buildGlyphInstances(VkExtent2D extent);
 
     VulkanDevice& vulkanDevice;
+    MemoryAllocator& allocator;
     CommandPool& commandPool;
     uint32_t maxFramesInFlight = 0;
 
@@ -53,10 +55,10 @@ private:
     VkPipeline barPipeline = VK_NULL_HANDLE;
 
     VkBuffer quadVertexBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory quadVertexBufferMemory = VK_NULL_HANDLE;
+    VkDeviceSize quadVertexBufferOffset = 0;
 
     std::vector<VkBuffer> textInstanceBuffers;
-    std::vector<VkDeviceMemory> textInstanceBufferMemories;
+    std::vector<VkDeviceSize> textInstanceBufferOffsets;
     std::vector<void*> textInstanceBuffersMapped;
 
     VkImage fontAtlasImage = VK_NULL_HANDLE;

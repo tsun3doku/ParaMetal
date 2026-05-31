@@ -19,7 +19,7 @@ HeatOverlayRenderer::HeatOverlayRenderer(
       memoryAllocator(allocator),
       surfaceRenderer(std::make_unique<HeatSurfaceRenderer>(device, uniformBufferManager)),
       vectorArrowRenderer(std::make_unique<VectorArrowRenderer>(device, allocator, uniformBufferManager, commandPool)),
-      heatPaletteRenderer(std::make_unique<HeatPaletteRenderer>(device, commandPool)) {
+      heatPaletteRenderer(std::make_unique<HeatPaletteRenderer>(device, allocator, commandPool)) {
 }
 
 HeatOverlayRenderer::~HeatOverlayRenderer() {

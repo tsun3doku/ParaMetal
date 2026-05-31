@@ -107,7 +107,7 @@ void main() {
     float invMass = 1.0 / thermalMass;
     float denominator = 1.0 + dt * kappa * totalConductance + dt * contactK * invMass;
     float numerator   = currentTemp + dt * kappa * totalFlux + dt * contactKT * invMass;
-    float newTemp     = max(numerator / denominator, 0.0);
+    float newTemp     = numerator / denominator;
 
     tempWrite.temperatures[localNodeID] = newTemp;
     

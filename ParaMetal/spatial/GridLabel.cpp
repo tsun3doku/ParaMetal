@@ -1,4 +1,6 @@
 ﻿#include "GridLabel.hpp"
+
+#include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/VulkanImage.hpp"
 #include "vulkan/VulkanBuffer.hpp"
@@ -13,9 +15,9 @@
 #include <cmath>
 #include "libs/stb/stb_image.h"
 
-GridLabel::GridLabel(VulkanDevice& vulkanDevice, UniformBufferManager& uniformBufferManager,
+GridLabel::GridLabel(VulkanDevice& vulkanDevice, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager,
                      uint32_t maxFramesInFlight, VkRenderPass renderPass, CommandPool& commandPool)
-    : vulkanDevice(vulkanDevice), uniformBufferManager(uniformBufferManager), commandPool(commandPool) {
+    : vulkanDevice(vulkanDevice), allocator(allocator), uniformBufferManager(uniformBufferManager), commandPool(commandPool) {
     
     if (!glyphText.load()) {
         std::cerr << "[GridLabel] Failed to load glyph text" << std::endl;
@@ -42,86 +44,48 @@ void GridLabel::createQuadVertexBuffer(VulkanDevice& vulkanDevice) {
         {{-0.5f,  0.5f, 0.0f}, {0.0f, 0.0f}}   // Top left
     };
 
-    VkDeviceSize bufferSize = sizeof(QuadVertex) * vertices.size();
+    const VkDeviceSize bufferSize = sizeof(QuadVertex) * vertices.size();
 
-    // Create vertex buffer 
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = bufferSize;
-    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    auto [buffer, offset] = allocator.allocate(
+        bufferSize,
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-    if (vkCreateBuffer(vulkanDevice.getDevice(), &bufferInfo, nullptr, &quadVertexBuffer) != VK_SUCCESS) {
-        std::cerr << "[GridLabel] Failed to create quad vertex buffer" << std::endl;
+    if (buffer == VK_NULL_HANDLE) {
+        std::cerr << "[GridLabel] Failed to allocate quad vertex buffer" << std::endl;
         return;
     }
 
-    VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(vulkanDevice.getDevice(), quadVertexBuffer, &memRequirements);
-    
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex = vulkanDevice.findMemoryType(memRequirements.memoryTypeBits, 
-                                                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    
-    if (vkAllocateMemory(vulkanDevice.getDevice(), &allocInfo, nullptr, &quadVertexBufferMemory) != VK_SUCCESS) {
-        std::cerr << "[GridLabel] Failed to allocate quad vertex buffer memory" << std::endl;
-        vkDestroyBuffer(vulkanDevice.getDevice(), quadVertexBuffer, nullptr);
-        quadVertexBuffer = VK_NULL_HANDLE;
-        return;
+    quadVertexBuffer = buffer;
+    quadVertexBufferOffset = offset;
+
+    void* data = allocator.getMappedPointer(buffer, offset);
+    if (data) {
+        std::memcpy(data, vertices.data(), static_cast<size_t>(bufferSize));
     }
-    
-    vkBindBufferMemory(vulkanDevice.getDevice(), quadVertexBuffer, quadVertexBufferMemory, 0);
-    
-    // Upload data
-    void* data;
-    vkMapMemory(vulkanDevice.getDevice(), quadVertexBufferMemory, 0, bufferSize, 0, &data);
-    memcpy(data, vertices.data(), bufferSize);
-    vkUnmapMemory(vulkanDevice.getDevice(), quadVertexBufferMemory);
 }
 
 void GridLabel::createInstanceBuffer(VulkanDevice& vulkanDevice, uint32_t maxFramesInFlight) {
-    VkDeviceSize bufferSize = sizeof(LabelInstance) * 1000;
+    const VkDeviceSize bufferSize = sizeof(LabelInstance) * 1000;
 
-    instanceBuffers.resize(maxFramesInFlight);
-    instanceBufferMemories.resize(maxFramesInFlight);
-    instanceBuffersMapped.resize(maxFramesInFlight);
+    instanceBuffers.resize(maxFramesInFlight, VK_NULL_HANDLE);
+    instanceBufferOffsets.resize(maxFramesInFlight, 0);
+    instanceBuffersMapped.resize(maxFramesInFlight, nullptr);
 
     for (size_t i = 0; i < maxFramesInFlight; i++) {
-        // Create buffer
-        VkBufferCreateInfo bufferInfo{};
-        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = bufferSize;
-        bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        auto [buffer, offset] = allocator.allocate(
+            bufferSize,
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-        if (vkCreateBuffer(vulkanDevice.getDevice(), &bufferInfo, nullptr, &instanceBuffers[i]) != VK_SUCCESS) {
-            std::cerr << "[GridLabel] Failed to create instance buffer [" << i << "]" << std::endl;
+        if (buffer == VK_NULL_HANDLE) {
+            std::cerr << "[GridLabel] Failed to allocate instance buffer [" << i << "]" << std::endl;
             return;
         }
 
-        // Allocate memory
-        VkMemoryRequirements memRequirements;
-        vkGetBufferMemoryRequirements(vulkanDevice.getDevice(), instanceBuffers[i], &memRequirements);
-
-        VkMemoryAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocInfo.allocationSize = memRequirements.size;
-        allocInfo.memoryTypeIndex = vulkanDevice.findMemoryType(memRequirements.memoryTypeBits,
-                                                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
-        if (vkAllocateMemory(vulkanDevice.getDevice(), &allocInfo, nullptr, &instanceBufferMemories[i]) != VK_SUCCESS) {
-            std::cerr << "[GridLabel] Failed to allocate instance buffer memory [" << i << "]" << std::endl;
-            vkDestroyBuffer(vulkanDevice.getDevice(), instanceBuffers[i], nullptr);
-            instanceBuffers[i] = VK_NULL_HANDLE;
-            return;
-        }
-
-        vkBindBufferMemory(vulkanDevice.getDevice(), instanceBuffers[i], instanceBufferMemories[i], 0);
-
-        vkMapMemory(vulkanDevice.getDevice(), instanceBufferMemories[i], 0, bufferSize, 0, 
-                    &instanceBuffersMapped[i]);
+        instanceBuffers[i] = buffer;
+        instanceBufferOffsets[i] = offset;
+        instanceBuffersMapped[i] = allocator.getMappedPointer(buffer, offset);
     }
 }
 
@@ -643,31 +607,41 @@ void GridLabel::render(VkCommandBuffer commandBuffer, uint32_t currentFrame) {
                            0, 1, &descriptorSets[currentFrame], 0, nullptr);
 
     VkBuffer vertexBuffers[] = {quadVertexBuffer, instanceBuffers[currentFrame]};
-    VkDeviceSize offsets[] = {0, 0};
+    VkDeviceSize offsets[] = {quadVertexBufferOffset, instanceBufferOffsets[currentFrame]};
     vkCmdBindVertexBuffers(commandBuffer, 0, 2, vertexBuffers, offsets);
 
     vkCmdDraw(commandBuffer, 4, instanceCount, 0, 0);
 }
 
 void GridLabel::cleanup(VulkanDevice& vulkanDevice) {
-    vkDestroyPipeline(vulkanDevice.getDevice(), pipeline, nullptr);
-    vkDestroyPipelineLayout(vulkanDevice.getDevice(), pipelineLayout, nullptr);
-    vkDestroyDescriptorSetLayout(vulkanDevice.getDevice(), descriptorSetLayout, nullptr);
-    vkDestroyDescriptorPool(vulkanDevice.getDevice(), descriptorPool, nullptr);
-    
-    vkDestroySampler(vulkanDevice.getDevice(), fontSampler, nullptr);
-    vkDestroyImageView(vulkanDevice.getDevice(), fontAtlasView, nullptr);
-    vkDestroyImage(vulkanDevice.getDevice(), fontAtlasImage, nullptr);
-    vkFreeMemory(vulkanDevice.getDevice(), fontAtlasMemory, nullptr);
-    
+    VkDevice device = vulkanDevice.getDevice();
+
+    if (pipeline != VK_NULL_HANDLE) { vkDestroyPipeline(device, pipeline, nullptr); pipeline = VK_NULL_HANDLE; }
+    if (pipelineLayout != VK_NULL_HANDLE) { vkDestroyPipelineLayout(device, pipelineLayout, nullptr); pipelineLayout = VK_NULL_HANDLE; }
+    if (descriptorSetLayout != VK_NULL_HANDLE) { vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr); descriptorSetLayout = VK_NULL_HANDLE; }
+    if (descriptorPool != VK_NULL_HANDLE) { vkDestroyDescriptorPool(device, descriptorPool, nullptr); descriptorPool = VK_NULL_HANDLE; }
+
+    if (fontSampler != VK_NULL_HANDLE) { vkDestroySampler(device, fontSampler, nullptr); fontSampler = VK_NULL_HANDLE; }
+    if (fontAtlasView != VK_NULL_HANDLE) { vkDestroyImageView(device, fontAtlasView, nullptr); fontAtlasView = VK_NULL_HANDLE; }
+    if (fontAtlasImage != VK_NULL_HANDLE) { vkDestroyImage(device, fontAtlasImage, nullptr); fontAtlasImage = VK_NULL_HANDLE; }
+    if (fontAtlasMemory != VK_NULL_HANDLE) { vkFreeMemory(device, fontAtlasMemory, nullptr); fontAtlasMemory = VK_NULL_HANDLE; }
+
     for (size_t i = 0; i < instanceBuffers.size(); i++) {
-        vkUnmapMemory(vulkanDevice.getDevice(), instanceBufferMemories[i]);
-        vkDestroyBuffer(vulkanDevice.getDevice(), instanceBuffers[i], nullptr);
-        vkFreeMemory(vulkanDevice.getDevice(), instanceBufferMemories[i], nullptr);
+        if (instanceBuffers[i] != VK_NULL_HANDLE) {
+            allocator.free(instanceBuffers[i], instanceBufferOffsets[i]);
+        }
     }
-    
-    vkDestroyBuffer(vulkanDevice.getDevice(), quadVertexBuffer, nullptr);
-    vkFreeMemory(vulkanDevice.getDevice(), quadVertexBufferMemory, nullptr);
+
+    if (quadVertexBuffer != VK_NULL_HANDLE) {
+        allocator.free(quadVertexBuffer, quadVertexBufferOffset);
+        quadVertexBuffer = VK_NULL_HANDLE;
+    }
+    quadVertexBufferOffset = 0;
+
+    instanceBuffers.clear();
+    instanceBufferOffsets.clear();
+    instanceBuffersMapped.clear();
+    descriptorSets.clear();
 }
 
 void GridLabel::generateMipmaps(VkImage image, VkFormat format, int32_t texWidth, int32_t texHeight, uint32_t mipLevels) {
