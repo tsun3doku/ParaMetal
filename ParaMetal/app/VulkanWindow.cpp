@@ -307,9 +307,6 @@ bool VulkanWindow::initializeApp() {
 void VulkanWindow::cleanupVulkan() {
     runtimeState.shouldClose.store(true, std::memory_order_release);
 
-    if (app && appInitialized) {
-        app->shutdown();
-    }
     appInitialized = false;
 
     if (vulkanDevice.getDevice() != VK_NULL_HANDLE) {
