@@ -150,8 +150,8 @@ NodeTypeDefinition buildContactNode() {
         "Contact",
         NodeGraphNodeCategory::System,
         {
-            makeInputSocket("Emitter", NodeGraphValueType::Mesh),
-            makeInputSocket("Receiver", NodeGraphValueType::Mesh),
+            makeInputSocket("SurfaceA", NodeGraphValueType::Mesh),
+            makeInputSocket("SurfaceB", NodeGraphValueType::Mesh),
             makeOutputSocket("Field", NodeGraphValueType::Field, payloadtypes::Contact),
         },
         {

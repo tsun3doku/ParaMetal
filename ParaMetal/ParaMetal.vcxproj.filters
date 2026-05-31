@@ -24,6 +24,9 @@
     <ClCompile Include="util\file_utils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="util\FileAssociation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="vulkan\UniformBufferManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -1411,5 +1414,10 @@
     <QtMoc Include="py\PyTerminalWidget.hpp">
       <Filter>Header Files</Filter>
     </QtMoc>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="resources\ParaMetal.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
   </ItemGroup>
 </Project>

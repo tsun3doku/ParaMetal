@@ -16,8 +16,8 @@ const char* NodeContact::typeId() const {
 }
 
 void NodeContact::execute(NodeGraphKernelContext& context) const {
-    const NodeGraphSocket* emitterSocket = context.node.input("Emitter");
-    const NodeGraphSocket* receiverSocket = context.node.input("Receiver");
+    const NodeGraphSocket* emitterSocket = context.node.input("SurfaceA");
+    const NodeGraphSocket* receiverSocket = context.node.input("SurfaceB");
     const EvaluatedSocketValue* emitterInputValue =
         emitterSocket ? readEvaluatedInput(context.node, emitterSocket->id, context.executionState) : nullptr;
     const NodeDataBlock* emitterInput = readInputValue(emitterInputValue);
@@ -88,8 +88,8 @@ void NodeContact::execute(NodeGraphKernelContext& context) const {
 }
 
 bool NodeContact::computeInputHash(const NodeGraphKernelHashContext& context, uint64_t& outHash) const {
-    const NodeGraphSocket* emitterSocket = context.node.input("Emitter");
-    const NodeGraphSocket* receiverSocket = context.node.input("Receiver");
+    const NodeGraphSocket* emitterSocket = context.node.input("SurfaceA");
+    const NodeGraphSocket* receiverSocket = context.node.input("SurfaceB");
 
     const EvaluatedSocketValue* emitterInputValue = emitterSocket ? readEvaluatedInput(context.node, emitterSocket->id, context.executionState) : nullptr;
     const NodeDataBlock* emitterInput = readInputValue(emitterInputValue);

@@ -366,7 +366,7 @@ bool MainWindow::openProject() {
 
     const QString path = QFileDialog::getOpenFileName(
         this,
-        "Open ParaMetal Project",
+        "Open Project",
         currentProjectPath.isEmpty() ? QString() : QFileInfo(currentProjectPath).absolutePath(),
         "ParaMetal Projects (*.pm);;All Files (*)");
     if (path.isEmpty()) {
@@ -424,7 +424,7 @@ bool MainWindow::saveProject() {
 bool MainWindow::saveProjectAs() {
     const QString path = QFileDialog::getSaveFileName(
         this,
-        "Save ParaMetal Project",
+        "Save Project",
         currentProjectPath.isEmpty() ? QString("untitled.pm") : currentProjectPath,
         "ParaMetal Projects (*.pm);;All Files (*)");
     if (path.isEmpty()) {
@@ -478,7 +478,7 @@ bool MainWindow::promptSaveIfModified() {
     const QMessageBox::StandardButton result = QMessageBox::question(
         this,
         "Unsaved Changes",
-        "Save changes to the current ParaMetal project?",
+        "Save changes to the current project?",
         QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
         QMessageBox::Save);
 

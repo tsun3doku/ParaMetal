@@ -104,6 +104,11 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Python3::Python
 )
 
+if(WIN32)
+    set(RESOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/ParaMetal/resources/ParaMetal.rc")
+    target_sources(${PROJECT_NAME} PRIVATE ${RESOURCE_FILES})
+endif()
+
 # Windows only: use windeployqt to copy Qt runtime files
 if(WIN32)
     # Find windeployqt 

@@ -18,10 +18,19 @@ void bindGraph(py::module_& m) {
 
     py::class_<PyEdge>(m, "Edge")
         .def(py::init<>())
-        .def_property_readonly("from_node", &PyEdge::from_node)
+        .def_property_readonly("id",          &PyEdge::edge_id)
+        .def_property_readonly("from_node",   &PyEdge::from_node)
         .def_property_readonly("from_socket", &PyEdge::from_socket)
-        .def_property_readonly("to_node", &PyEdge::to_node)
-        .def_property_readonly("to_socket", &PyEdge::to_socket);
+        .def_property_readonly("to_node",     &PyEdge::to_node)
+        .def_property_readonly("to_socket",   &PyEdge::to_socket)
+        .def("__repr__", [](const PyEdge& e) {
+            PyNode fn = e.from_node();
+            PyNode tn = e.to_node();
+            PySocket fs = e.from_socket();
+            PySocket ts = e.to_socket();
+            return "Edge(" + fn.name() + "." + fs.name() +
+                   " -> " + tn.name() + "." + ts.name() + ")";
+        });
 
     py::class_<PyNode>(m, "Node")
         .def(py::init<>())
@@ -63,6 +72,14 @@ void bindGraph(py::module_& m) {
             }
             return result;
         })
+        .def_property_readonly("edges", [](NodeGraphBridge& self) {
+            std::vector<PyEdge> result;
+            NodeGraphState state = self.state();
+            for (const auto& [id, edge] : state.edges) {
+                result.emplace_back(&self, edge.id);
+            }
+            return result;
+        })
         .def("connect", [](NodeGraphBridge& self, const PySocket& outSocket, const PySocket& inSocket) {
             std::string error;
             bool ok = self.connectSockets(outSocket.nodeId, outSocket.socketId, inSocket.nodeId, inSocket.socketId, error);
@@ -70,7 +87,11 @@ void bindGraph(py::module_& m) {
                 throw std::runtime_error("Connection failed: " + error);
             }
         }, py::arg("output"), py::arg("input"))
-        .def("disconnect", &NodeGraphBridge::removeConnection)
+        .def("disconnect", [](NodeGraphBridge& self, const PyEdge& edge) {
+            if (!self.removeConnection(edge.edge_id())) {
+                throw std::runtime_error("disconnect failed: edge not found");
+            }
+        }, py::arg("edge"))
         .def_property_readonly("registry", [](NodeGraphBridge& self) -> NodeGraphRegistry& {
             return self.getRegistry();
         }, py::return_value_policy::reference)
