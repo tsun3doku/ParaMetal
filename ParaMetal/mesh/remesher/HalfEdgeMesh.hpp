@@ -75,7 +75,7 @@ public:
 	};
 
 	// Construction
-	void buildFromIndexedData(
+	void buildMesh(
 		const std::vector<float>& pointPositions,
 		const std::vector<uint32_t>& triangleIndices);
 	void applyToModel(class Model& dstModel) const;
@@ -113,7 +113,8 @@ public:
 
 	// Iterative traversal
 	uint32_t getNextAroundVertex(uint32_t halfEdgeIdx) const;
-	
+	uint32_t getPrevAroundVertex(uint32_t halfEdgeIdx) const;
+
 	// Getters
 	std::vector<HalfEdge>& getHalfEdges() {  
 		return halfEdges;
@@ -141,6 +142,10 @@ public:
 	}
 	
 private:
+	void buildTopology(
+		const std::vector<glm::vec3>& vertexPositions,
+		const std::vector<uint32_t>& indices);
+
 	double lawOfCosinesAngle(double a, double b, double opposite) const;
 
 	std::vector<HalfEdge> halfEdges;

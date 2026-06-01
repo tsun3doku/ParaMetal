@@ -13,7 +13,7 @@ public:
     using Triangle2D = HalfEdgeMesh::Triangle2D;
 
     // Construction
-    void buildFromIndexedData(
+    void buildSignposts(
         const std::vector<float>& pointPositions,
         const std::vector<uint32_t>& triangleIndices);
     Triangle2D layoutTriangle(uint32_t faceIdx) const;

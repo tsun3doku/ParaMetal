@@ -63,6 +63,8 @@ void NodeGraphEditor::resetToDefaultGraph() {
     constexpr float leftColumnX = 82.5f;
     constexpr float rightColumnX = 184.8f;
     constexpr float centerColumnX = 133.7f;
+    constexpr float voronoiLeftColumnX = 40.0f;
+    constexpr float voronoiRightColumnX = 228.0f;
     constexpr float row1Y = 26.4f;
     constexpr float row2Y = 82.5f;
     constexpr float row3Y = 141.9f;
@@ -78,8 +80,8 @@ void NodeGraphEditor::resetToDefaultGraph() {
     const CreatedNode sourceRemesh = createNode(nodegraphtypes::Remesh, "Source Remesh", rightColumnX, row3Y);
     const CreatedNode receiverHeatModel = createNode(nodegraphtypes::HeatModel, "Receiver Heat Model", leftColumnX, row4Y);
     const CreatedNode sourceHeatModel = createNode(nodegraphtypes::HeatModel, "Source Heat Model", rightColumnX, row4Y);
-    const CreatedNode receiverVoronoi = createNode(nodegraphtypes::Voronoi, "Receiver Voronoi", leftColumnX, row5Y);
-    const CreatedNode sourceVoronoi = createNode(nodegraphtypes::Voronoi, "Source Voronoi", rightColumnX, row5Y);
+    const CreatedNode receiverVoronoi = createNode(nodegraphtypes::Voronoi, "Receiver Voronoi", voronoiLeftColumnX, row5Y);
+    const CreatedNode sourceVoronoi = createNode(nodegraphtypes::Voronoi, "Source Voronoi", voronoiRightColumnX, row5Y);
     const CreatedNode contact = createNode(nodegraphtypes::Contact, "", centerColumnX, row5Y);
     const CreatedNode heatSolve = createNode(nodegraphtypes::HeatSolve, "", centerColumnX, row6Y);
 

@@ -5,10 +5,8 @@
 
 #include "SignPostMesh.hpp"
 
-void SignpostMesh::buildFromIndexedData(
-    const std::vector<float>& pointPositions,
-    const std::vector<uint32_t>& triangleIndices) {
-    conn.buildFromIndexedData(pointPositions, triangleIndices);
+void SignpostMesh::buildSignposts(const std::vector<float>& pointPositions, const std::vector<uint32_t>& triangleIndices) {
+    conn.buildMesh(pointPositions, triangleIndices);
     auto& HEs = conn.getHalfEdges();
     auto& V = conn.getVertices();
 

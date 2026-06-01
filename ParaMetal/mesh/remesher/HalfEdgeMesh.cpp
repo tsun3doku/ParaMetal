@@ -9,17 +9,26 @@
 #include "scene/Model.hpp"
 #include "HalfEdgeMesh.hpp"
 
-namespace {
+void HalfEdgeMesh::buildMesh(const std::vector<float>& pointPositions, const std::vector<uint32_t>& triangleIndices) {
+	std::vector<glm::vec3> vertexPositions;
+	vertexPositions.reserve(pointPositions.size() / 3);
+	for (size_t index = 0; index + 2 < pointPositions.size(); index += 3) {
+		vertexPositions.emplace_back(
+			pointPositions[index],
+			pointPositions[index + 1],
+			pointPositions[index + 2]);
+	}
+	buildTopology(vertexPositions, triangleIndices);
 
-void buildFromIndexedMesh(
-	HalfEdgeMesh& mesh,
-	const std::vector<glm::vec3>& vertexPositions,
-	const std::vector<uint32_t>& indices) {
-	auto& vertices = mesh.getVertices();
-	auto& edges = mesh.getEdges();
-	auto& faces = mesh.getFaces();
-	auto& halfEdges = mesh.getHalfEdges();
+	if (!isManifold()) {
+		std::cerr << "[HalfEdgeMesh] Mesh is not manifold" << std::endl;
+		return;
+	}
 
+	initializeIntrinsicLengths();
+}
+
+void HalfEdgeMesh::buildTopology(const std::vector<glm::vec3>& vertexPositions, const std::vector<uint32_t>& indices) {
 	vertices.clear();
 	edges.clear();
 	faces.clear();
@@ -29,14 +38,14 @@ void buildFromIndexedMesh(
 	for (size_t i = 0; i < vertexPositions.size(); ++i) {
 		vertices[i].position = vertexPositions[i];
 		vertices[i].originalIndex = static_cast<uint32_t>(i);
-		vertices[i].halfEdgeIdx = HalfEdgeMesh::INVALID_INDEX;
+		vertices[i].halfEdgeIdx = INVALID_INDEX;
 	}
 
 	const size_t triangleCount = indices.size() / 3;
 	halfEdges.reserve(triangleCount * 3);
 	faces.reserve(triangleCount);
 
-	std::unordered_map<std::pair<uint32_t, uint32_t>, uint32_t, HalfEdgeMesh::pair_hash> halfEdgeMap;
+	std::unordered_map<std::pair<uint32_t, uint32_t>, uint32_t, pair_hash> halfEdgeMap;
 
 	for (size_t i = 0; i < triangleCount; ++i) {
 		const uint32_t idx0 = indices[i * 3];
@@ -50,13 +59,13 @@ void buildFromIndexedMesh(
 			continue;
 		}
 
-		HalfEdgeMesh::Face face;
+		Face face;
 		const uint32_t faceIdx = static_cast<uint32_t>(faces.size());
 		const uint32_t he0Idx = static_cast<uint32_t>(halfEdges.size());
 		const uint32_t he1Idx = he0Idx + 1;
 		const uint32_t he2Idx = he0Idx + 2;
 
-		HalfEdgeMesh::HalfEdge he0, he1, he2;
+		HalfEdge he0, he1, he2;
 		he0.origin = idx0;
 		he1.origin = idx1;
 		he2.origin = idx2;
@@ -117,7 +126,7 @@ void buildFromIndexedMesh(
 	for (const auto& directedEdge : edgeOrder) {
 		const uint32_t v1 = directedEdge.first;
 		const uint32_t v2 = directedEdge.second;
-		uint32_t foundHE = HalfEdgeMesh::INVALID_INDEX;
+		uint32_t foundHE = INVALID_INDEX;
 		auto it = halfEdgeMap.find({v1, v2});
 		if (it != halfEdgeMap.end()) {
 			foundHE = it->second;
@@ -128,39 +137,16 @@ void buildFromIndexedMesh(
 			}
 		}
 
-		if (foundHE != HalfEdgeMesh::INVALID_INDEX) {
+		if (foundHE != INVALID_INDEX) {
 			const uint32_t newEdgeIdx = static_cast<uint32_t>(edges.size());
 			edges.emplace_back(foundHE);
 			halfEdges[foundHE].edgeIdx = newEdgeIdx;
 			const uint32_t oppositeHE = halfEdges[foundHE].opposite;
-			if (oppositeHE != HalfEdgeMesh::INVALID_INDEX) {
+			if (oppositeHE != INVALID_INDEX) {
 				halfEdges[oppositeHE].edgeIdx = newEdgeIdx;
 			}
 		}
 	}
-}
-
-} // namespace
-
-void HalfEdgeMesh::buildFromIndexedData(
-	const std::vector<float>& pointPositions,
-	const std::vector<uint32_t>& triangleIndices) {
-	std::vector<glm::vec3> vertexPositions;
-	vertexPositions.reserve(pointPositions.size() / 3);
-	for (size_t index = 0; index + 2 < pointPositions.size(); index += 3) {
-		vertexPositions.emplace_back(
-			pointPositions[index],
-			pointPositions[index + 1],
-			pointPositions[index + 2]);
-	}
-	buildFromIndexedMesh(*this, vertexPositions, triangleIndices);
-
-	if (!isManifold()) {
-		std::cerr << "[HalfEdgeMesh] Indexed mesh is not manifold" << std::endl;
-		return;
-	}
-
-	initializeIntrinsicLengths();
 }
 
 void HalfEdgeMesh::applyToModel(class Model& dstModel) const {
@@ -1382,6 +1368,22 @@ uint32_t HalfEdgeMesh::getNextAroundVertex(uint32_t halfEdgeIdx) const {
 		return INVALID_INDEX;
 	}
 	return opp;
+}
+
+uint32_t HalfEdgeMesh::getPrevAroundVertex(uint32_t halfEdgeIdx) const {
+	// Clockwise traversal around a vertex
+	if (halfEdgeIdx == INVALID_INDEX || halfEdgeIdx >= halfEdges.size()) {
+		return INVALID_INDEX;
+	}
+	uint32_t twin = halfEdges[halfEdgeIdx].opposite;
+	if (twin == INVALID_INDEX || twin >= halfEdges.size()) {
+		return INVALID_INDEX;
+	}
+	uint32_t next = halfEdges[twin].next;
+	if (next == INVALID_INDEX || next >= halfEdges.size()) {
+		return INVALID_INDEX;
+	}
+	return next;
 }
 
 std::vector<uint32_t> HalfEdgeMesh::getVertexHalfEdges(uint32_t vertexIdx) const {

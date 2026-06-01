@@ -54,6 +54,8 @@ private:
     bool isValidEdge(uint32_t edgeIdx) const;
     bool needsRefinement(uint32_t faceIdx, float minAngleThreshold, float minAreaThreshold);
     float refinementPriority(uint32_t faceIdx);
+
+    static size_t countSharpCorners(SignpostMesh& mesh, uint32_t faceIdx);
     void queueRefineFace(uint32_t faceIdx, float minAngleThreshold, float minAreaThreshold, std::priority_queue<FaceCandidate>& faceQueue);
     void queueDelaunayEdge(uint32_t edgeIdx, std::deque<uint32_t>& edgeQueue, std::vector<uint8_t>& inQueue);
 

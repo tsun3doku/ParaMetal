@@ -15,119 +15,10 @@
 
 #include "iODT.hpp"
 
-namespace {
-
-bool isFixedRefinementEdge(const HalfEdgeMesh& conn, uint32_t edgeIdx) {
-    const auto& edges = conn.getEdges();
-    const auto& halfEdges = conn.getHalfEdges();
-
-    if (edgeIdx == HalfEdgeMesh::INVALID_INDEX || edgeIdx >= edges.size()) {
-        return true;
-    }
-
-    uint32_t he = edges[edgeIdx].halfEdgeIdx;
-    if (he == HalfEdgeMesh::INVALID_INDEX || he >= halfEdges.size()) {
-        return true;
-    }
-
-    return halfEdges[he].opposite == HalfEdgeMesh::INVALID_INDEX ||
-           !conn.isFlippableEdge(edgeIdx);
-}
-
-bool isFixedRefinementHalfedge(const HalfEdgeMesh& conn, uint32_t heIdx) {
-    return isFixedRefinementEdge(conn, conn.getEdgeFromHalfEdge(heIdx));
-}
-
-uint32_t previousAroundVertex(const HalfEdgeMesh& conn, uint32_t heIdx) {
-    const auto& halfEdges = conn.getHalfEdges();
-
-    if (heIdx == HalfEdgeMesh::INVALID_INDEX || heIdx >= halfEdges.size()) {
-        return HalfEdgeMesh::INVALID_INDEX;
-    }
-
-    uint32_t twin = halfEdges[heIdx].opposite;
-    if (twin == HalfEdgeMesh::INVALID_INDEX || twin >= halfEdges.size()) {
-        return HalfEdgeMesh::INVALID_INDEX;
-    }
-
-    uint32_t next = halfEdges[twin].next;
-    if (next == HalfEdgeMesh::INVALID_INDEX || next >= halfEdges.size()) {
-        return HalfEdgeMesh::INVALID_INDEX;
-    }
-
-    return next;
-}
-
-size_t countNeedleCornersGC(SignpostMesh& mesh, uint32_t faceIdx) {
-    auto& conn = mesh.getConnectivity();
-    const auto& halfEdges = conn.getHalfEdges();
-    std::vector<uint32_t> faceHEs = conn.getFaceHalfEdges(faceIdx);
-    size_t needleCorners = 0;
-
-    for (uint32_t he : faceHEs) {
-        if (he == HalfEdgeMesh::INVALID_INDEX || he >= halfEdges.size()) {
-            continue;
-        }
-
-        double angleSum = 0.0;
-        uint32_t curr = he;
-        bool validWalk = true;
-
-        for (size_t step = 0; step < halfEdges.size(); ++step) {
-            if (curr == HalfEdgeMesh::INVALID_INDEX || curr >= halfEdges.size()) {
-                validWalk = false;
-                break;
-            }
-
-            angleSum += mesh.getCornerAngle(curr);
-
-            uint32_t next = conn.getNextAroundVertex(curr);
-            if (next == HalfEdgeMesh::INVALID_INDEX || next >= halfEdges.size()) {
-                validWalk = false;
-                break;
-            }
-
-            curr = next;
-            if (curr == he || isFixedRefinementHalfedge(conn, curr)) {
-                break;
-            }
-        }
-
-        if (!validWalk) {
-            continue;
-        }
-
-        if (curr != he && !isFixedRefinementHalfedge(conn, he)) {
-            curr = he;
-            for (size_t step = 0; step < halfEdges.size(); ++step) {
-                curr = previousAroundVertex(conn, curr);
-                if (curr == HalfEdgeMesh::INVALID_INDEX || curr >= halfEdges.size()) {
-                    validWalk = false;
-                    break;
-                }
-
-                angleSum += mesh.getCornerAngle(curr);
-
-                if (isFixedRefinementHalfedge(conn, curr)) {
-                    break;
-                }
-            }
-        }
-
-        if (validWalk && angleSum < glm::pi<double>() / 3.0) {
-            ++needleCorners;
-        }
-    }
-
-    return needleCorners;
-}
-
-} // namespace
-
 iODT::iODT(const std::vector<float>& pointPositions, const std::vector<uint32_t>& triangleIndices)
     : tracer(intrinsicMesh), tracerInput(inputMesh) {
 
-    inputMesh.buildFromIndexedData(pointPositions, triangleIndices);
+    inputMesh.buildSignposts(pointPositions, triangleIndices);
     inputMesh.updateAllCornerAngles({});
     inputMesh.computeCornerScaledAngles();
     inputMesh.updateAllSignposts();
@@ -135,7 +26,7 @@ iODT::iODT(const std::vector<float>& pointPositions, const std::vector<uint32_t>
     inputMesh.buildHalfedgeVectorsInVertex();
     inputMesh.buildHalfedgeVectorsInFace();
 
-    intrinsicMesh.buildFromIndexedData(pointPositions, triangleIndices);
+    intrinsicMesh.buildSignposts(pointPositions, triangleIndices);
     auto& conn = intrinsicMesh.getConnectivity();
     intrinsicMesh.updateAllCornerAngles({});
     intrinsicMesh.computeCornerScaledAngles();
@@ -661,6 +552,70 @@ bool iODT::isValidEdge(uint32_t edgeIdx) const {
     return he != HalfEdgeMesh::INVALID_INDEX && he < halfEdges.size();
 }
 
+size_t iODT::countSharpCorners(SignpostMesh& mesh, uint32_t faceIdx) {
+    auto& conn = mesh.getConnectivity();
+    const auto& halfEdges = conn.getHalfEdges();
+    std::vector<uint32_t> faceHEs = conn.getFaceHalfEdges(faceIdx);
+    size_t sharpCorners = 0;
+
+    for (uint32_t he : faceHEs) {
+        if (he == HalfEdgeMesh::INVALID_INDEX || he >= halfEdges.size()) {
+            continue;
+        }
+
+        double angleSum = 0.0;
+        uint32_t curr = he;
+        bool validWalk = true;
+
+        for (size_t step = 0; step < halfEdges.size(); ++step) {
+            if (curr == HalfEdgeMesh::INVALID_INDEX || curr >= halfEdges.size()) {
+                validWalk = false;
+                break;
+            }
+
+            angleSum += mesh.getCornerAngle(curr);
+
+            uint32_t next = conn.getNextAroundVertex(curr);
+            if (next == HalfEdgeMesh::INVALID_INDEX || next >= halfEdges.size()) {
+                validWalk = false;
+                break;
+            }
+
+            curr = next;
+            if (curr == he || !conn.isFlippableEdge(conn.getEdgeFromHalfEdge(curr))) {
+                break;
+            }
+        }
+
+        if (!validWalk) {
+            continue;
+        }
+
+        if (curr != he && conn.isFlippableEdge(conn.getEdgeFromHalfEdge(he))) {
+            curr = he;
+            for (size_t step = 0; step < halfEdges.size(); ++step) {
+                curr = conn.getPrevAroundVertex(curr);
+                if (curr == HalfEdgeMesh::INVALID_INDEX || curr >= halfEdges.size()) {
+                    validWalk = false;
+                    break;
+                }
+
+                angleSum += mesh.getCornerAngle(curr);
+
+                if (!conn.isFlippableEdge(conn.getEdgeFromHalfEdge(curr))) {
+                    break;
+                }
+            }
+        }
+
+        if (validWalk && angleSum < glm::pi<double>() / 3.0) {
+            ++sharpCorners;
+        }
+    }
+
+    return sharpCorners;
+}
+
 bool iODT::needsRefinement(uint32_t faceIdx, float minAngleThreshold, float minAreaThreshold) {
     (void)minAreaThreshold;
 
@@ -687,7 +642,7 @@ bool iODT::needsRefinement(uint32_t faceIdx, float minAngleThreshold, float minA
         }
     }
 
-    size_t needleCorners = countNeedleCornersGC(intrinsicMesh, faceIdx);
+    size_t needleCorners = countSharpCorners(intrinsicMesh, faceIdx);
 
     if (needleCorners == 1) {
         return false;
@@ -713,8 +668,8 @@ bool iODT::needsRefinement(uint32_t faceIdx, float minAngleThreshold, float minA
             continue;
         }
 
-        if (isFixedRefinementHalfedge(conn, he) &&
-            isFixedRefinementHalfedge(conn, hePrev)) {
+        if (!conn.isFlippableEdge(conn.getEdgeFromHalfEdge(he)) &&
+            !conn.isFlippableEdge(conn.getEdgeFromHalfEdge(hePrev))) {
             continue;
         }
 
@@ -729,7 +684,7 @@ float iODT::refinementPriority(uint32_t faceIdx) {
     auto& conn = intrinsicMesh.getConnectivity();
     for (uint32_t he : conn.getFaceHalfEdges(faceIdx)) {
         uint32_t edgeIdx = conn.getEdgeFromHalfEdge(he);
-        if (isFixedRefinementEdge(conn, edgeIdx)) {
+        if (!conn.isFlippableEdge(edgeIdx)) {
             return std::numeric_limits<float>::infinity();
         }
     }
@@ -1845,6 +1800,3 @@ void iODT::cleanup() {
     supportingHalfedge.reset();
     commonSubdivision.reset();
 }
-
-
-

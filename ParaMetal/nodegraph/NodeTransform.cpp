@@ -4,59 +4,13 @@
 #include "NodeGraphUtils.hpp"
 
 #include "NodeGraphHash.hpp"
-#include "NodeGraphDataTypes.hpp"
 #include "NodeModelTransform.hpp"
 #include "NodePayloadRegistry.hpp"
 #include "NodeTransformParams.hpp"
 
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/trigonometric.hpp>
-#include <glm/vec3.hpp>
 
-#include <array>
 #include <utility>
-
-namespace {
-
-glm::mat4 buildLocalTransform(const NodeGraphNode& node) {
-    const TransformNodeParams params = readTransformNodeParams(node);
-    const float translateX = static_cast<float>(params.translateX);
-    const float translateY = static_cast<float>(params.translateY);
-    const float translateZ = static_cast<float>(params.translateZ);
-    const float rotateXDegrees = static_cast<float>(params.rotateXDegrees);
-    const float rotateYDegrees = static_cast<float>(params.rotateYDegrees);
-    const float rotateZDegrees = static_cast<float>(params.rotateZDegrees);
-    const float scaleX = static_cast<float>(params.scaleX);
-    const float scaleY = static_cast<float>(params.scaleY);
-    const float scaleZ = static_cast<float>(params.scaleZ);
-
-    glm::mat4 transform(1.0f);
-    transform = glm::translate(transform, glm::vec3(translateX, translateY, translateZ));
-    transform = glm::rotate(transform, glm::radians(rotateXDegrees), glm::vec3(1.0f, 0.0f, 0.0f));
-    transform = glm::rotate(transform, glm::radians(rotateYDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
-    transform = glm::rotate(transform, glm::radians(rotateZDegrees), glm::vec3(0.0f, 0.0f, 1.0f));
-    transform = glm::scale(transform, glm::vec3(scaleX, scaleY, scaleZ));
-    return transform;
-}
-
-void combineTransformParams(const NodeGraphNode& node, uint64_t& outHash) {
-    const TransformNodeParams params = readTransformNodeParams(node);
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.translateX));
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.translateY));
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.translateZ));
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.rotateXDegrees));
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.rotateYDegrees));
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.rotateZDegrees));
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.scaleX));
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.scaleY));
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.scaleZ));
-}
-
-std::array<float, 16> buildLocalTransformArray(const NodeGraphNode& node) {
-    return NodeModelTransform::toMatrixArray(buildLocalTransform(node));
-}
-
-}
 
 const char* NodeTransform::typeId() const {
     return nodegraphtypes::Transform;
@@ -126,4 +80,42 @@ bool NodeTransform::computeInputHash(const NodeGraphKernelHashContext& context, 
     NodeGraphHash::combineInputHash(outHash, inputMeshValue);
     combineTransformParams(context.node, outHash);
     return true;
+}
+
+glm::mat4 NodeTransform::buildLocalTransform(const NodeGraphNode& node) {
+    const TransformNodeParams params = readTransformNodeParams(node);
+    const float translateX = static_cast<float>(params.translateX);
+    const float translateY = static_cast<float>(params.translateY);
+    const float translateZ = static_cast<float>(params.translateZ);
+    const float rotateXDegrees = static_cast<float>(params.rotateXDegrees);
+    const float rotateYDegrees = static_cast<float>(params.rotateYDegrees);
+    const float rotateZDegrees = static_cast<float>(params.rotateZDegrees);
+    const float scaleX = static_cast<float>(params.scaleX);
+    const float scaleY = static_cast<float>(params.scaleY);
+    const float scaleZ = static_cast<float>(params.scaleZ);
+
+    glm::mat4 transform(1.0f);
+    transform = glm::translate(transform, glm::vec3(translateX, translateY, translateZ));
+    transform = glm::rotate(transform, glm::radians(rotateXDegrees), glm::vec3(1.0f, 0.0f, 0.0f));
+    transform = glm::rotate(transform, glm::radians(rotateYDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
+    transform = glm::rotate(transform, glm::radians(rotateZDegrees), glm::vec3(0.0f, 0.0f, 1.0f));
+    transform = glm::scale(transform, glm::vec3(scaleX, scaleY, scaleZ));
+    return transform;
+}
+
+void NodeTransform::combineTransformParams(const NodeGraphNode& node, uint64_t& outHash) {
+    const TransformNodeParams params = readTransformNodeParams(node);
+    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.translateX));
+    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.translateY));
+    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.translateZ));
+    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.rotateXDegrees));
+    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.rotateYDegrees));
+    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.rotateZDegrees));
+    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.scaleX));
+    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.scaleY));
+    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.scaleZ));
+}
+
+std::array<float, 16> NodeTransform::buildLocalTransformArray(const NodeGraphNode& node) {
+    return NodeModelTransform::toMatrixArray(buildLocalTransform(node));
 }
