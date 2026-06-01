@@ -326,7 +326,6 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="nodegraph\NodeGraphDebugCache.cpp" />
     <ClCompile Include="nodegraph\NodeModel.cpp" />
     <ClCompile Include="nodegraph\NodeModelParams.cpp" />
-    <ClCompile Include="nodegraph\NodeModelTransform.cpp" />
     <ClCompile Include="nodegraph\ui\widgets\NodeModelPanel.cpp" />
     <ClCompile Include="nodegraph\NodeTransform.cpp" />
     <ClCompile Include="nodegraph\NodeTransformParams.cpp" />
@@ -407,7 +406,8 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="mesh\\remesher\\SignPostMesh.cpp" />
     <ClCompile Include="vulkan\VulkanDevice.cpp" />
     <ClCompile Include="util\file_utils.cpp" />
-    <ClCompile Include="util\FileAssociation.cpp" />
+    <ClCompile Include="util\FileAssociationWindows.cpp" />
+    <ClCompile Include="util\FileAssociationLinux.cpp" />
     <ClCompile Include="vulkan\UniformBufferManager.cpp" />
     <ClCompile Include="vulkan\VulkanImage.cpp" />
     <ClCompile Include="renderers\WireframeRenderer.cpp" />
@@ -518,6 +518,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="runtime\RuntimeContactDisplayTransport.hpp" />
     <ClInclude Include="runtime\RuntimeRemeshDisplayTransport.hpp" />
     <ClInclude Include="runtime\RuntimeRemeshComputeTransport.hpp" />
+    <ClInclude Include="util\FileAssociation.hpp" />
     <ClInclude Include="vulkan\CommandBufferManager.hpp" />
     <ClInclude Include="framegraph\FrameController.hpp" />
     <ClInclude Include="framegraph\FrameTypes.hpp" />
@@ -620,7 +621,6 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="nodegraph\NodeGraphKernels.hpp" />
     <ClInclude Include="nodegraph\NodeModel.hpp" />
     <ClInclude Include="nodegraph\NodeModelParams.hpp" />
-    <ClInclude Include="nodegraph\NodeModelTransform.hpp" />
     <ClInclude Include="nodegraph\ui\widgets\NodeModelPanel.hpp" />
     <ClInclude Include="nodegraph\NodeTransform.hpp" />
     <ClInclude Include="nodegraph\NodeTransformParams.hpp" />

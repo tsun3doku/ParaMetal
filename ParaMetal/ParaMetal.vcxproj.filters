@@ -24,7 +24,10 @@
     <ClCompile Include="util\file_utils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="util\FileAssociation.cpp">
+    <ClCompile Include="util\FileAssociationWindows.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="util\FileAssociationLinux.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="vulkan\UniformBufferManager.cpp">

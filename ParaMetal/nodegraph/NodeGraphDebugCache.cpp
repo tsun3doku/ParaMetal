@@ -4,14 +4,9 @@
 
 #include <algorithm>
 
-namespace {
-
-NodeGraphDebugCache gCache;
-
-} // namespace
-
 NodeGraphDebugCache& NodeGraphDebugCache::instance() {
-    return gCache;
+    static NodeGraphDebugCache cache;
+    return cache;
 }
 
 bool NodeGraphDebugCache::tryGetLatestNodeDebugInfo(NodeGraphNodeId nodeId, NodeGraphRuntimeNodeDebugInfo& outInfo) {

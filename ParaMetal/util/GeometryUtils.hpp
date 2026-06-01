@@ -1,160 +1,37 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <array>
 #include <vector>
 #include <cstdint>
 #include <cmath>
 #include <algorithm>
 
-inline glm::vec3 makeOrthoU(const glm::vec3& n) {
-	glm::vec3 a = (std::abs(n.z) < 0.9f) ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
-	glm::vec3 u = glm::cross(a, n);
-	float l2 = glm::dot(u, u);
-	
-	if (l2 < 1e-20f) {
-		a = glm::vec3(0.0f, 1.0f, 0.0f);
-		u = glm::cross(a, n);
-		l2 = glm::dot(u, u);
-		
-		if (l2 < 1e-20f) {
-			return glm::vec3(1.0f, 0.0f, 0.0f);
+inline glm::vec3 safeNormalize(const glm::vec3& v) {
+	const float lengthSquared = glm::dot(v, v);
+	if (lengthSquared <= 1e-12f) {
+		return glm::vec3(0.0f);
+	}
+	return v * (1.0f / std::sqrt(lengthSquared));
+}
+
+inline glm::mat4 toMat4(const std::array<float, 16>& values) {
+	glm::mat4 matrix(1.0f);
+	for (int col = 0; col < 4; ++col) {
+		for (int row = 0; row < 4; ++row) {
+			matrix[col][row] = values[static_cast<std::size_t>(col) * 4 + static_cast<std::size_t>(row)];
 		}
 	}
-	
-	return u * (1.0f / std::sqrt(l2));
+	return matrix;
 }
 
-inline glm::vec2 projectToPlane2D(const glm::vec3& p, const glm::vec3& origin, const glm::vec3& u, const glm::vec3& v) {
-	glm::vec3 d = p - origin;
-	return glm::vec2(glm::dot(d, u), glm::dot(d, v));
-}
-
-inline float polygonArea2D(const std::vector<glm::vec2>& poly) {
-	if (poly.size() < 3) {
-		return 0.0f;
-	}
-
-	double a = 0.0;
-	
-	for (size_t i = 0; i < poly.size(); ++i) {
-		const glm::vec2& p = poly[i];
-		const glm::vec2& q = poly[(i + 1) % poly.size()];
-		a += static_cast<double>(p.x) * static_cast<double>(q.y) - static_cast<double>(p.y) * static_cast<double>(q.x);
-	}
-	
-	return static_cast<float>(0.5 * a);
-}
-
-inline bool insideEdge(const glm::vec2& p, const glm::vec2& a, const glm::vec2& b) {
-	glm::vec2 e = b - a;
-	glm::vec2 w = p - a;
-	float crossZ = e.x * w.y - e.y * w.x;
-	
-	return crossZ >= 0.0f;
-}
-
-inline glm::vec2 intersectLines(const glm::vec2& p, const glm::vec2& q, const glm::vec2& a, const glm::vec2& b) {
-	glm::vec2 r = q - p;
-	glm::vec2 s = b - a;
-	float denom = r.x * s.y - r.y * s.x;
-	
-	if (std::abs(denom) < 1e-20f) {
-		return p;
-	}
-	
-	glm::vec2 ap = a - p;
-	float t = (ap.x * s.y - ap.y * s.x) / denom;
-	
-	return p + t * r;
-}
-
-inline std::vector<glm::vec2> clipPolygon(const std::vector<glm::vec2>& subject, const std::vector<glm::vec2>& clip) {
-	std::vector<glm::vec2> output = subject;
-	
-	if (output.empty() || clip.size() < 3) {
-		return {};
-	}
-	
-	for (size_t i = 0; i < clip.size(); ++i) {
-		const glm::vec2& A = clip[i];
-		const glm::vec2& B = clip[(i + 1) % clip.size()];
-		std::vector<glm::vec2> input = output;
-		output.clear();
-		if (input.empty()) {
-			break;
-		}
-		glm::vec2 S = input.back();
-		for (size_t j = 0; j < input.size(); ++j) {
-			glm::vec2 E = input[j];
-			bool Ein = insideEdge(E, A, B);
-			bool Sin = insideEdge(S, A, B);
-			if (Ein) {
-				if (!Sin) {
-					output.push_back(intersectLines(S, E, A, B));
-				}
-				output.push_back(E);
-			} else if (Sin) {
-				output.push_back(intersectLines(S, E, A, B));
-			}
-			S = E;
-		}
-	}
-	
-	return output;
-}
-
-inline float computeTriangleOverlapSharedPlane(
-	const glm::vec3& r0, const glm::vec3& r1, const glm::vec3& r2, const glm::vec3& nR,
-	const glm::vec3& s0, const glm::vec3& s1, const glm::vec3& s2, const glm::vec3& nS,
-	std::vector<glm::vec3>* outPolygon = nullptr) {
-
-	glm::vec3 n = nR - nS;
-	float n2 = glm::dot(n, n);
-	
-	if (n2 < 1e-20f) {
-		n = nR;
-		n2 = glm::dot(n, n);
-	}
-	
-	if (n2 < 1e-20f) {
-		return 0.0f;
-	}
-	
-	n *= (1.0f / std::sqrt(n2));
-	glm::vec3 u = makeOrthoU(n);
-	glm::vec3 v = glm::cross(n, u);
-
-	glm::vec3 origin = r0;
-	std::vector<glm::vec2> clipPoly = {
-		projectToPlane2D(r0, origin, u, v),
-		projectToPlane2D(r1, origin, u, v),
-		projectToPlane2D(r2, origin, u, v)
+inline std::array<float, 16> toMatrixArray(const glm::mat4& matrix) {
+	return {
+		matrix[0][0], matrix[0][1], matrix[0][2], matrix[0][3],
+		matrix[1][0], matrix[1][1], matrix[1][2], matrix[1][3],
+		matrix[2][0], matrix[2][1], matrix[2][2], matrix[2][3],
+		matrix[3][0], matrix[3][1], matrix[3][2], matrix[3][3]
 	};
-	
-	std::vector<glm::vec2> subject = {
-		projectToPlane2D(s0, origin, u, v),
-		projectToPlane2D(s1, origin, u, v),
-		projectToPlane2D(s2, origin, u, v)
-	};
-
-	float clipArea = polygonArea2D(clipPoly);
-	
-	if (clipArea < 0.0f) {
-		std::reverse(clipPoly.begin(), clipPoly.end());
-	}
-
-	std::vector<glm::vec2> inter = clipPolygon(subject, clipPoly);
-	float area = std::abs(polygonArea2D(inter));
-
-	if (outPolygon) {
-		outPolygon->clear();
-		outPolygon->reserve(inter.size());
-		for (const auto& p : inter) {
-			outPolygon->push_back(origin + u * p.x + v * p.y);
-		}
-	}
-
-	return area;
 }
 
 inline bool intersectRayTriangle(

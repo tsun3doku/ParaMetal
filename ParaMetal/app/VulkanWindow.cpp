@@ -18,11 +18,9 @@
 #include <iostream>
 #include <vector>
 
-namespace {
-constexpr std::array<const char*, 1> kDeviceExtensions = {
+static constexpr std::array<const char*, 1> kDeviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
-}
 
 VulkanWindow::VulkanWindow(QWindow* parent)
     : QWindow(parent) {

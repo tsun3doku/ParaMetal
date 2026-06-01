@@ -1,6 +1,6 @@
 #include "RuntimeModelComputeTransport.hpp"
 
-#include "nodegraph/NodeModelTransform.hpp"
+#include "util/GeometryUtils.hpp"
 #include "runtime/ModelComputeRuntime.hpp"
 
 #include <iostream>
@@ -107,7 +107,7 @@ void RuntimeModelComputeTransport::publishProduct(uint64_t socketKey, uint32_t r
 
     auto entity = static_cast<ECSEntity>(socketKey);
     const auto& package = ecsRegistry->get<ModelPackage>(entity);
-    modelRuntime->setModelMatrix(runtimeModelId, NodeModelTransform::toMat4(package.localToWorld));
+    modelRuntime->setModelMatrix(runtimeModelId, toMat4(package.localToWorld));
 
     ModelProduct product{};
     if (!modelRuntime->exportProduct(runtimeModelId, product)) {

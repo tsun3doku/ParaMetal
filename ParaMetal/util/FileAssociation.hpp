@@ -2,10 +2,9 @@
 
 #include <QString>
 
-namespace fileassociation {
-
-bool isRegistered();
-bool registerFileAssociation(QString* outError = nullptr);
-bool unregisterFileAssociation(QString* outError = nullptr);
-
-} // namespace fileassociation
+class FileAssociation {
+public:
+    static bool isRegistered();
+    static bool registerFileAssociation(QString* outError = nullptr);
+    static bool unregisterFileAssociation(QString* outError = nullptr);
+};

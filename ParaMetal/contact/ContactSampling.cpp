@@ -9,39 +9,6 @@
 #include <limits>
 #include <algorithm>
 
-namespace {
-
-glm::vec3 normalizedOrZero(const glm::vec3& vector) {
-    const float lengthSquared = glm::dot(vector, vector);
-    if (lengthSquared <= 1e-12f) {
-        return glm::vec3(0.0f);
-    }
-    return vector * (1.0f / std::sqrt(lengthSquared));
-}
-
-glm::mat4 toMat4(const std::array<float, 16>& values) {
-    glm::mat4 matrix(1.0f);
-    matrix[0][0] = values[0];
-    matrix[0][1] = values[1];
-    matrix[0][2] = values[2];
-    matrix[0][3] = values[3];
-    matrix[1][0] = values[4];
-    matrix[1][1] = values[5];
-    matrix[1][2] = values[6];
-    matrix[1][3] = values[7];
-    matrix[2][0] = values[8];
-    matrix[2][1] = values[9];
-    matrix[2][2] = values[10];
-    matrix[2][3] = values[11];
-    matrix[3][0] = values[12];
-    matrix[3][1] = values[13];
-    matrix[3][2] = values[14];
-    matrix[3][3] = values[15];
-    return matrix;
-}
-
-}
-
 void mapSurfacePoints(
     const SupportingHalfedge::IntrinsicMesh& sourceMesh,
     const std::array<float, 16>& sourceLocalToWorld,
@@ -145,13 +112,13 @@ void mapSurfacePoints(
 				localN *= (1.0f / std::sqrt(localNLen2));
 
 				glm::vec3 worldPos = glm::vec3(recvModelMat * glm::vec4(localPos, 1.0f));
-				glm::vec3 worldN = normalizedOrZero(glm::vec3(recvNormalMat * localN));
+				glm::vec3 worldN = safeNormalize(glm::vec3(recvNormalMat * localN));
 				if (glm::dot(worldN, worldN) < 1e-12f) {
 					continue;
 				}
 
 				glm::vec3 srcPos = glm::vec3(invSrcModelMat * glm::vec4(worldPos, 1.0f));
-				glm::vec3 srcDirPlus = normalizedOrZero(glm::vec3(invSrcModelMat * glm::vec4(worldN, 0.0f)));
+				glm::vec3 srcDirPlus = safeNormalize(glm::vec3(invSrcModelMat * glm::vec4(worldN, 0.0f)));
 				if (glm::dot(srcDirPlus, srcDirPlus) < 1e-12f) {
 					continue;
 				}
@@ -181,7 +148,7 @@ void mapSurfacePoints(
 						continue;
 					}
 
-					glm::vec3 sNWorld = normalizedOrZero(glm::vec3(srcNormalMat * sTri.normal));
+					glm::vec3 sNWorld = safeNormalize(glm::vec3(srcNormalMat * sTri.normal));
 					float nd = glm::dot(worldN, sNWorld);
 					if (minNormalDot < 0.0f) {
 						if (nd > minNormalDot) {

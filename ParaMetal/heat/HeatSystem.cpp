@@ -11,7 +11,6 @@
 #include "contact/ContactSystemComputeStage.hpp"
 #include "heat/HeatGpuStructs.hpp"
 #include "heat/HeatContactRuntime.hpp"
-#include "nodegraph/NodeModelTransform.hpp"
 #include "vulkan/CommandBufferManager.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/ModelRegistry.hpp"

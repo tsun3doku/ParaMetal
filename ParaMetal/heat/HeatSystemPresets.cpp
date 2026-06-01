@@ -1,8 +1,6 @@
 #include "HeatSystemPresets.hpp"
 
-namespace {
-
-HeatMaterialPreset aluminumPreset = {
+const HeatMaterialPreset aluminumPreset = {
     HeatMaterialPresetId::Aluminum,
     "Aluminum",
     2700.0f,
@@ -10,7 +8,7 @@ HeatMaterialPreset aluminumPreset = {
     205.0f,
 };
 
-HeatMaterialPreset copperPreset = {
+const HeatMaterialPreset copperPreset = {
     HeatMaterialPresetId::Copper,
     "Copper",
     8960.0f,
@@ -18,7 +16,7 @@ HeatMaterialPreset copperPreset = {
     401.0f,
 };
 
-HeatMaterialPreset ironPreset = {
+const HeatMaterialPreset ironPreset = {
     HeatMaterialPresetId::Iron,
     "Iron",
     7874.0f,
@@ -26,7 +24,7 @@ HeatMaterialPreset ironPreset = {
     80.4f,
 };
 
-HeatMaterialPreset ceramicPreset = {
+const HeatMaterialPreset ceramicPreset = {
     HeatMaterialPresetId::Ceramic,
     "Ceramic",
     2400.0f,
@@ -34,15 +32,13 @@ HeatMaterialPreset ceramicPreset = {
     1.5f,
 };
 
-HeatMaterialPreset customPreset = {
+const HeatMaterialPreset customPreset = {
     HeatMaterialPresetId::Custom,
     "Custom",
     1.0f,
     1.0f,
     75000.0f,
 };
-
-}
 
 const HeatMaterialPreset& heatMaterialPresetById(HeatMaterialPresetId id) {
     switch (id) {

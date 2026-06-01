@@ -1,5 +1,6 @@
 #include "RuntimeVoronoiComputeTransport.hpp"
 #include "heat/VoronoiSystemComputeController.hpp"
+#include "util/GeometryUtils.hpp"
 
 
 void RuntimeVoronoiComputeTransport::sync(const ECSRegistry& registry) {
@@ -80,7 +81,7 @@ bool RuntimeVoronoiComputeTransport::tryBuildConfig(
         vertex.normal = glm::vec4(intrinsicVertex.normal, 0.0f);
         outConfig.receiverSurfaceVertices.push_back(vertex);
     }
-    outConfig.meshModelMatrix = NodeModelTransform::toMat4(package.modelLocalToWorld);
+    outConfig.meshModelMatrix = toMat4(package.modelLocalToWorld);
 
     outConfig.computeHash = buildComputeHash(outConfig);
     return true;

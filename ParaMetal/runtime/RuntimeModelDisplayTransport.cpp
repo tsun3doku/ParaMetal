@@ -1,6 +1,6 @@
 #include "RuntimeModelDisplayTransport.hpp"
 
-#include "nodegraph/NodeModelTransform.hpp"
+#include "util/GeometryUtils.hpp"
 #include "runtime/ModelDisplayController.hpp"
 #include "runtime/RuntimeECS.hpp"
 
@@ -21,7 +21,7 @@ void RuntimeModelDisplayTransport::sync(const ECSRegistry& registry) {
 
         ModelDisplayController::Config config{};
         config.runtimeModelId = product ? product->runtimeModelId : 0;
-        config.modelMatrix = NodeModelTransform::toMat4(package.localToWorld);
+        config.modelMatrix = toMat4(package.localToWorld);
         controller->apply(socketKey, config);
     }
 

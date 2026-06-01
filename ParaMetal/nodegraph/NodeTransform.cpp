@@ -4,9 +4,10 @@
 #include "NodeGraphUtils.hpp"
 
 #include "NodeGraphHash.hpp"
-#include "NodeModelTransform.hpp"
 #include "NodePayloadRegistry.hpp"
 #include "NodeTransformParams.hpp"
+
+#include "../util/GeometryUtils.hpp"
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -53,9 +54,9 @@ void NodeTransform::execute(NodeGraphKernelContext& context) const {
         }
 
         GeometryData forwardedGeometry = *inputGeometry;
-        forwardedGeometry.localToWorld = NodeModelTransform::toMatrixArray(
-            NodeModelTransform::toMat4(forwardedGeometry.localToWorld) *
-            NodeModelTransform::toMat4(localTransform));
+        forwardedGeometry.localToWorld = toMatrixArray(
+            toMat4(forwardedGeometry.localToWorld) *
+            toMat4(localTransform));
 
         const uint64_t payloadKey = NodeSocketKey(context.node.id, outputSocket.id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(forwardedGeometry));
@@ -117,5 +118,5 @@ void NodeTransform::combineTransformParams(const NodeGraphNode& node, uint64_t& 
 }
 
 std::array<float, 16> NodeTransform::buildLocalTransformArray(const NodeGraphNode& node) {
-    return NodeModelTransform::toMatrixArray(buildLocalTransform(node));
+    return toMatrixArray(buildLocalTransform(node));
 }
