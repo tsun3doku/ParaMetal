@@ -9,11 +9,9 @@
 #include <array>
 #include <iostream>
 
-namespace {
 struct ContactPushConstant {
     uint32_t elementCount = 0;
 };
-}
 
 ContactSystemComputeStage::ContactSystemComputeStage(VulkanDevice& device)
     : vulkanDevice(device) {

@@ -47,6 +47,7 @@ private:
         VkDeviceSize size);
     void clearComputedState(MemoryAllocator& memoryAllocator);
     bool computeContactPairs(std::vector<ContactPair>& outPairs);
+    bool hasUsableContactPairs(const std::vector<ContactPair>& pairs) const;
 
     float minNormalDot = -0.65f;
     float contactRadius = 0.01f;

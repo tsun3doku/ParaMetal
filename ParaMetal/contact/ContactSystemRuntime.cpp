@@ -7,17 +7,13 @@
 
 #include <vector>
 
-namespace {
-
-bool hasUsableContactPairs(const std::vector<ContactPair>& pairs) {
+bool ContactSystemRuntime::hasUsableContactPairs(const std::vector<ContactPair>& pairs) const {
     for (const ContactPair& pair : pairs) {
         if (pair.contactArea > 0.0f) {
             return true;
         }
     }
     return false;
-}
-
 }
 
 void ContactSystemRuntime::setParams(float updatedMinNormalDot, float updatedContactRadius) {

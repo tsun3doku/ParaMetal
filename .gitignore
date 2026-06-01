@@ -35,5 +35,7 @@
 *.pdb
 *.ilk
 
+ParaMetal/shaders/compile.bat
+
 # Third party
 ParaMetal/libs/glm/doc/
