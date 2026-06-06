@@ -84,9 +84,7 @@ bool findFirstUpstreamNodeByType(const NodeGraphState& state, uint64_t outputSoc
 
 bool validateNodeGraphParamValue(const NodeGraphParamDefinition& definition, const NodeGraphParamValue& value);
 
-namespace {
-
-bool validateNodeGraphParamFieldValues(
+static bool validateFieldValues(
     const std::vector<NodeGraphParamField>& fields,
     const std::vector<NodeGraphParamFieldValue>& fieldValues) {
     if (fields.size() != fieldValues.size()) {
@@ -118,8 +116,6 @@ bool validateNodeGraphParamFieldValues(
 
     return true;
 }
-
-} // namespace
 
 const EvaluatedSocketValue* readEvaluatedInput(
     const NodeGraphNode& node,
@@ -288,7 +284,7 @@ bool validateNodeGraphParamValue(const NodeGraphParamDefinition& definition, con
             && std::find(definition.enumOptions.begin(), definition.enumOptions.end(), value.enumValue)
                 != definition.enumOptions.end();
     case NodeGraphParamType::Struct:
-        return validateNodeGraphParamFieldValues(definition.fields, value.fieldValues);
+        return validateFieldValues(definition.fields, value.fieldValues);
     case NodeGraphParamType::Array:
         if (!definition.elementDefinition) {
             return false;

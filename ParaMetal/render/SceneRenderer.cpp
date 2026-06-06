@@ -18,55 +18,6 @@
 #include "OverlayPass.hpp"
 #include "BlendPass.hpp"
 
-namespace {
-void recordComputeToGraphicsBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags dstStageMask) {
-    if (commandBuffer == VK_NULL_HANDLE || dstStageMask == 0) {
-        return;
-    }
-
-    VkAccessFlags dstAccessMask = 0;
-    if ((dstStageMask & VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT) != 0) {
-        dstAccessMask |= VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
-    }
-    if ((dstStageMask & (VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
-            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-            VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT |
-            VK_PIPELINE_STAGE_TESSELLATION_CONTROL_SHADER_BIT |
-            VK_PIPELINE_STAGE_TESSELLATION_EVALUATION_SHADER_BIT |
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)) != 0) {
-        dstAccessMask |= VK_ACCESS_SHADER_READ_BIT;
-    }
-    if ((dstStageMask & VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT) != 0) {
-        dstAccessMask |= VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
-    }
-    if ((dstStageMask & VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT) != 0) {
-        dstAccessMask |= VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
-    }
-    if ((dstStageMask & VK_PIPELINE_STAGE_TRANSFER_BIT) != 0) {
-        dstAccessMask |= VK_ACCESS_TRANSFER_READ_BIT;
-    }
-    if ((dstStageMask & (VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT)) != 0) {
-        dstAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-    }
-    if (dstAccessMask == 0) {
-        dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-    }
-
-    VkMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barrier.dstAccessMask = dstAccessMask;
-    vkCmdPipelineBarrier(
-        commandBuffer,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        dstStageMask,
-        0,
-        1, &barrier,
-        0, nullptr,
-        0, nullptr);
-}
-}
-
 SceneRenderer::SceneRenderer(VulkanDevice& device, MemoryAllocator& allocator, FrameGraph& graph, VkFrameGraphRuntime& runtime, ModelRegistry& manager, UniformBufferManager& ubo, uint32_t framesInFlight, CommandPool& commandPool)
     : vulkanDevice(device),
       memoryAllocator(allocator),
@@ -606,4 +557,49 @@ bool SceneRenderer::getGpuTimingStats(uint32_t frameIndex, GpuTimingStats& outSt
     return true;
 }
 
+void SceneRenderer::recordComputeToGraphicsBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags dstStageMask) {
+    if (commandBuffer == VK_NULL_HANDLE || dstStageMask == 0) {
+        return;
+    }
 
+    VkAccessFlags dstAccessMask = 0;
+    if ((dstStageMask & VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT) != 0) {
+        dstAccessMask |= VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    }
+    if ((dstStageMask & (VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+            VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT |
+            VK_PIPELINE_STAGE_TESSELLATION_CONTROL_SHADER_BIT |
+            VK_PIPELINE_STAGE_TESSELLATION_EVALUATION_SHADER_BIT |
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)) != 0) {
+        dstAccessMask |= VK_ACCESS_SHADER_READ_BIT;
+    }
+    if ((dstStageMask & VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT) != 0) {
+        dstAccessMask |= VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
+    }
+    if ((dstStageMask & VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT) != 0) {
+        dstAccessMask |= VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+    }
+    if ((dstStageMask & VK_PIPELINE_STAGE_TRANSFER_BIT) != 0) {
+        dstAccessMask |= VK_ACCESS_TRANSFER_READ_BIT;
+    }
+    if ((dstStageMask & (VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT)) != 0) {
+        dstAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+    }
+    if (dstAccessMask == 0) {
+        dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    }
+
+    VkMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = dstAccessMask;
+    vkCmdPipelineBarrier(
+        commandBuffer,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        dstStageMask,
+        0,
+        1, &barrier,
+        0, nullptr,
+        0, nullptr);
+}

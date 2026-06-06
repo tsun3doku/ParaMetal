@@ -1,24 +1,9 @@
 #include "RemeshSystem.hpp"
 
+#include "util/GeometryUtils.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/ModelRegistry.hpp"
 #include "vulkan/VulkanDevice.hpp"
-
-namespace {
-
-std::vector<glm::vec3> buildGeometryPositions(const std::vector<float>& pointPositions) {
-    std::vector<glm::vec3> positions;
-    positions.reserve(pointPositions.size() / 3);
-    for (size_t index = 0; index + 2 < pointPositions.size(); index += 3) {
-        positions.emplace_back(
-            pointPositions[index],
-            pointPositions[index + 1],
-            pointPositions[index + 2]);
-    }
-    return positions;
-}
-
-} // namespace
 
 RemeshSystem::RemeshSystem(
     Remesher& remesher,
@@ -71,7 +56,7 @@ bool RemeshSystem::ensureConfigured() {
         return false;
     }
 
-    geometryPositions = buildGeometryPositions(pointPositions);
+    geometryPositions = toVec3Array(pointPositions);
     geometryTriangleIndices = triangleIndices;
     intrinsicMesh = remeshResult.intrinsicMesh;
     intrinsicGpuResources = remeshResult.intrinsicGpuResources;

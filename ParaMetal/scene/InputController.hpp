@@ -37,6 +37,8 @@ public:
     void processInput(bool shiftPressed, bool middleButtonPressed, double mouseX, double mouseY, float deltaTime);
     void updateGizmo();
 
+    bool resolveSelectedTransformNode(NodeGraphNodeId& outTransformNodeId);
+
     bool isDraggingGizmo = false;
 
 private:

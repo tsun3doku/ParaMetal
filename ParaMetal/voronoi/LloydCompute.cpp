@@ -11,14 +11,12 @@
 #include <cstring>
 #include <iostream>
 
-namespace {
-    struct LloydParamsCPU {
-        uint32_t nodeCount;
-        float alpha;
-        float maxStep;
-        float pad0;
-    };
-}
+struct LloydParamsCPU {
+    uint32_t nodeCount;
+    float alpha;
+    float maxStep;
+    float pad0;
+};
 
 LloydCompute::LloydCompute(VulkanDevice& device, MemoryAllocator& allocator, CommandPool& cmdPool)
     : vulkanDevice(device), memoryAllocator(allocator), commandPool(cmdPool) {

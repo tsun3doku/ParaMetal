@@ -183,17 +183,13 @@ qreal socketBottomY() {
     return outerFrameRect().bottom() + socketRadius * socketDistance;
 }
 
-namespace {
-
-qreal socketX(std::size_t index, std::size_t total, qreal minX, qreal maxX) {
+static qreal socketX(std::size_t index, std::size_t total, qreal minX, qreal maxX) {
     if (total <= 1) {
         return (minX + maxX) * 0.5;
     }
 
     const qreal t = static_cast<qreal>(index) / static_cast<qreal>(total - 1);
     return minX + (maxX - minX) * t;
-}
-
 }
 
 QPointF inputSocketPosition(std::size_t index, std::size_t total) {

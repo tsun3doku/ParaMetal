@@ -110,6 +110,7 @@ private:
     void destroyPasses();
     void createGpuTimingQueryPool();
     void destroyGpuTimingQueryPool();
+    void recordComputeToGraphicsBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags dstStageMask);
     
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;

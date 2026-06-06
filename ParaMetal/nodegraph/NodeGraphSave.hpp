@@ -5,6 +5,10 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include <QDir>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QJsonValue>
 #include <QString>
 
 class NodeGraphSave {
@@ -26,4 +30,36 @@ public:
 
     static bool save(const Data& data, const QString& filePath, QString* outError = nullptr);
     static bool load(Data& outData, const QString& filePath, QString* outError = nullptr);
+
+private:
+    static void setError(QString* outError, const QString& error);
+
+    static QString valueTypeToString(NodeGraphValueType value);
+    static bool valueTypeFromString(const QString& text, NodeGraphValueType& outValue);
+    static QString directionToString(NodeGraphSocketDirection direction);
+    static bool directionFromString(const QString& text, NodeGraphSocketDirection& outDirection);
+    static QString paramTypeToString(NodeGraphParamType type);
+    static bool paramTypeFromString(const QString& text, NodeGraphParamType& outType);
+
+    static QJsonArray vec3ToJson(const glm::vec3& value);
+    static QJsonArray quatToJson(const glm::quat& value);
+    static bool vec3FromJson(const QJsonValue& value, glm::vec3& outValue);
+    static bool quatFromJson(const QJsonValue& value, glm::quat& outValue);
+
+    static QString toRelativePath(const QString& path, const QDir& projectDir);
+    static QString toAbsolutePath(const QString& path, const QDir& projectDir);
+
+    static QJsonObject socketToJson(const NodeGraphSocket& socket);
+    static QJsonObject nodeToJson(const NodeGraphNode& node, const QDir& projectDir);
+    static QJsonObject edgeToJson(const NodeGraphEdge& edge);
+    static QJsonObject viewportToJson(const Viewport& viewport);
+    static QJsonObject paramToJson(const NodeGraphParamValue& parameter, const NodeGraphNode& node, const QDir& projectDir);
+    static QJsonObject fieldValueToJson(const NodeGraphParamFieldValue& field, const NodeGraphNode& node, const QDir& projectDir);
+
+    static bool socketFromJson(const QJsonValue& value, NodeGraphSocket& outSocket, QString* outError);
+    static bool nodeFromJson(const QJsonValue& value, NodeGraphNode& outNode, const QDir& projectDir, QString* outError);
+    static bool edgeFromJson(const QJsonValue& value, NodeGraphEdge& outEdge, QString* outError);
+    static bool viewportFromJson(const QJsonValue& value, Viewport& outViewport, QString* outError);
+    static bool paramFromJson(const QJsonValue& value, NodeGraphParamValue& outParameter, const NodeGraphNode& node, const QDir& projectDir, QString* outError);
+    static bool fieldValueFromJson(const QJsonValue& value, NodeGraphParamFieldValue& outField, const NodeGraphNode& node, const QDir& projectDir, QString* outError);
 };

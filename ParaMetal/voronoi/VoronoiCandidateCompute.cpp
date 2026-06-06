@@ -9,14 +9,12 @@
 #include <iostream>
 #include <vector>
 
-namespace {
 struct CandidatePushConstants {
     uint32_t faceCount;
     uint32_t seedCount;
     uint32_t _pad0;
     uint32_t _pad1;
 };
-}
 
 VoronoiCandidateCompute::VoronoiCandidateCompute(VulkanDevice& device, CommandPool& cmdPool)
     : vulkanDevice(device), commandPool(cmdPool) {

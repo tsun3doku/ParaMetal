@@ -21,14 +21,7 @@
 
 #include <libs/nanoflann/include/nanoflann.hpp>
 
-namespace {
-
-struct BakedContact {
-    float totalConductance = 0.0f;
-    std::unordered_map<uint32_t, float> neighborWeights;
-};
-
-bool buildPointStencil(
+bool HeatContactRuntime::buildPointStencil(
     const glm::vec3& point,
     const StencilKDTree& kdTree,
     std::vector<contact::ContactSampleWeight>& valueWeightsOut,
@@ -96,7 +89,7 @@ bool buildPointStencil(
     return (valueWeightCountOut != 0 && scatterWeightCountOut != 0);
 }
 
-void remapWeightsToSimNodes(
+void HeatContactRuntime::remapWeightsToSimNodes(
     const HeatModelRuntime& model,
     std::vector<contact::ContactSampleWeight>& weights) {
     std::vector<contact::ContactSampleWeight> remapped;
@@ -112,7 +105,7 @@ void remapWeightsToSimNodes(
     weights = std::move(remapped);
 }
 
-void thresholdContactEdges(
+void HeatContactRuntime::thresholdContactEdges(
     const std::vector<BakedContact>& baked,
     uint32_t nodeCount,
     std::vector<contact::ContactSampleWeight>& outEdges,
@@ -144,8 +137,6 @@ void thresholdContactEdges(
         outIndex[nodeId] = index;
     }
 }
-
-} // namespace
 
 HeatContactRuntime::~HeatContactRuntime() = default;
 

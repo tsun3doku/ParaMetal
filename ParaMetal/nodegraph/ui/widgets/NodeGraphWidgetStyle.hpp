@@ -93,6 +93,7 @@ inline constexpr QColor colorSliderKnobStroke = QColor(239, 237, 248);
 
 QString px(int value);
 void styleLineEdit(QLineEdit* edit);
+QLineEdit* createNumericEdit(QWidget* parent, double minimum, double maximum, int decimals);
 void styleComboBox(QComboBox* combo);
 QWidget* buildPanelCardPage(QWidget* parent, QWidget* contentWidget);
 void applyNodePanelStyle(QWidget* panel);

@@ -12,12 +12,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace {
-bool resolveSelectedTransformNode(
-    SceneController& sceneController,
-    NodeGraphBridge& nodeGraphBridge,
-    const ModelSelection& modelSelection,
-    NodeGraphNodeId& outTransformNodeId) {
+bool InputController::resolveSelectedTransformNode(NodeGraphNodeId& outTransformNodeId) {
     outTransformNodeId = {};
     const auto& selectedIDs = modelSelection.getSelectedModelIDsRenderThread();
     if (selectedIDs.size() != 1) {
@@ -30,8 +25,6 @@ bool resolveSelectedTransformNode(
     }
 
     return nodeGraphBridge.resolveGizmoTransformNode(outputSocketKey, outTransformNodeId);
-}
-
 }
 
 InputController::InputController(Camera& camera, GizmoController& gizmoController, ModelSelection& modelSelection, ModelRegistry& resourceManager,
@@ -152,7 +145,7 @@ void InputController::updateGizmo() {
 
             if (hitAxis != GizmoAxis::None) {
                 NodeGraphNodeId transformNodeId{};
-                if (!resolveSelectedTransformNode(sceneController, nodeGraphBridge, modelSelection, transformNodeId)) {
+                if (!resolveSelectedTransformNode(transformNodeId)) {
                     modelSelection.clearLastPickedResult();
                     return;
                 }

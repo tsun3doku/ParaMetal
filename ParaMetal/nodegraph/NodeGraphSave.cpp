@@ -1,531 +1,16 @@
 #include "NodeGraphSave.hpp"
-
 #include "NodeGraphRegistry.hpp"
 
-#include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QJsonArray>
 #include <QJsonDocument>
-#include <QJsonObject>
 #include <QJsonParseError>
 #include <QSaveFile>
 
 #include <algorithm>
 
-namespace {
-
 constexpr int ProjectVersion = 1;
 constexpr const char* ProjectApp = "ParaMetal";
-
-void setError(QString* outError, const QString& error) {
-    if (outError) {
-        *outError = error;
-    }
-}
-
-QString valueTypeToString(NodeGraphValueType value) {
-    switch (value) {
-    case NodeGraphValueType::None: return "None";
-    case NodeGraphValueType::Mesh: return "Mesh";
-    case NodeGraphValueType::Volume: return "Volume";
-    case NodeGraphValueType::Field: return "Field";
-    case NodeGraphValueType::Vector3: return "Vector3";
-    case NodeGraphValueType::ScalarFloat: return "ScalarFloat";
-    case NodeGraphValueType::ScalarInt: return "ScalarInt";
-    case NodeGraphValueType::ScalarBool: return "ScalarBool";
-    }
-    return "None";
-}
-
-bool valueTypeFromString(const QString& text, NodeGraphValueType& outValue) {
-    if (text == "None") outValue = NodeGraphValueType::None;
-    else if (text == "Mesh") outValue = NodeGraphValueType::Mesh;
-    else if (text == "Volume") outValue = NodeGraphValueType::Volume;
-    else if (text == "Field") outValue = NodeGraphValueType::Field;
-    else if (text == "Vector3") outValue = NodeGraphValueType::Vector3;
-    else if (text == "ScalarFloat") outValue = NodeGraphValueType::ScalarFloat;
-    else if (text == "ScalarInt") outValue = NodeGraphValueType::ScalarInt;
-    else if (text == "ScalarBool") outValue = NodeGraphValueType::ScalarBool;
-    else return false;
-    return true;
-}
-
-QString directionToString(NodeGraphSocketDirection direction) {
-    return direction == NodeGraphSocketDirection::Input ? "Input" : "Output";
-}
-
-bool directionFromString(const QString& text, NodeGraphSocketDirection& outDirection) {
-    if (text == "Input") {
-        outDirection = NodeGraphSocketDirection::Input;
-        return true;
-    }
-    if (text == "Output") {
-        outDirection = NodeGraphSocketDirection::Output;
-        return true;
-    }
-    return false;
-}
-
-QString paramTypeToString(NodeGraphParamType type) {
-    switch (type) {
-    case NodeGraphParamType::Float: return "Float";
-    case NodeGraphParamType::Int: return "Int";
-    case NodeGraphParamType::Bool: return "Bool";
-    case NodeGraphParamType::String: return "String";
-    case NodeGraphParamType::Enum: return "Enum";
-    case NodeGraphParamType::Struct: return "Struct";
-    case NodeGraphParamType::Array: return "Array";
-    }
-    return "Float";
-}
-
-bool paramTypeFromString(const QString& text, NodeGraphParamType& outType) {
-    if (text == "Float") outType = NodeGraphParamType::Float;
-    else if (text == "Int") outType = NodeGraphParamType::Int;
-    else if (text == "Bool") outType = NodeGraphParamType::Bool;
-    else if (text == "String") outType = NodeGraphParamType::String;
-    else if (text == "Enum") outType = NodeGraphParamType::Enum;
-    else if (text == "Struct") outType = NodeGraphParamType::Struct;
-    else if (text == "Array") outType = NodeGraphParamType::Array;
-    else return false;
-    return true;
-}
-
-QString maybeRelativeModelPath(const QString& path, const QDir& projectDir) {
-    if (path.isEmpty()) {
-        return path;
-    }
-
-    QFileInfo info(path);
-    if (!info.isAbsolute()) {
-        return path;
-    }
-
-    const QString absolutePath = info.canonicalFilePath().isEmpty() ? info.absoluteFilePath() : info.canonicalFilePath();
-    const QString relativePath = projectDir.relativeFilePath(absolutePath);
-    if (relativePath.startsWith("..") || QDir::isAbsolutePath(relativePath)) {
-        return path;
-    }
-    return relativePath;
-}
-
-QString maybeAbsoluteModelPath(const QString& path, const QDir& projectDir) {
-    if (path.isEmpty() || QDir::isAbsolutePath(path)) {
-        return path;
-    }
-    return QDir::cleanPath(projectDir.absoluteFilePath(path));
-}
-
-QJsonArray vec3ToJson(const glm::vec3& value) {
-    QJsonArray array;
-    array.append(value.x);
-    array.append(value.y);
-    array.append(value.z);
-    return array;
-}
-
-QJsonArray quatToJson(const glm::quat& value) {
-    QJsonArray array;
-    array.append(value.x);
-    array.append(value.y);
-    array.append(value.z);
-    array.append(value.w);
-    return array;
-}
-
-bool vec3FromJson(const QJsonValue& value, glm::vec3& outValue) {
-    if (!value.isArray()) {
-        return false;
-    }
-    const QJsonArray array = value.toArray();
-    if (array.size() != 3 || !array[0].isDouble() || !array[1].isDouble() || !array[2].isDouble()) {
-        return false;
-    }
-    outValue = glm::vec3(
-        static_cast<float>(array[0].toDouble()),
-        static_cast<float>(array[1].toDouble()),
-        static_cast<float>(array[2].toDouble()));
-    return true;
-}
-
-bool quatFromJson(const QJsonValue& value, glm::quat& outValue) {
-    if (!value.isArray()) {
-        return false;
-    }
-    const QJsonArray array = value.toArray();
-    if (array.size() != 4 || !array[0].isDouble() || !array[1].isDouble() || !array[2].isDouble() || !array[3].isDouble()) {
-        return false;
-    }
-    outValue = glm::quat(
-        static_cast<float>(array[3].toDouble()),
-        static_cast<float>(array[0].toDouble()),
-        static_cast<float>(array[1].toDouble()),
-        static_cast<float>(array[2].toDouble()));
-    return true;
-}
-
-QJsonObject socketToJson(const NodeGraphSocket& socket) {
-    QJsonObject obj;
-    obj["id"] = static_cast<int>(socket.id.value);
-    obj["name"] = QString::fromStdString(socket.name);
-    obj["valueType"] = valueTypeToString(socket.valueType);
-    obj["direction"] = directionToString(socket.direction);
-    QJsonObject contract;
-    contract["producedPayloadType"] = static_cast<int>(socket.contract.producedPayloadType);
-    obj["contract"] = contract;
-    obj["variadic"] = socket.variadic;
-    return obj;
-}
-
-QJsonObject paramToJson(const NodeGraphParamValue& parameter, const NodeGraphNode& node, const QDir& projectDir);
-
-QJsonObject fieldValueToJson(const NodeGraphParamFieldValue& field, const NodeGraphNode& node, const QDir& projectDir) {
-    QJsonObject obj;
-    obj["name"] = QString::fromStdString(field.name);
-    if (field.value) {
-        obj["value"] = paramToJson(*field.value, node, projectDir);
-    }
-    return obj;
-}
-
-QJsonObject paramToJson(const NodeGraphParamValue& parameter, const NodeGraphNode& node, const QDir& projectDir) {
-    QJsonObject obj;
-    obj["id"] = static_cast<int>(parameter.id);
-    obj["type"] = paramTypeToString(parameter.type);
-    switch (parameter.type) {
-    case NodeGraphParamType::Float:
-        obj["floatValue"] = parameter.floatValue;
-        break;
-    case NodeGraphParamType::Int:
-        obj["intValue"] = static_cast<qint64>(parameter.intValue);
-        break;
-    case NodeGraphParamType::Bool:
-        obj["boolValue"] = parameter.boolValue;
-        break;
-    case NodeGraphParamType::String: {
-        QString value = QString::fromStdString(parameter.stringValue);
-        if (node.typeId == nodegraphtypes::Model && parameter.id == nodegraphparams::model::Path) {
-            value = maybeRelativeModelPath(value, projectDir);
-        }
-        obj["stringValue"] = value;
-        break;
-    }
-    case NodeGraphParamType::Enum:
-        obj["enumValue"] = QString::fromStdString(parameter.enumValue);
-        obj["intValue"] = static_cast<qint64>(parameter.intValue);
-        break;
-    case NodeGraphParamType::Struct: {
-        QJsonArray fields;
-        for (const NodeGraphParamFieldValue& field : parameter.fieldValues) {
-            fields.append(fieldValueToJson(field, node, projectDir));
-        }
-        obj["fields"] = fields;
-        break;
-    }
-    case NodeGraphParamType::Array: {
-        QJsonArray values;
-        for (const NodeGraphParamValue& value : parameter.arrayValues) {
-            values.append(paramToJson(value, node, projectDir));
-        }
-        obj["values"] = values;
-        break;
-    }
-    }
-    return obj;
-}
-
-QJsonObject nodeToJson(const NodeGraphNode& node, const QDir& projectDir) {
-    QJsonObject obj;
-    obj["id"] = static_cast<int>(node.id.value);
-    obj["typeId"] = QString::fromStdString(node.typeId);
-    obj["title"] = QString::fromStdString(node.title);
-    obj["x"] = node.x;
-    obj["y"] = node.y;
-    obj["displayEnabled"] = node.displayEnabled;
-    obj["frozen"] = node.frozen;
-
-    QJsonArray inputs;
-    for (const NodeGraphSocket& socket : node.inputs) {
-        inputs.append(socketToJson(socket));
-    }
-    obj["inputs"] = inputs;
-
-    QJsonArray outputs;
-    for (const NodeGraphSocket& socket : node.outputs) {
-        outputs.append(socketToJson(socket));
-    }
-    obj["outputs"] = outputs;
-
-    QJsonArray parameters;
-    for (const NodeGraphParamValue& parameter : node.parameters) {
-        parameters.append(paramToJson(parameter, node, projectDir));
-    }
-    obj["parameters"] = parameters;
-    return obj;
-}
-
-QJsonObject edgeToJson(const NodeGraphEdge& edge) {
-    QJsonObject obj;
-    obj["id"] = static_cast<int>(edge.id.value);
-    obj["fromNode"] = static_cast<int>(edge.fromNode.value);
-    obj["fromSocket"] = static_cast<int>(edge.fromSocket.value);
-    obj["toNode"] = static_cast<int>(edge.toNode.value);
-    obj["toSocket"] = static_cast<int>(edge.toSocket.value);
-    return obj;
-}
-
-bool socketFromJson(const QJsonValue& value, NodeGraphSocket& outSocket, QString* outError) {
-    if (!value.isObject()) {
-        setError(outError, "Socket entry is not an object.");
-        return false;
-    }
-    const QJsonObject obj = value.toObject();
-    NodeGraphValueType valueType = NodeGraphValueType::None;
-    NodeGraphSocketDirection direction = NodeGraphSocketDirection::Input;
-    if (!obj["id"].isDouble() || !obj["name"].isString() || !obj["valueType"].isString() ||
-        !obj["direction"].isString() || !obj["contract"].isObject() || !obj["variadic"].isBool() ||
-        !valueTypeFromString(obj["valueType"].toString(), valueType) ||
-        !directionFromString(obj["direction"].toString(), direction)) {
-        setError(outError, "Socket entry has invalid fields.");
-        return false;
-    }
-
-    const QJsonObject contract = obj["contract"].toObject();
-    if (!contract["producedPayloadType"].isDouble()) {
-        setError(outError, "Socket contract has invalid fields.");
-        return false;
-    }
-
-    outSocket.id = NodeGraphSocketId{static_cast<uint32_t>(obj["id"].toInt())};
-    outSocket.name = obj["name"].toString().toStdString();
-    outSocket.valueType = valueType;
-    outSocket.direction = direction;
-    outSocket.contract.producedPayloadType = static_cast<uint8_t>(contract["producedPayloadType"].toInt());
-    outSocket.variadic = obj["variadic"].toBool();
-    return true;
-}
-
-bool paramFromJson(const QJsonValue& value, NodeGraphParamValue& outParameter, const NodeGraphNode& node, const QDir& projectDir, QString* outError);
-
-bool fieldValueFromJson(const QJsonValue& value, NodeGraphParamFieldValue& outField, const NodeGraphNode& node, const QDir& projectDir, QString* outError) {
-    if (!value.isObject()) {
-        setError(outError, "Parameter field entry is not an object.");
-        return false;
-    }
-    const QJsonObject obj = value.toObject();
-    if (!obj["name"].isString() || !obj["value"].isObject()) {
-        setError(outError, "Parameter field entry has invalid fields.");
-        return false;
-    }
-
-    outField.name = obj["name"].toString().toStdString();
-    outField.value = std::make_shared<NodeGraphParamValue>();
-    return paramFromJson(obj["value"], *outField.value, node, projectDir, outError);
-}
-
-bool paramFromJson(const QJsonValue& value, NodeGraphParamValue& outParameter, const NodeGraphNode& node, const QDir& projectDir, QString* outError) {
-    if (!value.isObject()) {
-        setError(outError, "Parameter entry is not an object.");
-        return false;
-    }
-    const QJsonObject obj = value.toObject();
-    NodeGraphParamType type = NodeGraphParamType::Float;
-    if (!obj["id"].isDouble() || !obj["type"].isString() || !paramTypeFromString(obj["type"].toString(), type)) {
-        setError(outError, "Parameter entry has invalid fields.");
-        return false;
-    }
-
-    outParameter = {};
-    outParameter.id = static_cast<uint32_t>(obj["id"].toInt());
-    outParameter.type = type;
-    switch (type) {
-    case NodeGraphParamType::Float:
-        if (!obj["floatValue"].isDouble()) {
-            setError(outError, "Float parameter is missing floatValue.");
-            return false;
-        }
-        outParameter.floatValue = obj["floatValue"].toDouble();
-        break;
-    case NodeGraphParamType::Int:
-        if (!obj["intValue"].isString() && !obj["intValue"].isDouble()) {
-            setError(outError, "Int parameter is missing intValue.");
-            return false;
-        }
-        if (obj["intValue"].isString()) {
-            bool ok = false;
-            outParameter.intValue = obj["intValue"].toString().toLongLong(&ok);
-            if (!ok) {
-                setError(outError, "Int parameter has an invalid intValue.");
-                return false;
-            }
-        } else {
-            outParameter.intValue = static_cast<int64_t>(obj["intValue"].toDouble());
-        }
-        break;
-    case NodeGraphParamType::Bool:
-        if (!obj["boolValue"].isBool()) {
-            setError(outError, "Bool parameter is missing boolValue.");
-            return false;
-        }
-        outParameter.boolValue = obj["boolValue"].toBool();
-        break;
-    case NodeGraphParamType::String: {
-        if (!obj["stringValue"].isString()) {
-            setError(outError, "String parameter is missing stringValue.");
-            return false;
-        }
-        QString stringValue = obj["stringValue"].toString();
-        if (node.typeId == nodegraphtypes::Model && outParameter.id == nodegraphparams::model::Path) {
-            stringValue = maybeAbsoluteModelPath(stringValue, projectDir);
-        }
-        outParameter.stringValue = stringValue.toStdString();
-        break;
-    }
-    case NodeGraphParamType::Enum:
-        if (!obj["enumValue"].isString()) {
-            setError(outError, "Enum parameter is missing enumValue.");
-            return false;
-        }
-        outParameter.enumValue = obj["enumValue"].toString().toStdString();
-        if (obj["intValue"].isDouble()) {
-            outParameter.intValue = static_cast<int64_t>(obj["intValue"].toDouble());
-        } else if (obj["intValue"].isString()) {
-            bool ok = false;
-            outParameter.intValue = obj["intValue"].toString().toLongLong(&ok);
-            if (!ok) {
-                setError(outError, "Enum parameter has an invalid intValue.");
-                return false;
-            }
-        }
-        break;
-    case NodeGraphParamType::Struct: {
-        if (!obj["fields"].isArray()) {
-            setError(outError, "Struct parameter is missing fields.");
-            return false;
-        }
-        for (const QJsonValue& fieldValue : obj["fields"].toArray()) {
-            NodeGraphParamFieldValue field;
-            if (!fieldValueFromJson(fieldValue, field, node, projectDir, outError)) {
-                return false;
-            }
-            outParameter.fieldValues.push_back(std::move(field));
-        }
-        break;
-    }
-    case NodeGraphParamType::Array: {
-        if (!obj["values"].isArray()) {
-            setError(outError, "Array parameter is missing values.");
-            return false;
-        }
-        for (const QJsonValue& itemValue : obj["values"].toArray()) {
-            NodeGraphParamValue item;
-            if (!paramFromJson(itemValue, item, node, projectDir, outError)) {
-                return false;
-            }
-            outParameter.arrayValues.push_back(std::move(item));
-        }
-        break;
-    }
-    }
-    return true;
-}
-
-bool nodeFromJson(const QJsonValue& value, NodeGraphNode& outNode, const QDir& projectDir, QString* outError) {
-    if (!value.isObject()) {
-        setError(outError, "Node entry is not an object.");
-        return false;
-    }
-    const QJsonObject obj = value.toObject();
-    if (!obj["id"].isDouble() || !obj["typeId"].isString() || !obj["title"].isString() ||
-        !obj["x"].isDouble() || !obj["y"].isDouble() || !obj["displayEnabled"].isBool() ||
-        !obj["frozen"].isBool() || !obj["inputs"].isArray() || !obj["outputs"].isArray() ||
-        !obj["parameters"].isArray()) {
-        setError(outError, "Node entry has invalid fields.");
-        return false;
-    }
-
-    outNode = {};
-    outNode.id = NodeGraphNodeId{static_cast<uint32_t>(obj["id"].toInt())};
-    outNode.typeId = obj["typeId"].toString().toStdString();
-    outNode.title = obj["title"].toString().toStdString();
-    outNode.x = static_cast<float>(obj["x"].toDouble());
-    outNode.y = static_cast<float>(obj["y"].toDouble());
-    outNode.displayEnabled = obj["displayEnabled"].toBool();
-    outNode.frozen = obj["frozen"].toBool();
-
-    for (const QJsonValue& socketValue : obj["inputs"].toArray()) {
-        NodeGraphSocket socket;
-        if (!socketFromJson(socketValue, socket, outError)) {
-            return false;
-        }
-        outNode.inputs.push_back(std::move(socket));
-    }
-    for (const QJsonValue& socketValue : obj["outputs"].toArray()) {
-        NodeGraphSocket socket;
-        if (!socketFromJson(socketValue, socket, outError)) {
-            return false;
-        }
-        outNode.outputs.push_back(std::move(socket));
-    }
-    for (const QJsonValue& parameterValue : obj["parameters"].toArray()) {
-        NodeGraphParamValue parameter;
-        if (!paramFromJson(parameterValue, parameter, outNode, projectDir, outError)) {
-            return false;
-        }
-        outNode.parameters.push_back(std::move(parameter));
-    }
-    return true;
-}
-
-bool edgeFromJson(const QJsonValue& value, NodeGraphEdge& outEdge, QString* outError) {
-    if (!value.isObject()) {
-        setError(outError, "Edge entry is not an object.");
-        return false;
-    }
-    const QJsonObject obj = value.toObject();
-    if (!obj["id"].isDouble() || !obj["fromNode"].isDouble() || !obj["fromSocket"].isDouble() ||
-        !obj["toNode"].isDouble() || !obj["toSocket"].isDouble()) {
-        setError(outError, "Edge entry has invalid fields.");
-        return false;
-    }
-
-    outEdge.id = NodeGraphEdgeId{static_cast<uint32_t>(obj["id"].toInt())};
-    outEdge.fromNode = NodeGraphNodeId{static_cast<uint32_t>(obj["fromNode"].toInt())};
-    outEdge.fromSocket = NodeGraphSocketId{static_cast<uint32_t>(obj["fromSocket"].toInt())};
-    outEdge.toNode = NodeGraphNodeId{static_cast<uint32_t>(obj["toNode"].toInt())};
-    outEdge.toSocket = NodeGraphSocketId{static_cast<uint32_t>(obj["toSocket"].toInt())};
-    return true;
-}
-
-QJsonObject viewportToJson(const NodeGraphSave::Viewport& viewport) {
-    QJsonObject obj;
-    obj["lookAt"] = vec3ToJson(viewport.lookAt);
-    obj["orientation"] = quatToJson(viewport.orientation);
-    obj["radius"] = viewport.radius;
-    obj["fov"] = viewport.fov;
-    return obj;
-}
-
-bool viewportFromJson(const QJsonValue& value, NodeGraphSave::Viewport& outViewport, QString* outError) {
-    if (!value.isObject()) {
-        setError(outError, "Viewport entry is not an object.");
-        return false;
-    }
-    const QJsonObject obj = value.toObject();
-    if (!vec3FromJson(obj["lookAt"], outViewport.lookAt) ||
-        !quatFromJson(obj["orientation"], outViewport.orientation) ||
-        !obj["radius"].isDouble() ||
-        !obj["fov"].isDouble()) {
-        setError(outError, "Viewport entry has invalid fields.");
-        return false;
-    }
-    outViewport.radius = static_cast<float>(obj["radius"].toDouble());
-    outViewport.fov = static_cast<float>(obj["fov"].toDouble());
-    return true;
-}
-
-} // namespace
 
 bool NodeGraphSave::save(const Data& data, const QString& filePath, QString* outError) {
     const QFileInfo projectInfo(filePath);
@@ -639,7 +124,7 @@ bool NodeGraphSave::load(Data& outData, const QString& filePath, QString* outErr
             setError(outError, "Project graph contains duplicate or invalid node ids.");
             return false;
         }
-        loaded.graph.nodes[node.id.value] = std::move(node);
+        loaded.graph.nodes[node.id.value] = node;
     }
 
     for (const QJsonValue& edgeValue : graph["edges"].toArray()) {
@@ -658,6 +143,509 @@ bool NodeGraphSave::load(Data& outData, const QString& filePath, QString* outErr
         return false;
     }
 
-    outData = std::move(loaded);
+    outData = loaded;
+    return true;
+}
+
+void NodeGraphSave::setError(QString* outError, const QString& error) {
+    if (outError) {
+        *outError = error;
+    }
+}
+
+QString NodeGraphSave::toRelativePath(const QString& path, const QDir& projectDir) {
+    if (path.isEmpty()) {
+        return path;
+    }
+
+    QFileInfo info(path);
+    if (!info.isAbsolute()) {
+        return path;
+    }
+
+    const QString absolutePath = info.canonicalFilePath().isEmpty() ? info.absoluteFilePath() : info.canonicalFilePath();
+    const QString relativePath = projectDir.relativeFilePath(absolutePath);
+    if (relativePath.startsWith("..") || QDir::isAbsolutePath(relativePath)) {
+        return path;
+    }
+    return relativePath;
+}
+
+QString NodeGraphSave::toAbsolutePath(const QString& path, const QDir& projectDir) {
+    if (path.isEmpty() || QDir::isAbsolutePath(path)) {
+        return path;
+    }
+    return QDir::cleanPath(projectDir.absoluteFilePath(path));
+}
+
+QString NodeGraphSave::valueTypeToString(NodeGraphValueType value) {
+    switch (value) {
+    case NodeGraphValueType::None: return "None";
+    case NodeGraphValueType::Mesh: return "Mesh";
+    case NodeGraphValueType::Volume: return "Volume";
+    case NodeGraphValueType::Field: return "Field";
+    case NodeGraphValueType::Vector3: return "Vector3";
+    case NodeGraphValueType::ScalarFloat: return "ScalarFloat";
+    case NodeGraphValueType::ScalarInt: return "ScalarInt";
+    case NodeGraphValueType::ScalarBool: return "ScalarBool";
+    }
+    return "None";
+}
+
+bool NodeGraphSave::valueTypeFromString(const QString& text, NodeGraphValueType& outValue) {
+    if (text == "None") outValue = NodeGraphValueType::None;
+    else if (text == "Mesh") outValue = NodeGraphValueType::Mesh;
+    else if (text == "Volume") outValue = NodeGraphValueType::Volume;
+    else if (text == "Field") outValue = NodeGraphValueType::Field;
+    else if (text == "Vector3") outValue = NodeGraphValueType::Vector3;
+    else if (text == "ScalarFloat") outValue = NodeGraphValueType::ScalarFloat;
+    else if (text == "ScalarInt") outValue = NodeGraphValueType::ScalarInt;
+    else if (text == "ScalarBool") outValue = NodeGraphValueType::ScalarBool;
+    else return false;
+    return true;
+}
+
+QString NodeGraphSave::directionToString(NodeGraphSocketDirection direction) {
+    return direction == NodeGraphSocketDirection::Input ? "Input" : "Output";
+}
+
+bool NodeGraphSave::directionFromString(const QString& text, NodeGraphSocketDirection& outDirection) {
+    if (text == "Input") {
+        outDirection = NodeGraphSocketDirection::Input;
+        return true;
+    }
+    if (text == "Output") {
+        outDirection = NodeGraphSocketDirection::Output;
+        return true;
+    }
+    return false;
+}
+
+QString NodeGraphSave::paramTypeToString(NodeGraphParamType type) {
+    switch (type) {
+    case NodeGraphParamType::Float: return "Float";
+    case NodeGraphParamType::Int: return "Int";
+    case NodeGraphParamType::Bool: return "Bool";
+    case NodeGraphParamType::String: return "String";
+    case NodeGraphParamType::Enum: return "Enum";
+    case NodeGraphParamType::Struct: return "Struct";
+    case NodeGraphParamType::Array: return "Array";
+    }
+    return "Float";
+}
+
+bool NodeGraphSave::paramTypeFromString(const QString& text, NodeGraphParamType& outType) {
+    if (text == "Float") outType = NodeGraphParamType::Float;
+    else if (text == "Int") outType = NodeGraphParamType::Int;
+    else if (text == "Bool") outType = NodeGraphParamType::Bool;
+    else if (text == "String") outType = NodeGraphParamType::String;
+    else if (text == "Enum") outType = NodeGraphParamType::Enum;
+    else if (text == "Struct") outType = NodeGraphParamType::Struct;
+    else if (text == "Array") outType = NodeGraphParamType::Array;
+    else return false;
+    return true;
+}
+
+QJsonArray NodeGraphSave::vec3ToJson(const glm::vec3& value) {
+    QJsonArray array;
+    array.append(value.x);
+    array.append(value.y);
+    array.append(value.z);
+    return array;
+}
+
+QJsonArray NodeGraphSave::quatToJson(const glm::quat& value) {
+    QJsonArray array;
+    array.append(value.x);
+    array.append(value.y);
+    array.append(value.z);
+    array.append(value.w);
+    return array;
+}
+
+bool NodeGraphSave::vec3FromJson(const QJsonValue& value, glm::vec3& outValue) {
+    if (!value.isArray()) {
+        return false;
+    }
+    const QJsonArray array = value.toArray();
+    if (array.size() != 3 || !array[0].isDouble() || !array[1].isDouble() || !array[2].isDouble()) {
+        return false;
+    }
+    outValue = glm::vec3(
+        static_cast<float>(array[0].toDouble()),
+        static_cast<float>(array[1].toDouble()),
+        static_cast<float>(array[2].toDouble()));
+    return true;
+}
+
+bool NodeGraphSave::quatFromJson(const QJsonValue& value, glm::quat& outValue) {
+    if (!value.isArray()) {
+        return false;
+    }
+    const QJsonArray array = value.toArray();
+    if (array.size() != 4 || !array[0].isDouble() || !array[1].isDouble() || !array[2].isDouble() || !array[3].isDouble()) {
+        return false;
+    }
+    outValue = glm::quat(
+        static_cast<float>(array[3].toDouble()),
+        static_cast<float>(array[0].toDouble()),
+        static_cast<float>(array[1].toDouble()),
+        static_cast<float>(array[2].toDouble()));
+    return true;
+}
+
+QJsonObject NodeGraphSave::socketToJson(const NodeGraphSocket& socket) {
+    QJsonObject obj;
+    obj["id"] = static_cast<int>(socket.id.value);
+    obj["name"] = QString::fromStdString(socket.name);
+    obj["valueType"] = valueTypeToString(socket.valueType);
+    obj["direction"] = directionToString(socket.direction);
+    QJsonObject contract;
+    contract["producedPayloadType"] = static_cast<int>(socket.contract.producedPayloadType);
+    obj["contract"] = contract;
+    obj["variadic"] = socket.variadic;
+    return obj;
+}
+
+QJsonObject NodeGraphSave::paramToJson(const NodeGraphParamValue& parameter, const NodeGraphNode& node, const QDir& projectDir) {
+    QJsonObject obj;
+    obj["id"] = static_cast<int>(parameter.id);
+    obj["type"] = paramTypeToString(parameter.type);
+    switch (parameter.type) {
+    case NodeGraphParamType::Float:
+        obj["floatValue"] = parameter.floatValue;
+        break;
+    case NodeGraphParamType::Int:
+        obj["intValue"] = static_cast<qint64>(parameter.intValue);
+        break;
+    case NodeGraphParamType::Bool:
+        obj["boolValue"] = parameter.boolValue;
+        break;
+    case NodeGraphParamType::String: {
+        QString value = QString::fromStdString(parameter.stringValue);
+        if (node.typeId == nodegraphtypes::Model && parameter.id == nodegraphparams::model::Path) {
+            value = toRelativePath(value, projectDir);
+        }
+        obj["stringValue"] = value;
+        break;
+    }
+    case NodeGraphParamType::Enum:
+        obj["enumValue"] = QString::fromStdString(parameter.enumValue);
+        obj["intValue"] = static_cast<qint64>(parameter.intValue);
+        break;
+    case NodeGraphParamType::Struct: {
+        QJsonArray fields;
+        for (const NodeGraphParamFieldValue& field : parameter.fieldValues) {
+            fields.append(fieldValueToJson(field, node, projectDir));
+        }
+        obj["fields"] = fields;
+        break;
+    }
+    case NodeGraphParamType::Array: {
+        QJsonArray values;
+        for (const NodeGraphParamValue& value : parameter.arrayValues) {
+            values.append(paramToJson(value, node, projectDir));
+        }
+        obj["values"] = values;
+        break;
+    }
+    }
+    return obj;
+}
+
+QJsonObject NodeGraphSave::fieldValueToJson(const NodeGraphParamFieldValue& field, const NodeGraphNode& node, const QDir& projectDir) {
+    QJsonObject obj;
+    obj["name"] = QString::fromStdString(field.name);
+    if (field.value) {
+        obj["value"] = paramToJson(*field.value, node, projectDir);
+    }
+    return obj;
+}
+
+QJsonObject NodeGraphSave::nodeToJson(const NodeGraphNode& node, const QDir& projectDir) {
+    QJsonObject obj;
+    obj["id"] = static_cast<int>(node.id.value);
+    obj["typeId"] = QString::fromStdString(node.typeId);
+    obj["title"] = QString::fromStdString(node.title);
+    obj["x"] = node.x;
+    obj["y"] = node.y;
+    obj["displayEnabled"] = node.displayEnabled;
+    obj["frozen"] = node.frozen;
+
+    QJsonArray inputs;
+    for (const NodeGraphSocket& socket : node.inputs) {
+        inputs.append(socketToJson(socket));
+    }
+    obj["inputs"] = inputs;
+
+    QJsonArray outputs;
+    for (const NodeGraphSocket& socket : node.outputs) {
+        outputs.append(socketToJson(socket));
+    }
+    obj["outputs"] = outputs;
+
+    QJsonArray parameters;
+    for (const NodeGraphParamValue& parameter : node.parameters) {
+        parameters.append(paramToJson(parameter, node, projectDir));
+    }
+    obj["parameters"] = parameters;
+    return obj;
+}
+
+QJsonObject NodeGraphSave::edgeToJson(const NodeGraphEdge& edge) {
+    QJsonObject obj;
+    obj["id"] = static_cast<int>(edge.id.value);
+    obj["fromNode"] = static_cast<int>(edge.fromNode.value);
+    obj["fromSocket"] = static_cast<int>(edge.fromSocket.value);
+    obj["toNode"] = static_cast<int>(edge.toNode.value);
+    obj["toSocket"] = static_cast<int>(edge.toSocket.value);
+    return obj;
+}
+
+QJsonObject NodeGraphSave::viewportToJson(const Viewport& viewport) {
+    QJsonObject obj;
+    obj["lookAt"] = vec3ToJson(viewport.lookAt);
+    obj["orientation"] = quatToJson(viewport.orientation);
+    obj["radius"] = viewport.radius;
+    obj["fov"] = viewport.fov;
+    return obj;
+}
+
+bool NodeGraphSave::socketFromJson(const QJsonValue& value, NodeGraphSocket& outSocket, QString* outError) {
+    if (!value.isObject()) {
+        setError(outError, "Socket entry is not an object.");
+        return false;
+    }
+    const QJsonObject obj = value.toObject();
+    NodeGraphValueType valueType = NodeGraphValueType::None;
+    NodeGraphSocketDirection direction = NodeGraphSocketDirection::Input;
+    if (!obj["id"].isDouble() || !obj["name"].isString() || !obj["valueType"].isString() ||
+        !obj["direction"].isString() || !obj["contract"].isObject() || !obj["variadic"].isBool() ||
+        !valueTypeFromString(obj["valueType"].toString(), valueType) ||
+        !directionFromString(obj["direction"].toString(), direction)) {
+        setError(outError, "Socket entry has invalid fields.");
+        return false;
+    }
+
+    const QJsonObject contract = obj["contract"].toObject();
+    if (!contract["producedPayloadType"].isDouble()) {
+        setError(outError, "Socket contract has invalid fields.");
+        return false;
+    }
+
+    outSocket.id = NodeGraphSocketId{static_cast<uint32_t>(obj["id"].toInt())};
+    outSocket.name = obj["name"].toString().toStdString();
+    outSocket.valueType = valueType;
+    outSocket.direction = direction;
+    outSocket.contract.producedPayloadType = static_cast<uint8_t>(contract["producedPayloadType"].toInt());
+    outSocket.variadic = obj["variadic"].toBool();
+    return true;
+}
+
+bool NodeGraphSave::paramFromJson(const QJsonValue& value, NodeGraphParamValue& outParameter, const NodeGraphNode& node, const QDir& projectDir, QString* outError) {
+    if (!value.isObject()) {
+        setError(outError, "Parameter entry is not an object.");
+        return false;
+    }
+    const QJsonObject obj = value.toObject();
+    NodeGraphParamType type = NodeGraphParamType::Float;
+    if (!obj["id"].isDouble() || !obj["type"].isString() || !paramTypeFromString(obj["type"].toString(), type)) {
+        setError(outError, "Parameter entry has invalid fields.");
+        return false;
+    }
+
+    outParameter = {};
+    outParameter.id = static_cast<uint32_t>(obj["id"].toInt());
+    outParameter.type = type;
+    switch (type) {
+    case NodeGraphParamType::Float:
+        if (!obj["floatValue"].isDouble()) {
+            setError(outError, "Float parameter is missing floatValue.");
+            return false;
+        }
+        outParameter.floatValue = obj["floatValue"].toDouble();
+        break;
+    case NodeGraphParamType::Int:
+        if (!obj["intValue"].isString() && !obj["intValue"].isDouble()) {
+            setError(outError, "Int parameter is missing intValue.");
+            return false;
+        }
+        if (obj["intValue"].isString()) {
+            bool ok = false;
+            outParameter.intValue = obj["intValue"].toString().toLongLong(&ok);
+            if (!ok) {
+                setError(outError, "Int parameter has an invalid intValue.");
+                return false;
+            }
+        } else {
+            outParameter.intValue = static_cast<int64_t>(obj["intValue"].toDouble());
+        }
+        break;
+    case NodeGraphParamType::Bool:
+        if (!obj["boolValue"].isBool()) {
+            setError(outError, "Bool parameter is missing boolValue.");
+            return false;
+        }
+        outParameter.boolValue = obj["boolValue"].toBool();
+        break;
+    case NodeGraphParamType::String: {
+        if (!obj["stringValue"].isString()) {
+            setError(outError, "String parameter is missing stringValue.");
+            return false;
+        }
+        QString stringValue = obj["stringValue"].toString();
+        if (node.typeId == nodegraphtypes::Model && outParameter.id == nodegraphparams::model::Path) {
+            stringValue = toAbsolutePath(stringValue, projectDir);
+        }
+        outParameter.stringValue = stringValue.toStdString();
+        break;
+    }
+    case NodeGraphParamType::Enum:
+        if (!obj["enumValue"].isString()) {
+            setError(outError, "Enum parameter is missing enumValue.");
+            return false;
+        }
+        outParameter.enumValue = obj["enumValue"].toString().toStdString();
+        if (obj["intValue"].isDouble()) {
+            outParameter.intValue = static_cast<int64_t>(obj["intValue"].toDouble());
+        } else if (obj["intValue"].isString()) {
+            bool ok = false;
+            outParameter.intValue = obj["intValue"].toString().toLongLong(&ok);
+            if (!ok) {
+                setError(outError, "Enum parameter has an invalid intValue.");
+                return false;
+            }
+        }
+        break;
+    case NodeGraphParamType::Struct: {
+        if (!obj["fields"].isArray()) {
+            setError(outError, "Struct parameter is missing fields.");
+            return false;
+        }
+        for (const QJsonValue& fieldValue : obj["fields"].toArray()) {
+            NodeGraphParamFieldValue field;
+            if (!fieldValueFromJson(fieldValue, field, node, projectDir, outError)) {
+                return false;
+            }
+            outParameter.fieldValues.push_back(field);
+        }
+        break;
+    }
+    case NodeGraphParamType::Array: {
+        if (!obj["values"].isArray()) {
+            setError(outError, "Array parameter is missing values.");
+            return false;
+        }
+        for (const QJsonValue& itemValue : obj["values"].toArray()) {
+            NodeGraphParamValue item;
+            if (!paramFromJson(itemValue, item, node, projectDir, outError)) {
+                return false;
+            }
+            outParameter.arrayValues.push_back(item);
+        }
+        break;
+    }
+    }
+    return true;
+}
+
+bool NodeGraphSave::fieldValueFromJson(const QJsonValue& value, NodeGraphParamFieldValue& outField, const NodeGraphNode& node, const QDir& projectDir, QString* outError) {
+    if (!value.isObject()) {
+        setError(outError, "Parameter field entry is not an object.");
+        return false;
+    }
+    const QJsonObject obj = value.toObject();
+    if (!obj["name"].isString() || !obj["value"].isObject()) {
+        setError(outError, "Parameter field entry has invalid fields.");
+        return false;
+    }
+
+    outField.name = obj["name"].toString().toStdString();
+    outField.value = std::make_shared<NodeGraphParamValue>();
+    return paramFromJson(obj["value"], *outField.value, node, projectDir, outError);
+}
+
+bool NodeGraphSave::nodeFromJson(const QJsonValue& value, NodeGraphNode& outNode, const QDir& projectDir, QString* outError) {
+    if (!value.isObject()) {
+        setError(outError, "Node entry is not an object.");
+        return false;
+    }
+    const QJsonObject obj = value.toObject();
+    if (!obj["id"].isDouble() || !obj["typeId"].isString() || !obj["title"].isString() ||
+        !obj["x"].isDouble() || !obj["y"].isDouble() || !obj["displayEnabled"].isBool() ||
+        !obj["frozen"].isBool() || !obj["inputs"].isArray() || !obj["outputs"].isArray() ||
+        !obj["parameters"].isArray()) {
+        setError(outError, "Node entry has invalid fields.");
+        return false;
+    }
+
+    outNode = {};
+    outNode.id = NodeGraphNodeId{static_cast<uint32_t>(obj["id"].toInt())};
+    outNode.typeId = obj["typeId"].toString().toStdString();
+    outNode.title = obj["title"].toString().toStdString();
+    outNode.x = static_cast<float>(obj["x"].toDouble());
+    outNode.y = static_cast<float>(obj["y"].toDouble());
+    outNode.displayEnabled = obj["displayEnabled"].toBool();
+    outNode.frozen = obj["frozen"].toBool();
+
+    for (const QJsonValue& socketValue : obj["inputs"].toArray()) {
+        NodeGraphSocket socket;
+        if (!socketFromJson(socketValue, socket, outError)) {
+            return false;
+        }
+        outNode.inputs.push_back(socket);
+    }
+    for (const QJsonValue& socketValue : obj["outputs"].toArray()) {
+        NodeGraphSocket socket;
+        if (!socketFromJson(socketValue, socket, outError)) {
+            return false;
+        }
+        outNode.outputs.push_back(socket);
+    }
+    for (const QJsonValue& parameterValue : obj["parameters"].toArray()) {
+        NodeGraphParamValue parameter;
+        if (!paramFromJson(parameterValue, parameter, outNode, projectDir, outError)) {
+            return false;
+        }
+        outNode.parameters.push_back(parameter);
+    }
+    return true;
+}
+
+bool NodeGraphSave::edgeFromJson(const QJsonValue& value, NodeGraphEdge& outEdge, QString* outError) {
+    if (!value.isObject()) {
+        setError(outError, "Edge entry is not an object.");
+        return false;
+    }
+    const QJsonObject obj = value.toObject();
+    if (!obj["id"].isDouble() || !obj["fromNode"].isDouble() || !obj["fromSocket"].isDouble() ||
+        !obj["toNode"].isDouble() || !obj["toSocket"].isDouble()) {
+        setError(outError, "Edge entry has invalid fields.");
+        return false;
+    }
+
+    outEdge.id = NodeGraphEdgeId{static_cast<uint32_t>(obj["id"].toInt())};
+    outEdge.fromNode = NodeGraphNodeId{static_cast<uint32_t>(obj["fromNode"].toInt())};
+    outEdge.fromSocket = NodeGraphSocketId{static_cast<uint32_t>(obj["fromSocket"].toInt())};
+    outEdge.toNode = NodeGraphNodeId{static_cast<uint32_t>(obj["toNode"].toInt())};
+    outEdge.toSocket = NodeGraphSocketId{static_cast<uint32_t>(obj["toSocket"].toInt())};
+    return true;
+}
+
+bool NodeGraphSave::viewportFromJson(const QJsonValue& value, Viewport& outViewport, QString* outError) {
+    if (!value.isObject()) {
+        setError(outError, "Viewport entry is not an object.");
+        return false;
+    }
+    const QJsonObject obj = value.toObject();
+    if (!vec3FromJson(obj["lookAt"], outViewport.lookAt) ||
+        !quatFromJson(obj["orientation"], outViewport.orientation) ||
+        !obj["radius"].isDouble() ||
+        !obj["fov"].isDouble()) {
+        setError(outError, "Viewport entry has invalid fields.");
+        return false;
+    }
+    outViewport.radius = static_cast<float>(obj["radius"].toDouble());
+    outViewport.fov = static_cast<float>(obj["fov"].toDouble());
     return true;
 }

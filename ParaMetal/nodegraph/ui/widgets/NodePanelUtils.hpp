@@ -20,6 +20,7 @@ int readIntParam(const NodeGraphNode& node, uint32_t parameterId, int defaultVal
 std::string readStringParam(const NodeGraphNode& node, uint32_t parameterId);
 int readEnumParam(const NodeGraphNode& node, uint32_t parameterId, int defaultValue);
 
+bool writeParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, const NodeGraphParamValue& parameter);
 bool writeBoolParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uint32_t parameterId, bool value);
 bool writeFloatParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uint32_t parameterId, double value);
 bool writeIntParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uint32_t parameterId, int64_t value);

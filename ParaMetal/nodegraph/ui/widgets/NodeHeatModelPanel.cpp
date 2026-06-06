@@ -7,7 +7,6 @@
 #include "nodegraph/NodeHeatModelParams.hpp"
 #include "NodeGraphWidgetStyle.hpp"
 
-#include <QDoubleValidator>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -33,11 +32,7 @@ NodeHeatModelPanel::NodeHeatModelPanel(QWidget* parent)
     // Temperature (for Fixed Temperature BC)
     QHBoxLayout* tempRow = new QHBoxLayout();
     tempRow->addWidget(new QLabel("Fixed Temperature (K):", this));
-    temperatureEdit = new QLineEdit(this);
-    nodegraphwidgets::styleLineEdit(temperatureEdit);
-    auto* tempValidator = new QDoubleValidator(0.0, 10000.0, 2, temperatureEdit);
-    tempValidator->setNotation(QDoubleValidator::StandardNotation);
-    temperatureEdit->setValidator(tempValidator);
+    temperatureEdit = nodegraphwidgets::createNumericEdit(this, 0.0, 10000.0, 2);
     temperatureEdit->setText(QString::number(HeatSimDefaults::ambientTemperature, 'f', 2));
     tempRow->addWidget(temperatureEdit, 1);
     layout->addLayout(tempRow);
@@ -45,11 +40,7 @@ NodeHeatModelPanel::NodeHeatModelPanel(QWidget* parent)
     // Density
     QHBoxLayout* densityRow = new QHBoxLayout();
     densityRow->addWidget(new QLabel("Density (kg/m³):", this));
-    densityEdit = new QLineEdit(this);
-    nodegraphwidgets::styleLineEdit(densityEdit);
-    auto* densityValidator = new QDoubleValidator(0.0, 100000.0, 1, densityEdit);
-    densityValidator->setNotation(QDoubleValidator::StandardNotation);
-    densityEdit->setValidator(densityValidator);
+    densityEdit = nodegraphwidgets::createNumericEdit(this, 0.0, 100000.0, 1);
     densityEdit->setText(QString::number(HeatSimDefaults::density, 'f', 1));
     densityRow->addWidget(densityEdit, 1);
     layout->addLayout(densityRow);
@@ -57,11 +48,7 @@ NodeHeatModelPanel::NodeHeatModelPanel(QWidget* parent)
     // Specific Heat
     QHBoxLayout* specificHeatRow = new QHBoxLayout();
     specificHeatRow->addWidget(new QLabel("Specific Heat (J/(kg·K)):", this));
-    specificHeatEdit = new QLineEdit(this);
-    nodegraphwidgets::styleLineEdit(specificHeatEdit);
-    auto* specificHeatValidator = new QDoubleValidator(0.0, 100000.0, 1, specificHeatEdit);
-    specificHeatValidator->setNotation(QDoubleValidator::StandardNotation);
-    specificHeatEdit->setValidator(specificHeatValidator);
+    specificHeatEdit = nodegraphwidgets::createNumericEdit(this, 0.0, 100000.0, 1);
     specificHeatEdit->setText(QString::number(HeatSimDefaults::specificHeat, 'f', 1));
     specificHeatRow->addWidget(specificHeatEdit, 1);
     layout->addLayout(specificHeatRow);
@@ -69,11 +56,7 @@ NodeHeatModelPanel::NodeHeatModelPanel(QWidget* parent)
     // Conductivity
     QHBoxLayout* conductivityRow = new QHBoxLayout();
     conductivityRow->addWidget(new QLabel("Conductivity (W/(m·K)):", this));
-    conductivityEdit = new QLineEdit(this);
-    nodegraphwidgets::styleLineEdit(conductivityEdit);
-    auto* conductivityValidator = new QDoubleValidator(0.0, 10000.0, 2, conductivityEdit);
-    conductivityValidator->setNotation(QDoubleValidator::StandardNotation);
-    conductivityEdit->setValidator(conductivityValidator);
+    conductivityEdit = nodegraphwidgets::createNumericEdit(this, 0.0, 10000.0, 2);
     conductivityEdit->setText(QString::number(HeatSimDefaults::conductivity, 'f', 2));
     conductivityRow->addWidget(conductivityEdit, 1);
     layout->addLayout(conductivityRow);

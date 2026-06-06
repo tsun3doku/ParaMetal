@@ -7,24 +7,10 @@
 #include "nodegraph/NodeTransformParams.hpp"
 #include "NodeGraphWidgetStyle.hpp"
 
-#include <QDoubleValidator>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QVBoxLayout>
-
-namespace {
-
-QLineEdit* createNumericEdit(QWidget* parent, double minimum, double maximum, int decimals) {
-    QLineEdit* edit = new QLineEdit(parent);
-    nodegraphwidgets::styleLineEdit(edit);
-    auto* validator = new QDoubleValidator(minimum, maximum, decimals, edit);
-    validator->setNotation(QDoubleValidator::StandardNotation);
-    edit->setValidator(validator);
-    return edit;
-}
-
-}
 
 NodeTransformPanel::NodeTransformPanel(QWidget* parent)
     : NodePanelBase(parent) {
@@ -36,7 +22,7 @@ NodeTransformPanel::NodeTransformPanel(QWidget* parent)
     translateRow->addWidget(new QLabel("Translate:", this));
     for (std::size_t index = 0; index < translateEdits.size(); ++index) {
         translateRow->addWidget(new QLabel(axisLabels[index], this));
-        translateEdits[index] = createNumericEdit(this, -10000.0, 10000.0, 4);
+        translateEdits[index] = nodegraphwidgets::createNumericEdit(this, -10000.0, 10000.0, 4);
         translateEdits[index]->setText("0");
         translateRow->addWidget(translateEdits[index], 1);
     }
@@ -46,7 +32,7 @@ NodeTransformPanel::NodeTransformPanel(QWidget* parent)
     rotateRow->addWidget(new QLabel("Rotate:", this));
     for (std::size_t index = 0; index < rotateEdits.size(); ++index) {
         rotateRow->addWidget(new QLabel(axisLabels[index], this));
-        rotateEdits[index] = createNumericEdit(this, -360.0, 360.0, 3);
+        rotateEdits[index] = nodegraphwidgets::createNumericEdit(this, -360.0, 360.0, 3);
         rotateEdits[index]->setText("0");
         rotateRow->addWidget(rotateEdits[index], 1);
     }
@@ -56,7 +42,7 @@ NodeTransformPanel::NodeTransformPanel(QWidget* parent)
     scaleRow->addWidget(new QLabel("Scale:", this));
     for (std::size_t index = 0; index < scaleEdits.size(); ++index) {
         scaleRow->addWidget(new QLabel(axisLabels[index], this));
-        scaleEdits[index] = createNumericEdit(this, -1000.0, 1000.0, 4);
+        scaleEdits[index] = nodegraphwidgets::createNumericEdit(this, -1000.0, 1000.0, 4);
         scaleEdits[index]->setText("1");
         scaleRow->addWidget(scaleEdits[index], 1);
     }

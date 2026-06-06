@@ -37,6 +37,15 @@ void styleLineEdit(QLineEdit* edit) {
     edit->setStyleSheet(stylesheet);
 }
 
+QLineEdit* createNumericEdit(QWidget* parent, double minimum, double maximum, int decimals) {
+    QLineEdit* edit = new QLineEdit(parent);
+    styleLineEdit(edit);
+    auto* validator = new QDoubleValidator(minimum, maximum, decimals, edit);
+    validator->setNotation(QDoubleValidator::StandardNotation);
+    edit->setValidator(validator);
+    return edit;
+}
+
 void styleComboBox(QComboBox* combo) {
     if (!combo) {
         return;

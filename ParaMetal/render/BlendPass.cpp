@@ -17,29 +17,6 @@
 #include "vulkan/VulkanImage.hpp"
 #include "libs/stb/stb_image.h"
 
-namespace {
-
-std::string resolveBackgroundPath() {
-    const std::array<const char*, 6> candidates = {
-        "textures/background.png",
-        "ParaMetal/textures/background.png",
-        "../textures/background.png",
-        "../../textures/background.png",
-        "../ParaMetal/textures/background.png",
-        "../../ParaMetal/textures/background.png"
-    };
-
-    for (const char* candidate : candidates) {
-        if (std::filesystem::exists(candidate)) {
-            return candidate;
-        }
-    }
-
-    return {};
-}
-
-}
-
 namespace render {
 
 BlendPass::BlendPass(VulkanDevice& device, MemoryAllocator& memoryAllocator, CommandPool& commandPool, VkFrameGraphRuntime& runtime, uint32_t framesInFlight, framegraph::PassId passId,
@@ -571,6 +548,25 @@ void BlendPass::destroyBackgroundResources() {
         vkFreeMemory(vulkanDevice.getDevice(), backgroundImageMemory, nullptr);
         backgroundImageMemory = VK_NULL_HANDLE;
     }
+}
+
+std::string BlendPass::resolveBackgroundPath() {
+    const std::array<const char*, 6> candidates = {
+        "textures/background.png",
+        "ParaMetal/textures/background.png",
+        "../textures/background.png",
+        "../../textures/background.png",
+        "../ParaMetal/textures/background.png",
+        "../../ParaMetal/textures/background.png"
+    };
+
+    for (const char* candidate : candidates) {
+        if (std::filesystem::exists(candidate)) {
+            return candidate;
+        }
+    }
+
+    return {};
 }
 
 } // namespace render

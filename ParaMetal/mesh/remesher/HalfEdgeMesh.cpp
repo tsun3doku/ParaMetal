@@ -7,17 +7,11 @@
 #include <iostream>
 
 #include "scene/Model.hpp"
+#include "util/GeometryUtils.hpp"
 #include "HalfEdgeMesh.hpp"
 
 void HalfEdgeMesh::buildMesh(const std::vector<float>& pointPositions, const std::vector<uint32_t>& triangleIndices) {
-	std::vector<glm::vec3> vertexPositions;
-	vertexPositions.reserve(pointPositions.size() / 3);
-	for (size_t index = 0; index + 2 < pointPositions.size(); index += 3) {
-		vertexPositions.emplace_back(
-			pointPositions[index],
-			pointPositions[index + 1],
-			pointPositions[index + 2]);
-	}
+	const std::vector<glm::vec3> vertexPositions = toVec3Array(pointPositions);
 	buildTopology(vertexPositions, triangleIndices);
 
 	if (!isManifold()) {

@@ -22,8 +22,6 @@
 #include <unordered_set>
 #include <vector>
 
-namespace {
-
 enum class GroupSourceType : int64_t {
     Vertex = nodegraphparams::group::sourcetype::Vertex,
     Object = nodegraphparams::group::sourcetype::Object,
@@ -31,7 +29,7 @@ enum class GroupSourceType : int64_t {
     Smooth = nodegraphparams::group::sourcetype::Smooth,
 };
 
-GroupSourceType sanitizeGroupSourceType(int64_t sourceTypeValue) {
+static GroupSourceType toGroupSourceType(int64_t sourceTypeValue) {
     switch (sourceTypeValue) {
     case nodegraphparams::group::sourcetype::Object:
         return GroupSourceType::Object;
@@ -45,7 +43,7 @@ GroupSourceType sanitizeGroupSourceType(int64_t sourceTypeValue) {
     }
 }
 
-const char* metadataKeyForSourceType(GroupSourceType sourceType) {
+static const char* metadataKeyForSourceType(GroupSourceType sourceType) {
     switch (sourceType) {
     case GroupSourceType::Object:
         return "geometry.group_names.object";
@@ -59,7 +57,7 @@ const char* metadataKeyForSourceType(GroupSourceType sourceType) {
     }
 }
 
-void appendGroupNamesFromObjPath(
+static void appendGroupNamesFromObjPath(
     const std::string& modelPath,
     GroupSourceType sourceType,
     std::unordered_set<std::string>& seenNames,
@@ -146,8 +144,6 @@ void appendGroupNamesFromObjPath(
     }
 }
 
-} // namespace
-
 NodeGroupPanel::NodeGroupPanel(QWidget* parent)
     : NodePanelBase(parent) {
     QVBoxLayout* layout = static_cast<QVBoxLayout*>(this->layout());
@@ -205,7 +201,7 @@ void NodeGroupPanel::refreshSourceOptions() {
     }
 
     const std::string preferredSourceName = NodePanelUtils::readStringParam(node, nodegraphparams::group::SourceName);
-    const GroupSourceType selectedSourceType = sanitizeGroupSourceType(sourceTypeComboBox->currentData().toLongLong());
+    const GroupSourceType selectedSourceType = toGroupSourceType(sourceTypeComboBox->currentData().toLongLong());
     const std::string sourceTypeMetadataKey = metadataKeyForSourceType(selectedSourceType);
 
     std::vector<std::string> groupNames;
@@ -293,7 +289,7 @@ void NodeGroupPanel::refreshFromNode() {
     enabledCheckBox->setChecked(NodePanelUtils::readBoolParam(node, nodegraphparams::group::Enabled, true));
     targetNameLineEdit->setText(QString::fromStdString(NodePanelUtils::readStringParam(node, nodegraphparams::group::TargetName)));
 
-    const GroupSourceType sourceType = sanitizeGroupSourceType(
+    const GroupSourceType sourceType = toGroupSourceType(
         NodePanelUtils::readIntParam(node, nodegraphparams::group::SourceType, nodegraphparams::group::sourcetype::Vertex));
     const int sourceTypeIndex = sourceTypeComboBox->findData(static_cast<qlonglong>(static_cast<int64_t>(sourceType)));
     sourceTypeComboBox->setCurrentIndex(sourceTypeIndex >= 0 ? sourceTypeIndex : 0);

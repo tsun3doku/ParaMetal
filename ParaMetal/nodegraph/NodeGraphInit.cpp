@@ -16,9 +16,7 @@ namespace payloadtypes {
     uint8_t Contact = 0;
 }
 
-namespace {
-
-NodeSocketSignature makeInputSocket(
+static NodeSocketSignature makeInputSocket(
     const char* name,
     NodeGraphValueType valueType,
     bool variadic = false) {
@@ -30,7 +28,7 @@ NodeSocketSignature makeInputSocket(
     return signature;
 }
 
-NodeSocketSignature makeOutputSocket(
+static NodeSocketSignature makeOutputSocket(
     const char* name,
     NodeGraphValueType valueType,
     uint8_t producedPayloadType) {
@@ -42,7 +40,7 @@ NodeSocketSignature makeOutputSocket(
     return signature;
 }
 
-NodeTypeDefinition buildModelNode() {
+static NodeTypeDefinition buildModelNode() {
     return {
         nodegraphtypes::Model,
         "Model",
@@ -56,7 +54,7 @@ NodeTypeDefinition buildModelNode() {
     };
 }
 
-NodeTypeDefinition buildTransformNode() {
+static NodeTypeDefinition buildTransformNode() {
     return {
         nodegraphtypes::Transform,
         "Transform",
@@ -79,7 +77,7 @@ NodeTypeDefinition buildTransformNode() {
     };
 }
 
-NodeTypeDefinition buildGroupNode() {
+static NodeTypeDefinition buildGroupNode() {
     return {
         nodegraphtypes::Group,
         "Group",
@@ -97,7 +95,7 @@ NodeTypeDefinition buildGroupNode() {
     };
 }
 
-NodeTypeDefinition buildRemeshNode() {
+static NodeTypeDefinition buildRemeshNode() {
     return {
         nodegraphtypes::Remesh,
         "Remesh",
@@ -120,7 +118,7 @@ NodeTypeDefinition buildRemeshNode() {
     };
 }
 
-NodeTypeDefinition buildHeatModelNode() {
+static NodeTypeDefinition buildHeatModelNode() {
     return {
         nodegraphtypes::HeatModel,
         "Heat Model",
@@ -144,7 +142,7 @@ NodeTypeDefinition buildHeatModelNode() {
     };
 }
 
-NodeTypeDefinition buildContactNode() {
+static NodeTypeDefinition buildContactNode() {
     return {
         nodegraphtypes::Contact,
         "Contact",
@@ -162,7 +160,7 @@ NodeTypeDefinition buildContactNode() {
     };
 }
 
-NodeTypeDefinition buildVoronoiNode() {
+static NodeTypeDefinition buildVoronoiNode() {
     return {
         nodegraphtypes::Voronoi,
         "Voronoi",
@@ -180,7 +178,7 @@ NodeTypeDefinition buildVoronoiNode() {
     };
 }
 
-NodeTypeDefinition buildHeatSolveNode() {
+static NodeTypeDefinition buildHeatSolveNode() {
     return {
         nodegraphtypes::HeatSolve,
         "Heat Solve",
@@ -219,7 +217,7 @@ NodeTypeDefinition buildHeatSolveNode() {
     };
 }
 
-NodeTypeDefinition buildCustomNode() {
+static NodeTypeDefinition buildCustomNode() {
     return {
         nodegraphtypes::Custom,
         "Custom",
@@ -231,8 +229,6 @@ NodeTypeDefinition buildCustomNode() {
         {},
     };
 }
-
-} // anonymous namespace
 
 void initNodeGraph(NodeGraphRegistry& registry) {
     payloadtypes::Geometry   = registry.registerPayloadType("geometry", NodeGraphValueType::Mesh);

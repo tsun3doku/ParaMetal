@@ -35,41 +35,6 @@
 #include <map>
 #include <limits>
 
-namespace {
-
-QString nodeCategoryDisplayName(NodeGraphNodeCategory category) {
-    switch (category) {
-    case NodeGraphNodeCategory::Model:
-        return "Model";
-    case NodeGraphNodeCategory::PointSurface:
-        return "Point/Surface";
-    case NodeGraphNodeCategory::Meshing:
-        return "Meshing";
-    case NodeGraphNodeCategory::System:
-        return "System";
-    case NodeGraphNodeCategory::Custom:
-        return "Misc";
-    }
-    return "Misc";
-}
-
-int nodeCategorySortKey(NodeGraphNodeCategory category) {
-    switch (category) {
-    case NodeGraphNodeCategory::Model:
-        return 0;
-    case NodeGraphNodeCategory::PointSurface:
-        return 1;
-    case NodeGraphNodeCategory::Meshing:
-        return 2;
-    case NodeGraphNodeCategory::System:
-        return 3;
-    case NodeGraphNodeCategory::Custom:
-        return 4;
-    }
-    return 4;
-}
-
-} // namespace
 
 NodeGraphEditorWidget::NodeGraphEditorWidget(QWidget* parent)
     : QWidget(parent) {
@@ -181,6 +146,38 @@ void NodeGraphEditorWidget::createUi() {
     connect(canvas, &NodeGraphCanvas::requestDeleteSelected, this, &NodeGraphEditorWidget::onRequestDeleteSelected);
     connect(canvas, &NodeGraphCanvas::requestCopySelected, this, &NodeGraphEditorWidget::onRequestCopySelected);
     connect(canvas, &NodeGraphCanvas::requestPaste, this, &NodeGraphEditorWidget::onRequestPaste);
+}
+
+static QString nodeCategoryDisplayName(NodeGraphNodeCategory category) {
+    switch (category) {
+    case NodeGraphNodeCategory::Model:
+        return "Model";
+    case NodeGraphNodeCategory::PointSurface:
+        return "Point/Surface";
+    case NodeGraphNodeCategory::Meshing:
+        return "Meshing";
+    case NodeGraphNodeCategory::System:
+        return "System";
+    case NodeGraphNodeCategory::Custom:
+        return "Misc";
+    }
+    return "Misc";
+}
+
+static int nodeCategorySortKey(NodeGraphNodeCategory category) {
+    switch (category) {
+    case NodeGraphNodeCategory::Model:
+        return 0;
+    case NodeGraphNodeCategory::PointSurface:
+        return 1;
+    case NodeGraphNodeCategory::Meshing:
+        return 2;
+    case NodeGraphNodeCategory::System:
+        return 3;
+    case NodeGraphNodeCategory::Custom:
+        return 4;
+    }
+    return 4;
 }
 
 void NodeGraphEditorWidget::onRequestCreateMenu(QPoint globalPos, QPointF scenePos, bool requireEmptySpace) {

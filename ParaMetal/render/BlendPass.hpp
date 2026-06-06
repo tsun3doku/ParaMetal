@@ -41,6 +41,8 @@ private:
     bool createBackgroundResources();
     void destroyBackgroundResources();
 
+    std::string resolveBackgroundPath();
+
     ::VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
     CommandPool& commandPool;

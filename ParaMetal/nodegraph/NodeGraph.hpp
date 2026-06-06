@@ -49,6 +49,9 @@ public:
     const NodeGraphNode* findNode(NodeGraphNodeId nodeId) const;
     NodeGraphNode* findNode(NodeGraphNodeId nodeId);
 
+    const NodeGraphEdge* findEdge(NodeGraphEdgeId edgeId) const;
+    const NodeGraphEdge* findIncomingEdge(NodeGraphNodeId toNode, NodeGraphSocketId toSocket) const;
+
     uint64_t getRevision() const {
         return revision;
     }

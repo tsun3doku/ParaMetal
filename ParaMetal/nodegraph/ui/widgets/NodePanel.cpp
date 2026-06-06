@@ -33,9 +33,33 @@
 #include <string>
 #include <utility>
 
-namespace {
 
-QString nodeTypeDisplayName(const NodeTypeId& typeId, const NodeGraphRegistry* registry) {
+NodePanel::NodePanel(QWidget* parent)
+    : QWidget(parent) {
+    setMinimumHeight(nodegraphwidgets::panelMinimumHeight);
+
+    buildUi();
+    nodegraphwidgets::applyNodePanelStyle(this);
+}
+
+void NodePanel::bind(NodeGraphBridge* nodeGraphBridgePtr, const RuntimeQuery* runtimeQueryPtr) {
+    nodeGraphBridge = nodeGraphBridgePtr;
+    runtimeQuery = runtimeQueryPtr;
+    groupPanel->bind(nodeGraphBridgePtr);
+    modelPanel->bind(nodeGraphBridgePtr);
+    transformPanel->bind(nodeGraphBridgePtr);
+    remeshPanel->bind(nodeGraphBridgePtr);
+    voronoiPanel->bind(nodeGraphBridgePtr);
+    contactPanel->bind(nodeGraphBridgePtr);
+    heatModelPanel->bind(nodeGraphBridgePtr);
+    heatSolverPanel->bind(nodeGraphBridgePtr, runtimeQueryPtr);
+
+    if (isVisible() && currentNodeId.isValid()) {
+        setNode(currentNodeId);
+    }
+}
+
+static QString nodeTypeDisplayName(const NodeTypeId& typeId, const NodeGraphRegistry* registry) {
     const NodeTypeDefinition* definition = registry ? registry->findNodeType(typeId) : nullptr;
     if (definition) {
         return QString::fromStdString(definition->displayName);
@@ -44,7 +68,7 @@ QString nodeTypeDisplayName(const NodeTypeId& typeId, const NodeGraphRegistry* r
     return QString::fromStdString(typeId.empty() ? std::string("Unknown") : typeId);
 }
 
-QString nodeTypeDescription(const NodeTypeId& typeId) {
+static QString nodeTypeDescription(const NodeTypeId& typeId) {
     if (typeId == nodegraphtypes::Model) {
         return "Choose a 3D model";
     }
@@ -72,7 +96,7 @@ QString nodeTypeDescription(const NodeTypeId& typeId) {
     return "Select a node in the graph to inspect its parameters";
 }
 
-std::string formatLineagePath(const std::vector<NodeGraphNodeId>& lineageNodeIds) {
+static std::string formatLineagePath(const std::vector<NodeGraphNodeId>& lineageNodeIds) {
     if (lineageNodeIds.empty()) {
         return std::string("none");
     }
@@ -87,7 +111,7 @@ std::string formatLineagePath(const std::vector<NodeGraphNodeId>& lineageNodeIds
     return stream.str();
 }
 
-void appendSocketDebugText(std::ostringstream& stream, const NodeGraphRuntimeSocketDebugInfo& socketDebug) {
+static void appendSocketDebugText(std::ostringstream& stream, const NodeGraphRuntimeSocketDebugInfo& socketDebug) {
     stream << "  [" << (socketDebug.direction == NodeGraphSocketDirection::Input ? "In" : "Out")
            << "] " << socketDebug.socketName << " (#" << socketDebug.socketId.value << ")\n";
     if (!socketDebug.hasValue) {
@@ -116,33 +140,6 @@ void appendSocketDebugText(std::ostringstream& stream, const NodeGraphRuntimeSoc
     stream << "    metadata:\n";
     for (const auto& metadataEntry : metadataEntries) {
         stream << "      " << metadataEntry.first << " = " << metadataEntry.second << "\n";
-    }
-}
-
-}
-
-NodePanel::NodePanel(QWidget* parent)
-    : QWidget(parent) {
-    setMinimumHeight(nodegraphwidgets::panelMinimumHeight);
-
-    buildUi();
-    nodegraphwidgets::applyNodePanelStyle(this);
-}
-
-void NodePanel::bind(NodeGraphBridge* nodeGraphBridgePtr, const RuntimeQuery* runtimeQueryPtr) {
-    nodeGraphBridge = nodeGraphBridgePtr;
-    runtimeQuery = runtimeQueryPtr;
-    groupPanel->bind(nodeGraphBridgePtr);
-    modelPanel->bind(nodeGraphBridgePtr);
-    transformPanel->bind(nodeGraphBridgePtr);
-    remeshPanel->bind(nodeGraphBridgePtr);
-    voronoiPanel->bind(nodeGraphBridgePtr);
-    contactPanel->bind(nodeGraphBridgePtr);
-    heatModelPanel->bind(nodeGraphBridgePtr);
-    heatSolverPanel->bind(nodeGraphBridgePtr, runtimeQueryPtr);
-
-    if (isVisible() && currentNodeId.isValid()) {
-        setNode(currentNodeId);
     }
 }
 

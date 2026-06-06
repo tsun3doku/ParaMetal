@@ -13,19 +13,6 @@
 
 namespace NodePanelUtils {
 
-namespace {
-
-bool writeParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, const NodeGraphParamValue& parameter) {
-    if (!nodeGraphBridge) {
-        return false;
-    }
-
-    NodeGraphEditor editor(*nodeGraphBridge);
-    return editor.setNodeParameter(nodeId, parameter);
-}
-
-}
-
 bool canEditNode(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId) {
     return nodeGraphBridge && nodeId.isValid();
 }
@@ -75,6 +62,15 @@ int readEnumParam(const NodeGraphNode& node, uint32_t parameterId, int defaultVa
         return defaultValue;
     }
     return static_cast<int>(param->intValue);
+}
+
+bool writeParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, const NodeGraphParamValue& parameter) {
+    if (!nodeGraphBridge) {
+        return false;
+    }
+
+    NodeGraphEditor editor(*nodeGraphBridge);
+    return editor.setNodeParameter(nodeId, parameter);
 }
 
 bool writeBoolParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uint32_t parameterId, bool value) {

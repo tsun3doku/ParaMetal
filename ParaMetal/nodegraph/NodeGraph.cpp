@@ -10,23 +10,7 @@
 
 NodeGraph::NodeGraph(const NodeGraphRegistry* reg) : registry(reg) {}
 
-namespace {
-
-const NodeGraphSocket* findSocket(
-    const NodeGraphNode& node,
-    NodeGraphSocketId socketId,
-    NodeGraphSocketDirection direction) {
-    const std::vector<NodeGraphSocket>& sockets =
-        direction == NodeGraphSocketDirection::Input ? node.inputs : node.outputs;
-    for (const NodeGraphSocket& socket : sockets) {
-        if (socket.id == socketId && socket.direction == direction) {
-            return &socket;
-        }
-    }
-    return nullptr;
-}
-
-bool patchSocketIds(
+static bool patchSocketIds(
     std::vector<NodeGraphSocket>& rebuiltSockets,
     const std::vector<NodeGraphSocket>& savedSockets,
     std::string& errorMessage) {
@@ -53,7 +37,7 @@ bool patchSocketIds(
     return true;
 }
 
-uint32_t maxSocketId(const NodeGraphNode& node) {
+static uint32_t maxSocketId(const NodeGraphNode& node) {
     uint32_t maxId = 0;
     for (const NodeGraphSocket& socket : node.inputs) {
         maxId = std::max(maxId, socket.id.value);
@@ -63,9 +47,6 @@ uint32_t maxSocketId(const NodeGraphNode& node) {
     }
     return maxId;
 }
-
-} // namespace
-
 NodeGraphNodeId NodeGraph::addNode(const NodeTypeId& typeId, const std::string& title, float x, float y) {
     if (!registry) {
         return {};
@@ -364,8 +345,8 @@ bool NodeGraph::loadSerializedState(
             errorMessage = "Saved edge references a missing node.";
             return false;
         }
-        if (!findSocket(*fromNode, savedEdge.fromSocket, NodeGraphSocketDirection::Output) ||
-            !findSocket(*toNode, savedEdge.toSocket, NodeGraphSocketDirection::Input)) {
+        if (!fromNode->output(savedEdge.fromSocket) ||
+            !toNode->input(savedEdge.toSocket)) {
             errorMessage = "Saved edge references a missing or invalid socket.";
             return false;
         }
@@ -415,6 +396,20 @@ const NodeGraphNode* NodeGraph::findNode(NodeGraphNodeId nodeId) const {
 NodeGraphNode* NodeGraph::findNode(NodeGraphNodeId nodeId) {
     auto it = nodes.find(nodeId.value);
     return it != nodes.end() ? &it->second : nullptr;
+}
+
+const NodeGraphEdge* NodeGraph::findEdge(NodeGraphEdgeId edgeId) const {
+    auto it = edges.find(edgeId.value);
+    return it != edges.end() ? &it->second : nullptr;
+}
+
+const NodeGraphEdge* NodeGraph::findIncomingEdge(NodeGraphNodeId toNode, NodeGraphSocketId toSocket) const {
+    for (const auto& [id, edge] : edges) {
+        if (edge.toNode == toNode && edge.toSocket == toSocket) {
+            return &edge;
+        }
+    }
+    return nullptr;
 }
 
 NodeGraphSocketId NodeGraph::allocateSocketId() {

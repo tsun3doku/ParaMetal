@@ -15,6 +15,15 @@ inline glm::vec3 safeNormalize(const glm::vec3& v) {
 	return v * (1.0f / std::sqrt(lengthSquared));
 }
 
+inline std::vector<glm::vec3> toVec3Array(const std::vector<float>& flat) {
+	std::vector<glm::vec3> result;
+	result.reserve(flat.size() / 3);
+	for (size_t i = 0; i + 2 < flat.size(); i += 3) {
+		result.emplace_back(flat[i], flat[i + 1], flat[i + 2]);
+	}
+	return result;
+}
+
 inline glm::mat4 toMat4(const std::array<float, 16>& values) {
 	glm::mat4 matrix(1.0f);
 	for (int col = 0; col < 4; ++col) {
