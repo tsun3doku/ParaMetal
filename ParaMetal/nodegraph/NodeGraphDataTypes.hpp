@@ -34,9 +34,10 @@ struct EvaluatedSocketValue {
 };
 
 struct NodeGraphEvaluationState {
-    std::unordered_map<uint64_t, uint64_t> sourceSocketByInputSocket;
-    std::unordered_map<uint64_t, std::vector<uint64_t>> sourceSocketsByInputSocket;
+    std::unordered_map<uint64_t, uint64_t> upstreamSocket;
+    std::unordered_map<uint64_t, std::vector<uint64_t>> upstreamSockets;
     std::unordered_map<uint64_t, EvaluatedSocketValue> outputBySocket;
+    std::vector<NodeGraphNodeId> executionOrder;
 };
 
 void populateMetadata(NodeDataBlock& dataBlock, const NodeGraphTypeRegistry* typeRegistry = nullptr, const NodePayloadRegistry* payloadRegistry = nullptr);

@@ -1,7 +1,7 @@
 #include "RuntimeVoronoiComputeTransport.hpp"
 #include "heat/VoronoiSystemComputeController.hpp"
+#include "runtime/RuntimePackages.hpp"
 #include "util/GeometryUtils.hpp"
-
 
 void RuntimeVoronoiComputeTransport::sync(const ECSRegistry& registry) {
     if (!controller) {
@@ -15,7 +15,13 @@ void RuntimeVoronoiComputeTransport::sync(const ECSRegistry& registry) {
         uint64_t socketKey = static_cast<uint64_t>(entity);
         const auto& package = registry.get<VoronoiPackage>(entity);
 
-        if (!package.authored.active || package.modelMeshHandle.key == 0 || package.modelRemeshHandle.key == 0) {
+        bool inputsReady = false;
+        if (package.domainType == DomainType::Mesh) {
+            inputsReady = package.modelMeshHandle.key != 0 && package.modelRemeshHandle.key != 0 && package.pointsPayloadHandle.key != 0;
+        } else {
+            inputsReady = package.pointsPayloadHandle.key != 0;
+        }
+        if (!package.authored.active || !inputsReady) {
             controller->disable(socketKey);
             appliedConfigInputHash.erase(socketKey);
             continue;
@@ -53,35 +59,69 @@ bool RuntimeVoronoiComputeTransport::tryBuildConfig(
     if (socketKey == 0 || !ecsRegistry) {
         return false;
     }
-    if (!package.authored.active || package.modelMeshHandle.key == 0 || package.modelRemeshHandle.key == 0) {
-        return false;
-    }
 
     outConfig = {};
     outConfig.active = true;
     outConfig.cellSize = package.authored.cellSize;
     outConfig.voxelResolution = package.authored.voxelResolution;
 
-    const RemeshProduct* remeshProduct = tryGetProduct<RemeshProduct>(*ecsRegistry, package.modelRemeshHandle.key);
-    const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, package.modelMeshHandle.key);
-    if (!remeshProduct || !modelProduct || remeshProduct->runtimeModelId == 0) {
-        return false;
-    }
+    if (package.domainType == DomainType::Mesh) {
+        if (!package.authored.active || package.modelMeshHandle.key == 0 || package.modelRemeshHandle.key == 0) {
+            return false;
+        }
 
-    outConfig.receiverRuntimeModelId = remeshProduct->runtimeModelId;
-    outConfig.receiverNodeModelId = 0;
-    outConfig.receiverGeometryPositions = remeshProduct->geometryPositions;
-    outConfig.receiverGeometryTriangleIndices = remeshProduct->geometryTriangleIndices;
-    outConfig.receiverIntrinsicMesh = remeshProduct->intrinsicMesh;
-    outConfig.receiverIntrinsicTriangleIndices = remeshProduct->intrinsicMesh.indices;
-    outConfig.receiverSurfaceVertices.reserve(remeshProduct->intrinsicMesh.vertices.size());
-    for (const SupportingHalfedge::IntrinsicVertex& intrinsicVertex : remeshProduct->intrinsicMesh.vertices) {
-        VoronoiModelRuntime::SurfaceVertex vertex{};
-        vertex.position = glm::vec4(intrinsicVertex.position, 1.0f);
-        vertex.normal = glm::vec4(intrinsicVertex.normal, 0.0f);
-        outConfig.receiverSurfaceVertices.push_back(vertex);
+        const RemeshProduct* remeshProduct = tryGetProduct<RemeshProduct>(*ecsRegistry, package.modelRemeshHandle.key);
+        const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, package.modelMeshHandle.key);
+        if (!remeshProduct || !modelProduct || remeshProduct->runtimeModelId == 0) {
+            return false;
+        }
+
+        outConfig.receiverRuntimeModelId = remeshProduct->runtimeModelId;
+        outConfig.receiverNodeModelId = 0;
+        outConfig.receiverGeometryPositions = remeshProduct->geometryPositions;
+        outConfig.receiverGeometryTriangleIndices = remeshProduct->geometryTriangleIndices;
+        outConfig.receiverIntrinsicMesh = remeshProduct->intrinsicMesh;
+        outConfig.receiverIntrinsicTriangleIndices = remeshProduct->intrinsicMesh.indices;
+        outConfig.receiverSurfaceVertices.reserve(remeshProduct->intrinsicMesh.vertices.size());
+        for (const SupportingHalfedge::IntrinsicVertex& intrinsicVertex : remeshProduct->intrinsicMesh.vertices) {
+            VoronoiModelRuntime::SurfaceVertex vertex{};
+            vertex.position = glm::vec4(intrinsicVertex.position, 1.0f);
+            vertex.normal = glm::vec4(intrinsicVertex.normal, 0.0f);
+            outConfig.receiverSurfaceVertices.push_back(vertex);
+        }
+        outConfig.meshModelMatrix = toMat4(package.modelLocalToWorld);
+
+        if (package.pointsPayloadHandle.key != 0 && ecsRegistry) {
+            auto pointsEntity = static_cast<ECSEntity>(package.pointsPayloadHandle.key);
+            if (ecsRegistry->valid(pointsEntity) && ecsRegistry->all_of<PointPackage>(pointsEntity)) {
+                const auto& pointPackage = ecsRegistry->get<PointPackage>(pointsEntity);
+                if (!pointPackage.positions.empty()) {
+                    outConfig.pointPositions = pointPackage.positions;
+                    const glm::mat4 pointsToMeshLocal = glm::inverse(toMat4(package.modelLocalToWorld)) * toMat4(pointPackage.localToWorld);
+                    for (glm::vec4& pos : outConfig.pointPositions) {
+                        pos = pointsToMeshLocal * pos;
+                    }
+                }
+            }
+        }
+    } else if (package.domainType == DomainType::Points) {
+        if (!package.authored.active || package.pointsPayloadHandle.key == 0 || !ecsRegistry) {
+            return false;
+        }
+
+        auto pointsEntity = static_cast<ECSEntity>(package.pointsPayloadHandle.key);
+        if (!ecsRegistry->valid(pointsEntity) || !ecsRegistry->all_of<PointPackage>(pointsEntity)) {
+            return false;
+        }
+
+        const auto& pointPackage = ecsRegistry->get<PointPackage>(pointsEntity);
+        if (pointPackage.positions.empty()) {
+            return false;
+        }
+
+        outConfig.isPointDomain = true;
+        outConfig.pointPositions = pointPackage.positions;
     }
-    outConfig.meshModelMatrix = toMat4(package.modelLocalToWorld);
 
     outConfig.computeHash = buildComputeHash(outConfig);
     return true;
@@ -145,20 +185,34 @@ void RuntimeVoronoiComputeTransport::publishProduct(uint64_t socketKey) {
 uint64_t RuntimeVoronoiComputeTransport::buildConfigInputHash(uint64_t socketKey, const VoronoiPackage& package) const {
     (void)socketKey;
     uint64_t hash = package.packageHash;
-    const RemeshProduct* remeshProduct = tryGetProduct<RemeshProduct>(*ecsRegistry, package.modelRemeshHandle.key);
-    const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, package.modelMeshHandle.key);
-    if (!remeshProduct || !modelProduct) {
-        return 0;
+
+    if (package.pointsPayloadHandle.key != 0 && ecsRegistry) {
+        auto pointsEntity = static_cast<ECSEntity>(package.pointsPayloadHandle.key);
+        if (ecsRegistry->valid(pointsEntity) && ecsRegistry->all_of<PointPackage>(pointsEntity)) {
+            const auto& pointPackage = ecsRegistry->get<PointPackage>(pointsEntity);
+            NodeGraphHash::combine(hash, pointPackage.packageHash);
+        }
     }
-    NodeGraphHash::combine(hash, remeshProduct->productHash);
-    NodeGraphHash::combine(hash, modelProduct->productHash);
+
+    if (package.domainType == DomainType::Mesh) {
+        const RemeshProduct* remeshProduct = tryGetProduct<RemeshProduct>(*ecsRegistry, package.modelRemeshHandle.key);
+        const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, package.modelMeshHandle.key);
+        if (!remeshProduct || !modelProduct) {
+            return 0;
+        }
+        NodeGraphHash::combine(hash, remeshProduct->productHash);
+        NodeGraphHash::combine(hash, modelProduct->productHash);
+    }
     return hash;
 }
 
 bool RuntimeVoronoiComputeTransport::buildProduct(uint64_t socketKey, VoronoiProduct& outProduct) const {
     outProduct = {};
     const VoronoiSystem* voronoiSystem = controller ? controller->getSystem(socketKey) : nullptr;
-    if (!voronoiSystem || !controller->getConfig(socketKey)) {
+    if (!voronoiSystem) {
+        return false;
+    }
+    if (!controller->getConfig(socketKey)) {
         return false;
     }
 
@@ -194,24 +248,32 @@ bool RuntimeVoronoiComputeTransport::buildProduct(uint64_t socketKey, VoronoiPro
     outProduct.voronoiToSim = voronoiSystem->runtimeRef().getVoronoiToSim();
     outProduct.simToVoronoi = voronoiSystem->runtimeRef().getSimToVoronoi();
 
-    const VoronoiModelRuntime* modelRuntime = voronoiSystem->getModelRuntime();
-    if (!modelRuntime) {
+    const VoronoiDomainRuntime* domainRuntime = voronoiSystem->getDomainRuntime();
+    if (!domainRuntime) {
         return false;
     }
     const auto& domainSeedFlags = voronoiSystem->runtimeRef().getSeedFlags();
     const auto& domainSeedPositions = voronoiSystem->runtimeRef().getSeedPositions();
 
-    outProduct.runtimeModelId = modelRuntime->getRuntimeModelId();
-    outProduct.candidateBuffer = modelRuntime->getVoronoiCandidateBuffer();
-    outProduct.candidateBufferOffset = modelRuntime->getVoronoiCandidateBufferOffset();
-    outProduct.gmlsSurfaceStencilBuffer = modelRuntime->getGMLSSurfaceStencilBuffer();
-    outProduct.gmlsSurfaceStencilBufferOffset = modelRuntime->getGMLSSurfaceStencilBufferOffset();
-    outProduct.gmlsSurfaceWeightBuffer = modelRuntime->getGMLSSurfaceWeightBuffer();
-    outProduct.gmlsSurfaceWeightBufferOffset = modelRuntime->getGMLSSurfaceWeightBufferOffset();
-    outProduct.gmlsSurfaceWeightCount = modelRuntime->getGMLSSurfaceWeightCount();
-    outProduct.gmlsSurfaceGradientWeightBuffer = modelRuntime->getGMLSSurfaceGradientWeightBuffer();
-    outProduct.gmlsSurfaceGradientWeightBufferOffset = modelRuntime->getGMLSSurfaceGradientWeightBufferOffset();
-    outProduct.gmlsSurfaceGradientWeightCount = modelRuntime->getGMLSSurfaceGradientWeightCount();
+    outProduct.isPointDomain = domainRuntime->isPointDomain();
+    outProduct.candidateBuffer = domainRuntime->getCandidateBuffer();
+    outProduct.candidateBufferOffset = domainRuntime->getCandidateBufferOffset();
+
+    if (!domainRuntime->isPointDomain()) {
+        const VoronoiModelRuntime* modelRuntime = static_cast<const VoronoiModelRuntime*>(domainRuntime);
+        outProduct.runtimeModelId = modelRuntime->getRuntimeModelId();
+        outProduct.gmlsSurfaceStencilBuffer = modelRuntime->getGMLSSurfaceStencilBuffer();
+        outProduct.gmlsSurfaceStencilBufferOffset = modelRuntime->getGMLSSurfaceStencilBufferOffset();
+        outProduct.gmlsSurfaceWeightBuffer = modelRuntime->getGMLSSurfaceWeightBuffer();
+        outProduct.gmlsSurfaceWeightBufferOffset = modelRuntime->getGMLSSurfaceWeightBufferOffset();
+        outProduct.gmlsSurfaceWeightCount = modelRuntime->getGMLSSurfaceWeightCount();
+        outProduct.gmlsSurfaceGradientWeightBuffer = modelRuntime->getGMLSSurfaceGradientWeightBuffer();
+        outProduct.gmlsSurfaceGradientWeightBufferOffset = modelRuntime->getGMLSSurfaceGradientWeightBufferOffset();
+        outProduct.gmlsSurfaceGradientWeightCount = modelRuntime->getGMLSSurfaceGradientWeightCount();
+    } else {
+        outProduct.runtimeModelId = 0;
+    }
+
     outProduct.seedFlags = domainSeedFlags;
     outProduct.seedPositions.reserve(domainSeedPositions.size());
     for (const glm::vec4& pos : domainSeedPositions) {
@@ -219,5 +281,8 @@ bool RuntimeVoronoiComputeTransport::buildProduct(uint64_t socketKey, VoronoiPro
     }
 
     outProduct.productHash = buildProductHash(outProduct);
-    return outProduct.isValid();
+    if (!outProduct.isValid()) {
+        return false;
+    }
+    return true;
 }

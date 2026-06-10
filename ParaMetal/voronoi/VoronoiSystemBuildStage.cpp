@@ -1,6 +1,7 @@
 #include "VoronoiSystemBuildStage.hpp"
 
 #include "spatial/VoxelGrid.hpp"
+#include "voronoi/VoronoiDomainRuntime.hpp"
 #include "voronoi/VoronoiModelRuntime.hpp"
 #include "heat/VoronoiSystemRuntime.hpp"
 
@@ -15,7 +16,6 @@
 #include <algorithm>
 #include <cstring>
 #include <fstream>
-#include <iostream>
 #include <limits>
 #include <sstream>
 #include <unordered_set>
@@ -46,26 +46,51 @@ bool VoronoiSystemBuildStage::buildVoronoiDiagram(
     float cellSize,
     int voxelResolution,
     uint32_t maxNeighbors) const {
-    VoronoiModelRuntime* modelRuntime = runtime.getModelRuntime();
-    if (!modelRuntime) {
+    VoronoiDomainRuntime* domainRuntime = runtime.getDomainRuntime();
+    if (!domainRuntime) {
         return false;
     }
 
+    const auto& seedPositions = runtime.getSeedPositions();
+    if (seedPositions.empty()) {
+        return false;
+    }
+
+    runtime.resetIntegrator();
+    if (!runtime.getIntegrator()) {
+        return false;
+    }
+
+    if (domainRuntime->isPointDomain()) {
+        std::vector<glm::dvec3> dSeedPositions;
+        dSeedPositions.reserve(seedPositions.size());
+        runtime.getSeedFlags().clear();
+        runtime.getSeedFlags().reserve(seedPositions.size());
+        for (const auto& pos : seedPositions) {
+            dSeedPositions.push_back(glm::dvec3(pos));
+            runtime.getSeedFlags().push_back(0u);
+        }
+
+        runtime.getIntegrator()->computeNeighbors(dSeedPositions, maxNeighbors, runtime.getSeedPositions(), runtime.getNeighborIndices());
+        runtime.getMeshTriangles().clear();
+        return true;
+    }
+
+    auto* modelRuntime = static_cast<VoronoiModelRuntime*>(domainRuntime);
     const uint32_t receiverModelId = modelRuntime->getRuntimeModelId();
     if (receiverModelId == 0) {
         return false;
     }
 
-    runtime.resetSeeder();
-    runtime.resetIntegrator();
-    if (!runtime.getSeeder() || !runtime.getIntegrator()) {
+    runtime.resetMeshGrid();
+    if (!runtime.getMeshGrid()) {
         return false;
     }
 
     const SupportingHalfedge::IntrinsicMesh& intrinsicMesh = modelRuntime->getIntrinsicMesh();
     const std::vector<glm::vec3>& geometryPositions = modelRuntime->getGeometryPositions();
     const std::vector<uint32_t>& geometryIndices = modelRuntime->getGeometryTriangleIndices();
-    runtime.getSeeder()->generateSeeds(
+    runtime.getMeshGrid()->buildGrids(
         intrinsicMesh,
         geometryPositions,
         geometryIndices,
@@ -74,25 +99,16 @@ bool VoronoiSystemBuildStage::buildVoronoiDiagram(
         voxelResolution);
     runtime.setVoxelGridBuilt(true);
 
-    const std::vector<VoronoiSeeder::Seed>& seeds = runtime.getSeeder()->getSeeds();
-    if (seeds.empty()) {
-        return false;
-    }
-
-    std::vector<glm::dvec3> seedPositions;
-    seedPositions.reserve(seeds.size());
+    std::vector<glm::dvec3> dSeedPositions;
+    dSeedPositions.reserve(seedPositions.size());
     runtime.getSeedFlags().clear();
-    runtime.getSeedFlags().reserve(seeds.size());
-    for (const VoronoiSeeder::Seed& seed : seeds) {
-        seedPositions.push_back(glm::dvec3(seed.pos));
-        uint32_t flags = 0u;
-        if (seed.isSurface) {
-            flags |= 2u;
-        }
-        runtime.getSeedFlags().push_back(flags);
+    runtime.getSeedFlags().reserve(seedPositions.size());
+    for (const auto& pos : seedPositions) {
+        dSeedPositions.push_back(glm::dvec3(pos));
+        runtime.getSeedFlags().push_back(0u);
     }
 
-    runtime.getIntegrator()->computeNeighbors(seedPositions, maxNeighbors, runtime.getSeedPositions(), runtime.getNeighborIndices());
+    runtime.getIntegrator()->computeNeighbors(dSeedPositions, maxNeighbors, runtime.getSeedPositions(), runtime.getNeighborIndices());
     runtime.getIntegrator()->extractMeshTriangles(geometryPositions, geometryIndices, runtime.getMeshTriangles());
 
     return true;
@@ -104,8 +120,8 @@ void VoronoiSystemBuildStage::setGhostFromVolumes(VoronoiSystemRuntime& runtime)
     }
 
     std::vector<voronoi::Node> nodes(resources.voronoiNodeCount);
-    if (downloadDeviceBuffer(memoryAllocator, renderCommandPool, 
-        resources.voronoiNodeBuffer, resources.voronoiNodeBufferOffset, 
+    if (downloadDeviceBuffer(memoryAllocator, renderCommandPool,
+        resources.voronoiNodeBuffer, resources.voronoiNodeBufferOffset,
         nodes.size() * sizeof(voronoi::Node), nodes.data()) != VK_SUCCESS) {
         return;
     }
@@ -123,21 +139,21 @@ void VoronoiSystemBuildStage::setGhostFromVolumes(VoronoiSystemRuntime& runtime)
 }
 
 void VoronoiSystemBuildStage::setGhostFromVoxelGrid(VoronoiSystemRuntime& runtime) {
-    if (!runtime.isVoxelGridBuilt() || !runtime.getSeeder()) {
+    if (!runtime.isVoxelGridBuilt() || !runtime.getMeshGrid()) {
         return;
     }
     const auto& seedPositions = runtime.getSeedPositions();
     if (seedPositions.size() != runtime.getSeedFlags().size()) {
         return;
     }
-    const float maxDistFromSurface = runtime.getSeeder()->getCellSize() * 1.5f;
+    const float maxDistFromSurface = runtime.getMeshGrid()->getCellSize() * 1.5f;
     uint32_t ghostCount = 0;
     for (uint32_t i = 0; i < static_cast<uint32_t>(seedPositions.size()); ++i) {
         const glm::vec4& seed = seedPositions[i];
         glm::ivec3 voxel = runtime.getVoxelGrid().worldToVoxel(glm::vec3(seed));
         uint8_t occ = runtime.getVoxelGrid().getOccupancy(voxel.x, voxel.y, voxel.z);
         bool isInside = (occ == 2 || occ == 1);
-        float distToSurface = runtime.getSeeder()->sampleSDFGrid(glm::vec3(seed));
+        float distToSurface = runtime.getMeshGrid()->sampleSDFGrid(glm::vec3(seed));
         if (!isInside && distToSurface > maxDistFromSurface) {
             runtime.getSeedFlags()[i] |= 1u;
             ++ghostCount;
@@ -378,6 +394,15 @@ bool VoronoiSystemBuildStage::buildGMLSInterfaceBuffer(VoronoiSystemRuntime& run
     }
 
     if (interfaces.empty()) {
+        uint32_t ghostedCount = 0;
+        uint32_t zeroInterfaceCount = 0;
+        for (uint32_t i = 0; i < resources.voronoiNodeCount; ++i) {
+            if ((seedFlags[i] & 1u) != 0u) {
+                ++ghostedCount;
+            } else if (nodes[i].interfaceNeighborCount == 0) {
+                ++zeroInterfaceCount;
+            }
+        }
         return false;
     }
 
@@ -422,7 +447,8 @@ bool VoronoiSystemBuildStage::rebuildOccupancyPointBuffer(VoronoiSystemRuntime& 
     const VoxelGrid& voxelGrid = runtime.getVoxelGrid();
     const auto& occupancy = voxelGrid.getOccupancyData();
     const auto& params = voxelGrid.getParams();
-    VoronoiModelRuntime* modelRuntime = runtime.getModelRuntime();
+    VoronoiDomainRuntime* domainRuntime = runtime.getDomainRuntime();
+    auto* modelRuntime = domainRuntime ? static_cast<VoronoiModelRuntime*>(domainRuntime) : nullptr;
     const glm::mat4 modelMatrix = modelRuntime ? modelRuntime->getModelMatrix() : glm::mat4(1.0f);
 
     size_t estimatedPointCount = occupancy.size() / 4;
@@ -489,8 +515,8 @@ bool VoronoiSystemBuildStage::rebuildOccupancyPointBuffer(VoronoiSystemRuntime& 
 }
 
 bool VoronoiSystemBuildStage::dispatchVoronoiCompute(VoronoiSystemRuntime& runtime, bool debugEnable, uint32_t maxNeighbors) {
-    VoronoiModelRuntime* modelRuntime = runtime.getModelRuntime();
-    if (!modelRuntime || !runtime.getIntegrator()) {
+    VoronoiDomainRuntime* domainRuntime = runtime.getDomainRuntime();
+    if (!domainRuntime || !runtime.getIntegrator()) {
         return false;
     }
 
@@ -560,6 +586,96 @@ bool VoronoiSystemBuildStage::dispatchVoronoiCompute(VoronoiSystemRuntime& runti
             maxNeighbors)) {
         return false;
     }
+
+    if (domainRuntime->isPointDomain()) {
+        // Point domain: no geo compute. Build interfaces from distances directly.
+        std::vector<voronoi::GMLSInterface> interfaces;
+        interfaces.reserve(static_cast<size_t>(resources.voronoiNodeCount) * static_cast<size_t>(maxNeighbors));
+        std::vector<voronoi::GMLSInterface> cellInterfaces;
+        cellInterfaces.reserve(maxNeighbors);
+
+        uint32_t totalNeighbors = 0;
+        for (uint32_t cellIdx = 0; cellIdx < resources.voronoiNodeCount; ++cellIdx) {
+            uint32_t neighborOffset = totalNeighbors;
+            cellInterfaces.clear();
+
+            if ((globalSeedFlags[cellIdx] & 1u) != 0u) {
+                initialNodes[cellIdx].neighborOffset = neighborOffset;
+                initialNodes[cellIdx].neighborCount = 0;
+                continue;
+            }
+
+            const glm::vec3 cellPosition(globalSeedPositions[cellIdx]);
+
+            for (uint32_t k = 0; k < maxNeighbors; ++k) {
+                const uint32_t idx = cellIdx * maxNeighbors + k;
+                uint32_t neighborIdx = globalNeighborIndices[idx];
+                if (neighborIdx == UINT32_MAX || neighborIdx >= resources.voronoiNodeCount) {
+                    continue;
+                }
+
+                const glm::vec3 seedB(globalSeedPositions[neighborIdx]);
+                const float distance = glm::length(seedB - cellPosition);
+                if (distance <= 1e-12f) {
+                    continue;
+                }
+
+                const float conductance = 1.0f / distance;
+                cellInterfaces.push_back({neighborIdx, conductance});
+            }
+
+            std::sort(
+                cellInterfaces.begin(),
+                cellInterfaces.end(),
+                [](const voronoi::GMLSInterface& a, const voronoi::GMLSInterface& b) {
+                    return a.neighborIdx < b.neighborIdx;
+                });
+
+            interfaces.insert(interfaces.end(), cellInterfaces.begin(), cellInterfaces.end());
+            initialNodes[cellIdx].neighborOffset = neighborOffset;
+            initialNodes[cellIdx].neighborCount = static_cast<uint32_t>(cellInterfaces.size());
+            initialNodes[cellIdx].interfaceNeighborCount = initialNodes[cellIdx].neighborCount;
+            totalNeighbors += static_cast<uint32_t>(cellInterfaces.size());
+        }
+
+        if (interfaces.empty()) {
+            return false;
+        }
+
+        // Upload interface buffer
+        freeBuffer(memoryAllocator, resources.voronoiGMLSInterfaceBuffer, resources.voronoiGMLSInterfaceBufferOffset);
+        VkDeviceSize storageAlignment = vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
+
+        if (uploadDeviceBuffer(memoryAllocator, renderCommandPool, interfaces.data(),
+            sizeof(voronoi::GMLSInterface) * interfaces.size(),
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, storageAlignment,
+            resources.voronoiGMLSInterfaceBuffer, resources.voronoiGMLSInterfaceBufferOffset) != VK_SUCCESS) {
+            return false;
+        }
+
+        // Write back modified nodes
+        freeBuffer(memoryAllocator, resources.voronoiNodeBuffer, resources.voronoiNodeBufferOffset);
+        if (uploadDeviceBuffer(memoryAllocator, renderCommandPool, initialNodes.data(),
+            sizeof(voronoi::Node) * initialNodes.size(),
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, storageAlignment,
+            resources.voronoiNodeBuffer, resources.voronoiNodeBufferOffset) != VK_SUCCESS) {
+            return false;
+        }
+
+        freeBuffer(memoryAllocator, resources.voronoiInterfaceAreasBuffer, resources.voronoiInterfaceAreasBufferOffset);
+        freeBuffer(memoryAllocator, resources.voronoiInterfaceNeighborIdsBuffer, resources.voronoiInterfaceNeighborIdsBufferOffset);
+
+        runtime.buildSimSpaceMapping();
+        if (!runtime.buildSimBuffers(memoryAllocator, renderCommandPool)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    // Mesh domain path
+    auto* modelRuntime = static_cast<VoronoiModelRuntime*>(domainRuntime);
+    (void)modelRuntime;
 
     if (voronoiGeoCompute) {
         voronoiGeoCompute->initialize(resources.voronoiNodeCount);
@@ -718,10 +834,7 @@ bool VoronoiSystemBuildStage::dispatchVoronoiCompute(VoronoiSystemRuntime& runti
     freeBuffer(memoryAllocator, resources.voxelOffsetsBuffer, resources.voxelOffsetsBufferOffset);
 
     setGhostFromVolumes(runtime);
-
-    if (VoronoiModelRuntime* modelRuntime = runtime.getModelRuntime()) {
-        modelRuntime->setStencilKDTree(nullptr);
-    }
+    modelRuntime->setStencilKDTree(nullptr);
 
     if (!buildGMLSInterfaceBuffer(runtime, maxNeighbors)) {
         return false;
@@ -736,11 +849,12 @@ bool VoronoiSystemBuildStage::dispatchVoronoiCompute(VoronoiSystemRuntime& runti
 }
 
 bool VoronoiSystemBuildStage::stageSurfaceMappings(VoronoiSystemRuntime& runtime) const {
-    VoronoiModelRuntime* modelRuntime = runtime.getModelRuntime();
-    if (!modelRuntime || !runtime.getIntegrator()) {
+    VoronoiDomainRuntime* domainRuntime = runtime.getDomainRuntime();
+    if (!domainRuntime || domainRuntime->isPointDomain() || !runtime.getIntegrator()) {
         return false;
     }
 
+    auto* modelRuntime = static_cast<VoronoiModelRuntime*>(domainRuntime);
 
     const auto& domainSeedPositions4 = runtime.getSeedPositions();
     if (domainSeedPositions4.empty() || runtime.getSeedFlags().size() != domainSeedPositions4.size()) {

@@ -16,4 +16,5 @@ namespace payloadtypes {
     extern uint8_t Heat;
     extern uint8_t Voronoi;
     extern uint8_t Contact;
+    extern uint8_t Points;
 }

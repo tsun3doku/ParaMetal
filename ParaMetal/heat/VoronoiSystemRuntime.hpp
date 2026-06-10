@@ -1,9 +1,10 @@
 #pragma once
 
 #include "mesh/remesher/SupportingHalfedge.hpp"
+#include "voronoi/VoronoiDomainRuntime.hpp"
 #include "voronoi/VoronoiModelRuntime.hpp"
 #include "voronoi/VoronoiResources.hpp"
-#include "voronoi/VoronoiSeeder.hpp"
+#include "voronoi/VoronoiMeshGrid.hpp"
 #include "voronoi/VoronoiIntegrator.hpp"
 #include "spatial/SpatialOrder.hpp"
 #include "spatial/VoxelGrid.hpp"
@@ -25,9 +26,9 @@ class VoronoiGeoCompute;
 class VoronoiSystemRuntime {
 public:
     bool isReady() const { return voronoiReady; }
-    bool isSeederReady() const { return voronoiSeederReady; }
+    bool isMeshGridReady() const { return voronoiMeshGridReady; }
 
-    VoronoiModelRuntime* getModelRuntime() const { return modelRuntime.get(); }
+    VoronoiDomainRuntime* getDomainRuntime() const { return domainRuntime.get(); }
 
     uint32_t getVoronoiNodeCount() const { return resources.voronoiNodeCount; }
     uint32_t getSimNodeCount() const { return simNodeCount; }
@@ -43,9 +44,9 @@ public:
     const VoronoiResources& resourcesRef() const { return resources; }
 
     // VoronoiDomain fields moved here
-    VoronoiSeeder* getSeeder() const { return seeder.get(); }
+    VoronoiMeshGrid* getMeshGrid() const { return meshGrid.get(); }
     VoronoiIntegrator* getIntegrator() const { return integrator.get(); }
-    void resetSeeder() { seeder = std::make_unique<VoronoiSeeder>(); }
+    void resetMeshGrid() { meshGrid = std::make_unique<VoronoiMeshGrid>(); }
     void resetIntegrator() { integrator = std::make_unique<VoronoiIntegrator>(); }
     VoxelGrid& getVoxelGrid() { return voxelGrid; }
     const VoxelGrid& getVoxelGrid() const { return voxelGrid; }
@@ -77,12 +78,20 @@ public:
         const std::vector<uint32_t>& receiverIntrinsicTriangleIndices,
         uint32_t receiverModelId,
         const glm::mat4& meshModelMatrix);
+    void setPointGeometry(
+        VulkanDevice& vulkanDevice,
+        MemoryAllocator& memoryAllocator,
+        CommandPool& renderCommandPool,
+        uint64_t domainKey,
+        const std::vector<glm::vec4>& positions);
     void clearReceiverGeometry();
     void setParams(float cellSize, int voxelResolution);
     float getCellSize() const { return cellSize; }
     int getVoxelResolution() const { return voxelResolution; }
-    void markSeederReady();
+    void markMeshGridReady();
     void markReady();
+
+    void setSeedPositions(const std::vector<glm::vec4>& positions);
 
     void cleanupResources(VulkanDevice& vulkanDevice);
     void cleanup(MemoryAllocator& memoryAllocator);
@@ -90,12 +99,12 @@ public:
 private:
     void invalidateMaterialization();
 
-    std::unique_ptr<VoronoiModelRuntime> modelRuntime;
+    std::unique_ptr<VoronoiDomainRuntime> domainRuntime;
     float cellSize = 0.005f;
     int voxelResolution = 128;
 
     // VoronoiDomain fields moved here
-    std::unique_ptr<VoronoiSeeder> seeder;
+    std::unique_ptr<VoronoiMeshGrid> meshGrid;
     std::unique_ptr<VoronoiIntegrator> integrator;
     VoxelGrid voxelGrid;
     bool voxelGridBuilt = false;
@@ -113,7 +122,7 @@ private:
     uint32_t simGMLSInterfaceCount = 0;
 
     VoronoiResources resources;
-    bool voronoiSeederReady = false;
+    bool voronoiMeshGridReady = false;
     bool voronoiReady = false;
     static constexpr float AMBIENT_TEMPERATURE = 1.0f;
 };

@@ -7,8 +7,8 @@
 #include "NodeGraphHash.hpp"
 #include "NodePayloadRegistry.hpp"
 #include "NodeVoronoiParams.hpp"
+#include "domain/PointData.hpp"
 
-#include <iostream>
 #include <unordered_set>
 
 const char* NodeVoronoi::typeId() const {
@@ -16,47 +16,45 @@ const char* NodeVoronoi::typeId() const {
 }
 
 void NodeVoronoi::execute(NodeGraphKernelContext& context) const {
-    // Voronoi is a single-input node: it accepts exactly one mesh input.
     NodeDataHandle modelMeshHandle;
     uint64_t modelPayloadHash = 0;
     NodeDataHandle modelPayloadHandle;
+    NodeDataHandle pointsPayloadHandle;
+    DomainType domainType = DomainType::Points;
+    bool active = false;
     NodePayloadRegistry* const payloadRegistry = context.executionState.services.payloadRegistry;
 
+    const NodeGraphSocket* pointsSocket = context.node.input(NodeGraphValueType::Points);
+    const EvaluatedSocketValue* pointsEval = pointsSocket ? readEvaluatedInput(context.node, pointsSocket->id, context.executionState) : nullptr;
+    const NodeDataBlock* pointsData = readInputValue(pointsEval);
+    if (pointsData && pointsData->dataType == payloadtypes::Points && pointsData->payloadHandle.key != 0) {
+        const PointData* pointData = payloadRegistry ? payloadRegistry->get<PointData>(pointsData->payloadHandle) : nullptr;
+        if (pointData && !pointData->positions.empty()) {
+            pointsPayloadHandle = pointsData->payloadHandle;
+            active = true;
+        }
+    }
+
     const NodeGraphSocket* meshSocket = context.node.input(NodeGraphValueType::Mesh);
-    if (meshSocket) {
-        const auto evals = readEvaluatedInputs(context.node, meshSocket->id, context.executionState);
-        for (const EvaluatedSocketValue* eval : evals) {
-            if (!eval || eval->status != EvaluatedSocketStatus::Value) {
-                continue;
+    if (active && meshSocket) {
+        const EvaluatedSocketValue* meshEval = readEvaluatedInput(context.node, meshSocket->id, context.executionState);
+        const NodeDataBlock* meshData = readInputValue(meshEval);
+        if (meshData && meshData->payloadHandle.key != 0) {
+            const NodeDataHandle meshHandle = payloadRegistry ? payloadRegistry->resolveMeshHandle(meshData->dataType, meshData->payloadHandle) : NodeDataHandle{};
+            if (meshHandle.key != 0) {
+                modelMeshHandle = meshHandle;
+                modelPayloadHash = payloadRegistry->resolvePayloadHash(meshData->payloadHandle);
+                modelPayloadHandle = meshData->payloadHandle;
+                domainType = DomainType::Mesh;
             }
-
-            const NodeDataBlock& inputValue = eval->data;
-            if ((inputValue.dataType != payloadtypes::Geometry &&
-                 inputValue.dataType != payloadtypes::Remesh &&
-                 inputValue.dataType != payloadtypes::HeatModel) ||
-                inputValue.payloadHandle.key == 0) {
-                continue;
-            }
-
-            const NodeDataHandle meshHandle = payloadRegistry
-                ? payloadRegistry->resolveMeshHandle(inputValue.dataType, inputValue.payloadHandle)
-                : NodeDataHandle{};
-            if (meshHandle.key == 0) {
-                continue;
-            }
-
-            // Take the first valid mesh input only
-            modelMeshHandle = meshHandle;
-            modelPayloadHash = payloadRegistry->resolvePayloadHash(inputValue.payloadHandle);
-            modelPayloadHandle = inputValue.payloadHandle;
-            break;
         }
     }
 
     const VoronoiNodeParams nodeParams = readVoronoiNodeParams(context.node);
 
-    const bool active = modelMeshHandle.key != 0;
-    for (std::size_t outputIndex = 0; outputIndex < context.outputs.size() && outputIndex < context.node.outputs.size(); ++outputIndex) {
+    for (std::size_t outputIndex = 0;
+         outputIndex < context.outputs.size() && outputIndex < context.node.outputs.size();
+         ++outputIndex) {
         NodeDataBlock& outputValue = context.outputs[outputIndex];
         const NodeGraphSocket& outputSocket = context.node.outputs[outputIndex];
         outputValue = {};
@@ -70,9 +68,11 @@ void NodeVoronoi::execute(NodeGraphKernelContext& context) const {
         VoronoiData voronoiData{};
         voronoiData.cellSize = static_cast<float>(nodeParams.cellSize);
         voronoiData.voxelResolution = nodeParams.voxelResolution;
+        voronoiData.domainType = domainType;
         voronoiData.modelMeshHandle = modelMeshHandle;
         voronoiData.modelPayloadHash = modelPayloadHash;
         voronoiData.modelPayloadHandle = modelPayloadHandle;
+        voronoiData.pointsPayloadHandle = pointsPayloadHandle;
         voronoiData.active = active;
         const uint64_t payloadKey = NodeSocketKey(context.node.id, context.node.outputs[outputIndex].id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(voronoiData));
@@ -84,23 +84,22 @@ bool NodeVoronoi::computeInputHash(const NodeGraphKernelHashContext& context, ui
     outHash = NodeGraphHash::start();
     NodeGraphHash::combine(outHash, static_cast<uint64_t>(context.node.id.value));
 
+    const NodeGraphSocket* pointsSocket = context.node.input(NodeGraphValueType::Points);
+    const EvaluatedSocketValue* pointsEval = pointsSocket ? readEvaluatedInput(context.node, pointsSocket->id, context.executionState) : nullptr;
+    const NodeDataBlock* pointsData = readInputValue(pointsEval);
+    if (pointsData && pointsData->dataType == payloadtypes::Points && pointsData->payloadHandle.key != 0) {
+        NodeGraphHash::combineInputHash(outHash, pointsData);
+    } else {
+        NodeGraphHash::combineInputHash(outHash, nullptr);
+    }
+
     const NodeGraphSocket* meshSocket = context.node.input(NodeGraphValueType::Mesh);
-    if (meshSocket) {
-        const auto evals = readEvaluatedInputs(context.node, meshSocket->id, context.executionState);
-        for (const EvaluatedSocketValue* input : evals) {
-            const NodeDataBlock* inputData = nullptr;
-            if (input && input->status == EvaluatedSocketStatus::Value) {
-                if ((input->data.dataType == payloadtypes::Geometry ||
-                     input->data.dataType == payloadtypes::Remesh ||
-                     input->data.dataType == payloadtypes::HeatModel) &&
-                    input->data.payloadHandle.key != 0) {
-                    inputData = &input->data;
-                }
-            }
-            NodeGraphHash::combineInputHash(outHash, inputData);
-            // Only hash the first valid mesh input
-            if (inputData) break;
-        }
+    const EvaluatedSocketValue* meshEval = meshSocket ? readEvaluatedInput(context.node, meshSocket->id, context.executionState) : nullptr;
+    const NodeDataBlock* meshData = readInputValue(meshEval);
+    if (meshData && meshData->payloadHandle.key != 0) {
+        NodeGraphHash::combineInputHash(outHash, meshData);
+    } else {
+        NodeGraphHash::combineInputHash(outHash, nullptr);
     }
 
     const VoronoiNodeParams nodeParams = readVoronoiNodeParams(context.node);

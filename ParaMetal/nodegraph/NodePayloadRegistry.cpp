@@ -6,6 +6,7 @@
 #include "domain/GeometryData.hpp"
 #include "domain/HeatData.hpp"
 #include "domain/HeatModelData.hpp"
+#include "domain/PointData.hpp"
 #include "domain/RemeshData.hpp"
 #include "domain/VoronoiData.hpp"
 
@@ -105,6 +106,18 @@ void VoronoiData::sealPayload() {
     NodeGraphHash::combineFloat(hash, cellSize);
     NodeGraphHash::combine(hash, static_cast<uint64_t>(voxelResolution));
     NodeGraphHash::combine(hash, modelPayloadHash);
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(domainType));
+    NodeGraphHash::combine(hash, pointsPayloadHandle.key);
+    payloadHash = hash;
+}
+
+void PointData::sealPayload() {
+    uint64_t hash = NodeGraphHash::start();
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(active ? 1u : 0u));
+    NodeGraphHash::combinePodVector(hash, positions);
+    for (float value : localToWorld) {
+        NodeGraphHash::combineFloat(hash, value);
+    }
     payloadHash = hash;
 }
 
@@ -148,6 +161,13 @@ const GeometryData* NodePayloadRegistry::resolveGeometry(const NodeDataHandle& h
         return resolveGeometry(h->meshHandle, outSourceHandle);
     }
     return nullptr;
+}
+
+const PointData* NodePayloadRegistry::resolvePoints(const NodeDataHandle& handle) const {
+    if (handle.key == 0) {
+        return nullptr;
+    }
+    return get<PointData>(handle);
 }
 
 uint64_t NodePayloadRegistry::resolvePayloadHash(const NodeDataHandle& handle) const {

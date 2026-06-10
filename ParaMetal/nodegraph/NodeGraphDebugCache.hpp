@@ -36,7 +36,7 @@ public:
     void setState(const NodeGraphState& state, NodePayloadRegistry* registry);
     void update(
         uint64_t revision,
-        const std::unordered_map<uint64_t, uint64_t>& srcByInput,
+        const std::unordered_map<uint64_t, uint64_t>& upstream,
         const std::unordered_map<uint64_t, EvaluatedSocketValue>& outBySocket);
     bool tryGetNode(NodeGraphNodeId nodeId, NodeGraphRuntimeNodeDebugInfo& outInfo) const;
 

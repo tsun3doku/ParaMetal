@@ -1,4 +1,5 @@
 #include "NodeGraphUtils.hpp"
+#include "NodeGraph.hpp"
 #include "NodeGraphKernels.hpp"
 #include "NodeGraphParamUtils.hpp"
 #include "NodeGraphRegistry.hpp"
@@ -165,8 +166,105 @@ const NodeDataBlock* readInputValue(const EvaluatedSocketValue* input) {
     return &input->data;
 }
 
+std::string valueTypeToString(NodeGraphValueType value) {
+    switch (value) {
+    case NodeGraphValueType::None:       return "None";
+    case NodeGraphValueType::Mesh:       return "Mesh";
+    case NodeGraphValueType::Points:     return "Points";
+    case NodeGraphValueType::Volume:     return "Volume";
+    case NodeGraphValueType::Field:      return "Field";
+    case NodeGraphValueType::Vector3:    return "Vector3";
+    case NodeGraphValueType::ScalarFloat: return "ScalarFloat";
+    case NodeGraphValueType::ScalarInt:   return "ScalarInt";
+    case NodeGraphValueType::ScalarBool:  return "ScalarBool";
+    }
+    return "None";
+}
+
 NodeTypeId getNodeTypeId(const NodeTypeId& requestedTypeId) {
     return requestedTypeId.empty() ? nodegraphtypes::Custom : requestedTypeId;
+}
+
+static const NodeGraphNode* findNode(const NodeGraphState& state, NodeGraphNodeId id) {
+    return state.node(id);
+}
+static const NodeGraphNode* findNode(const NodeGraph& document, NodeGraphNodeId id) {
+    return document.findNode(id);
+}
+static const NodeGraphEdge* findIncomingEdge(const NodeGraphState& state, NodeGraphNodeId toNode, NodeGraphSocketId toSocket) {
+    return state.incomingEdge(toNode, toSocket);
+}
+static const NodeGraphEdge* findIncomingEdge(const NodeGraph& document, NodeGraphNodeId toNode, NodeGraphSocketId toSocket) {
+    return document.findIncomingEdge(toNode, toSocket);
+}
+
+template <typename GraphT>
+static NodeGraphValueType traceType(
+    const GraphT& graph,
+    NodeGraphNodeId nodeId,
+    NodeGraphSocketId socketId,
+    std::unordered_set<uint64_t>& visited) {
+    const NodeGraphNode* node = findNode(graph, nodeId);
+    if (!node) {
+        return NodeGraphValueType::None;
+    }
+
+    const NodeGraphSocket* socket = nullptr;
+    for (const auto& s : node->inputs) {
+        if (s.id == socketId) { socket = &s; break; }
+    }
+    if (!socket) {
+        for (const auto& s : node->outputs) {
+            if (s.id == socketId) { socket = &s; break; }
+        }
+    }
+    if (!socket) {
+        return NodeGraphValueType::None;
+    }
+
+    if (socket->valueType != NodeGraphValueType::None) {
+        return socket->valueType;
+    }
+
+    const uint64_t socketKey = NodeSocketKey(nodeId, socketId).value;
+    if (!visited.insert(socketKey).second) {
+        return NodeGraphValueType::None;
+    }
+
+    if (socket->direction == NodeGraphSocketDirection::Output && !socket->acceptedValueTypes.empty()) {
+        for (const auto& inputSocket : node->inputs) {
+            const NodeGraphEdge* incoming = findIncomingEdge(graph, nodeId, inputSocket.id);
+            if (!incoming || !incoming->fromNode.isValid()) {
+                continue;
+            }
+            NodeGraphValueType upstreamType = traceType(
+                graph, incoming->fromNode, incoming->fromSocket, visited);
+            if (upstreamType != NodeGraphValueType::None) {
+                return upstreamType;
+            }
+        }
+    } else if (socket->direction == NodeGraphSocketDirection::Input) {
+        const NodeGraphEdge* incoming = findIncomingEdge(graph, nodeId, socketId);
+        if (incoming && incoming->fromNode.isValid()) {
+            NodeGraphValueType upstreamType = traceType(
+                graph, incoming->fromNode, incoming->fromSocket, visited);
+            if (upstreamType != NodeGraphValueType::None) {
+                return upstreamType;
+            }
+        }
+    }
+
+    return NodeGraphValueType::None;
+}
+
+NodeGraphValueType socketType(const NodeGraphState& state, NodeGraphNodeId nodeId, NodeGraphSocketId socketId) {
+    std::unordered_set<uint64_t> visited;
+    return traceType(state, nodeId, socketId, visited);
+}
+
+NodeGraphValueType socketType(const NodeGraph& document, NodeGraphNodeId nodeId, NodeGraphSocketId socketId) {
+    std::unordered_set<uint64_t> visited;
+    return traceType(document, nodeId, socketId, visited);
 }
 
 std::string displayNodeLabel(const NodeGraphNode& node) {

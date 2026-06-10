@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "mesh/remesher/SupportingHalfedge.hpp"
+#include "voronoi/VoronoiDomainRuntime.hpp"
 #include "voronoi/VoronoiGpuStructs.hpp"
 
 struct StencilKDTree;
@@ -16,7 +17,7 @@ class VulkanDevice;
 class MemoryAllocator;
 class CommandPool;
 
-class VoronoiModelRuntime {
+class VoronoiModelRuntime : public VoronoiDomainRuntime {
 public:
     struct SurfaceVertex {
         glm::vec4 position{0.0f, 0.0f, 0.0f, 1.0f};
@@ -41,7 +42,8 @@ public:
         CommandPool& renderCommandPool);
     ~VoronoiModelRuntime();
 
-    bool createVoronoiBuffers();
+    bool isPointDomain() const override { return false; }
+    bool createVoronoiBuffers() override;
     bool createSurfaceBuffers();
     bool resetSurfaceState();
 
@@ -49,13 +51,13 @@ public:
         const std::vector<voronoi::GMLSSurfaceStencil>& stencils,
         const std::vector<voronoi::GMLSSurfaceWeight>& valueWeights,
         const std::vector<voronoi::GMLSSurfaceGradientWeight>& gradientWeights);
-    void cleanup();
+    void cleanup() override;
 
     void setStencilKDTree(std::unique_ptr<StencilKDTree> kdTree);
     StencilKDTree* getStencilKDTree() const { return stencilKDTree.get(); }
 
-    uint32_t getNodeModelId() const { return nodeModelId; }
-    uint32_t getRuntimeModelId() const { return runtimeModelId; }
+    uint32_t getNodeModelId() const override { return nodeModelId; }
+    uint32_t getRuntimeModelId() const override { return runtimeModelId; }
     const glm::mat4& getModelMatrix() const { return modelMatrix; }
 
     size_t getIntrinsicVertexCount() const { return intrinsicVertexCount; }
@@ -66,20 +68,20 @@ public:
     const std::vector<SurfaceVertex>& getSurfaceVertices() const { return surfaceVertices; }
     std::vector<glm::vec3> getIntrinsicSurfacePositions() const;
     const std::vector<uint32_t>& getIntrinsicTriangleIndices() const { return intrinsicTriangleIndices; }
-    VkBuffer getTriangleIndicesBuffer() const { return triangleIndicesBuffer; }
-    VkDeviceSize getTriangleIndicesBufferOffset() const { return triangleIndicesBufferOffset; }
-    VkBuffer getVoronoiCandidateBuffer() const { return voronoiCandidateBuffer; }
-    VkDeviceSize getVoronoiCandidateBufferOffset() const { return voronoiCandidateBufferOffset; }
-    VkBuffer getSurfaceBuffer() const { return surfaceBuffer; }
-    VkDeviceSize getSurfaceBufferOffset() const { return surfaceBufferOffset; }
-    VkBuffer getGMLSSurfaceStencilBuffer() const { return gmlsSurfaceStencilBuffer; }
-    VkDeviceSize getGMLSSurfaceStencilBufferOffset() const { return gmlsSurfaceStencilBufferOffset; }
-    VkBuffer getGMLSSurfaceWeightBuffer() const { return gmlsSurfaceWeightBuffer; }
-    VkDeviceSize getGMLSSurfaceWeightBufferOffset() const { return gmlsSurfaceWeightBufferOffset; }
-    size_t getGMLSSurfaceWeightCount() const { return valueWeightCount; }
-    VkBuffer getGMLSSurfaceGradientWeightBuffer() const { return gmlsSurfaceGradientWeightBuffer; }
-    VkDeviceSize getGMLSSurfaceGradientWeightBufferOffset() const { return gmlsSurfaceGradientWeightBufferOffset; }
-    size_t getGMLSSurfaceGradientWeightCount() const { return gradientWeightCount; }
+    VkBuffer getTriangleIndicesBuffer() const override { return triangleIndicesBuffer; }
+    VkDeviceSize getTriangleIndicesBufferOffset() const override { return triangleIndicesBufferOffset; }
+    VkBuffer getCandidateBuffer() const override { return voronoiCandidateBuffer; }
+    VkDeviceSize getCandidateBufferOffset() const override { return voronoiCandidateBufferOffset; }
+    VkBuffer getSurfaceBuffer() const override { return surfaceBuffer; }
+    VkDeviceSize getSurfaceBufferOffset() const override { return surfaceBufferOffset; }
+    VkBuffer getGMLSSurfaceStencilBuffer() const override { return gmlsSurfaceStencilBuffer; }
+    VkDeviceSize getGMLSSurfaceStencilBufferOffset() const override { return gmlsSurfaceStencilBufferOffset; }
+    VkBuffer getGMLSSurfaceWeightBuffer() const override { return gmlsSurfaceWeightBuffer; }
+    VkDeviceSize getGMLSSurfaceWeightBufferOffset() const override { return gmlsSurfaceWeightBufferOffset; }
+    size_t getGMLSSurfaceWeightCount() const override { return valueWeightCount; }
+    VkBuffer getGMLSSurfaceGradientWeightBuffer() const override { return gmlsSurfaceGradientWeightBuffer; }
+    VkDeviceSize getGMLSSurfaceGradientWeightBufferOffset() const override { return gmlsSurfaceGradientWeightBufferOffset; }
+    size_t getGMLSSurfaceGradientWeightCount() const override { return gradientWeightCount; }
 
 private:
     VulkanDevice& vulkanDevice;

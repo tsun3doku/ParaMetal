@@ -14,17 +14,20 @@ namespace payloadtypes {
     uint8_t Heat = 0;
     uint8_t Voronoi = 0;
     uint8_t Contact = 0;
+    uint8_t Points = 0;
 }
 
 static NodeSocketSignature makeInputSocket(
     const char* name,
     NodeGraphValueType valueType,
-    bool variadic = false) {
+    bool variadic = false,
+    bool required = true) {
     NodeSocketSignature signature{};
     signature.name = name;
     signature.direction = NodeGraphSocketDirection::Input;
     signature.valueType = valueType;
     signature.variadic = variadic;
+    signature.required = required;
     return signature;
 }
 
@@ -55,14 +58,25 @@ static NodeTypeDefinition buildModelNode() {
 }
 
 static NodeTypeDefinition buildTransformNode() {
+    NodeSocketSignature inSocket{};
+    inSocket.name = "Geometry";
+    inSocket.direction = NodeGraphSocketDirection::Input;
+    inSocket.valueType = NodeGraphValueType::None;
+    inSocket.acceptedValueTypes = {NodeGraphValueType::Mesh, NodeGraphValueType::Points};
+    inSocket.required = false;
+
+    NodeSocketSignature outSocket{};
+    outSocket.name = "Geometry";
+    outSocket.direction = NodeGraphSocketDirection::Output;
+    outSocket.valueType = NodeGraphValueType::None;
+    outSocket.acceptedValueTypes = {NodeGraphValueType::Mesh, NodeGraphValueType::Points};
+    outSocket.contract.producedPayloadType = payloadtypes::None;
+
     return {
         nodegraphtypes::Transform,
         "Transform",
         NodeGraphNodeCategory::Meshing,
-        {
-            makeInputSocket("Mesh", NodeGraphValueType::Mesh),
-            makeOutputSocket("Mesh", NodeGraphValueType::Mesh, payloadtypes::Geometry),
-        },
+        {inSocket, outSocket},
         {
             {nodegraphparams::transform::TranslateX, "Translate X", NodeGraphParamType::Float, 0.0, 0, false, "", false},
             {nodegraphparams::transform::TranslateY, "Translate Y", NodeGraphParamType::Float, 0.0, 0, false, "", false},
@@ -166,7 +180,8 @@ static NodeTypeDefinition buildVoronoiNode() {
         "Voronoi",
         NodeGraphNodeCategory::System,
         {
-            makeInputSocket("Mesh", NodeGraphValueType::Mesh),
+            makeInputSocket("Mesh", NodeGraphValueType::Mesh, false, false),
+            makeInputSocket("Points", NodeGraphValueType::Points, false, true),
             makeOutputSocket("Volume", NodeGraphValueType::Volume, payloadtypes::Voronoi),
         },
         {
@@ -230,6 +245,61 @@ static NodeTypeDefinition buildCustomNode() {
     };
 }
 
+static NodeTypeDefinition buildPointsNode() {
+    return {
+        nodegraphtypes::Points,
+        "Points",
+        NodeGraphNodeCategory::PointSurface,
+        {
+            makeOutputSocket("Points", NodeGraphValueType::Points, payloadtypes::Points),
+        },
+        {
+            {nodegraphparams::points::PointCount, "Point Count", NodeGraphParamType::Int, 0.0, 1000, false, "", false},
+            {nodegraphparams::points::DimX, "Dim X", NodeGraphParamType::Float, 1.0, 0, false, "", false},
+            {nodegraphparams::points::DimY, "Dim Y", NodeGraphParamType::Float, 1.0, 0, false, "", false},
+            {nodegraphparams::points::DimZ, "Dim Z", NodeGraphParamType::Float, 1.0, 0, false, "", false},
+        },
+    };
+}
+
+static NodeTypeDefinition buildMeshPointsNode() {
+    return {
+        nodegraphtypes::MeshPoints,
+        "Mesh Points",
+        NodeGraphNodeCategory::PointSurface,
+        {
+            makeInputSocket("Geometry", NodeGraphValueType::Mesh),
+            makeOutputSocket("Points", NodeGraphValueType::Points, payloadtypes::Points),
+        },
+        {},
+    };
+}
+
+static NodeTypeDefinition buildMergeNode() {
+    NodeSocketSignature inSocket{};
+    inSocket.name = "Geometry";
+    inSocket.direction = NodeGraphSocketDirection::Input;
+    inSocket.valueType = NodeGraphValueType::None;
+    inSocket.acceptedValueTypes = {NodeGraphValueType::Mesh, NodeGraphValueType::Points};
+    inSocket.variadic = true;
+    inSocket.required = true;
+
+    NodeSocketSignature outSocket{};
+    outSocket.name = "Geometry";
+    outSocket.direction = NodeGraphSocketDirection::Output;
+    outSocket.valueType = NodeGraphValueType::None;
+    outSocket.acceptedValueTypes = {NodeGraphValueType::Mesh, NodeGraphValueType::Points};
+    outSocket.contract.producedPayloadType = payloadtypes::None;
+
+    return {
+        nodegraphtypes::Merge,
+        "Merge",
+        NodeGraphNodeCategory::Meshing,
+        {inSocket, outSocket},
+        {},
+    };
+}
+
 void initNodeGraph(NodeGraphRegistry& registry) {
     payloadtypes::Geometry   = registry.registerPayloadType("geometry", NodeGraphValueType::Mesh);
     payloadtypes::Remesh     = registry.registerPayloadType("remesh",   NodeGraphValueType::Mesh);
@@ -237,6 +307,7 @@ void initNodeGraph(NodeGraphRegistry& registry) {
     payloadtypes::Heat       = registry.registerPayloadType("heat",      NodeGraphValueType::None);
     payloadtypes::Voronoi    = registry.registerPayloadType("voronoi",   NodeGraphValueType::Volume);
     payloadtypes::Contact    = registry.registerPayloadType("contact",   NodeGraphValueType::Field);
+    payloadtypes::Points     = registry.registerPayloadType("points",    NodeGraphValueType::Points);
 
     registry.registerNodeType(buildModelNode());
     registry.registerNodeType(buildTransformNode());
@@ -246,5 +317,8 @@ void initNodeGraph(NodeGraphRegistry& registry) {
     registry.registerNodeType(buildContactNode());
     registry.registerNodeType(buildVoronoiNode());
     registry.registerNodeType(buildHeatSolveNode());
+    registry.registerNodeType(buildPointsNode());
+    registry.registerNodeType(buildMeshPointsNode());
+    registry.registerNodeType(buildMergeNode());
     registry.registerNodeType(buildCustomNode());
 }

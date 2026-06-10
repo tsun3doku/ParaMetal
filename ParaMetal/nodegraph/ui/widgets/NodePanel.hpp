@@ -24,6 +24,7 @@ class NodeRemeshPanel;
 class NodeContactPanel;
 class NodeHeatModelPanel;
 class NodeVoronoiPanel;
+class NodePointsPanel;
 
 class NodePanel : public QWidget {
 public:
@@ -64,6 +65,7 @@ private:
     QWidget* heatModelPage = nullptr;
     QWidget* contactPage = nullptr;
     QWidget* heatPage = nullptr;
+    QWidget* pointsPage = nullptr;
 
     NodeModelPanel* modelPanel = nullptr;
     NodeTransformPanel* transformPanel = nullptr;
@@ -73,6 +75,7 @@ private:
     NodeContactPanel* contactPanel = nullptr;
     NodeHeatModelPanel* heatModelPanel = nullptr;
     NodeHeatSolverPanel* heatSolverPanel = nullptr;
+    NodePointsPanel* pointsPanel = nullptr;
 
     QTabWidget* mainTabWidget = nullptr;
     QTextEdit* dataflowTextEdit = nullptr;

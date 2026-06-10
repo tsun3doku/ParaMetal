@@ -11,6 +11,7 @@
 enum class NodeGraphValueType : uint8_t {
     None,
     Mesh,
+    Points,
     Volume,
     Field,
     Vector3,
@@ -42,8 +43,10 @@ struct NodeSocketSignature {
     std::string name;
     NodeGraphSocketDirection direction = NodeGraphSocketDirection::Input;
     NodeGraphValueType valueType = NodeGraphValueType::None;
+    std::vector<NodeGraphValueType> acceptedValueTypes;
     NodeGraphSocketContract contract;
     bool variadic = false;
+    bool required = true;
 };
 
 enum class NodeGraphParamType {
@@ -104,13 +107,12 @@ struct NodeTypeDefinition {
     std::vector<NodeGraphParamDefinition> parameters;
 };
 
-struct NodeGraphSocket {
+struct NodeGraphSocket : NodeSocketSignature {
     NodeGraphSocketId id{};
-    std::string name;
-    NodeGraphValueType valueType = NodeGraphValueType::None;
-    NodeGraphSocketDirection direction = NodeGraphSocketDirection::Input;
-    NodeGraphSocketContract contract;
-    bool variadic = false;
+
+    NodeGraphSocket() = default;
+    NodeGraphSocket(NodeGraphSocketId socketId, const NodeSocketSignature& sig)
+        : NodeSocketSignature(sig), id(socketId) {}
 };
 
 struct NodeGraphNode {

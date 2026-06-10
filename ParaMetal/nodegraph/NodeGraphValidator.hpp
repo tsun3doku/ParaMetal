@@ -11,7 +11,6 @@ class NodeGraphValidator {
 public:
     static bool canCreateConnection(
         const NodeGraph& document,
-        const NodeGraphTypeRegistry& typeRegistry,
         NodeGraphNodeId fromNode,
         NodeGraphSocketId fromSocket,
         NodeGraphNodeId toNode,
@@ -20,5 +19,5 @@ public:
         NodeGraphEdgeId ignoreExistingEdge = {});
 
 private:
-    static bool wouldIntroduceCycle(const NodeGraph& document, NodeGraphNodeId fromNode, NodeGraphNodeId toNode);
+    static bool createsCycle(const NodeGraph& document, NodeGraphNodeId fromNode, NodeGraphNodeId toNode);
 };

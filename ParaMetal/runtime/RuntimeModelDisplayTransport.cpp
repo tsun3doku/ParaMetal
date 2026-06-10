@@ -9,6 +9,7 @@ void RuntimeModelDisplayTransport::sync(const ECSRegistry& registry) {
         return;
     }
 
+    std::unordered_set<uint64_t> nextSocketKeys;
     auto view = registry.view<ModelPackage>(entt::exclude<Stale>);
     for (auto entity : view) {
         uint64_t socketKey = static_cast<uint64_t>(entity);
@@ -23,12 +24,20 @@ void RuntimeModelDisplayTransport::sync(const ECSRegistry& registry) {
         config.runtimeModelId = product ? product->runtimeModelId : 0;
         config.modelMatrix = toMat4(package.localToWorld);
         controller->apply(socketKey, config);
+        nextSocketKeys.insert(socketKey);
     }
 
     for (auto entity : registry.view<ModelPackage, Stale>()) {
         uint64_t socketKey = static_cast<uint64_t>(entity);
         controller->remove(socketKey);
     }
+
+    for (uint64_t socketKey : activeSocketKeys) {
+        if (nextSocketKeys.find(socketKey) == nextSocketKeys.end()) {
+            controller->remove(socketKey);
+        }
+    }
+    activeSocketKeys = std::move(nextSocketKeys);
 }
 
 void RuntimeModelDisplayTransport::finalizeSync() {

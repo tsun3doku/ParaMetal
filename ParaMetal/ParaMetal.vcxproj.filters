@@ -330,7 +330,7 @@
     <ClCompile Include="scene\InputController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="voronoi\VoronoiSeeder.cpp">
+    <ClCompile Include="voronoi\VoronoiMeshGrid.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="spatial\TriangleHashGrid.cpp">
@@ -454,6 +454,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="nodegraph\NodeRemesh.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="nodegraph\NodeMerge.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="nodegraph\ui\widgets\NodeRemeshPanel.cpp">
@@ -1067,7 +1070,7 @@
     <ClInclude Include="scene\InputController.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="voronoi\VoronoiSeeder.hpp">
+    <ClInclude Include="voronoi\VoronoiMeshGrid.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="spatial\TriangleHashGrid.hpp">
@@ -1185,6 +1188,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\NodeRemesh.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nodegraph\NodeMerge.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\ui\widgets\NodeRemeshPanel.hpp">

@@ -8,14 +8,15 @@
 #include "vulkan/VulkanDevice.hpp"
 #include "voronoi/VoronoiCandidateCompute.hpp"
 #include "voronoi/VoronoiModelRuntime.hpp"
+#include "voronoi/VoronoiPointRuntime.hpp"
 
 #include <iostream>
 #include <limits>
 
 void VoronoiSystemRuntime::invalidateMaterialization() {
     voronoiReady = false;
-    voronoiSeederReady = false;
-    seeder.reset();
+    voronoiMeshGridReady = false;
+    meshGrid.reset();
     integrator.reset();
     voxelGrid = VoxelGrid{};
     voxelGridBuilt = false;
@@ -223,10 +224,10 @@ void VoronoiSystemRuntime::setReceiverGeometry(
     const glm::mat4& meshModelMatrix) {
     invalidateMaterialization();
 
-    if (modelRuntime) {
-        modelRuntime->cleanup();
+    if (domainRuntime) {
+        domainRuntime->cleanup();
     }
-    modelRuntime.reset();
+    domainRuntime.reset();
 
     if (receiverModelId == 0) {
         return;
@@ -260,16 +261,57 @@ void VoronoiSystemRuntime::setReceiverGeometry(
         return;
     }
 
-    modelRuntime = std::move(nextModelRuntime);
+    domainRuntime = std::move(nextModelRuntime);
+}
+
+void VoronoiSystemRuntime::setPointGeometry(
+    VulkanDevice& vulkanDevice,
+    MemoryAllocator& memoryAllocator,
+    CommandPool& renderCommandPool,
+    uint64_t domainKey,
+    const std::vector<glm::vec4>& positions) {
+    invalidateMaterialization();
+
+    if (domainRuntime) {
+        domainRuntime->cleanup();
+    }
+    domainRuntime.reset();
+
+    if (positions.empty()) {
+        return;
+    }
+
+    auto nextPointRuntime = std::make_unique<VoronoiPointRuntime>(
+        vulkanDevice,
+        memoryAllocator,
+        domainKey,
+        positions,
+        std::vector<uint32_t>{},   // no boundary conditions for raw points
+        std::vector<float>{},       // no fixed temperatures for raw points
+        renderCommandPool);
+    if (!nextPointRuntime->createVoronoiBuffers()) {
+        std::cerr << "[VoronoiSystemRuntime] Failed to create Voronoi buffers for point domain key="
+                  << domainKey << std::endl;
+        nextPointRuntime->cleanup();
+        return;
+    }
+
+    domainRuntime = std::move(nextPointRuntime);
+    setSeedPositions(positions);
+}
+
+void VoronoiSystemRuntime::setSeedPositions(const std::vector<glm::vec4>& positions) {
+    seedPositions = positions;
+    seedFlags.assign(positions.size(), 0u);
 }
 
 void VoronoiSystemRuntime::clearReceiverGeometry() {
     invalidateMaterialization();
 
-    if (modelRuntime) {
-        modelRuntime->cleanup();
+    if (domainRuntime) {
+        domainRuntime->cleanup();
     }
-    modelRuntime.reset();
+    domainRuntime.reset();
 }
 
 void VoronoiSystemRuntime::setParams(float updatedCellSize, int updatedVoxelResolution) {
@@ -282,8 +324,8 @@ void VoronoiSystemRuntime::setParams(float updatedCellSize, int updatedVoxelReso
     invalidateMaterialization();
 }
 
-void VoronoiSystemRuntime::markSeederReady() {
-    voronoiSeederReady = true;
+void VoronoiSystemRuntime::markMeshGridReady() {
+    voronoiMeshGridReady = true;
 }
 
 void VoronoiSystemRuntime::markReady() {
@@ -341,8 +383,8 @@ void VoronoiSystemRuntime::cleanup(MemoryAllocator& memoryAllocator) {
     freeBuffer(resources.voxelOffsetsBuffer, resources.voxelOffsetsBufferOffset);
     resources.voronoiNodeCount = 0;
 
-    if (modelRuntime) {
-        modelRuntime->cleanup();
+    if (domainRuntime) {
+        domainRuntime->cleanup();
     }
-    modelRuntime.reset();
+    domainRuntime.reset();
 }

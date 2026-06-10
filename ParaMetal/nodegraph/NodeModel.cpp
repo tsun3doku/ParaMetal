@@ -28,8 +28,8 @@ void NodeModel::execute(NodeGraphKernelContext& context) const {
     GeometryData geometry{};
     bool hasGeometry = false;
     if (!modelPath.empty()) {
+        hasGeometry = loadGeometryFromModelPath(modelPath, geometry);
         geometry.baseModelPath = modelPath;
-        hasGeometry = populateGeometryFromModelPath(modelPath, geometry);
     }
 
     for (std::size_t outputIndex = 0;
@@ -188,19 +188,6 @@ bool NodeModel::parseObjGeometry(const std::string& modelPath, GeometryData& geo
         return false;
     }
 
-    return true;
-}
-
-bool NodeModel::populateGeometryFromModelPath(const std::string& modelPath, GeometryData& geometry) {
-    GeometryData loadedGeometry;
-    if (!loadGeometryFromModelPath(modelPath, loadedGeometry)) {
-        return false;
-    }
-
-    const std::string baseModelPath = geometry.baseModelPath;
-
-    geometry = std::move(loadedGeometry);
-    geometry.baseModelPath = baseModelPath;
     return true;
 }
 

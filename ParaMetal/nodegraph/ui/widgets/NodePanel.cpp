@@ -13,6 +13,7 @@
 #include "NodeTransformPanel.hpp"
 #include "NodeRemeshPanel.hpp"
 #include "NodeVoronoiPanel.hpp"
+#include "NodePointsPanel.hpp"
 #include "NodeGraphWidgetStyle.hpp"
 #include "runtime/RuntimeInterfaces.hpp"
 
@@ -53,6 +54,7 @@ void NodePanel::bind(NodeGraphBridge* nodeGraphBridgePtr, const RuntimeQuery* ru
     contactPanel->bind(nodeGraphBridgePtr);
     heatModelPanel->bind(nodeGraphBridgePtr);
     heatSolverPanel->bind(nodeGraphBridgePtr, runtimeQueryPtr);
+    pointsPanel->bind(nodeGraphBridgePtr);
 
     if (isVisible() && currentNodeId.isValid()) {
         setNode(currentNodeId);
@@ -92,6 +94,12 @@ static QString nodeTypeDescription(const NodeTypeId& typeId) {
     }
     if (typeId == nodegraphtypes::HeatSolve) {
         return "Simulate the transient transfer of heat between 3D geometry";
+    }
+    if (typeId == nodegraphtypes::Points) {
+        return "Generate a point cloud domain";
+    }
+    if (typeId == nodegraphtypes::MeshPoints) {
+        return "Extract mesh surface vertices as a point cloud";
     }
     return "Select a node in the graph to inspect its parameters";
 }
@@ -204,6 +212,10 @@ bool NodePanel::setNode(NodeGraphNodeId nodeId) {
         } else {
             heatSolverPanel->stopStatusTimer();
         }
+    } else if (currentNodeTypeId == nodegraphtypes::Points) {
+        pageStack->setCurrentWidget(pointsPage);
+        pointsPanel->setNode(currentNodeId);
+        heatSolverPanel->stopStatusTimer();
     } else {
         pageStack->setCurrentWidget(genericPage);
         heatSolverPanel->stopStatusTimer();
@@ -324,6 +336,15 @@ void NodePanel::buildUi() {
         voronoiPage = nodegraphwidgets::buildPanelCardPage(inspectorContent, voronoiPanel);
     }
     pageStack->addWidget(voronoiPage);
+
+    {
+        pointsPanel = new NodePointsPanel(inspectorContent);
+        pointsPanel->setStatusSink([this](const QString& text) {
+            statusLabel->setText(text);
+        });
+        pointsPage = nodegraphwidgets::buildPanelCardPage(inspectorContent, pointsPanel);
+    }
+    pageStack->addWidget(pointsPage);
 
     {
         contactPanel = new NodeContactPanel(inspectorContent);

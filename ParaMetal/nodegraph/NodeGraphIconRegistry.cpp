@@ -15,6 +15,7 @@ const char* NodeGraphIconRegistry::iconFolderForType(const NodeTypeId& typeId) {
     if (typeId == "remesh") return "Remesh";
     if (typeId == "transform") return "Transform";
     if (typeId == "voronoi") return "VoronoiSystem";
+    if (typeId == "mesh_points") return "Points";
     return nullptr;
 }
 

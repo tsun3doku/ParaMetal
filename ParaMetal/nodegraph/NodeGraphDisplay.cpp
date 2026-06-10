@@ -6,6 +6,7 @@
 #include "NodeGraphUtils.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
 #include "runtime/RuntimeECS.hpp"
+#include "runtime/RuntimePackages.hpp"
 
 #include <unordered_set>
 #include <vector>
@@ -80,6 +81,12 @@ void NodeGraphDisplay::addDisplayKeys(
         return;
     }
 
+    // Points
+    if (registry.all_of<PointPackage>(entity)) {
+        selectedKeys.insert(socketKey);
+        return;
+    }
+
     // Voronoi
     if (registry.all_of<VoronoiPackage>(entity)) {
         selectedKeys.insert(socketKey);
@@ -89,6 +96,9 @@ void NodeGraphDisplay::addDisplayKeys(
         }
         if (package.modelRemeshHandle.key != 0) {
             selectedKeys.insert(package.modelRemeshHandle.key);
+        }
+        if (package.pointsPayloadHandle.key != 0) {
+            selectedKeys.insert(package.pointsPayloadHandle.key);
         }
         return;
     }

@@ -6,7 +6,7 @@
 #include "NodeGraphHash.hpp"
 #include "NodePayloadRegistry.hpp"
 #include "NodeTransformParams.hpp"
-
+#include "domain/PointData.hpp"
 #include "../util/GeometryUtils.hpp"
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -18,67 +18,51 @@ const char* NodeTransform::typeId() const {
 }
 
 void NodeTransform::execute(NodeGraphKernelContext& context) const {
-    const NodeGraphSocket* meshSocket = context.node.input(NodeGraphValueType::Mesh);
-    const EvaluatedSocketValue* inputMesh =
-        meshSocket ? readEvaluatedInput(context.node, meshSocket->id, context.executionState) : nullptr;
-    const NodeDataBlock* inputMeshValue = readInputValue(inputMesh);
-    if (inputMeshValue &&
-        inputMeshValue->dataType != payloadtypes::Geometry &&
-        inputMeshValue->dataType != payloadtypes::Remesh &&
-        inputMeshValue->dataType != payloadtypes::HeatModel) {
-        inputMeshValue = nullptr;
-    }
+    const NodeGraphSocket* inSocket = context.node.input("Geometry");
+    const EvaluatedSocketValue* inputEval =
+        inSocket ? readEvaluatedInput(context.node, inSocket->id, context.executionState) : nullptr;
+    const NodeDataBlock* inputData = readInputValue(inputEval);
+
     NodePayloadRegistry* const payloadRegistry = context.executionState.services.payloadRegistry;
     const std::array<float, 16> localTransform = buildLocalTransformArray(context.node);
+    const glm::mat4 transformMat = toMat4(localTransform);
 
-    for (std::size_t outputIndex = 0;
-         outputIndex < context.outputs.size() && outputIndex < context.node.outputs.size();
-         ++outputIndex) {
-        NodeDataBlock& outputValue = context.outputs[outputIndex];
-        const NodeGraphSocket& outputSocket = context.node.outputs[outputIndex];
-        outputValue = {};
-        outputValue.dataType = outputSocket.contract.producedPayloadType;
+    NodeDataBlock& outputValue = context.outputs[0];
+    outputValue = {};
 
-        if (!payloadRegistry ||
-            outputValue.dataType != payloadtypes::Geometry ||
-            !inputMeshValue ||
-            inputMeshValue->payloadHandle.key == 0) {
-            populateMetadata(outputValue, nullptr, payloadRegistry);
-            continue;
+    if (payloadRegistry && inputData && inputData->payloadHandle.key != 0) {
+        if (const GeometryData* inputGeometry = payloadRegistry->resolveGeometry(inputData->payloadHandle)) {
+            GeometryData forwardedGeometry = *inputGeometry;
+            forwardedGeometry.localToWorld = toMatrixArray(
+                toMat4(forwardedGeometry.localToWorld) * transformMat);
+            const uint64_t payloadKey = NodeSocketKey(context.node.id, context.node.outputs[0].id);
+            outputValue.dataType = payloadtypes::Geometry;
+            outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(forwardedGeometry));
+        } else if (const PointData* inputPointData = payloadRegistry->resolvePoints(inputData->payloadHandle)) {
+            if (!inputPointData->positions.empty()) {
+                PointData forwardedPoints = *inputPointData;
+                forwardedPoints.localToWorld = toMatrixArray(
+                    toMat4(forwardedPoints.localToWorld) * transformMat);
+                forwardedPoints.sealPayload();
+                const uint64_t payloadKey = NodeSocketKey(context.node.id, context.node.outputs[0].id);
+                outputValue.dataType = payloadtypes::Points;
+                outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(forwardedPoints));
+            }
         }
-
-        const GeometryData* inputGeometry = payloadRegistry->resolveGeometry(inputMeshValue->payloadHandle);
-        if (!inputGeometry) {
-            populateMetadata(outputValue, nullptr, payloadRegistry);
-            continue;
-        }
-
-        GeometryData forwardedGeometry = *inputGeometry;
-        forwardedGeometry.localToWorld = toMatrixArray(
-            toMat4(forwardedGeometry.localToWorld) *
-            toMat4(localTransform));
-
-        const uint64_t payloadKey = NodeSocketKey(context.node.id, outputSocket.id);
-        outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(forwardedGeometry));
-        populateMetadata(outputValue, nullptr, payloadRegistry);
     }
+
+    populateMetadata(outputValue, nullptr, payloadRegistry);
 }
 
 bool NodeTransform::computeInputHash(const NodeGraphKernelHashContext& context, uint64_t& outHash) const {
-    const NodeGraphSocket* meshSocket = context.node.input(NodeGraphValueType::Mesh);
-    const EvaluatedSocketValue* inputMesh =
-        meshSocket ? readEvaluatedInput(context.node, meshSocket->id, context.executionState) : nullptr;
-    const NodeDataBlock* inputMeshValue = readInputValue(inputMesh);
-    if (inputMeshValue &&
-        inputMeshValue->dataType != payloadtypes::Geometry &&
-        inputMeshValue->dataType != payloadtypes::Remesh &&
-        inputMeshValue->dataType != payloadtypes::HeatModel) {
-        inputMeshValue = nullptr;
-    }
+    const NodeGraphSocket* inSocket = context.node.input("Geometry");
+    const EvaluatedSocketValue* inputEval =
+        inSocket ? readEvaluatedInput(context.node, inSocket->id, context.executionState) : nullptr;
+    const NodeDataBlock* inputData = readInputValue(inputEval);
 
     outHash = NodeGraphHash::start();
     NodeGraphHash::combine(outHash, static_cast<uint64_t>(context.node.id.value));
-    NodeGraphHash::combineInputHash(outHash, inputMeshValue);
+    NodeGraphHash::combineInputHash(outHash, inputData);
     combineTransformParams(context.node, outHash);
     return true;
 }

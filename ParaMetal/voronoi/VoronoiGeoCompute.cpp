@@ -90,6 +90,9 @@ void VoronoiGeoCompute::updateDescriptors(const Bindings& bindings) {
 
 void VoronoiGeoCompute::dispatch(const PushConstants& pushConstants) {
     if (!initialized || nodeCount == 0 || descriptorSet == VK_NULL_HANDLE) {
+        std::cerr << "[VoronoiGeoCompute] dispatch skipped: initialized=" << initialized
+                  << " nodeCount=" << nodeCount
+                  << " descriptorSet=" << descriptorSet << std::endl;
         return;
     }
 

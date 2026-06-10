@@ -66,6 +66,10 @@ bool NodeGraphRuntime::evaluateNodeInputs(
         const NodeGraphSocket& inputSocket = node.inputs[inputIndex];
         const auto edgeIt = incomingEdgeByInputSocket.find(NodeSocketKey(node.id, inputSocket.id).value);
         if (edgeIt == incomingEdgeByInputSocket.end() || !edgeIt->second) {
+            if (!inputSocket.required) {
+                outInputs[inputIndex] = nullptr;
+                continue;
+            }
             outStatus = EvaluatedSocketStatus::Missing;
             return false;
         }
@@ -73,6 +77,10 @@ bool NodeGraphRuntime::evaluateNodeInputs(
         const NodeGraphEdge& edge = *edgeIt->second;
         const auto outputIt = state.outputBySocket.find(NodeSocketKey(edge.fromNode, edge.fromSocket).value);
         if (outputIt == state.outputBySocket.end()) {
+            if (!inputSocket.required) {
+                outInputs[inputIndex] = nullptr;
+                continue;
+            }
             outStatus = EvaluatedSocketStatus::Missing;
             return false;
         }
@@ -150,7 +158,7 @@ void NodeGraphRuntime::applyChange(const NodeGraphChange& change) {
 void NodeGraphRuntime::tick(NodeGraphEvaluationState* outState, const NodeGraphCompiled& compiled) {
     if (!bridge) {
         if (outState) {
-            outState->sourceSocketByInputSocket.clear();
+            outState->upstreamSocket.clear();
             outState->outputBySocket.clear();
         }
         return;
@@ -161,7 +169,7 @@ void NodeGraphRuntime::tick(NodeGraphEvaluationState* outState, const NodeGraphC
 void NodeGraphRuntime::execute(NodeGraphEvaluationState* outState, const NodeGraphCompiled& compiled) {
     if (graphState.nodes.size() > 0 && compiled.executionOrder.size() != graphState.nodes.size()) {
         if (outState) {
-            outState->sourceSocketByInputSocket.clear();
+            outState->upstreamSocket.clear();
             outState->outputBySocket.clear();
         }
         return;
@@ -173,15 +181,15 @@ void NodeGraphRuntime::execute(NodeGraphEvaluationState* outState, const NodeGra
     std::unordered_map<uint64_t, std::vector<const NodeGraphEdge*>> incomingEdgesByInputSocket;
     incomingEdgesByInputSocket.reserve(graphState.edges.size() * 2);
     NodeGraphEvaluationState state{};
-    state.sourceSocketByInputSocket.reserve(graphState.edges.size() * 2);
+    state.upstreamSocket.reserve(graphState.edges.size() * 2);
     state.outputBySocket.reserve(graphState.edges.size() * 2);
     for (const auto& [id, edge] : graphState.edges) {
         const uint64_t inputKey = NodeSocketKey(edge.toNode, edge.toSocket).value;
         incomingEdgeByInputSocket[inputKey] = &edge;
         incomingEdgesByInputSocket[inputKey].push_back(&edge);
         const uint64_t sourceKey = NodeSocketKey(edge.fromNode, edge.fromSocket).value;
-        state.sourceSocketByInputSocket[inputKey] = sourceKey;
-        state.sourceSocketsByInputSocket[inputKey].push_back(sourceKey);
+        state.upstreamSocket[inputKey] = sourceKey;
+        state.upstreamSockets[inputKey].push_back(sourceKey);
     }
 
     for (NodeGraphNodeId nodeId : executionOrder) {
@@ -288,9 +296,10 @@ void NodeGraphRuntime::execute(NodeGraphEvaluationState* outState, const NodeGra
     }
 
     if (outState) {
-        outState->sourceSocketByInputSocket = std::move(state.sourceSocketByInputSocket);
-        outState->sourceSocketsByInputSocket = std::move(state.sourceSocketsByInputSocket);
+        outState->upstreamSocket = std::move(state.upstreamSocket);
+        outState->upstreamSockets = std::move(state.upstreamSockets);
         outState->outputBySocket = std::move(state.outputBySocket);
+        outState->executionOrder = executionOrder;
     }
 }
 

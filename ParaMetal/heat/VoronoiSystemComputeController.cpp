@@ -1,5 +1,4 @@
 #include "VoronoiSystemComputeController.hpp"
-#include <iostream>
 
 #include "VoronoiSystem.hpp"
 #include "runtime/RuntimeProducts.hpp"
@@ -54,15 +53,21 @@ void VoronoiSystemComputeController::configure(uint64_t socketKey, const Config&
     configuredConfigs[socketKey] = config;
 
     if (system) {
-        system->setReceiverGeometry(
-            config.receiverNodeModelId,
-            config.receiverGeometryPositions,
-            config.receiverGeometryTriangleIndices,
-            config.receiverIntrinsicMesh,
-            config.receiverSurfaceVertices,
-            config.receiverIntrinsicTriangleIndices,
-            config.receiverRuntimeModelId,
-            config.meshModelMatrix);
+        if (config.isPointDomain) {
+            system->clearReceiverGeometry();
+            system->setPointGeometry(config.pointPositions);
+        } else {
+            system->setReceiverGeometry(
+                config.receiverNodeModelId,
+                config.receiverGeometryPositions,
+                config.receiverGeometryTriangleIndices,
+                config.receiverIntrinsicMesh,
+                config.receiverSurfaceVertices,
+                config.receiverIntrinsicTriangleIndices,
+                config.receiverRuntimeModelId,
+                config.meshModelMatrix);
+            system->setSeedPositions(config.pointPositions);
+        }
         system->setParams(config.cellSize, config.voxelResolution);
         system->ensureConfigured();
     }

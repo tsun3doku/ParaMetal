@@ -21,12 +21,8 @@ void NodeGroup::execute(NodeGraphKernelContext& context) const {
         if (!input || input->status != EvaluatedSocketStatus::Value) {
             continue;
         }
-
-        const NodeDataBlock& inputValue = input->data;
-        if (inputValue.dataType == payloadtypes::Geometry ||
-            inputValue.dataType == payloadtypes::Remesh ||
-            inputValue.dataType == payloadtypes::HeatModel) {
-            inputMeshValue = &inputValue;
+        if (input->data.payloadHandle.key != 0) {
+            inputMeshValue = &input->data;
             break;
         }
     }
@@ -36,29 +32,30 @@ void NodeGroup::execute(NodeGraphKernelContext& context) const {
     const std::string targetGroupName = NodePanelUtils::readStringParam(context.node, nodegraphparams::group::TargetName);
     NodePayloadRegistry* const payloadRegistry = context.executionState.services.payloadRegistry;
 
-    const GeometryData* inputGeometry = nullptr;
-    if (payloadRegistry && inputMeshValue && inputMeshValue->payloadHandle.key != 0 &&
-        (inputMeshValue->dataType == payloadtypes::Geometry ||
-         inputMeshValue->dataType == payloadtypes::Remesh ||
-         inputMeshValue->dataType == payloadtypes::HeatModel)) {
-        inputGeometry = payloadRegistry->resolveGeometry(inputMeshValue->payloadHandle);
-    }
+    const GeometryData* inputGeometry =
+        (payloadRegistry && inputMeshValue)
+            ? payloadRegistry->resolveGeometry(inputMeshValue->payloadHandle)
+            : nullptr;
 
     const bool hasValidInput = inputGeometry != nullptr;
 
-    for (std::size_t outputIndex = 0; outputIndex < context.outputs.size() && outputIndex < context.node.outputs.size(); ++outputIndex) {
+    for (std::size_t outputIndex = 0;
+         outputIndex < context.outputs.size() && outputIndex < context.node.outputs.size();
+         ++outputIndex) {
         NodeDataBlock& outputValue = context.outputs[outputIndex];
         const NodeGraphSocket& outputSocket = context.node.outputs[outputIndex];
         outputValue = {};
         outputValue.dataType = outputSocket.contract.producedPayloadType;
 
-        if (!payloadRegistry || outputValue.dataType != payloadtypes::Geometry || !hasValidInput) {
+        if (!payloadRegistry || outputValue.dataType != payloadtypes::Geometry) {
             populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
 
-        if (!enabled || sourceGroupName.empty() || targetGroupName.empty()) {
-            outputValue.payloadHandle = inputMeshValue->payloadHandle;
+        if (!hasValidInput || !enabled || sourceGroupName.empty() || targetGroupName.empty()) {
+            if (hasValidInput) {
+                outputValue.payloadHandle = inputMeshValue->payloadHandle;
+            }
             populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
@@ -79,7 +76,6 @@ bool NodeGroup::equalsIgnoreCase(const std::string& lhs, const std::string& rhs)
     if (lhs.size() != rhs.size()) {
         return false;
     }
-
     for (std::size_t index = 0; index < lhs.size(); ++index) {
         if (std::tolower(static_cast<unsigned char>(lhs[index])) !=
             std::tolower(static_cast<unsigned char>(rhs[index]))) {
@@ -95,18 +91,15 @@ uint32_t NodeGroup::resolveTargetGroupId(GeometryData& geometry, const std::stri
             return group.id;
         }
     }
-
     uint32_t maxGroupId = 0;
     bool hasAnyGroup = false;
     for (const GeometryGroup& group : geometry.groups) {
         maxGroupId = std::max(maxGroupId, group.id);
         hasAnyGroup = true;
     }
-
     if (!hasAnyGroup) {
         return 0;
     }
-
     if (maxGroupId == std::numeric_limits<uint32_t>::max()) {
         return maxGroupId;
     }
@@ -123,14 +116,11 @@ bool NodeGroup::applyAssignment(
             matchingGroupIds.insert(group.id);
         }
     }
-
     if (matchingGroupIds.empty()) {
         return false;
     }
-
     const uint32_t targetGroupId = resolveTargetGroupId(geometry, targetGroupName);
     bool changed = false;
-
     for (uint32_t& triangleGroupId : geometry.triangleGroupIds) {
         if (matchingGroupIds.find(triangleGroupId) != matchingGroupIds.end()) {
             if (triangleGroupId != targetGroupId) {
@@ -139,7 +129,6 @@ bool NodeGroup::applyAssignment(
             }
         }
     }
-
     auto existingIt = std::find_if(
         geometry.groups.begin(),
         geometry.groups.end(),
@@ -163,7 +152,6 @@ bool NodeGroup::applyAssignment(
             changed = true;
         }
     }
-
     return changed;
 }
 
@@ -173,12 +161,8 @@ bool NodeGroup::computeInputHash(const NodeGraphKernelHashContext& context, uint
         if (!input || input->status != EvaluatedSocketStatus::Value) {
             continue;
         }
-
-        const NodeDataBlock& inputValue = input->data;
-        if (inputValue.dataType == payloadtypes::Geometry ||
-            inputValue.dataType == payloadtypes::Remesh ||
-            inputValue.dataType == payloadtypes::HeatModel) {
-            inputMeshValue = &inputValue;
+        if (input->data.payloadHandle.key != 0) {
+            inputMeshValue = &input->data;
             break;
         }
     }

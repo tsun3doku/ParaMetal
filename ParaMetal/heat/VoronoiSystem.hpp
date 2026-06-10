@@ -39,11 +39,13 @@ public:
         const std::vector<uint32_t>& receiverIntrinsicTriangleIndices,
         uint32_t receiverModelId,
         const glm::mat4& meshModelMatrix);
+    void setPointGeometry(const std::vector<glm::vec4>& positions);
+    void setSeedPositions(const std::vector<glm::vec4>& positions);
     void clearReceiverGeometry();
     void setParams(float cellSize, int voxelResolution);
     bool ensureConfigured();
 
-    VoronoiModelRuntime* getModelRuntime() const { return runtime.getModelRuntime(); }
+    VoronoiDomainRuntime* getDomainRuntime() const { return runtime.getDomainRuntime(); }
     uint32_t getVoronoiNodeCount() const { return runtime.getVoronoiNodeCount(); }
 
     VoronoiResources& resourcesRef() { return runtime.resourcesRef(); }

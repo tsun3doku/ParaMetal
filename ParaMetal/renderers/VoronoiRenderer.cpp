@@ -516,6 +516,9 @@ void VoronoiRenderer::updateDescriptors(const std::vector<VoronoiRenderBinding>&
     liveBindings.reserve(bindings.size());
     for (const VoronoiRenderBinding& binding : bindings) {
         if (binding.bindingKey == 0 || binding.runtimeModelId == 0 || binding.candidateBuffer == VK_NULL_HANDLE) {
+            std::cerr << "[VoronoiRenderer] updateDescriptors skipped binding: key=" << binding.bindingKey
+                      << " runtimeModelId=" << binding.runtimeModelId
+                      << " candidateBuffer=" << binding.candidateBuffer << std::endl;
             continue;
         }
         liveBindings.insert(binding.bindingKey);
@@ -732,10 +735,15 @@ void VoronoiRenderer::render(VkCommandBuffer cmd, uint32_t frameIndex, const std
 
     for (const VoronoiRenderBinding& binding : bindings) {
         if (binding.bindingKey == 0 || binding.runtimeModelId == 0 || binding.indexCount == 0) {
+            std::cerr << "[VoronoiRenderer] render skipped binding: key=" << binding.bindingKey
+                      << " runtimeModelId=" << binding.runtimeModelId
+                      << " indexCount=" << binding.indexCount << std::endl;
             continue;
         }
         auto it = voronoiDescriptorSets.find(binding.bindingKey);
         if (it == voronoiDescriptorSets.end() || frameIndex >= it->second.size()) {
+            std::cerr << "[VoronoiRenderer] render missing descriptor set for bindingKey=" << binding.bindingKey
+                      << " frameIndex=" << frameIndex << std::endl;
             continue;
         }
         drawBinding(cmd, it->second[frameIndex], binding);

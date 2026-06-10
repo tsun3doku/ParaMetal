@@ -87,13 +87,33 @@ struct VoronoiPackage {
         0.0f, 0.0f, 1.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f
     };
+    DomainType domainType = DomainType::Mesh;
     NodeDataHandle modelMeshHandle{};
     NodeDataHandle modelRemeshHandle{};
+    NodeDataHandle pointsPayloadHandle{};
 
     bool matches(const VoronoiPackage& other) const {
         return packageHash == other.packageHash &&
             display.showVoronoi == other.display.showVoronoi &&
             display.showPoints == other.display.showPoints;
+    }
+};
+
+struct PointPackage {
+    uint64_t packageHash = 0;
+    NodeDataHandle pointsPayloadHandle{};
+    std::vector<glm::vec4> positions;
+    uint32_t pointCount = 0;
+    std::array<float, 16> localToWorld{
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f
+    };
+
+    bool matches(const PointPackage& other) const {
+        return packageHash == other.packageHash &&
+            localToWorld == other.localToWorld;
     }
 };
 

@@ -13,7 +13,6 @@ public:
 
 private:
     static bool parseObjGeometry(const std::string& modelPath, GeometryData& geometry);
-    static bool populateGeometryFromModelPath(const std::string& modelPath, GeometryData& geometry);
     static bool loadGeometryFromModelPath(const std::string& modelPath, GeometryData& geometry);
     static std::vector<std::string> resolveCandidateModelPaths(const std::string& modelPath);
 };

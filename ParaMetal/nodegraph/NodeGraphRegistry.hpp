@@ -16,6 +16,10 @@ inline constexpr const char* HeatModel = "heat_model";
 inline constexpr const char* Contact = "contact";
 inline constexpr const char* Voronoi = "voronoi";
 inline constexpr const char* HeatSolve = "heat_solve";
+inline constexpr const char* Points = "points";
+inline constexpr const char* HeatPoints = "heat_points";
+inline constexpr const char* MeshPoints = "mesh_points";
+inline constexpr const char* Merge = "merge";
 inline constexpr const char* Custom = "custom";
 }
 
@@ -98,6 +102,17 @@ constexpr uint32_t Conductivity = 3;
 constexpr uint32_t InitialTemperature = 4;
 constexpr uint32_t BoundaryCondition = 5;
 constexpr uint32_t FixedTemperatureValue = 6;
+}
+
+namespace points {
+constexpr uint32_t PointCount = 1;
+constexpr uint32_t DimX = 2;
+constexpr uint32_t DimY = 3;
+constexpr uint32_t DimZ = 4;
+}
+
+namespace heatpoints {
+constexpr uint32_t InitialTemperature = 1;
 }
 }
 

@@ -98,6 +98,7 @@ private:
     static void setNodeHovered(NodeGraphNodeItem* item, bool hovered);
     static void setEdgeHovered(QGraphicsPathItem* item, bool hovered);
     static void setSocketHovered(NodeGraphSocketItem* item, bool hovered);
+    void colorNode(NodeGraphNodeId nodeId);
     static NodeGraphEdgeId itemEdgeId(const QGraphicsItem* item);
     static bool extractSocketFromItem(const QGraphicsItem* item, NodeGraphNodeId& outNodeId, NodeGraphSocketId& outSocketId, NodeGraphSocketDirection& outDirection);
     bool socketAtScenePos(const QPointF& scenePos, NodeGraphNodeId& outNodeId, NodeGraphSocketId& outSocketId, NodeGraphSocketDirection& outDirection) const;

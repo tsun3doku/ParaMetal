@@ -26,7 +26,7 @@ void NodeRemesh::execute(NodeGraphKernelContext& context) const {
         upstreamGeometryValue = nullptr;
     }
 
-    const bool hasValidInput = payloadRegistry && upstreamGeometryValue && upstreamGeometryValue->payloadHandle.key != 0;
+    const bool hasValidInput = payloadRegistry && upstreamGeometryValue;
     if (hasValidInput) {
         const uint64_t sourcePayloadHash = payloadRegistry->resolvePayloadHash(upstreamGeometryValue->payloadHandle);
         const RemeshNodeParams params = readRemeshNodeParams(context.node);
@@ -45,7 +45,7 @@ void NodeRemesh::execute(NodeGraphKernelContext& context) const {
         outputValue = {};
         outputValue.dataType = outputSocket.contract.producedPayloadType;
 
-        if (!payloadRegistry || outputValue.dataType != payloadtypes::Remesh || !hasValidInput) {
+        if (!payloadRegistry || outputValue.dataType != payloadtypes::Remesh) {
             populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }

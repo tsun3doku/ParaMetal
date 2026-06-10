@@ -124,6 +124,7 @@ struct VoronoiProduct {
     uint32_t occupancyPointCount = 0;
 
     uint32_t runtimeModelId = 0;
+    bool isPointDomain = false;
     VkBuffer candidateBuffer = VK_NULL_HANDLE;
     VkDeviceSize candidateBufferOffset = 0;
     VkBuffer gmlsSurfaceStencilBuffer = VK_NULL_HANDLE;
@@ -148,8 +149,8 @@ struct VoronoiProduct {
             simNodeBuffer != VK_NULL_HANDLE &&
             voronoiNeighborIndicesBuffer != VK_NULL_HANDLE &&
             seedPositionBuffer != VK_NULL_HANDLE &&
-            runtimeModelId != 0 &&
-            candidateBuffer != VK_NULL_HANDLE;
+            candidateBuffer != VK_NULL_HANDLE &&
+            (isPointDomain || runtimeModelId != 0);
     }
 
 };
@@ -171,6 +172,18 @@ struct ContactProduct {
             contactPairBuffer != VK_NULL_HANDLE;
     }
 
+};
+
+struct PointProduct {
+    VkBuffer positionBuffer = VK_NULL_HANDLE;
+    VkDeviceSize positionBufferOffset = 0;
+    uint32_t pointCount = 0;
+    glm::mat4 modelMatrix = glm::mat4(1.0f);
+    uint64_t productHash = 0;
+
+    bool isValid() const {
+        return positionBuffer != VK_NULL_HANDLE && pointCount != 0;
+    }
 };
 
 struct HeatProduct {
@@ -258,6 +271,7 @@ inline uint64_t buildProductHash(const VoronoiProduct& product) {
     uint64_t hash = NodeGraphHash::start();
     NodeGraphHash::combine(hash, product.nodeCount);
     NodeGraphHash::combine(hash, product.simNodeCount);
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(product.isPointDomain ? 1u : 0u));
     NodeGraphHash::combine(hash, product.runtimeModelId);
     NodeGraphHash::combinePodVector(hash, product.seedFlags);
     NodeGraphHash::combinePodVector(hash, product.seedPositions);
@@ -297,6 +311,15 @@ inline uint64_t buildProductHash(const VoronoiProduct& product) {
     combineVkHandle(hash, product.gmlsSurfaceGradientWeightBuffer);
     NodeGraphHash::combine(hash, product.gmlsSurfaceGradientWeightBufferOffset);
     NodeGraphHash::combine(hash, product.gmlsSurfaceGradientWeightCount);
+    return hash;
+}
+
+inline uint64_t buildProductHash(const PointProduct& product) {
+    uint64_t hash = NodeGraphHash::start();
+    combineVkHandle(hash, product.positionBuffer);
+    NodeGraphHash::combine(hash, product.positionBufferOffset);
+    NodeGraphHash::combine(hash, product.pointCount);
+    NodeGraphHash::combinePod(hash, product.modelMatrix);
     return hash;
 }
 

@@ -26,6 +26,10 @@ public:
         bool active = false;
         float cellSize = 0.005f;
         int voxelResolution = 128;
+        bool isPointDomain = false;
+        std::vector<glm::vec4> pointPositions;
+
+        // Mesh path
         uint32_t receiverNodeModelId = 0;
         std::vector<glm::vec3> receiverGeometryPositions;
         std::vector<uint32_t> receiverGeometryTriangleIndices;
@@ -72,6 +76,8 @@ inline uint64_t buildComputeHash(const VoronoiSystemComputeController::Config& c
     NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.active ? 1u : 0u));
     NodeGraphHash::combinePod(hash, config.cellSize);
     NodeGraphHash::combinePod(hash, config.voxelResolution);
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(config.isPointDomain ? 1u : 0u));
+    NodeGraphHash::combinePodVector(hash, config.pointPositions);
     NodeGraphHash::combine(hash, config.receiverNodeModelId);
     NodeGraphHash::combinePodVector(hash, config.receiverGeometryPositions);
     NodeGraphHash::combinePodVector(hash, config.receiverGeometryTriangleIndices);

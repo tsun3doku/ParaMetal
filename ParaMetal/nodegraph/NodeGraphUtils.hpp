@@ -5,10 +5,14 @@
 
 struct NodeGraphKernelExecutionState;
 class NodeGraphRegistry;
+class NodeGraph;
 struct NodeGraphState;
 
 bool findFirstUpstreamNodeByType(const NodeGraphState& state, NodeGraphNodeId startNodeId, const NodeTypeId& targetTypeId, NodeGraphNodeId& outNodeId);
 bool findFirstUpstreamNodeByType(const NodeGraphState& state, uint64_t outputSocketKey, const NodeTypeId& targetTypeId, NodeGraphNodeId& outNodeId);
+
+NodeGraphValueType socketType(const NodeGraphState& state, NodeGraphNodeId nodeId, NodeGraphSocketId socketId);
+NodeGraphValueType socketType(const NodeGraph& document, NodeGraphNodeId nodeId, NodeGraphSocketId socketId);
 
 const EvaluatedSocketValue* readEvaluatedInput(
     const NodeGraphNode& node,
@@ -27,6 +31,8 @@ bool normalizeNodeGraphParamValue(const NodeGraphParamDefinition& definition, No
 bool validateNodeGraphParamValue(const NodeGraphParamDefinition& definition, const NodeGraphParamValue& value);
 
 std::string displayNodeLabel(const NodeGraphNode& node);
+
+std::string valueTypeToString(NodeGraphValueType value);
 
 NodeTypeId getNodeTypeId(const NodeTypeId& requestedTypeId);
 const NodeGraphParamDefinition* findNodeParamDefinition(const NodeTypeDefinition& definition, uint32_t paramId);

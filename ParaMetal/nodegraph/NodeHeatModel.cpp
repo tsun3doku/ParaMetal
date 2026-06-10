@@ -7,8 +7,6 @@
 #include "NodeHeatModelParams.hpp"
 #include "NodePayloadRegistry.hpp"
 
-#include <iostream>
-
 const char* NodeHeatModel::typeId() const {
     return nodegraphtypes::HeatModel;
 }
@@ -23,23 +21,21 @@ void NodeHeatModel::execute(NodeGraphKernelContext& context) const {
 
     NodeDataHandle meshHandle{};
     uint64_t meshPayloadHash = 0;
-    const bool hasValidInput = payloadRegistry && inputMeshValue &&
-        inputMeshValue->payloadHandle.key != 0 &&
-        (inputMeshValue->dataType == payloadtypes::Remesh ||
-         inputMeshValue->dataType == payloadtypes::HeatModel);
+    const bool hasValidInput = payloadRegistry && inputMeshValue && inputMeshValue->payloadHandle.key != 0;
     if (hasValidInput) {
         meshPayloadHash = payloadRegistry->resolvePayloadHash(inputMeshValue->payloadHandle);
         meshHandle = payloadRegistry->resolveMeshHandle(inputMeshValue->dataType, inputMeshValue->payloadHandle);
     }
 
-    for (std::size_t outputIndex = 0; outputIndex < context.outputs.size() && outputIndex < context.node.outputs.size(); ++outputIndex) {
+    for (std::size_t outputIndex = 0;
+         outputIndex < context.outputs.size() && outputIndex < context.node.outputs.size();
+         ++outputIndex) {
         NodeDataBlock& outputValue = context.outputs[outputIndex];
         const NodeGraphSocket& outputSocket = context.node.outputs[outputIndex];
         outputValue = {};
         outputValue.dataType = outputSocket.contract.producedPayloadType;
 
-        if (!payloadRegistry || outputValue.dataType != payloadtypes::HeatModel ||
-            !hasValidInput || meshHandle.key == 0) {
+        if (!payloadRegistry || outputValue.dataType != payloadtypes::HeatModel || meshHandle.key == 0) {
             populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
@@ -65,9 +61,7 @@ bool NodeHeatModel::computeInputHash(const NodeGraphKernelHashContext& context, 
     const EvaluatedSocketValue* inputMesh =
         meshSocket ? readEvaluatedInput(context.node, meshSocket->id, context.executionState) : nullptr;
     const NodeDataBlock* inputMeshValue = readInputValue(inputMesh);
-    if (inputMeshValue &&
-        inputMeshValue->dataType != payloadtypes::Remesh &&
-        inputMeshValue->dataType != payloadtypes::HeatModel) {
+    if (inputMeshValue && inputMeshValue->payloadHandle.key == 0) {
         inputMeshValue = nullptr;
     }
 

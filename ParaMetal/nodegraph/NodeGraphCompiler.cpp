@@ -22,34 +22,11 @@ std::unordered_set<uint64_t> NodeGraphCompiler::buildConnectedInputSocketSet(con
 std::vector<std::string> NodeGraphCompiler::findMissingInputSocketNames(
     const NodeGraphNode& node,
     const std::unordered_set<uint64_t>& connectedInputSockets) {
-    if (getNodeTypeId(node.typeId) == nodegraphtypes::HeatSolve) {
-        bool hasVoronoiConnection = false;
-        bool hasContactConnection = false;
-        for (const NodeGraphSocket& inputSocket : node.inputs) {
-            if (connectedInputSockets.find(NodeSocketKey(node.id, inputSocket.id)) == connectedInputSockets.end()) {
-                continue;
-            }
-
-            if (inputSocket.valueType == NodeGraphValueType::Volume) {
-                hasVoronoiConnection = true;
-            }
-            if (inputSocket.valueType == NodeGraphValueType::Field) {
-                hasContactConnection = true;
-            }
-        }
-
-        std::vector<std::string> missing;
-        if (!hasVoronoiConnection) {
-            missing.push_back("Volume");
-        }
-        if (!hasContactConnection) {
-            missing.push_back("Field");
-        }
-        return missing;
-    }
-
     std::vector<std::string> missingSocketNames;
     for (const NodeGraphSocket& inputSocket : node.inputs) {
+        if (!inputSocket.required) {
+            continue;
+        }
         if (connectedInputSockets.find(NodeSocketKey(node.id, inputSocket.id)) != connectedInputSockets.end()) {
             continue;
         }
@@ -88,33 +65,16 @@ std::string NodeGraphCompiler::makeInvariantReason(const char* code, const std::
     return reason;
 }
 
-bool NodeGraphCompiler::nodeHasAllRequiredInputs(const NodeGraphState& state, NodeGraphNodeId nodeId) {
+bool NodeGraphCompiler::nodeHasAllRequiredInputs(const NodeGraphState& state, NodeGraphNodeId nodeId, const std::unordered_set<uint64_t>& connectedInputSockets) {
     const NodeGraphNode* node = state.node(nodeId);
     if (!node) {
         return false;
     }
 
-    const std::unordered_set<uint64_t> connectedInputSockets = buildConnectedInputSocketSet(state);
-    if (getNodeTypeId(node->typeId) == nodegraphtypes::HeatSolve) {
-        bool hasVoronoiConnection = false;
-        bool hasContactConnection = false;
-        for (const NodeGraphSocket& inputSocket : node->inputs) {
-            if (connectedInputSockets.find(NodeSocketKey(node->id, inputSocket.id)) == connectedInputSockets.end()) {
-                continue;
-            }
-
-            if (inputSocket.valueType == NodeGraphValueType::Volume) {
-                hasVoronoiConnection = true;
-            }
-            if (inputSocket.valueType == NodeGraphValueType::Field) {
-                hasContactConnection = true;
-            }
-        }
-
-        return hasVoronoiConnection && hasContactConnection;
-    }
-
     for (const NodeGraphSocket& inputSocket : node->inputs) {
+        if (!inputSocket.required) {
+            continue;
+        }
         if (connectedInputSockets.find(NodeSocketKey(node->id, inputSocket.id)) == connectedInputSockets.end()) {
             return false;
         }
@@ -266,7 +226,7 @@ NodeGraphCompiled NodeGraphCompiler::compile(const NodeGraphState& state) {
             continue;
         }
 
-        if (!nodeHasAllRequiredInputs(state, node->id)) {
+        if (!nodeHasAllRequiredInputs(state, node->id, connectedInputSockets)) {
             if (!missingConnectionsNode) {
                 missingConnectionsNode = node;
             }

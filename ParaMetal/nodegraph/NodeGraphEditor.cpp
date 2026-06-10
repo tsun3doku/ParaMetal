@@ -1,6 +1,8 @@
 #include "NodeGraphEditor.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
+#include "NodePointsParams.hpp"
+#include "NodeTransformParams.hpp"
 
 #include "NodeGraphBridge.hpp"
 #include "nodegraph/ui/scene/NodeGraphSceneUtils.hpp"
@@ -80,26 +82,54 @@ void NodeGraphEditor::resetToDefaultGraph() {
     const CreatedNode sourceRemesh = createNode(nodegraphtypes::Remesh, "Source Remesh", rightColumnX, row3Y);
     const CreatedNode receiverHeatModel = createNode(nodegraphtypes::HeatModel, "Receiver Heat Model", leftColumnX, row4Y);
     const CreatedNode sourceHeatModel = createNode(nodegraphtypes::HeatModel, "Source Heat Model", rightColumnX, row4Y);
-    const CreatedNode receiverVoronoi = createNode(nodegraphtypes::Voronoi, "Receiver Voronoi", voronoiLeftColumnX, row5Y);
-    const CreatedNode sourceVoronoi = createNode(nodegraphtypes::Voronoi, "Source Voronoi", voronoiRightColumnX, row5Y);
+    const CreatedNode points = createNode(nodegraphtypes::Points, "Points", 10.0f, row1Y);
+    const CreatedNode pointsTransform = createNode(nodegraphtypes::Transform, "Points Transform", 10.0f, row2Y);
+    const CreatedNode receiverMeshPoints = createNode(nodegraphtypes::MeshPoints, "Mesh Points", voronoiLeftColumnX, row4Y);
+    const CreatedNode sourceMeshPoints = createNode(nodegraphtypes::MeshPoints, "Mesh Points", voronoiRightColumnX, row4Y);
+    const CreatedNode leftMerge = createNode(nodegraphtypes::Merge, "Merge", voronoiLeftColumnX, row5Y);
+    const CreatedNode rightMerge = createNode(nodegraphtypes::Merge, "Merge", voronoiRightColumnX, row5Y);
+    const CreatedNode receiverVoronoi = createNode(nodegraphtypes::Voronoi, "Receiver Voronoi", leftColumnX, row5Y);
+    const CreatedNode sourceVoronoi = createNode(nodegraphtypes::Voronoi, "Source Voronoi", rightColumnX, row5Y);
     const CreatedNode contact = createNode(nodegraphtypes::Contact, "", centerColumnX, row5Y);
     const CreatedNode heatSolve = createNode(nodegraphtypes::HeatSolve, "", centerColumnX, row6Y);
 
     if (!receiverModel.id.isValid() || !receiverTransform.id.isValid() || !receiverRemesh.id.isValid() ||
         !sourceModel.id.isValid() || !sourceTransform.id.isValid() || !sourceRemesh.id.isValid() ||
         !receiverHeatModel.id.isValid() || !sourceHeatModel.id.isValid() || !contact.id.isValid() ||
-        !receiverVoronoi.id.isValid() || !sourceVoronoi.id.isValid() || !heatSolve.id.isValid()) {
+        !receiverVoronoi.id.isValid() || !sourceVoronoi.id.isValid() || !heatSolve.id.isValid() ||
+        !points.id.isValid() || !pointsTransform.id.isValid() ||
+        !receiverMeshPoints.id.isValid() || !sourceMeshPoints.id.isValid() ||
+        !leftMerge.id.isValid() || !rightMerge.id.isValid()) {
         return;
     }
 
+    TransformNodeParams pointsTransformParams{};
+    pointsTransformParams.translateX = -0.05;
+    pointsTransformParams.translateY = 0.0;
+    pointsTransformParams.translateZ = 0.05;
+    pointsTransformParams.rotateXDegrees = 0.0;
+    pointsTransformParams.rotateYDegrees = 0.0;
+    pointsTransformParams.rotateZDegrees = 0.0;
+    pointsTransformParams.scaleX = 1.0;
+    pointsTransformParams.scaleY = 1.0;
+    pointsTransformParams.scaleZ = 1.0;
+    writeTransformNodeParams(*this, pointsTransform.id, pointsTransformParams);
+
+    PointsNodeParams pointsParams{};
+    pointsParams.pointCount = 10000;
+    pointsParams.dimX = 0.3f;
+    pointsParams.dimY = 0.1f;
+    pointsParams.dimZ = 0.3f;
+    writePointsNodeParams(*this, points.id, pointsParams);
+
     const NodeGraphSocketId receiverModelOutputId = outputSocketByType(receiverModel.node, NodeGraphValueType::Mesh);
-    const NodeGraphSocketId receiverTransformInputId = inputSocketByType(receiverTransform.node, NodeGraphValueType::Mesh);
-    const NodeGraphSocketId receiverTransformOutputId = outputSocketByType(receiverTransform.node, NodeGraphValueType::Mesh);
+    const NodeGraphSocketId receiverTransformInputId = inputSocketByName(receiverTransform.node, "Geometry");
+    const NodeGraphSocketId receiverTransformOutputId = firstOutputSocket(receiverTransform.node);
     const NodeGraphSocketId receiverRemeshInputId = inputSocketByType(receiverRemesh.node, NodeGraphValueType::Mesh);
     const NodeGraphSocketId receiverRemeshOutputId = outputSocketByType(receiverRemesh.node, NodeGraphValueType::Mesh);
     const NodeGraphSocketId sourceModelOutputId = outputSocketByType(sourceModel.node, NodeGraphValueType::Mesh);
-    const NodeGraphSocketId sourceTransformInputId = inputSocketByType(sourceTransform.node, NodeGraphValueType::Mesh);
-    const NodeGraphSocketId sourceTransformOutputId = outputSocketByType(sourceTransform.node, NodeGraphValueType::Mesh);
+    const NodeGraphSocketId sourceTransformInputId = inputSocketByName(sourceTransform.node, "Geometry");
+    const NodeGraphSocketId sourceTransformOutputId = firstOutputSocket(sourceTransform.node);
     const NodeGraphSocketId sourceRemeshInputId = inputSocketByType(sourceRemesh.node, NodeGraphValueType::Mesh);
     const NodeGraphSocketId sourceRemeshOutputId = outputSocketByType(sourceRemesh.node, NodeGraphValueType::Mesh);
     const NodeGraphSocketId receiverHeatModelInputId = inputSocketByType(receiverHeatModel.node, NodeGraphValueType::Mesh);
@@ -115,6 +145,19 @@ void NodeGraphEditor::resetToDefaultGraph() {
     const NodeGraphSocketId contactOutputId = firstOutputSocket(contact.node);
     const NodeGraphSocketId receiverVoronoiOutputId = firstOutputSocket(receiverVoronoi.node);
     const NodeGraphSocketId sourceVoronoiOutputId = firstOutputSocket(sourceVoronoi.node);
+    const NodeGraphSocketId pointsOutputId = outputSocketByType(points.node, NodeGraphValueType::Points);
+    const NodeGraphSocketId pointsTransformInputId = inputSocketByName(pointsTransform.node, "Geometry");
+    const NodeGraphSocketId pointsTransformOutputId = firstOutputSocket(pointsTransform.node);
+    const NodeGraphSocketId receiverVoronoiPointsInputId = inputSocketByType(receiverVoronoi.node, NodeGraphValueType::Points);
+    const NodeGraphSocketId sourceVoronoiPointsInputId = inputSocketByType(sourceVoronoi.node, NodeGraphValueType::Points);
+    const NodeGraphSocketId receiverMeshPointsInputId = inputSocketByName(receiverMeshPoints.node, "Geometry");
+    const NodeGraphSocketId receiverMeshPointsOutputId = firstOutputSocket(receiverMeshPoints.node);
+    const NodeGraphSocketId sourceMeshPointsInputId = inputSocketByName(sourceMeshPoints.node, "Geometry");
+    const NodeGraphSocketId sourceMeshPointsOutputId = firstOutputSocket(sourceMeshPoints.node);
+    const NodeGraphSocketId leftMergeInputId = inputSocketByName(leftMerge.node, "Geometry");
+    const NodeGraphSocketId leftMergeOutputId = firstOutputSocket(leftMerge.node);
+    const NodeGraphSocketId rightMergeInputId = inputSocketByName(rightMerge.node, "Geometry");
+    const NodeGraphSocketId rightMergeOutputId = firstOutputSocket(rightMerge.node);
 
     if (!receiverModelOutputId.isValid() || !receiverTransformInputId.isValid() || !receiverTransformOutputId.isValid() ||
         !receiverRemeshInputId.isValid() || !receiverRemeshOutputId.isValid() || !sourceModelOutputId.isValid() ||
@@ -124,7 +167,13 @@ void NodeGraphEditor::resetToDefaultGraph() {
         !heatSolveVoronoiInputId.isValid() || !heatSolveContactInputId.isValid() ||
         !contactEmitterInputId.isValid() || !contactReceiverInputId.isValid() || !receiverHeatModelOutputId.isValid() ||
         !sourceHeatModelOutputId.isValid() || !contactOutputId.isValid() ||
-        !receiverVoronoiOutputId.isValid() || !sourceVoronoiOutputId.isValid()) {
+        !receiverVoronoiOutputId.isValid() || !sourceVoronoiOutputId.isValid() ||
+        !pointsOutputId.isValid() || !pointsTransformInputId.isValid() || !pointsTransformOutputId.isValid() ||
+        !receiverVoronoiPointsInputId.isValid() || !sourceVoronoiPointsInputId.isValid() ||
+        !receiverMeshPointsInputId.isValid() || !receiverMeshPointsOutputId.isValid() ||
+        !sourceMeshPointsInputId.isValid() || !sourceMeshPointsOutputId.isValid() ||
+        !leftMergeInputId.isValid() || !leftMergeOutputId.isValid() ||
+        !rightMergeInputId.isValid() || !rightMergeOutputId.isValid()) {
         return;
     }
 
@@ -170,6 +219,15 @@ void NodeGraphEditor::resetToDefaultGraph() {
     connectSockets(sourceHeatModel.id, sourceHeatModelOutputId, sourceVoronoi.id, sourceVoronoiGeometryInputId, errorMessage);
     connectSockets(receiverHeatModel.id, receiverHeatModelOutputId, contact.id, contactReceiverInputId, errorMessage);
     connectSockets(sourceHeatModel.id, sourceHeatModelOutputId, contact.id, contactEmitterInputId, errorMessage);
+    connectSockets(receiverRemesh.id, receiverRemeshOutputId, receiverMeshPoints.id, receiverMeshPointsInputId, errorMessage);
+    connectSockets(sourceRemesh.id, sourceRemeshOutputId, sourceMeshPoints.id, sourceMeshPointsInputId, errorMessage);
+    connectSockets(receiverMeshPoints.id, receiverMeshPointsOutputId, leftMerge.id, leftMergeInputId, errorMessage);
+    connectSockets(sourceMeshPoints.id, sourceMeshPointsOutputId, rightMerge.id, rightMergeInputId, errorMessage);
+    connectSockets(points.id, pointsOutputId, pointsTransform.id, pointsTransformInputId, errorMessage);
+    connectSockets(pointsTransform.id, pointsTransformOutputId, leftMerge.id, leftMergeInputId, errorMessage);
+    connectSockets(pointsTransform.id, pointsTransformOutputId, rightMerge.id, rightMergeInputId, errorMessage);
+    connectSockets(leftMerge.id, leftMergeOutputId, receiverVoronoi.id, receiverVoronoiPointsInputId, errorMessage);
+    connectSockets(rightMerge.id, rightMergeOutputId, sourceVoronoi.id, sourceVoronoiPointsInputId, errorMessage);
     connectSockets(receiverVoronoi.id, receiverVoronoiOutputId, heatSolve.id, heatSolveVoronoiInputId, errorMessage);
     connectSockets(sourceVoronoi.id, sourceVoronoiOutputId, heatSolve.id, heatSolveVoronoiInputId, errorMessage);
     connectSockets(contact.id, contactOutputId, heatSolve.id, heatSolveContactInputId, errorMessage);

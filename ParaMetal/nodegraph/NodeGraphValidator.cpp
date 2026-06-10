@@ -1,6 +1,6 @@
 #include "NodeGraphValidator.hpp"
-#include "NodeGraphTypeRegistry.hpp"
 #include "NodeGraphTypes.hpp"
+#include "NodeGraphUtils.hpp"
 
 #include <queue>
 #include <string>
@@ -9,7 +9,6 @@
 
 bool NodeGraphValidator::canCreateConnection(
     const NodeGraph& document,
-    const NodeGraphTypeRegistry& typeRegistry,
     NodeGraphNodeId fromNode,
     NodeGraphSocketId fromSocket,
     NodeGraphNodeId toNode,
@@ -42,13 +41,35 @@ bool NodeGraphValidator::canCreateConnection(
         return false;
     }
 
-    const uint8_t producedPayloadType = srcSocket->contract.producedPayloadType;
-    NodeGraphValueType srcDisplayType = typeRegistry.getDisplayType(producedPayloadType);
-    if (srcDisplayType == NodeGraphValueType::None || srcDisplayType != dstSocket->valueType) {
-        const std::string* typeName = typeRegistry.getTypeName(producedPayloadType);
-        errorMessage = "Data contract mismatch: output '" + srcSocket->name +
-            "' provides '" + (typeName ? *typeName : std::string("unknown")) +
-            "' but input '" + dstSocket->name + "' does not accept it.";
+    const NodeGraphValueType srcType = socketType(document, fromNode, fromSocket);
+    const NodeGraphValueType dstType = socketType(document, toNode, toSocket);
+
+    auto isAccepted = [&]() -> bool {
+        if (srcType != NodeGraphValueType::None && dstType != NodeGraphValueType::None) {
+            return srcType == dstType;
+        }
+        if (!srcSocket->acceptedValueTypes.empty()) {
+            if (dstType != NodeGraphValueType::None) {
+                return std::find(srcSocket->acceptedValueTypes.begin(), srcSocket->acceptedValueTypes.end(), dstType) != srcSocket->acceptedValueTypes.end();
+            }
+            if (!dstSocket->acceptedValueTypes.empty()) {
+                return std::any_of(srcSocket->acceptedValueTypes.begin(), srcSocket->acceptedValueTypes.end(),
+                    [dstSocket](NodeGraphValueType vt) {
+                        return std::find(dstSocket->acceptedValueTypes.begin(), dstSocket->acceptedValueTypes.end(), vt) != dstSocket->acceptedValueTypes.end();
+                    });
+            }
+        }
+        if (!dstSocket->acceptedValueTypes.empty() && srcType != NodeGraphValueType::None) {
+            return std::find(dstSocket->acceptedValueTypes.begin(), dstSocket->acceptedValueTypes.end(), srcType) != dstSocket->acceptedValueTypes.end();
+        }
+        return srcSocket->valueType == dstSocket->valueType;
+    }();
+
+    if (!isAccepted) {
+        errorMessage = "Type mismatch: output '" + srcSocket->name +
+            "' is '" + valueTypeToString(srcType) +
+            "' but input '" + dstSocket->name + "' expects '" +
+            valueTypeToString(dstSocket->acceptedValueTypes.empty() ? dstSocket->valueType : dstType) + "'.";
         return false;
     }
 
@@ -60,19 +81,13 @@ bool NodeGraphValidator::canCreateConnection(
             errorMessage = "Connection already exists.";
             return false;
         }
-    }
-
-    for (const auto& [id, edge] : document.getEdges()) {
-        if (ignoreExistingEdge.isValid() && edge.id == ignoreExistingEdge) {
-            continue;
-        }
         if (edge.toNode == toNode && edge.toSocket == toSocket && !dstSocket->variadic) {
             errorMessage = "Input socket already has a connection.";
             return false;
         }
     }
 
-    if (wouldIntroduceCycle(document, fromNode, toNode)) {
+    if (createsCycle(document, fromNode, toNode)) {
         errorMessage = "Connection would introduce a cycle.";
         return false;
     }
@@ -80,10 +95,7 @@ bool NodeGraphValidator::canCreateConnection(
     return true;
 }
 
-bool NodeGraphValidator::wouldIntroduceCycle(
-    const NodeGraph& document,
-    NodeGraphNodeId fromNode,
-    NodeGraphNodeId toNode) {
+bool NodeGraphValidator::createsCycle(const NodeGraph& document, NodeGraphNodeId fromNode, NodeGraphNodeId toNode) {
     std::unordered_map<uint32_t, std::vector<uint32_t>> adjacency;
     for (const auto& [id, edge] : document.getEdges()) {
         adjacency[edge.fromNode.value].push_back(edge.toNode.value);

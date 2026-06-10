@@ -15,7 +15,11 @@
 #include "nodegraph/NodePayloadRegistry.hpp"
 #include "runtime/ModelComputeRuntime.hpp"
 #include "runtime/ContactDisplayController.hpp"
+#include "runtime/PointComputeRuntime.hpp"
+#include "runtime/PointDisplayController.hpp"
 #include "runtime/RemeshDisplayController.hpp"
+#include "runtime/RuntimePointComputeTransport.hpp"
+#include "runtime/RuntimePointDisplayTransport.hpp"
 #include "runtime/RemeshController.hpp"
 #include "runtime/RuntimeContactDisplayTransport.hpp"
 #include "runtime/RuntimeRemeshDisplayTransport.hpp"
@@ -79,6 +83,13 @@ bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, Win
     payloadRegistryState = std::make_unique<NodePayloadRegistry>();
     runtimeModelComputeTransportState = std::make_unique<RuntimeModelComputeTransport>();
     runtimeModelDisplayTransportState = std::make_unique<RuntimeModelDisplayTransport>();
+    runtimePointComputeTransportState = std::make_unique<RuntimePointComputeTransport>();
+    runtimePointDisplayTransportState = std::make_unique<RuntimePointDisplayTransport>();
+    pointDisplayControllerState = std::make_unique<PointDisplayController>();
+    pointComputeRuntimeState = std::make_unique<PointComputeRuntime>(
+        core.device(),
+        *allocator,
+        *commandPool);
     modelDisplayControllerState = std::make_unique<ModelDisplayController>();
     modelComputeRuntimeState = std::make_unique<ModelComputeRuntime>(
         core.device(),
@@ -138,6 +149,9 @@ bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, Win
     heatDisplayControllerState->setOverlayRenderer(renderRuntime->getSceneRenderer().getHeatOverlayRenderer());
     runtimeHeatComputeTransportState->setController(heatSystemComputeControllerState.get());
     runtimeHeatDisplayTransportState->setController(heatDisplayControllerState.get());
+    runtimePointComputeTransportState->setRuntime(pointComputeRuntimeState.get());
+    pointDisplayControllerState->setOverlayRenderer(renderRuntime->getSceneRenderer().getPointOverlayRenderer());
+    runtimePointDisplayTransportState->setController(pointDisplayControllerState.get());
     runtimeModelComputeTransportState->setRuntime(modelComputeRuntimeState.get());
     modelDisplayControllerState->setModelRegistry(resourceManager);
     runtimeModelDisplayTransportState->setController(modelDisplayControllerState.get());
@@ -155,10 +169,12 @@ bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, Win
     nodeRuntimeServices.contactComputeTransport = runtimeContactComputeTransportState.get();
     nodeRuntimeServices.heatComputeTransport = runtimeHeatComputeTransportState.get();
     nodeRuntimeServices.modelDisplayTransport = runtimeModelDisplayTransportState.get();
+    nodeRuntimeServices.pointDisplayTransport = runtimePointDisplayTransportState.get();
     nodeRuntimeServices.remeshDisplayTransport = runtimeRemeshDisplayTransportState.get();
     nodeRuntimeServices.voronoiDisplayTransport = runtimeVoronoiDisplayTransportState.get();
     nodeRuntimeServices.contactDisplayTransport = runtimeContactDisplayTransportState.get();
     nodeRuntimeServices.heatDisplayTransport = runtimeHeatDisplayTransportState.get();
+    nodeRuntimeServices.pointComputeTransport = runtimePointComputeTransportState.get();
     nodeRuntimeServices.heatSystemController = heatSystemComputeControllerState.get();
     nodeRuntimeServices.renderSettingsController = renderSettingsController;
     nodeRuntimeServices.payloadRegistry = payloadRegistryState.get();

@@ -249,6 +249,9 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="runtime\RuntimePackageCompiler.cpp" />
     <ClCompile Include="runtime\RuntimeModelComputeTransport.cpp" />
     <ClCompile Include="runtime\RuntimeModelDisplayTransport.cpp" />
+    <ClCompile Include="runtime\RuntimePointComputeTransport.cpp" />
+    <ClCompile Include="runtime\PointComputeRuntime.cpp" />
+    <ClCompile Include="runtime\PointDisplayController.cpp" />
     <ClCompile Include="runtime\RuntimeVoronoiComputeTransport.cpp" />
     <ClCompile Include="runtime\VoronoiDisplayController.cpp" />
     <ClCompile Include="runtime\RuntimeController.cpp" />
@@ -275,6 +278,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="render\SceneRenderer.cpp" />
     <ClCompile Include="render\ContactOverlayRenderer.cpp" />
     <ClCompile Include="render\HeatOverlayRenderer.cpp" />
+    <ClCompile Include="render\PointOverlayRenderer.cpp" />
     <ClCompile Include="render\VoronoiOverlayRenderer.cpp" />
     <ClCompile Include="render\GeometryPass.cpp" />
     <ClCompile Include="render\LightingPass.cpp" />
@@ -289,6 +293,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="mesh\\remesher\\HalfEdgeMesh.cpp" />
     <ClCompile Include="spatial\HashGrid.cpp" />
     <ClCompile Include="renderers\HashGridRenderer.cpp" />
+    <ClCompile Include="renderers\HeatPointRenderer.cpp" />
     <ClCompile Include="renderers\HeatSurfaceRenderer.cpp" />
     <ClCompile Include="renderers\HeatPaletteRenderer.cpp" />
     <ClCompile Include="renderers\VectorArrowRenderer.cpp" />
@@ -296,6 +301,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="heat\HeatContactRuntime.cpp" />
     <ClCompile Include="voronoi\VoronoiSystemBuildStage.cpp" />
     <ClCompile Include="voronoi\VoronoiModelRuntime.cpp" />
+    <ClCompile Include="voronoi\VoronoiPointRuntime.cpp" />
     <ClCompile Include="heat\HeatSystemPresets.cpp" />
     <ClCompile Include="heat\HeatSystemComputeController.cpp" />
     <ClCompile Include="heat\HeatSystem.cpp" />
@@ -336,6 +342,11 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="nodegraph\NodeRemesh.cpp" />
     <ClCompile Include="nodegraph\NodeRemeshParams.cpp" />
     <ClCompile Include="nodegraph\ui\widgets\NodeRemeshPanel.cpp" />
+    <ClCompile Include="nodegraph\NodePoints.cpp" />
+    <ClCompile Include="nodegraph\NodeMeshPoints.cpp" />
+    <ClCompile Include="nodegraph\NodeMerge.cpp" />
+    <ClCompile Include="nodegraph\NodePointsParams.cpp" />
+    <ClCompile Include="nodegraph\ui\widgets\NodePointsPanel.cpp" />
     <ClCompile Include="nodegraph\NodeVoronoiParams.cpp" />
     <ClCompile Include="nodegraph\ui\widgets\NodeVoronoiPanel.cpp" />
     <ClCompile Include="nodegraph\NodeHeatModel.cpp" />
@@ -381,7 +392,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="renderers\VoronoiRenderer.cpp" />
     <ClCompile Include="renderers\IntrinsicRenderer.cpp" />
     <ClCompile Include="renderers\OutlineRenderer.cpp" />
-    <ClCompile Include="voronoi\VoronoiSeeder.cpp" />
+    <ClCompile Include="voronoi\VoronoiMeshGrid.cpp" />
     <ClCompile Include="spatial\VoxelGrid.cpp" />
     <ClCompile Include="vulkan\VulkanBuffer.cpp" />
     <ClCompile Include="app\SwapchainStage.cpp" />
@@ -482,6 +493,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="domain\GeometryData.hpp" />
     <ClInclude Include="domain\HeatData.hpp" />
     <ClInclude Include="domain\HeatModelData.hpp" />
+    <ClInclude Include="domain\PointData.hpp" />
     <ClInclude Include="domain\RemeshData.hpp" />
     <ClInclude Include="domain\VoronoiData.hpp" />
     <ClInclude Include="contact\ContactSampling.hpp" />
@@ -508,9 +520,14 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="runtime\ModelDisplayController.hpp" />
     <ClInclude Include="runtime\RemeshDisplayController.hpp" />
     <ClInclude Include="render\ContactOverlayRenderer.hpp" />
+    <ClInclude Include="render\PointOverlayRenderer.hpp" />
     <ClInclude Include="render\VoronoiOverlayRenderer.hpp" />
     <ClInclude Include="runtime\RuntimeModelComputeTransport.hpp" />
     <ClInclude Include="runtime\RuntimeModelDisplayTransport.hpp" />
+    <ClInclude Include="runtime\RuntimePointComputeTransport.hpp" />
+    <ClInclude Include="runtime\RuntimePointDisplayTransport.hpp" />
+    <ClInclude Include="runtime\PointComputeRuntime.hpp" />
+    <ClInclude Include="runtime\PointDisplayController.hpp" />
     <ClInclude Include="runtime\RuntimeVoronoiComputeTransport.hpp" />
     <ClInclude Include="runtime\RuntimeVoronoiDisplayTransport.hpp" />
     <ClInclude Include="runtime\VoronoiDisplayController.hpp" />
@@ -581,12 +598,15 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="mesh\\remesher\\HalfEdgeMesh.hpp" />
     <ClInclude Include="spatial\HashGrid.hpp" />
     <ClInclude Include="renderers\HashGridRenderer.hpp" />
+    <ClInclude Include="renderers\HeatPointRenderer.hpp" />
     <ClInclude Include="renderers\HeatSurfaceRenderer.hpp" />
     <ClInclude Include="renderers\HeatPaletteRenderer.hpp" />
     <ClInclude Include="renderers\VectorArrowRenderer.hpp" />
     <ClInclude Include="voronoi\VoronoiSystemBuildStage.hpp" />
     <ClInclude Include="voronoi\VoronoiDomain.hpp" />
+    <ClInclude Include="voronoi\VoronoiDomainRuntime.hpp" />
     <ClInclude Include="voronoi\VoronoiModelRuntime.hpp" />
+    <ClInclude Include="voronoi\VoronoiPointRuntime.hpp" />
     <ClInclude Include="voronoi\VoronoiGpuStructs.hpp" />
     <ClInclude Include="voronoi\VoronoiResources.hpp" />
     <ClInclude Include="voronoi\VoronoiStageContext.hpp" />
@@ -631,6 +651,11 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="nodegraph\NodeRemesh.hpp" />
     <ClInclude Include="nodegraph\NodeRemeshParams.hpp" />
     <ClInclude Include="nodegraph\ui\widgets\NodeRemeshPanel.hpp" />
+    <ClInclude Include="nodegraph\NodePoints.hpp" />
+    <ClInclude Include="nodegraph\NodeMeshPoints.hpp" />
+    <ClInclude Include="nodegraph\NodeMerge.hpp" />
+    <ClInclude Include="nodegraph\NodePointsParams.hpp" />
+    <ClInclude Include="nodegraph\ui\widgets\NodePointsPanel.hpp" />
     <ClInclude Include="nodegraph\NodeVoronoiParams.hpp" />
     <ClInclude Include="nodegraph\ui\widgets\NodeVoronoiPanel.hpp" />
     <ClInclude Include="nodegraph\NodeHeatModel.hpp" />
@@ -670,7 +695,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="renderers\VoronoiRenderer.hpp" />
     <ClInclude Include="renderers\IntrinsicRenderer.hpp" />
     <ClInclude Include="renderers\OutlineRenderer.hpp" />
-    <ClInclude Include="voronoi\VoronoiSeeder.hpp" />
+    <ClInclude Include="voronoi\VoronoiMeshGrid.hpp" />
     <ClInclude Include="spatial\VoxelGrid.hpp" />
     <ClInclude Include="renderers\WireframeRenderer.hpp" />
     <QtMoc Include="app\MainQt.h" />

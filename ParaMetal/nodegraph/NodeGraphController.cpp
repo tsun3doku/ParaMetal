@@ -12,6 +12,8 @@
 #include "runtime/RuntimeModelComputeTransport.hpp"
 #include "runtime/RuntimeModelDisplayTransport.hpp"
 #include "runtime/RuntimePackageCompiler.hpp"
+#include "runtime/RuntimePointComputeTransport.hpp"
+#include "runtime/RuntimePointDisplayTransport.hpp"
 #include "runtime/RuntimeRemeshComputeTransport.hpp"
 #include "runtime/RuntimeRemeshDisplayTransport.hpp"
 #include "runtime/RuntimeVoronoiComputeTransport.hpp"
@@ -28,10 +30,12 @@ NodeGraphController::NodeGraphController(NodeGraphBridge* bridge, const NodeRunt
     if (runtimeServices.voronoiComputeTransport) { runtimeServices.voronoiComputeTransport->setECSRegistry(&ecsRegistry); }
     if (runtimeServices.contactComputeTransport) { runtimeServices.contactComputeTransport->setECSRegistry(&ecsRegistry); }
     if (runtimeServices.heatComputeTransport) { runtimeServices.heatComputeTransport->setECSRegistry(&ecsRegistry); }
+    if (runtimeServices.pointComputeTransport) { runtimeServices.pointComputeTransport->setECSRegistry(&ecsRegistry); }
     if (runtimeServices.remeshDisplayTransport) { runtimeServices.remeshDisplayTransport->setECSRegistry(&ecsRegistry); }
     if (runtimeServices.voronoiDisplayTransport) { runtimeServices.voronoiDisplayTransport->setECSRegistry(&ecsRegistry); }
     if (runtimeServices.contactDisplayTransport) { runtimeServices.contactDisplayTransport->setECSRegistry(&ecsRegistry); }
     if (runtimeServices.heatDisplayTransport) { runtimeServices.heatDisplayTransport->setECSRegistry(&ecsRegistry); }
+    if (runtimeServices.pointDisplayTransport) { runtimeServices.pointDisplayTransport->setECSRegistry(&ecsRegistry); }
     applyPendingChanges();
 }
 
@@ -73,12 +77,14 @@ void NodeGraphController::tick() {
         runtimeServices.remeshComputeTransport ||
         runtimeServices.voronoiComputeTransport ||
         runtimeServices.contactComputeTransport ||
-        runtimeServices.heatComputeTransport;
+        runtimeServices.heatComputeTransport ||
+        runtimeServices.pointComputeTransport;
     const bool hasDisplayTransports = runtimeServices.modelDisplayTransport ||
         runtimeServices.remeshDisplayTransport ||
         runtimeServices.voronoiDisplayTransport ||
         runtimeServices.contactDisplayTransport ||
-        runtimeServices.heatDisplayTransport;
+        runtimeServices.heatDisplayTransport ||
+        runtimeServices.pointDisplayTransport;
 
     if (hasComputeTransports || hasDisplayTransports) {
         RuntimePackageCompiler packageCompiler{};
@@ -112,6 +118,10 @@ void NodeGraphController::tick() {
             runtimeServices.heatComputeTransport->sync(ecsRegistry);
             runtimeServices.heatComputeTransport->finalizeSync();
         }
+        if (runtimeServices.pointComputeTransport) {
+            runtimeServices.pointComputeTransport->sync(ecsRegistry);
+            runtimeServices.pointComputeTransport->finalizeSync();
+        }
 
         if (hasDisplayTransports) {
             const std::unordered_set<uint64_t> visibleKeys =
@@ -126,6 +136,7 @@ void NodeGraphController::tick() {
             if (runtimeServices.voronoiDisplayTransport) { runtimeServices.voronoiDisplayTransport->setVisibleKeys(&visibleKeys); }
             if (runtimeServices.contactDisplayTransport) { runtimeServices.contactDisplayTransport->setVisibleKeys(&visibleKeys); }
             if (runtimeServices.heatDisplayTransport) { runtimeServices.heatDisplayTransport->setVisibleKeys(&visibleKeys); }
+            if (runtimeServices.pointDisplayTransport) { runtimeServices.pointDisplayTransport->setVisibleKeys(&visibleKeys); }
 
             if (runtimeServices.modelDisplayTransport) {
                 runtimeServices.modelDisplayTransport->sync(ecsRegistry);
@@ -147,6 +158,10 @@ void NodeGraphController::tick() {
                 runtimeServices.heatDisplayTransport->sync(ecsRegistry);
                 runtimeServices.heatDisplayTransport->finalizeSync();
             }
+            if (runtimeServices.pointDisplayTransport) {
+                runtimeServices.pointDisplayTransport->sync(ecsRegistry);
+                runtimeServices.pointDisplayTransport->finalizeSync();
+            }
         }
 
         destroyStaleEntities(ecsRegistry);
@@ -154,7 +169,7 @@ void NodeGraphController::tick() {
 
     NodeGraphDebugCache::instance().update(
         runtime.state().revision,
-        execState.sourceSocketByInputSocket,
+        execState.upstreamSocket,
         execState.outputBySocket);
 }
 

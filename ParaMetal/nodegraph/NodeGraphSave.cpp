@@ -1,5 +1,6 @@
 #include "NodeGraphSave.hpp"
 #include "NodeGraphRegistry.hpp"
+#include "NodeGraphUtils.hpp"
 
 #include <QFile>
 #include <QFileInfo>
@@ -179,17 +180,7 @@ QString NodeGraphSave::toAbsolutePath(const QString& path, const QDir& projectDi
 }
 
 QString NodeGraphSave::valueTypeToString(NodeGraphValueType value) {
-    switch (value) {
-    case NodeGraphValueType::None: return "None";
-    case NodeGraphValueType::Mesh: return "Mesh";
-    case NodeGraphValueType::Volume: return "Volume";
-    case NodeGraphValueType::Field: return "Field";
-    case NodeGraphValueType::Vector3: return "Vector3";
-    case NodeGraphValueType::ScalarFloat: return "ScalarFloat";
-    case NodeGraphValueType::ScalarInt: return "ScalarInt";
-    case NodeGraphValueType::ScalarBool: return "ScalarBool";
-    }
-    return "None";
+    return QString::fromStdString(::valueTypeToString(value));
 }
 
 bool NodeGraphSave::valueTypeFromString(const QString& text, NodeGraphValueType& outValue) {
@@ -299,11 +290,19 @@ QJsonObject NodeGraphSave::socketToJson(const NodeGraphSocket& socket) {
     obj["id"] = static_cast<int>(socket.id.value);
     obj["name"] = QString::fromStdString(socket.name);
     obj["valueType"] = valueTypeToString(socket.valueType);
+    if (!socket.acceptedValueTypes.empty()) {
+        QJsonArray accepted;
+        for (NodeGraphValueType vt : socket.acceptedValueTypes) {
+            accepted.append(valueTypeToString(vt));
+        }
+        obj["acceptedValueTypes"] = accepted;
+    }
     obj["direction"] = directionToString(socket.direction);
     QJsonObject contract;
     contract["producedPayloadType"] = static_cast<int>(socket.contract.producedPayloadType);
     obj["contract"] = contract;
     obj["variadic"] = socket.variadic;
+    obj["required"] = socket.required;
     return obj;
 }
 
@@ -439,6 +438,15 @@ bool NodeGraphSave::socketFromJson(const QJsonValue& value, NodeGraphSocket& out
     outSocket.direction = direction;
     outSocket.contract.producedPayloadType = static_cast<uint8_t>(contract["producedPayloadType"].toInt());
     outSocket.variadic = obj["variadic"].toBool();
+    outSocket.required = obj.contains("required") ? obj["required"].toBool() : true;
+    if (obj.contains("acceptedValueTypes") && obj["acceptedValueTypes"].isArray()) {
+        for (const QJsonValue& vtValue : obj["acceptedValueTypes"].toArray()) {
+            NodeGraphValueType vt = NodeGraphValueType::None;
+            if (valueTypeFromString(vtValue.toString(), vt) && vt != NodeGraphValueType::None) {
+                outSocket.acceptedValueTypes.push_back(vt);
+            }
+        }
+    }
     return true;
 }
 

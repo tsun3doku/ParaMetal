@@ -3,6 +3,7 @@
 #include "NodeGraphSceneStyle.hpp"
 #include "NodeGraphSceneUtils.hpp"
 #include "NodeGraphSocketItem.hpp"
+#include "nodegraph/NodeGraphUtils.hpp"
 
 #include <QBrush>
 #include <QColor>
@@ -75,6 +76,10 @@ void NodeGraphScene::buildFromState(const NodeGraphState& state) {
         createEdgeItem(edge);
     }
 
+    for (const auto& [id, node] : state.nodes) {
+        colorNode(node.id);
+    }
+
     selectNodesById(selectedNodeIds);
     suppressSelectionChangedNotifications = false;
     notifySelectedNodeChanged();
@@ -121,9 +126,13 @@ void NodeGraphScene::applyDelta(const NodeGraphDelta& delta) {
             break;
         case NodeGraphChangeType::EdgeUpsert:
             createEdgeItem(change.edge);
+            colorNode(change.edge.fromNode);
+            colorNode(change.edge.toNode);
             break;
         case NodeGraphChangeType::EdgeRemoved:
             removeEdgeItem(change.edgeId);
+            colorNode(change.edge.fromNode);
+            colorNode(change.edge.toNode);
             break;
         }
     }
@@ -169,12 +178,13 @@ NodeGraphNodeItem* NodeGraphScene::createNodeItem(const NodeGraphNode& node) {
 
     for (std::size_t index = 0; index < node.inputs.size(); ++index) {
         const NodeGraphSocket& socket = node.inputs[index];
+        const NodeGraphValueType displayValueType = bridge ? socketType(bridge->state(), node.id, socket.id) : socket.valueType;
         const QPointF socketPos = nodeItem->inputSocketPosition(index, node.inputs.size());
         NodeGraphSocketItem* inputSocket = new NodeGraphSocketItem(
             node.id,
             socket.id,
             NodeGraphSocketDirection::Input,
-            socket.valueType,
+            displayValueType,
             QRectF(
                 socketPos.x() - nodegraphscene::socketRadius,
                 socketPos.y() - nodegraphscene::socketRadius,
@@ -182,7 +192,7 @@ NodeGraphNodeItem* NodeGraphScene::createNodeItem(const NodeGraphNode& node) {
                 nodegraphscene::socketRadius * 2.0),
             nodeItem);
         inputSocket->setPen(QPen(nodegraphscene::socketBorderColor(), nodegraphscene::socketBorderWidth));
-        inputSocket->setBrush(nodegraphscene::valueTypeColor(socket.valueType));
+        inputSocket->setBrush(nodegraphscene::valueTypeColor(displayValueType));
         nodegraphscene::setDecorativeItemFlags(inputSocket);
         inputSocket->setData(NodeIdRole, static_cast<qulonglong>(node.id.value));
         inputSocketItemsBySocket[socket.id.value] = inputSocket;
@@ -190,12 +200,13 @@ NodeGraphNodeItem* NodeGraphScene::createNodeItem(const NodeGraphNode& node) {
 
     for (std::size_t index = 0; index < node.outputs.size(); ++index) {
         const NodeGraphSocket& socket = node.outputs[index];
+        const NodeGraphValueType displayValueType = bridge ? socketType(bridge->state(), node.id, socket.id) : socket.valueType;
         const QPointF socketPos = nodeItem->outputSocketPosition(index, node.outputs.size());
         NodeGraphSocketItem* outputSocket = new NodeGraphSocketItem(
             node.id,
             socket.id,
             NodeGraphSocketDirection::Output,
-            socket.valueType,
+            displayValueType,
             QRectF(
                 socketPos.x() - nodegraphscene::socketRadius,
                 socketPos.y() - nodegraphscene::socketRadius,
@@ -203,7 +214,7 @@ NodeGraphNodeItem* NodeGraphScene::createNodeItem(const NodeGraphNode& node) {
                 nodegraphscene::socketRadius * 2.0),
             nodeItem);
         outputSocket->setPen(QPen(nodegraphscene::socketBorderColor(), nodegraphscene::socketBorderWidth));
-        outputSocket->setBrush(nodegraphscene::valueTypeColor(socket.valueType));
+        outputSocket->setBrush(nodegraphscene::valueTypeColor(displayValueType));
         nodegraphscene::setDecorativeItemFlags(outputSocket);
         outputSocket->setData(NodeIdRole, static_cast<qulonglong>(node.id.value));
 
@@ -882,6 +893,38 @@ void NodeGraphScene::setEdgeHovered(QGraphicsPathItem* item, bool hovered) {
     pen.setCapStyle(Qt::RoundCap);
     pen.setJoinStyle(Qt::RoundJoin);
     item->setPen(pen);
+}
+
+void NodeGraphScene::colorNode(NodeGraphNodeId nodeId) {
+    if (!bridge || !nodeId.isValid()) {
+        return;
+    }
+
+    const NodeGraphState state = bridge->state();
+    const NodeGraphNode* node = state.node(nodeId);
+    if (!node) {
+        return;
+    }
+
+    for (const NodeGraphSocket& socket : node->inputs) {
+        auto it = inputSocketItemsBySocket.find(socket.id.value);
+        if (it == inputSocketItemsBySocket.end() || !it->second) {
+            continue;
+        }
+        const NodeGraphValueType effectiveType = socketType(state, nodeId, socket.id);
+        it->second->setValueType(effectiveType);
+        it->second->setBrush(nodegraphscene::valueTypeColor(effectiveType));
+    }
+
+    for (const NodeGraphSocket& socket : node->outputs) {
+        auto it = outputSocketItemsBySocket.find(socket.id.value);
+        if (it == outputSocketItemsBySocket.end() || !it->second) {
+            continue;
+        }
+        const NodeGraphValueType effectiveType = socketType(state, nodeId, socket.id);
+        it->second->setValueType(effectiveType);
+        it->second->setBrush(nodegraphscene::valueTypeColor(effectiveType));
+    }
 }
 
 void NodeGraphScene::setSocketHovered(NodeGraphSocketItem* item, bool hovered) {

@@ -25,6 +25,7 @@ public:
     NodeGraphSocketId socketId() const { return m_socketId; }
     NodeGraphSocketDirection direction() const { return m_direction; }
     NodeGraphValueType valueType() const { return m_valueType; }
+    void setValueType(NodeGraphValueType valueType) { m_valueType = valueType; }
 
 private:
     NodeGraphNodeId m_nodeId{};

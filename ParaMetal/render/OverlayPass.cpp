@@ -12,6 +12,7 @@
 #include "GeometryPass.hpp"
 #include "ContactOverlayRenderer.hpp"
 #include "HeatOverlayRenderer.hpp"
+#include "PointOverlayRenderer.hpp"
 #include "VoronoiOverlayRenderer.hpp"
 #include "scene/GizmoController.hpp"
 #include "renderers/GizmoRenderer.hpp"
@@ -134,6 +135,20 @@ void OverlayPass::create() {
         framegraph::toIndex(passId),
         maxFramesInFlight);
 
+    pointOverlayRenderer = std::make_unique<PointOverlayRenderer>(
+        vulkanDevice,
+        uniformBufferManager);
+    if (!pointOverlayRenderer) {
+        std::cerr << "[OverlayPass] Failed to create point overlay renderer" << std::endl;
+        destroy();
+        return;
+    }
+
+    pointOverlayRenderer->initialize(
+        frameGraphRuntime.getRenderPass(),
+        framegraph::toIndex(passId),
+        maxFramesInFlight);
+
     gridRenderer = std::make_unique<GridRenderer>(vulkanDevice, memoryAllocator, uniformBufferManager, maxFramesInFlight, frameGraphRuntime.getRenderPass(), renderCommandPool);
     if (!gridRenderer) {
         std::cerr << "[OverlayPass] Failed to create grid renderer" << std::endl;
@@ -192,6 +207,10 @@ VoronoiOverlayRenderer* OverlayPass::getVoronoiOverlayRenderer() const {
     return voronoiOverlayRenderer.get();
 }
 
+PointOverlayRenderer* OverlayPass::getPointOverlayRenderer() const {
+    return pointOverlayRenderer.get();
+}
+
 void OverlayPass::record(const FrameContext& context, const SceneView& view, const RenderFlags& flags, RenderServices& services) {
     if (!ready) {
         return;
@@ -219,6 +238,9 @@ void OverlayPass::record(const FrameContext& context, const SceneView& view, con
     if (voronoiOverlayRenderer) {
         voronoiOverlayRenderer->renderSurface(commandBuffer, currentFrame);
         voronoiOverlayRenderer->renderPoints(commandBuffer, currentFrame, extent);
+    }
+    if (pointOverlayRenderer) {
+        pointOverlayRenderer->render(commandBuffer, currentFrame, extent);
     }
 
     if (intrinsicRenderer) {
@@ -308,6 +330,10 @@ void OverlayPass::destroy() {
     if (voronoiOverlayRenderer) {
         voronoiOverlayRenderer->cleanup();
         voronoiOverlayRenderer.reset();
+    }
+    if (pointOverlayRenderer) {
+        pointOverlayRenderer->cleanup();
+        pointOverlayRenderer.reset();
     }
     if (timingOverlay) {
         timingOverlay->cleanup();

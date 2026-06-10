@@ -4,6 +4,7 @@
 #include "runtime/RuntimeECS.hpp"
 #include "runtime/VoronoiDisplayController.hpp"
 
+#include <iostream>
 #include <unordered_set>
 #include <vector>
 
@@ -26,26 +27,35 @@ public:
             return;
         }
 
+        std::unordered_set<uint64_t> nextSocketKeys;
         auto view = registry.view<VoronoiPackage>(entt::exclude<Stale>);
         for (auto entity : view) {
             uint64_t socketKey = static_cast<uint64_t>(entity);
             if (visibleKeys && visibleKeys->find(socketKey) == visibleKeys->end()) {
                 continue;
-        }
+            }
 
-        const auto& package = registry.get<VoronoiPackage>(entity);
-        VoronoiDisplayController::Config config{};
-        if (!tryBuildConfig(socketKey, package, config)) {
-            controller->remove(socketKey);
-            continue;
-        }
+            const auto& package = registry.get<VoronoiPackage>(entity);
+            VoronoiDisplayController::Config config{};
+            if (!tryBuildConfig(socketKey, package, config)) {
+                controller->remove(socketKey);
+                continue;
+            }
 
-        controller->apply(socketKey, config);
+            controller->apply(socketKey, config);
+            nextSocketKeys.insert(socketKey);
         }
 
         for (auto entity : registry.view<VoronoiPackage, Stale>()) {
             controller->remove(static_cast<uint64_t>(entity));
         }
+
+        for (uint64_t socketKey : activeSocketKeys) {
+            if (nextSocketKeys.find(socketKey) == nextSocketKeys.end()) {
+                controller->remove(socketKey);
+            }
+        }
+        activeSocketKeys = std::move(nextSocketKeys);
     }
 
     void finalizeSync() {
@@ -66,12 +76,25 @@ private:
         }
 
         const VoronoiProduct* computeProduct = tryGetProduct<VoronoiProduct>(*ecsRegistry, socketKey);
-        if (!computeProduct || !computeProduct->isValid()) {
+        if (!computeProduct) {
+            std::cerr << "[VoronoiDisplayTransport] no computeProduct for socketKey=" << socketKey << std::endl;
+            return false;
+        }
+        if (!computeProduct->isValid()) {
+            std::cerr << "[VoronoiDisplayTransport] computeProduct invalid: nodeCount=" << computeProduct->nodeCount
+                      << " simNodeCount=" << computeProduct->simNodeCount
+                      << " nodeBuffer=" << computeProduct->nodeBuffer
+                      << " simNodeBuffer=" << computeProduct->simNodeBuffer
+                      << " neighborIndicesBuffer=" << computeProduct->voronoiNeighborIndicesBuffer
+                      << " seedPositionBuffer=" << computeProduct->seedPositionBuffer
+                      << " candidateBuffer=" << computeProduct->candidateBuffer
+                      << " isPointDomain=" << computeProduct->isPointDomain
+                      << " runtimeModelId=" << computeProduct->runtimeModelId << std::endl;
             return false;
         }
 
         outConfig = {};
-        outConfig.showVoronoi = package.display.showVoronoi;
+        outConfig.showVoronoi = package.display.showVoronoi && package.domainType != DomainType::Points;
         outConfig.showPoints = package.display.showPoints;
         outConfig.nodeCount = computeProduct->nodeCount;
         outConfig.mappedVoronoiNodes = nullptr;
@@ -84,10 +107,20 @@ private:
         outConfig.occupancyPointBuffer = computeProduct->occupancyPointBuffer;
         outConfig.occupancyPointBufferOffset = computeProduct->occupancyPointBufferOffset;
         outConfig.occupancyPointCount = computeProduct->occupancyPointCount;
-        if (package.display.showVoronoi) {
+        if (outConfig.showVoronoi) {
             const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, package.modelMeshHandle.key);
             const RemeshProduct* remeshProduct = tryGetProduct<RemeshProduct>(*ecsRegistry, package.modelRemeshHandle.key);
-            if (!modelProduct || !remeshProduct || modelProduct->runtimeModelId != computeProduct->runtimeModelId) {
+            if (!modelProduct) {
+                std::cerr << "[VoronoiDisplayTransport] missing ModelProduct for modelMeshHandle=" << package.modelMeshHandle.key << std::endl;
+                return false;
+            }
+            if (!remeshProduct) {
+                std::cerr << "[VoronoiDisplayTransport] missing RemeshProduct for modelRemeshHandle=" << package.modelRemeshHandle.key << std::endl;
+                return false;
+            }
+            if (modelProduct->runtimeModelId != computeProduct->runtimeModelId) {
+                std::cerr << "[VoronoiDisplayTransport] runtimeModelId mismatch: model=" << modelProduct->runtimeModelId
+                          << " compute=" << computeProduct->runtimeModelId << std::endl;
                 return false;
             }
 
@@ -120,4 +153,5 @@ private:
     VoronoiDisplayController* controller = nullptr;
     ECSRegistry* ecsRegistry = nullptr;
     const std::unordered_set<uint64_t>* visibleKeys = nullptr;
+    std::unordered_set<uint64_t> activeSocketKeys;
 };

@@ -10,31 +10,15 @@
 
 NodeGraph::NodeGraph(const NodeGraphRegistry* reg) : registry(reg) {}
 
-static bool patchSocketIds(
+static void copySocketIdsByIndex(
     std::vector<NodeGraphSocket>& rebuiltSockets,
-    const std::vector<NodeGraphSocket>& savedSockets,
-    std::string& errorMessage) {
-    if (rebuiltSockets.size() != savedSockets.size()) {
-        errorMessage = "Saved node socket count does not match current node definition.";
-        return false;
-    }
-
-    for (std::size_t i = 0; i < rebuiltSockets.size(); ++i) {
-        const NodeGraphSocket& savedSocket = savedSockets[i];
-        NodeGraphSocket& rebuiltSocket = rebuiltSockets[i];
-        if (rebuiltSocket.name != savedSocket.name ||
-            rebuiltSocket.valueType != savedSocket.valueType ||
-            rebuiltSocket.direction != savedSocket.direction ||
-            rebuiltSocket.contract.producedPayloadType != savedSocket.contract.producedPayloadType ||
-            rebuiltSocket.variadic != savedSocket.variadic ||
-            !savedSocket.id.isValid()) {
-            errorMessage = "Saved node socket metadata does not match current node definition.";
-            return false;
+    const std::vector<NodeGraphSocket>& savedSockets) {
+    const std::size_t count = std::min(rebuiltSockets.size(), savedSockets.size());
+    for (std::size_t i = 0; i < count; ++i) {
+        if (savedSockets[i].id.isValid()) {
+            rebuiltSockets[i].id = savedSockets[i].id;
         }
-        rebuiltSocket.id = savedSocket.id;
     }
-
-    return true;
 }
 
 static uint32_t maxSocketId(const NodeGraphNode& node) {
@@ -190,13 +174,7 @@ bool NodeGraph::appendSocket(
         return false;
     }
 
-    NodeGraphSocket socket{};
-    socket.id = allocateSocketId();
-    socket.name = socketSignature.name;
-    socket.valueType = socketSignature.valueType;
-    socket.direction = socketSignature.direction;
-    socket.contract = socketSignature.contract;
-
+    NodeGraphSocket socket(allocateSocketId(), socketSignature);
     if (socket.direction == NodeGraphSocketDirection::Input) {
         node->inputs.push_back(socket);
     } else {
@@ -294,13 +272,8 @@ bool NodeGraph::loadSerializedState(
         rebuiltNode.inputs = candidate.buildSocketsFromInterface(*definition, NodeGraphSocketDirection::Input);
         rebuiltNode.outputs = candidate.buildSocketsFromInterface(*definition, NodeGraphSocketDirection::Output);
 
-        if (!patchSocketIds(rebuiltNode.inputs, savedNode.inputs, errorMessage) ||
-            !patchSocketIds(rebuiltNode.outputs, savedNode.outputs, errorMessage)) {
-            std::ostringstream ss;
-            ss << "Node " << savedNode.id.value << ": " << errorMessage;
-            errorMessage = ss.str();
-            return false;
-        }
+        copySocketIdsByIndex(rebuiltNode.inputs, savedNode.inputs);
+        copySocketIdsByIndex(rebuiltNode.outputs, savedNode.outputs);
 
         for (const NodeGraphParamDefinition& parameterDefinition : definition->parameters) {
             rebuiltNode.parameters.push_back(makeNodeGraphParamValue(parameterDefinition));
@@ -354,7 +327,6 @@ bool NodeGraph::loadSerializedState(
         std::string validationError;
         if (!NodeGraphValidator::canCreateConnection(
                 candidate,
-                registry->typeRegistry(),
                 savedEdge.fromNode,
                 savedEdge.fromSocket,
                 savedEdge.toNode,
@@ -425,15 +397,7 @@ std::vector<NodeGraphSocket> NodeGraph::buildSocketsFromInterface(
             continue;
         }
 
-        sockets.push_back(
-            {
-                allocateSocketId(),
-                socketSignature.name,
-                socketSignature.valueType,
-                socketSignature.direction,
-                socketSignature.contract,
-                socketSignature.variadic,
-            });
+        sockets.emplace_back(allocateSocketId(), socketSignature);
     }
 
     return sockets;

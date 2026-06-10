@@ -30,4 +30,5 @@ private:
     ModelDisplayController* controller = nullptr;
     ECSRegistry* ecsRegistry = nullptr;
     const std::unordered_set<uint64_t>* visibleKeys = nullptr;
+    std::unordered_set<uint64_t> activeSocketKeys;
 };

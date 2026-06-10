@@ -182,66 +182,46 @@ bool NodeGraphBridge::connectSockets(
     bool replaceExistingInput) {
     std::lock_guard<std::mutex> lock(mutex);
 
+    const NodeGraphNode* toNodePtr = document.findNode(toNode);
+    const NodeGraphSocket* targetSocket = toNodePtr ? toNodePtr->input(toSocket) : nullptr;
+
+    NodeGraphEdgeId ignoreEdgeId{};
+    const NodeGraphEdge* existingEdge = document.findIncomingEdge(toNode, toSocket);
+    if (existingEdge && targetSocket && !targetSocket->variadic) {
+        if (!replaceExistingInput) {
+            errorMessage = "Input socket already has a connection.";
+            return false;
+        }
+        ignoreEdgeId = existingEdge->id;
+    }
+
+    if (!NodeGraphValidator::canCreateConnection(document, fromNode, fromSocket, toNode, toSocket, errorMessage, ignoreEdgeId)) {
+        return false;
+    }
+
     std::vector<NodeGraphChange> changes;
+    if (ignoreEdgeId.isValid()) {
+        if (!document.removeConnection(ignoreEdgeId)) {
+            errorMessage = "Failed to replace existing input connection.";
+            return false;
+        }
+        NodeGraphChange removedChange{};
+        removedChange.type = NodeGraphChangeType::EdgeRemoved;
+        removedChange.reason = NodeGraphChangeReason::Topology;
+        removedChange.edge = *existingEdge;
+        removedChange.edgeId = ignoreEdgeId;
+        changes.push_back(std::move(removedChange));
+    }
 
     NodeGraphEdgeId newEdgeId{};
-    if (NodeGraphValidator::canCreateConnection(document, registry.typeRegistry(), fromNode, fromSocket, toNode, toSocket, errorMessage)) {
-        document.addConnection(fromNode, fromSocket, toNode, toSocket, &newEdgeId);
-        if (const NodeGraphEdge* edge = document.findEdge(newEdgeId)) {
-            NodeGraphChange edgeChange{NodeGraphChangeType::EdgeUpsert};
-            edgeChange.reason = NodeGraphChangeReason::Topology;
-            edgeChange.edge = *edge;
-            changes.push_back(std::move(edgeChange));
-        }
-        rebuildStateLocked();
-        pushChangesLocked(changes);
-        return true;
-    }
-
-    if (!replaceExistingInput) {
-        return false;
-    }
-
-    // Check if the target socket is variadic - if so, allow multiple connections
-    const NodeGraphNode* toNodePtr = document.findNode(toNode);
-    if (!toNodePtr) {
-        return false;
-    }
-    const NodeGraphSocket* targetSocket = nullptr;
-    for (const auto& input : toNodePtr->inputs) {
-        if (input.id == toSocket) {
-            targetSocket = &input;
-            break;
-        }
-    }
-    if (targetSocket && targetSocket->variadic) {
-        return false;
-    }
-
-    const NodeGraphEdge* existingIncomingEdge = document.findIncomingEdge(toNode, toSocket);
-    if (!existingIncomingEdge) {
-        return false;
-    }
-
-    if (!NodeGraphValidator::canCreateConnection(document, registry.typeRegistry(), fromNode, fromSocket, toNode, toSocket, errorMessage, existingIncomingEdge->id)) {
-        return false;
-    }
-
-    if (!document.removeConnection(existingIncomingEdge->id)) {
-        errorMessage = "Failed to replace existing input connection.";
-        return false;
-    }
-    NodeGraphChange removedChange{NodeGraphChangeType::EdgeRemoved};
-    removedChange.reason = NodeGraphChangeReason::Topology;
-    removedChange.edgeId = existingIncomingEdge->id;
-    changes.push_back(std::move(removedChange));
-
     document.addConnection(fromNode, fromSocket, toNode, toSocket, &newEdgeId);
     if (const NodeGraphEdge* edge = document.findEdge(newEdgeId)) {
-        NodeGraphChange edgeChange{NodeGraphChangeType::EdgeUpsert};
-        edgeChange.reason = NodeGraphChangeReason::Topology;
-        edgeChange.edge = *edge;
-        changes.push_back(std::move(edgeChange));
+        NodeGraphChange addedChange{};
+        addedChange.type = NodeGraphChangeType::EdgeUpsert;
+        addedChange.reason = NodeGraphChangeReason::Topology;
+        addedChange.edge = *edge;
+        addedChange.edgeId = newEdgeId;
+        changes.push_back(std::move(addedChange));
     }
 
     rebuildStateLocked();
@@ -252,7 +232,8 @@ bool NodeGraphBridge::connectSockets(
 bool NodeGraphBridge::removeConnection(NodeGraphEdgeId edgeId) {
     std::lock_guard<std::mutex> lock(mutex);
 
-    if (!document.findEdge(edgeId)) {
+    const NodeGraphEdge* edge = document.findEdge(edgeId);
+    if (!edge) {
         return false;
     }
     if (!document.removeConnection(edgeId)) {
@@ -261,6 +242,7 @@ bool NodeGraphBridge::removeConnection(NodeGraphEdgeId edgeId) {
 
     NodeGraphChange change{NodeGraphChangeType::EdgeRemoved};
     change.reason = NodeGraphChangeReason::Topology;
+    change.edge = *edge;
     change.edgeId = edgeId;
     std::vector<NodeGraphChange> changes;
     changes.push_back(std::move(change));

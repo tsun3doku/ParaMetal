@@ -26,6 +26,7 @@ class VkFrameGraphRuntime;
 namespace render {
 class ContactOverlayRenderer;
 class HeatOverlayRenderer;
+class PointOverlayRenderer;
 class VoronoiOverlayRenderer;
 class GeometryPass;
 }
@@ -57,6 +58,7 @@ public:
     IntrinsicRenderer* getIntrinsicRenderer() const;
     ContactOverlayRenderer* getContactOverlayRenderer() const;
     HeatOverlayRenderer* getHeatOverlayRenderer() const;
+    PointOverlayRenderer* getPointOverlayRenderer() const;
     VoronoiOverlayRenderer* getVoronoiOverlayRenderer() const;
     void setTimingOverlayLines(const std::vector<std::string>& lines);
     void updateGridLabels(const glm::vec3& gridSize);
@@ -79,6 +81,7 @@ private:
     std::unique_ptr<IntrinsicRenderer> intrinsicRenderer;
     std::unique_ptr<ContactOverlayRenderer> contactOverlayRenderer;
     std::unique_ptr<HeatOverlayRenderer> heatOverlayRenderer;
+    std::unique_ptr<PointOverlayRenderer> pointOverlayRenderer;
     std::unique_ptr<VoronoiOverlayRenderer> voronoiOverlayRenderer;
     std::unique_ptr<TimingRenderer> timingOverlay;
     std::unique_ptr<GridRenderer> gridRenderer;

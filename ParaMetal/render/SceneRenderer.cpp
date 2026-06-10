@@ -277,6 +277,10 @@ render::HeatOverlayRenderer* SceneRenderer::getHeatOverlayRenderer() const {
     return overlayPass ? overlayPass->getHeatOverlayRenderer() : nullptr;
 }
 
+render::PointOverlayRenderer* SceneRenderer::getPointOverlayRenderer() const {
+    return overlayPass ? overlayPass->getPointOverlayRenderer() : nullptr;
+}
+
 render::VoronoiOverlayRenderer* SceneRenderer::getVoronoiOverlayRenderer() const {
     return overlayPass ? overlayPass->getVoronoiOverlayRenderer() : nullptr;
 }

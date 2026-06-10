@@ -24,11 +24,11 @@ void NodeGraphDebugCache::setState(const NodeGraphState& graphState, NodePayload
 
 void NodeGraphDebugCache::update(
     uint64_t runtimeRevision,
-    const std::unordered_map<uint64_t, uint64_t>& inputSources,
+    const std::unordered_map<uint64_t, uint64_t>& upstream,
     const std::unordered_map<uint64_t, EvaluatedSocketValue>& outputs) {
     std::lock_guard<std::mutex> lock(mutex);
     revision = runtimeRevision;
-    srcByInput = inputSources;
+    srcByInput = upstream;
     outBySocket = outputs;
 }
 

@@ -11,6 +11,7 @@
 #include <utility>
 
 struct GeometryData;
+struct PointData;
 
 class NodePayloadRegistry {
 public:
@@ -47,6 +48,7 @@ public:
     void clear();
     NodeDataHandle resolveMeshHandle(uint8_t type, const NodeDataHandle& handle) const;
     const GeometryData* resolveGeometry(const NodeDataHandle& handle, NodeDataHandle* outSourceHandle = nullptr) const;
+    const PointData* resolvePoints(const NodeDataHandle& handle) const;
     uint64_t resolvePayloadHash(const NodeDataHandle& handle) const;
 
 private:

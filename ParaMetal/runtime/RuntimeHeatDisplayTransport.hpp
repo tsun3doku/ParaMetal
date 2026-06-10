@@ -28,26 +28,35 @@ public:
             return;
         }
 
+        std::unordered_set<uint64_t> nextSocketKeys;
         auto view = registry.view<HeatPackage>(entt::exclude<Stale>);
         for (auto entity : view) {
             uint64_t socketKey = static_cast<uint64_t>(entity);
             if (visibleKeys && visibleKeys->find(socketKey) == visibleKeys->end()) {
                 continue;
-        }
+            }
 
-        const auto& package = registry.get<HeatPackage>(entity);
-        HeatDisplayController::Config config{};
-        if (!tryBuildConfig(socketKey, package, config)) {
-            controller->remove(socketKey);
-            continue;
-        }
+            const auto& package = registry.get<HeatPackage>(entity);
+            HeatDisplayController::Config config{};
+            if (!tryBuildConfig(socketKey, package, config)) {
+                controller->remove(socketKey);
+                continue;
+            }
 
-        controller->apply(socketKey, config);
+            controller->apply(socketKey, config);
+            nextSocketKeys.insert(socketKey);
         }
 
         for (auto entity : registry.view<HeatPackage, Stale>()) {
             controller->remove(static_cast<uint64_t>(entity));
         }
+
+        for (uint64_t socketKey : activeSocketKeys) {
+            if (nextSocketKeys.find(socketKey) == nextSocketKeys.end()) {
+                controller->remove(socketKey);
+            }
+        }
+        activeSocketKeys = std::move(nextSocketKeys);
     }
 
     void finalizeSync() {
@@ -159,4 +168,5 @@ private:
     HeatDisplayController* controller = nullptr;
     ECSRegistry* ecsRegistry = nullptr;
     const std::unordered_set<uint64_t>* visibleKeys = nullptr;
+    std::unordered_set<uint64_t> activeSocketKeys;
 };

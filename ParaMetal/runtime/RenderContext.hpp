@@ -8,6 +8,8 @@
 #include "runtime/RemeshController.hpp"
 #include "runtime/ModelComputeRuntime.hpp"
 #include "runtime/ModelDisplayController.hpp"
+#include "runtime/PointComputeRuntime.hpp"
+#include "runtime/PointDisplayController.hpp"
 #include "runtime/RemeshDisplayController.hpp"
 #include "runtime/ContactDisplayController.hpp"
 #include "runtime/RuntimeContactComputeTransport.hpp"
@@ -17,6 +19,8 @@
 #include "runtime/RuntimeHeatDisplayTransport.hpp"
 #include "runtime/RuntimeModelDisplayTransport.hpp"
 #include "runtime/RuntimeModelComputeTransport.hpp"
+#include "runtime/RuntimePointComputeTransport.hpp"
+#include "runtime/RuntimePointDisplayTransport.hpp"
 #include "runtime/RuntimeRemeshDisplayTransport.hpp"
 #include "runtime/RuntimeRemeshComputeTransport.hpp"
 #include "runtime/RuntimeVoronoiComputeTransport.hpp"
@@ -74,12 +78,16 @@ private:
     std::unique_ptr<RuntimeHeatDisplayTransport> runtimeHeatDisplayTransportState;
     std::unique_ptr<RuntimeModelComputeTransport> runtimeModelComputeTransportState;
     std::unique_ptr<RuntimeModelDisplayTransport> runtimeModelDisplayTransportState;
+    std::unique_ptr<RuntimePointComputeTransport> runtimePointComputeTransportState;
+    std::unique_ptr<RuntimePointDisplayTransport> runtimePointDisplayTransportState;
     std::unique_ptr<RuntimeRemeshDisplayTransport> runtimeRemeshDisplayTransportState;
     std::unique_ptr<RuntimeRemeshComputeTransport> runtimeRemeshTransportState;
     std::unique_ptr<RuntimeVoronoiComputeTransport> runtimeVoronoiComputeTransportState;
     std::unique_ptr<RuntimeVoronoiDisplayTransport> runtimeVoronoiDisplayTransportState;
     std::unique_ptr<ModelComputeRuntime> modelComputeRuntimeState;
     std::unique_ptr<ModelDisplayController> modelDisplayControllerState;
+    std::unique_ptr<PointComputeRuntime> pointComputeRuntimeState;
+    std::unique_ptr<PointDisplayController> pointDisplayControllerState;
     std::unique_ptr<RemeshController> remeshControllerState;
     std::unique_ptr<RemeshDisplayController> remeshDisplayControllerState;
     std::unique_ptr<ContactDisplayController> contactDisplayControllerState;
