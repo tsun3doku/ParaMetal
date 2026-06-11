@@ -3,6 +3,7 @@
 #include "NodeGraphUtils.hpp"
 
 #include <queue>
+#include <algorithm>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
