@@ -12,7 +12,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 find_package(Vulkan REQUIRED)
 find_package(OpenMP REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/ParaMetal/libs/pybind11)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/ParaMetal/libs/pybind11 ${CMAKE_CURRENT_BINARY_DIR}/libs/pybind11)
 
 file(GLOB SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ParaMetal/*.cpp")
 file(GLOB HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ParaMetal/*.hpp"
