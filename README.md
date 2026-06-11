@@ -18,7 +18,7 @@ This project is a work in progress. Functionality, performance and physical accu
 ## Quick Start
 1. Download the latest demo release from the [Releases](https://github.com/tsun3doku/ParaMetal/releases) page
 2. Extract the zip file
-3. Run ParaMetal.exe
+3. Run parametal.exe
 
 ### Hardware Requirements
 - GPU with Vulkan 1.3 or higher support ([Check GPU compatibility](https://vulkan.gpuinfo.org/))
@@ -68,5 +68,5 @@ This project is a work in progress. Functionality, performance and physical accu
    ```
    Run:
    ```bash
-   ./ParaMetal
+   ./parametal
    ```
