@@ -57,7 +57,6 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
                 seedFlagsIt == config.modelVoronoiSeedFlagsByModelId.end() ||
                 seedPositionsIt == config.modelVoronoiSeedPositionsByModelId.end() ||
                 voronoiToSimIt == config.modelVoronoiToSimByModelId.end()) {
-                std::cerr << "[HeatSystemComputeController] addVoronoiModelInput SKIP runtimeModelId=" << runtimeModelId << std::endl;
                 continue;
             }
 
@@ -118,7 +117,6 @@ void HeatSystemComputeController::configure(uint64_t socketKey, const Config& co
         instance->system->setIsPaused(config.active && config.paused);
 
         if (config.resetRequested) {
-            std::cerr << "[HeatSystemComputeController] explicit reset socketKey=" << socketKey << std::endl;
             instance->system->resetHeatState(config.modelTemperatureByRuntimeId);
         }
     }
@@ -132,12 +130,15 @@ void HeatSystemComputeController::configure(uint64_t socketKey, const Config& co
         }
     }
 
-    configuredConfigs[socketKey] = config;
-
     if (instance->system) {
         configureHeatSystem(*instance->system, config);
-        instance->system->ensureConfigured();
-        instance->system->resetHeatState(config.modelTemperatureByRuntimeId);
+        const bool configured = instance->system->ensureConfigured();
+        if (configured) {
+            configuredConfigs[socketKey] = config;
+            instance->system->resetHeatState(config.modelTemperatureByRuntimeId);
+        } else {
+            configuredConfigs.erase(socketKey);
+        }
     }
 }
 
@@ -264,7 +265,6 @@ void HeatSystemComputeController::destroyHeatSystem(uint64_t socketKey) {
 uint64_t buildComputeHash(const HeatSystemComputeController::Config& config) {
     uint64_t hash = NodeGraphHash::start();
     NodeGraphHash::combine(hash, static_cast<uint64_t>(config.active ? 1u : 0u));
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(config.paused ? 1u : 0u));
     NodeGraphHash::combinePod(hash, config.contactThermalConductance);
     NodeGraphHash::combine(hash, static_cast<uint64_t>(config.modelIntrinsicMeshes.size()));
     for (const SupportingHalfedge::IntrinsicMesh& mesh : config.modelIntrinsicMeshes) {

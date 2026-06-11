@@ -34,7 +34,7 @@ public:
     ~HeatSystem();
 
     void update() override;
-    void ensureConfigured();
+    bool ensureConfigured();
     void setActive(bool active);
     bool isInitialized() const { return initialized; }
 

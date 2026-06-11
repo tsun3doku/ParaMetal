@@ -214,12 +214,12 @@ void HeatSystem::update() {
 
 }
 
-void HeatSystem::ensureConfigured() {
+bool HeatSystem::ensureConfigured() {
     const bool needsHardRebuild = runtime.needsRebuild() || contactCouplingsDirty || voronoiConfigDirty || heatParamsDirty;
-    if (!needsHardRebuild) return;
+    if (!needsHardRebuild) return true;
 
     vkDeviceWaitIdle(vulkanDevice.getDevice());
-    rebuildRuntimeResources(true);
+    return rebuildRuntimeResources(true);
 }
 
 bool HeatSystem::rebuildRuntimeResources(bool forceDescriptorReallocate) {
