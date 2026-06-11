@@ -65,8 +65,10 @@ void NodeGraphEditor::resetToDefaultGraph() {
     constexpr float leftColumnX = 82.5f;
     constexpr float rightColumnX = 184.8f;
     constexpr float centerColumnX = 133.7f;
-    constexpr float voronoiLeftColumnX = 40.0f;
-    constexpr float voronoiRightColumnX = 228.0f;
+    constexpr float leftmostColumnX = -20.0f;
+    constexpr float farRightColumnX = 270.0f;
+    constexpr float receiverVoronoiX = 55.0f;
+    constexpr float sourceVoronoiX = 220.0f;
     constexpr float row1Y = 26.4f;
     constexpr float row2Y = 82.5f;
     constexpr float row3Y = 141.9f;
@@ -82,14 +84,14 @@ void NodeGraphEditor::resetToDefaultGraph() {
     const CreatedNode sourceRemesh = createNode(nodegraphtypes::Remesh, "Source Remesh", rightColumnX, row3Y);
     const CreatedNode receiverHeatModel = createNode(nodegraphtypes::HeatModel, "Receiver Heat Model", leftColumnX, row4Y);
     const CreatedNode sourceHeatModel = createNode(nodegraphtypes::HeatModel, "Source Heat Model", rightColumnX, row4Y);
-    const CreatedNode points = createNode(nodegraphtypes::Points, "Points", 10.0f, row1Y);
-    const CreatedNode pointsTransform = createNode(nodegraphtypes::Transform, "Points Transform", 10.0f, row2Y);
-    const CreatedNode receiverMeshPoints = createNode(nodegraphtypes::MeshPoints, "Mesh Points", voronoiLeftColumnX, row4Y);
-    const CreatedNode sourceMeshPoints = createNode(nodegraphtypes::MeshPoints, "Mesh Points", voronoiRightColumnX, row4Y);
-    const CreatedNode leftMerge = createNode(nodegraphtypes::Merge, "Merge", voronoiLeftColumnX, row5Y);
-    const CreatedNode rightMerge = createNode(nodegraphtypes::Merge, "Merge", voronoiRightColumnX, row5Y);
-    const CreatedNode receiverVoronoi = createNode(nodegraphtypes::Voronoi, "Receiver Voronoi", leftColumnX, row5Y);
-    const CreatedNode sourceVoronoi = createNode(nodegraphtypes::Voronoi, "Source Voronoi", rightColumnX, row5Y);
+    const CreatedNode points = createNode(nodegraphtypes::Points, "Points", leftmostColumnX, row1Y);
+    const CreatedNode pointsTransform = createNode(nodegraphtypes::Transform, "Points Transform", leftmostColumnX, row2Y);
+    const CreatedNode receiverMeshPoints = createNode(nodegraphtypes::MeshPoints, "Mesh Points", leftmostColumnX, row4Y);
+    const CreatedNode sourceMeshPoints = createNode(nodegraphtypes::MeshPoints, "Mesh Points", farRightColumnX, row4Y);
+    const CreatedNode leftMerge = createNode(nodegraphtypes::Merge, "Merge", leftmostColumnX, row5Y);
+    const CreatedNode rightMerge = createNode(nodegraphtypes::Merge, "Merge", farRightColumnX, row5Y);
+    const CreatedNode receiverVoronoi = createNode(nodegraphtypes::Voronoi, "Receiver Voronoi", receiverVoronoiX, row5Y);
+    const CreatedNode sourceVoronoi = createNode(nodegraphtypes::Voronoi, "Source Voronoi", sourceVoronoiX, row5Y);
     const CreatedNode contact = createNode(nodegraphtypes::Contact, "", centerColumnX, row5Y);
     const CreatedNode heatSolve = createNode(nodegraphtypes::HeatSolve, "", centerColumnX, row6Y);
 
@@ -104,9 +106,9 @@ void NodeGraphEditor::resetToDefaultGraph() {
     }
 
     TransformNodeParams pointsTransformParams{};
-    pointsTransformParams.translateX = -0.05;
-    pointsTransformParams.translateY = 0.0;
-    pointsTransformParams.translateZ = 0.05;
+    pointsTransformParams.translateX = 0.0;
+    pointsTransformParams.translateY = 0.025;
+    pointsTransformParams.translateZ = 0.0;
     pointsTransformParams.rotateXDegrees = 0.0;
     pointsTransformParams.rotateYDegrees = 0.0;
     pointsTransformParams.rotateZDegrees = 0.0;
@@ -115,11 +117,23 @@ void NodeGraphEditor::resetToDefaultGraph() {
     pointsTransformParams.scaleZ = 1.0;
     writeTransformNodeParams(*this, pointsTransform.id, pointsTransformParams);
 
+    TransformNodeParams sourceTransformParams{};
+    sourceTransformParams.translateX = 0.0;
+    sourceTransformParams.translateY = -0.01;
+    sourceTransformParams.translateZ = 0.0;
+    sourceTransformParams.rotateXDegrees = 0.0;
+    sourceTransformParams.rotateYDegrees = 0.0;
+    sourceTransformParams.rotateZDegrees = 0.0;
+    sourceTransformParams.scaleX = 1.0;
+    sourceTransformParams.scaleY = 1.0;
+    sourceTransformParams.scaleZ = 1.0;
+    writeTransformNodeParams(*this, sourceTransform.id, sourceTransformParams);
+
     PointsNodeParams pointsParams{};
-    pointsParams.pointCount = 10000;
-    pointsParams.dimX = 0.3f;
-    pointsParams.dimY = 0.1f;
-    pointsParams.dimZ = 0.3f;
+    pointsParams.pointCount = 15000;
+    pointsParams.dimX = 0.15f;
+    pointsParams.dimY = 0.10f;
+    pointsParams.dimZ = 0.15f;
     writePointsNodeParams(*this, points.id, pointsParams);
 
     const NodeGraphSocketId receiverModelOutputId = outputSocketByType(receiverModel.node, NodeGraphValueType::Mesh);
@@ -180,13 +194,13 @@ void NodeGraphEditor::resetToDefaultGraph() {
     NodeGraphParamValue receiverModelPath{};
     receiverModelPath.id = nodegraphparams::model::Path;
     receiverModelPath.type = NodeGraphParamType::String;
-    receiverModelPath.stringValue = "models/channel_tube.obj";
+    receiverModelPath.stringValue = "models/heatsink.obj";
     setNodeParameter(receiverModel.id, receiverModelPath);
 
     NodeGraphParamValue sourceModelPath{};
     sourceModelPath.id = nodegraphparams::model::Path;
     sourceModelPath.type = NodeGraphParamType::String;
-    sourceModelPath.stringValue = "models/heatsource_tube.obj";
+    sourceModelPath.stringValue = "models/heatsource_torus.obj";
     setNodeParameter(sourceModel.id, sourceModelPath);
 
     // Set receiver heat model to None BC (receiver)
@@ -207,6 +221,48 @@ void NodeGraphEditor::resetToDefaultGraph() {
     sourceHeatModelTemp.type = NodeGraphParamType::Float;
     sourceHeatModelTemp.floatValue = 100.0;
     setNodeParameter(sourceHeatModel.id, sourceHeatModelTemp);
+
+    NodeGraphParamValue receiverHeatModelDensity{};
+    receiverHeatModelDensity.id = nodegraphparams::heatmodel::Density;
+    receiverHeatModelDensity.type = NodeGraphParamType::Float;
+    receiverHeatModelDensity.floatValue = 100.0;
+    setNodeParameter(receiverHeatModel.id, receiverHeatModelDensity);
+
+    NodeGraphParamValue receiverHeatModelConductivity{};
+    receiverHeatModelConductivity.id = nodegraphparams::heatmodel::Conductivity;
+    receiverHeatModelConductivity.type = NodeGraphParamType::Float;
+    receiverHeatModelConductivity.floatValue = 5.0;
+    setNodeParameter(receiverHeatModel.id, receiverHeatModelConductivity);
+
+    NodeGraphParamValue sourceHeatModelDensity{};
+    sourceHeatModelDensity.id = nodegraphparams::heatmodel::Density;
+    sourceHeatModelDensity.type = NodeGraphParamType::Float;
+    sourceHeatModelDensity.floatValue = 100.0;
+    setNodeParameter(sourceHeatModel.id, sourceHeatModelDensity);
+
+    NodeGraphParamValue sourceHeatModelConductivity{};
+    sourceHeatModelConductivity.id = nodegraphparams::heatmodel::Conductivity;
+    sourceHeatModelConductivity.type = NodeGraphParamType::Float;
+    sourceHeatModelConductivity.floatValue = 5.0;
+    setNodeParameter(sourceHeatModel.id, sourceHeatModelConductivity);
+
+    NodeGraphParamValue receiverRemeshMaxEdge{};
+    receiverRemeshMaxEdge.id = nodegraphparams::remesh::MaxEdgeLength;
+    receiverRemeshMaxEdge.type = NodeGraphParamType::Float;
+    receiverRemeshMaxEdge.floatValue = 0.005;
+    setNodeParameter(receiverRemesh.id, receiverRemeshMaxEdge);
+
+    NodeGraphParamValue sourceRemeshMaxEdge{};
+    sourceRemeshMaxEdge.id = nodegraphparams::remesh::MaxEdgeLength;
+    sourceRemeshMaxEdge.type = NodeGraphParamType::Float;
+    sourceRemeshMaxEdge.floatValue = 0.005;
+    setNodeParameter(sourceRemesh.id, sourceRemeshMaxEdge);
+
+    NodeGraphParamValue receiverVoronoiCellSize{};
+    receiverVoronoiCellSize.id = nodegraphparams::voronoi::CellSize;
+    receiverVoronoiCellSize.type = NodeGraphParamType::Float;
+    receiverVoronoiCellSize.floatValue = 0.001f;
+    setNodeParameter(receiverVoronoi.id, receiverVoronoiCellSize);
 
     std::string errorMessage;
     connectSockets(receiverModel.id, receiverModelOutputId, receiverTransform.id, receiverTransformInputId, errorMessage);
