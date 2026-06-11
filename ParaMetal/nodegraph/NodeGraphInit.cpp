@@ -185,7 +185,7 @@ static NodeTypeDefinition buildVoronoiNode() {
             makeOutputSocket("Volume", NodeGraphValueType::Volume, payloadtypes::Voronoi),
         },
         {
-            {nodegraphparams::voronoi::CellSize, "Cell Size", NodeGraphParamType::Float, 0.005, 0, false, "", false},
+            {nodegraphparams::voronoi::SDFSize, "SDF Size", NodeGraphParamType::Float, 0.005, 0, false, "", false},
             {nodegraphparams::voronoi::VoxelResolution, "Voxel Resolution", NodeGraphParamType::Int, 0.0, 128, false, "", false},
             {nodegraphparams::voronoi::ShowVoronoi, "Show Voronoi", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::voronoi::ShowPoints, "Show Points", NodeGraphParamType::Bool, 0.0, 0, false, "", false},

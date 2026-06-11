@@ -79,7 +79,7 @@ constexpr uint32_t ShowHeatPalette = 9;
 }
 
 namespace voronoi {
-constexpr uint32_t CellSize = 1;
+constexpr uint32_t SDFSize = 1;
 constexpr uint32_t VoxelResolution = 2;
 constexpr uint32_t ShowVoronoi = 3;
 constexpr uint32_t ShowPoints = 4;

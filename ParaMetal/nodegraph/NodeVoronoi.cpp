@@ -66,7 +66,7 @@ void NodeVoronoi::execute(NodeGraphKernelContext& context) const {
         }
 
         VoronoiData voronoiData{};
-        voronoiData.cellSize = static_cast<float>(nodeParams.cellSize);
+        voronoiData.cellSize = static_cast<float>(nodeParams.sdfSize);
         voronoiData.voxelResolution = nodeParams.voxelResolution;
         voronoiData.domainType = domainType;
         voronoiData.modelMeshHandle = modelMeshHandle;
@@ -103,7 +103,7 @@ bool NodeVoronoi::computeInputHash(const NodeGraphKernelHashContext& context, ui
     }
 
     const VoronoiNodeParams nodeParams = readVoronoiNodeParams(context.node);
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(nodeParams.cellSize));
+    NodeGraphHash::combineFloat(outHash, static_cast<float>(nodeParams.sdfSize));
     NodeGraphHash::combine(outHash, static_cast<uint64_t>(nodeParams.voxelResolution));
     return true;
 }

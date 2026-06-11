@@ -258,11 +258,11 @@ void NodeGraphEditor::resetToDefaultGraph() {
     sourceRemeshMaxEdge.floatValue = 0.005;
     setNodeParameter(sourceRemesh.id, sourceRemeshMaxEdge);
 
-    NodeGraphParamValue receiverVoronoiCellSize{};
-    receiverVoronoiCellSize.id = nodegraphparams::voronoi::CellSize;
-    receiverVoronoiCellSize.type = NodeGraphParamType::Float;
-    receiverVoronoiCellSize.floatValue = 0.001f;
-    setNodeParameter(receiverVoronoi.id, receiverVoronoiCellSize);
+    NodeGraphParamValue receiverVoronoiSDFSize{};
+    receiverVoronoiSDFSize.id = nodegraphparams::voronoi::SDFSize;
+    receiverVoronoiSDFSize.type = NodeGraphParamType::Float;
+    receiverVoronoiSDFSize.floatValue = 0.001f;
+    setNodeParameter(receiverVoronoi.id, receiverVoronoiSDFSize);
 
     std::string errorMessage;
     connectSockets(receiverModel.id, receiverModelOutputId, receiverTransform.id, receiverTransformInputId, errorMessage);

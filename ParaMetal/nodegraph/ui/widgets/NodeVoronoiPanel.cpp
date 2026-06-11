@@ -13,13 +13,13 @@ NodeVoronoiPanel::NodeVoronoiPanel(QWidget* parent)
     : NodePanelBase(parent) {
     QVBoxLayout* layout = static_cast<QVBoxLayout*>(this->layout());
 
-    constexpr double cellSize = 0.005;
+    constexpr double sdfSize = 0.005;
     constexpr int voxelResolution = 128;
 
-    cellSizeRow = new NodeGraphSliderRow("Cell Size", this);
+    cellSizeRow = new NodeGraphSliderRow("SDF Size", this);
     cellSizeRow->setRange(0.0001, 0.1);
     cellSizeRow->setDecimals(6);
-    cellSizeRow->setValue(cellSize);
+    cellSizeRow->setValue(sdfSize);
     layout->addWidget(cellSizeRow);
 
     voxelResolutionRow = new NodeGraphSliderRow("Voxel Resolution", this);
@@ -60,7 +60,7 @@ void NodeVoronoiPanel::refreshFromNode() {
 
     const VoronoiNodeParams params = readVoronoiNodeParams(node);
     setSyncing(true);
-    cellSizeRow->setValue(params.cellSize);
+    cellSizeRow->setValue(params.sdfSize);
     voxelResolutionRow->setValue(static_cast<double>(params.voxelResolution));
     showVoronoiCheckBox->setChecked(params.preview.showVoronoi);
     showPointsCheckBox->setChecked(params.preview.showPoints);
