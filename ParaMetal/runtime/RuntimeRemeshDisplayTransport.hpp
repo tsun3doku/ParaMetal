@@ -120,7 +120,7 @@ private:
         outConfig.inputEdgeView = computeProduct->inputEdgeView;
         outConfig.inputTriangleView = computeProduct->inputTriangleView;
         outConfig.inputLengthView = computeProduct->inputLengthView;
-        outConfig.displayHash = buildDisplayHash(outConfig, computeProduct->productHash);
+        outConfig.displayHash = buildDisplayHash(outConfig);
         return true;
     }
 

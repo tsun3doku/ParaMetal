@@ -53,7 +53,7 @@ HeatSystem::HeatSystem(
     voronoiStage = std::make_unique<HeatSystemVoronoiStage>(stageContext);
     contactStage = std::make_unique<ContactSystemComputeStage>(vulkanDevice);
 
-    if (!surfaceStage->createDescriptorPool(maxFramesInFlight) ||
+    if (!surfaceStage->createDescriptorPool(0) ||  
         !surfaceStage->createDescriptorSetLayout() ||
         !surfaceStage->createPipeline() ||
         !voronoiStage->createDescriptorPool(32) ||
@@ -212,6 +212,7 @@ void HeatSystem::update() {
         timeData->totalTime += deltaTime;
     }
 
+    (void)deltaTime;
 }
 
 bool HeatSystem::ensureConfigured() {
@@ -290,12 +291,21 @@ bool HeatSystem::rebuildRuntimeResources(bool forceDescriptorReallocate) {
         contactRuntimes.clear();
         resources.hasContact = false;
         simRuntime.cleanup(memoryAllocator);
-        voronoiConfigDirty = false;
-        return true;
+
+        return false;
+    }
+
+    uint32_t numModels = static_cast<uint32_t>(modelRuntimeModelIds.size());
+
+    if (resources.surfaceDescriptorPool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(vulkanDevice.getDevice(), resources.surfaceDescriptorPool, nullptr);
+        resources.surfaceDescriptorPool = VK_NULL_HANDLE;
+    }
+    if (!surfaceStage->createDescriptorPool(numModels)) {
+        return false;
     }
 
     // Recreate Voronoi descriptor pool
-    uint32_t numModels = static_cast<uint32_t>(modelRuntimeModelIds.size());
     if (resources.voronoiDescriptorPool != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(vulkanDevice.getDevice(), resources.voronoiDescriptorPool, nullptr);
         resources.voronoiDescriptorPool = VK_NULL_HANDLE;
@@ -511,8 +521,8 @@ bool HeatSystem::hasDispatchableComputeWork() const {
     bool isActiveAndNotPaused = isActive && !isPaused;
     bool voronoiIsReady = voronoiReady();
     bool hasBuffers = !computeCommandBuffers.empty();
-    
-    return isActiveAndNotPaused && voronoiIsReady && hasBuffers;
+    bool result = isActiveAndNotPaused && voronoiIsReady && hasBuffers;
+    return result;
 }
 
 bool HeatSystem::voronoiReady() const {
@@ -525,10 +535,25 @@ bool HeatSystem::voronoiReady() const {
         }
         const auto countIt = voronoiNodeCounts.find(runtimeModelId);
         const auto bufferIt = modelVoronoiNodeBufferByModelId.find(runtimeModelId);
+        const auto simNodeBufferIt = modelSimNodeBufferByModelId.find(runtimeModelId);
+        const auto simGmlsIt = modelSimGMLSInterfaceBufferByModelId.find(runtimeModelId);
+        const auto gmlsStencilIt = modelGMLSSurfaceStencilBufferByModelId.find(runtimeModelId);
+        const auto gmlsWeightIt = modelGMLSSurfaceWeightBufferByModelId.find(runtimeModelId);
+        const auto gmlsGradientIt = modelGMLSSurfaceGradientWeightBufferByModelId.find(runtimeModelId);
         if (countIt == voronoiNodeCounts.end() ||
             countIt->second == 0 ||
             bufferIt == modelVoronoiNodeBufferByModelId.end() ||
-            !bufferIt->second) {
+            !bufferIt->second ||
+            simNodeBufferIt == modelSimNodeBufferByModelId.end() ||
+            !simNodeBufferIt->second ||
+            simGmlsIt == modelSimGMLSInterfaceBufferByModelId.end() ||
+            !simGmlsIt->second ||
+            gmlsStencilIt == modelGMLSSurfaceStencilBufferByModelId.end() ||
+            !gmlsStencilIt->second ||
+            gmlsWeightIt == modelGMLSSurfaceWeightBufferByModelId.end() ||
+            !gmlsWeightIt->second ||
+            gmlsGradientIt == modelGMLSSurfaceGradientWeightBufferByModelId.end() ||
+            !gmlsGradientIt->second) {
             return false;
         }
     }
@@ -543,7 +568,8 @@ void HeatSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t c
         return;
     }
 
-    if (hasDispatchableComputeWork() &&
+    bool hasWork = hasDispatchableComputeWork();
+    if (hasWork &&
         simStage &&
         surfaceStage &&
         voronoiStage) {

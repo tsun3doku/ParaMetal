@@ -78,7 +78,7 @@ private:
     std::unordered_set<uint64_t> syncedSockets;
 };
 
-inline uint64_t buildDisplayHash(const RemeshDisplayController::Config& config, uint64_t productHash) {
+inline uint64_t buildDisplayHash(const RemeshDisplayController::Config& config) {
     uint64_t hash = NodeGraphHash::start();
     NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showRemeshOverlay ? 1u : 0u));
     NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showFaceNormals ? 1u : 0u));
@@ -91,6 +91,22 @@ inline uint64_t buildDisplayHash(const RemeshDisplayController::Config& config, 
     NodeGraphHash::combinePod(hash, config.renderIndexBufferOffset);
     NodeGraphHash::combine(hash, config.renderIndexCount);
     NodeGraphHash::combinePod(hash, config.modelMatrix);
-    NodeGraphHash::combine(hash, productHash);
+    NodeGraphHash::combinePod(hash, config.intrinsicTriangleBuffer);
+    NodeGraphHash::combinePod(hash, config.intrinsicTriangleBufferOffset);
+    NodeGraphHash::combinePod(hash, config.intrinsicVertexBuffer);
+    NodeGraphHash::combinePod(hash, config.intrinsicVertexBufferOffset);
+    NodeGraphHash::combine(hash, config.intrinsicTriangleCount);
+    NodeGraphHash::combine(hash, config.intrinsicVertexCount);
+    NodeGraphHash::combinePod(hash, config.averageTriangleArea);
+    NodeGraphHash::combinePod(hash, config.supportingHalfedgeView);
+    NodeGraphHash::combinePod(hash, config.supportingAngleView);
+    NodeGraphHash::combinePod(hash, config.halfedgeView);
+    NodeGraphHash::combinePod(hash, config.edgeView);
+    NodeGraphHash::combinePod(hash, config.triangleView);
+    NodeGraphHash::combinePod(hash, config.lengthView);
+    NodeGraphHash::combinePod(hash, config.inputHalfedgeView);
+    NodeGraphHash::combinePod(hash, config.inputEdgeView);
+    NodeGraphHash::combinePod(hash, config.inputTriangleView);
+    NodeGraphHash::combinePod(hash, config.inputLengthView);
     return hash;
 }

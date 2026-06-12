@@ -147,6 +147,8 @@ struct VoronoiProduct {
             simNodeCount != 0 &&
             nodeBuffer != VK_NULL_HANDLE &&
             simNodeBuffer != VK_NULL_HANDLE &&
+            simGMLSInterfaceBuffer != VK_NULL_HANDLE &&
+            simGMLSInterfaceCount != 0 &&
             voronoiNeighborIndicesBuffer != VK_NULL_HANDLE &&
             seedPositionBuffer != VK_NULL_HANDLE &&
             candidateBuffer != VK_NULL_HANDLE &&

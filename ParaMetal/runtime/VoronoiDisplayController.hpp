@@ -79,13 +79,22 @@ private:
     std::unordered_set<uint64_t> syncedSockets;
 };
 
-inline uint64_t buildDisplayHash(const VoronoiDisplayController::Config& config, uint64_t productHash) {
+inline uint64_t buildDisplayHash(const VoronoiDisplayController::Config& config) {
     uint64_t hash = NodeGraphHash::start();
     NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showVoronoi ? 1u : 0u));
     NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showPoints ? 1u : 0u));
-    NodeGraphHash::combine(hash, productHash);
     NodeGraphHash::combine(hash, config.bindingKey);
     NodeGraphHash::combine(hash, config.runtimeModelId);
+    NodeGraphHash::combinePod(hash, config.nodeBuffer);
+    NodeGraphHash::combine(hash, config.nodeBufferOffset);
+    NodeGraphHash::combine(hash, config.nodeCount);
+    NodeGraphHash::combinePod(hash, config.seedPositionBuffer);
+    NodeGraphHash::combine(hash, config.seedPositionBufferOffset);
+    NodeGraphHash::combinePod(hash, config.neighborIndicesBuffer);
+    NodeGraphHash::combine(hash, config.neighborIndicesBufferOffset);
+    NodeGraphHash::combinePod(hash, config.occupancyPointBuffer);
+    NodeGraphHash::combine(hash, config.occupancyPointBufferOffset);
+    NodeGraphHash::combine(hash, config.occupancyPointCount);
     NodeGraphHash::combinePod(hash, config.candidateBuffer);
     NodeGraphHash::combine(hash, config.candidateBufferOffset);
     NodeGraphHash::combinePod(hash, config.supportingHalfedgeView);

@@ -1,5 +1,6 @@
 #include "VoronoiSystemComputeController.hpp"
 
+#include <iostream>
 #include "VoronoiSystem.hpp"
 #include "runtime/RuntimeProducts.hpp"
 #include "vulkan/MemoryAllocator.hpp"
@@ -69,7 +70,12 @@ void VoronoiSystemComputeController::configure(uint64_t socketKey, const Config&
             system->setSeedPositions(config.pointPositions);
         }
         system->setParams(config.cellSize, config.voxelResolution);
-        system->ensureConfigured();
+        const bool configured = system->ensureConfigured();
+        if (configured) {
+            configuredConfigs[socketKey] = config;
+        } else {
+            configuredConfigs.erase(socketKey);
+        }
     }
 }
 

@@ -15,7 +15,7 @@ class HeatSystemSurfaceStage {
 public:
     explicit HeatSystemSurfaceStage(const HeatSystemStageContext& stageContext);
 
-    bool createDescriptorPool(uint32_t maxFramesInFlight);
+    bool createDescriptorPool(uint32_t numModels);
     bool createDescriptorSetLayout();
     bool createPipeline();
     void dispatchSurfaceTemperatureUpdates(

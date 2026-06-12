@@ -313,7 +313,7 @@ bool HeatModelRuntime::ensureSimulationBuffers(uint32_t nodeCount) {
 
     if (nodeCount == 0) return true;
 
-    // Allocate Temp A 
+    // Allocate Temp A
     auto [handleA, offsetA] = memoryAllocator.allocate(
         nodeCount * sizeof(float),
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -321,7 +321,7 @@ bool HeatModelRuntime::ensureSimulationBuffers(uint32_t nodeCount) {
     tempBufferA = handleA;
     tempBufferAOffset = offsetA;
 
-    // Allocate Temp B 
+    // Allocate Temp B
     auto [handleB, offsetB] = memoryAllocator.allocate(
         nodeCount * sizeof(float),
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -329,13 +329,24 @@ bool HeatModelRuntime::ensureSimulationBuffers(uint32_t nodeCount) {
     tempBufferB = handleB;
     tempBufferBOffset = offsetB;
 
-    // Allocate coupling accumulator 
+    // Allocate coupling accumulator — must be zeroed because the voronoi shader
+    // reads contactK/contactKT before the contact gather pass writes to it on
+    // the first substep. Device-local memory has undefined contents on allocation.
     auto [handleFlux, offsetFlux] = memoryAllocator.allocate(
         nodeCount * sizeof(float) * 2,
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     contactAccumulatorBuffer = handleFlux;
     contactAccumulatorBufferOffset = offsetFlux;
+
+    if (contactAccumulatorBuffer != VK_NULL_HANDLE) {
+        std::vector<float> accumZero(nodeCount * 2, 0.0f);
+        uploadDeviceBuffer(memoryAllocator, renderCommandPool, accumZero.data(),
+            nodeCount * sizeof(float) * 2,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment,
+            contactAccumulatorBuffer, contactAccumulatorBufferOffset);
+    }
 
     return tempBufferA != VK_NULL_HANDLE && tempBufferB != VK_NULL_HANDLE && contactAccumulatorBuffer != VK_NULL_HANDLE;
 }

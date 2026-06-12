@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <iostream>
 #include <unordered_set>
 
 #include "contact/ContactTypes.hpp"
@@ -156,7 +157,7 @@ private:
         // Collect per-model Voronoi products. Heat is the aggregation layer.
         for (const NodeDataHandle& voronoiHandle : package.authored.voronoiHandles) {
             const VoronoiProduct* product = tryGetProduct<VoronoiProduct>(*ecsRegistry, voronoiHandle.key);
-            if (!product) {
+            if (!product || !product->isValid()) {
                 return false;
             }
 

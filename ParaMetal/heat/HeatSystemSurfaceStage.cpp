@@ -18,10 +18,9 @@ HeatSystemSurfaceStage::HeatSystemSurfaceStage(const HeatSystemStageContext& sta
     : context(stageContext) {
 }
 
-bool HeatSystemSurfaceStage::createDescriptorPool(uint32_t maxFramesInFlight) {
-    (void)maxFramesInFlight;
-    const uint32_t maxHeatModels = 10;
-    const uint32_t totalSets = (maxHeatModels * 2);
+bool HeatSystemSurfaceStage::createDescriptorPool(uint32_t numModels) {
+    const uint32_t effectiveModels = (numModels > 0) ? numModels : 1;
+    const uint32_t totalSets = effectiveModels * 4;
 
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
