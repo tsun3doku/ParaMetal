@@ -17,7 +17,7 @@ bool HeatSystemSimRuntime::initialize(VulkanDevice& vulkanDevice, MemoryAllocato
 
     cleanup(memoryAllocator);
 
-    if (createUniformBuffer(memoryAllocator, vulkanDevice, sizeof(heat::TimeUniform), timeBuffer, timeBufferOffset, &mappedTimeData) != VK_SUCCESS) {
+    if (createUniformBuffer(memoryAllocator, vulkanDevice, sizeof(heat::SimPlaybackUniform), playbackBuffer, playbackBufferOffset, &mappedPlaybackData) != VK_SUCCESS) {
         cleanup(memoryAllocator);
         return false;
     }
@@ -27,14 +27,14 @@ bool HeatSystemSimRuntime::initialize(VulkanDevice& vulkanDevice, MemoryAllocato
 }
 
 void HeatSystemSimRuntime::reset() {
-    if (mappedTimeData) std::memset(mappedTimeData, 0, sizeof(heat::TimeUniform));
+    if (mappedPlaybackData) std::memset(mappedPlaybackData, 0, sizeof(heat::SimPlaybackUniform));
 }
 
 void HeatSystemSimRuntime::cleanup(MemoryAllocator& memoryAllocator) {
-    freeBuffer(memoryAllocator, timeBuffer, timeBufferOffset);
-    mappedTimeData = nullptr;
+    freeBuffer(memoryAllocator, playbackBuffer, playbackBufferOffset);
+    mappedPlaybackData = nullptr;
 }
 
-heat::TimeUniform* HeatSystemSimRuntime::getMappedTimeData() const {
-    return static_cast<heat::TimeUniform*>(mappedTimeData);
+heat::SimPlaybackUniform* HeatSystemSimRuntime::getMappedPlaybackData() const {
+    return static_cast<heat::SimPlaybackUniform*>(mappedPlaybackData);
 }

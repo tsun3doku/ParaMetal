@@ -128,9 +128,7 @@ void NodeHeatSolve::execute(NodeGraphKernelContext& context) const {
     }
 
     const bool active = activeNodeId.isValid() && activeNodeId == context.node.id;
-    const bool wantsPaused = params.resetRequested
-        ? false
-        : params.paused;
+    const bool wantsPaused = params.paused;
     populateOutputPayloads(
         context,
         heatModelHandles,
@@ -142,7 +140,7 @@ void NodeHeatSolve::execute(NodeGraphKernelContext& context) const {
         static_cast<float>(params.contactThermalConductance),
         active,
         active ? wantsPaused : false,
-        active ? params.resetRequested : false);
+        active ? params.resetCounter : 0);
 }
 
 void NodeHeatSolve::populateOutputPayloads(
@@ -156,7 +154,7 @@ void NodeHeatSolve::populateOutputPayloads(
     float contactThermalConductance,
     bool active,
     bool paused,
-    bool resetRequested) {
+    uint32_t resetCounter) {
     NodePayloadRegistry* const payloadRegistry = context.executionState.services.payloadRegistry;
     for (std::size_t outputIndex = 0; outputIndex < context.outputs.size() && outputIndex < context.node.outputs.size(); ++outputIndex) {
         NodeDataBlock& outputValue = context.outputs[outputIndex];
@@ -181,7 +179,7 @@ void NodeHeatSolve::populateOutputPayloads(
             heatData.contactThermalConductance = contactThermalConductance;
             heatData.active = active;
             heatData.paused = paused;
-            heatData.resetRequested = resetRequested;
+            heatData.resetCounter = resetCounter;
             outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(heatData));
         }
 
@@ -238,7 +236,7 @@ bool NodeHeatSolve::computeInputHash(const NodeGraphKernelHashContext& context, 
     const bool active = activeNodeId.isValid() && activeNodeId == context.node.id;
     NodeGraphHash::combine(outHash, static_cast<uint64_t>(active ? 1u : 0u));
     NodeGraphHash::combine(outHash, static_cast<uint64_t>(active && params.paused ? 1u : 0u));
-    NodeGraphHash::combine(outHash, static_cast<uint64_t>(active && params.resetRequested ? 1u : 0u));
+    NodeGraphHash::combine(outHash, static_cast<uint64_t>(active ? params.resetCounter : 0u));
 
     return true;
 }

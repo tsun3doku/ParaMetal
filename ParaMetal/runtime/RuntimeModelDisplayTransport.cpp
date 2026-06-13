@@ -35,11 +35,6 @@ void RuntimeModelDisplayTransport::sync(const ECSRegistry& registry) {
         nextSocketKeys.insert(socketKey);
     }
 
-    for (auto entity : registry.view<ModelPackage, Stale>()) {
-        uint64_t socketKey = static_cast<uint64_t>(entity);
-        controller->remove(socketKey);
-    }
-
     for (uint64_t socketKey : activeSocketKeys) {
         if (nextSocketKeys.find(socketKey) == nextSocketKeys.end()) {
             controller->remove(socketKey);

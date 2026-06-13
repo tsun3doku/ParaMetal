@@ -24,7 +24,7 @@ private:
         float contactThermalConductance,
         bool active,
         bool paused,
-        bool resetRequested);
+        uint32_t resetCounter);
     static NodeGraphNodeId selectHeatSolveNode(
         const NodeGraphState& state,
         const NodeGraphKernelExecutionState& executionState);

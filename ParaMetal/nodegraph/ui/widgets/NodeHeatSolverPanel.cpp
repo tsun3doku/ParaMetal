@@ -499,19 +499,11 @@ void NodeHeatSolverPanel::resetHeatSystem() {
     }
 
     params.paused = false;
-    params.resetRequested = true;
+    params.resetCounter++;
     if (!writeNodeParams(params)) {
         setStatus("Failed to request heat reset.");
         return;
     }
-
-    QTimer::singleShot(0, this, [this]() {
-        HeatSolveNodeParams clearParams{};
-        if (tryLoadNodeParams(clearParams)) {
-            clearParams.resetRequested = false;
-            writeNodeParams(clearParams);
-        }
-    });
 
     updateHeatStatus();
     setStatus("Heat solve reset requested.");

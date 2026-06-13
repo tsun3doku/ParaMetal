@@ -206,7 +206,7 @@ static NodeTypeDefinition buildHeatSolveNode() {
         {
             {nodegraphparams::heatsolve::Enabled, "Enabled", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::Paused, "Paused", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
-            {nodegraphparams::heatsolve::ResetRequested, "Reset Requested", NodeGraphParamType::Bool, 0.0, 0, false, "", true},
+            {nodegraphparams::heatsolve::ResetRequested, "Reset Requested", NodeGraphParamType::Int, 0.0, 0, false, "", false},
             makeArrayParamDefinition(
                 nodegraphparams::heatsolve::MaterialBindings,
                 "Material Bindings",

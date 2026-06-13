@@ -94,7 +94,7 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
         config.modelDensity,
         config.modelSpecificHeat,
         config.modelConductivity);
-    system.setParams(config.contactThermalConductance);
+    system.setParams(config.contactThermalConductance, config.simulationDuration);
     system.setContactCouplings(config.contactCouplings);
 }
 
@@ -111,35 +111,32 @@ void HeatSystemComputeController::configure(uint64_t socketKey, const Config& co
     }
 
     auto& instance = it->second;
-
-    if (instance->system) {
-        instance->system->setActive(config.active);
-        instance->system->setIsPaused(config.active && config.paused);
-
-        if (config.resetRequested) {
-            instance->system->resetHeatState(config.modelTemperatureByRuntimeId);
-        }
+    if (!instance->system) {
+        return;
     }
 
-    const auto configIt = configuredConfigs.find(socketKey);
-    if (configIt != configuredConfigs.end()) {
-        configIt->second.paused = config.paused;
-        configIt->second.resetRequested = config.resetRequested;
-        if (configIt->second.computeHash == config.computeHash) {
-            return;
-        }
+    // Runtime state: always pushed, never hashed
+    instance->system->setActive(config.active);
+    instance->system->setPlaybackState(config.paused, config.resetCounter);
+
+    // Structural path: only when computeHash changes (mesh/material/topology)
+    configureHeatSystem(*instance->system, config);
+    const bool configured = instance->system->ensureConfigured();
+    if (configured) {
+        configuredConfigs[socketKey] = config;
+        instance->system->resetHeatState();
+    } else {
+        configuredConfigs.erase(socketKey);
+    }
+}
+
+void HeatSystemComputeController::pushPlaybackState(uint64_t socketKey, bool paused, uint32_t resetCounter) {
+    auto it = activeSystems.find(socketKey);
+    if (it == activeSystems.end() || !it->second->system) {
+        return;
     }
 
-    if (instance->system) {
-        configureHeatSystem(*instance->system, config);
-        const bool configured = instance->system->ensureConfigured();
-        if (configured) {
-            configuredConfigs[socketKey] = config;
-            instance->system->resetHeatState(config.modelTemperatureByRuntimeId);
-        } else {
-            configuredConfigs.erase(socketKey);
-        }
-    }
+    it->second->system->setPlaybackState(paused, resetCounter);
 }
 
 void HeatSystemComputeController::disable(uint64_t socketKey) {
@@ -151,7 +148,7 @@ void HeatSystemComputeController::disable(uint64_t socketKey) {
     auto it = activeSystems.find(socketKey);
     if (it != activeSystems.end()) {
         if (it->second->system) {
-            it->second->system->setIsPaused(false);
+            it->second->system->setPlaybackState(false, 0);
             it->second->system->setActive(false);
             it->second->system->cleanupResources();
             it->second->system->cleanup();
@@ -164,7 +161,7 @@ void HeatSystemComputeController::disableAll() {
     configuredConfigs.clear();
     for (auto& [key, instance] : activeSystems) {
         if (instance->system) {
-            instance->system->setIsPaused(false);
+            instance->system->setPlaybackState(false, 0);
             instance->system->setActive(false);
             instance->system->cleanupResources();
             instance->system->cleanup();

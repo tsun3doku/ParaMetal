@@ -191,6 +191,7 @@ struct PointProduct {
 struct HeatProduct {
     bool active = false;
     bool paused = false;
+    uint32_t resetCounter = 0;
     std::vector<uint32_t> modelRuntimeModelIds;
     std::vector<VkBuffer> modelSurfaceBuffers;
     std::vector<VkDeviceSize> modelSurfaceBufferOffsets;
@@ -345,6 +346,7 @@ inline uint64_t buildProductHash(const HeatProduct& product) {
     uint64_t hash = NodeGraphHash::start();
     NodeGraphHash::combine(hash, static_cast<uint64_t>(product.active ? 1u : 0u));
     NodeGraphHash::combine(hash, static_cast<uint64_t>(product.paused ? 1u : 0u));
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(product.resetCounter));
     NodeGraphHash::combinePodVector(hash, product.modelRuntimeModelIds);
     NodeGraphHash::combine(hash, static_cast<uint64_t>(product.modelSurfaceBuffers.size()));
     for (size_t i = 0; i < product.modelSurfaceBuffers.size(); ++i) {

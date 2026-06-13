@@ -25,8 +25,9 @@ public:
     struct Config {
         bool active = false;
         bool paused = false;
-        bool resetRequested = false;
+        uint32_t resetCounter = 0;
         float contactThermalConductance = 16000.0f;
+        float simulationDuration = 5.0f;
         std::vector<SupportingHalfedge::IntrinsicMesh> modelIntrinsicMeshes;
         std::vector<uint32_t> modelRuntimeModelIds;
         std::vector<VkBufferView> supportingHalfedgeViews;
@@ -83,6 +84,7 @@ public:
     bool isHeatSystemPaused(uint64_t socketKey) const;
 
     void configure(uint64_t socketKey, const Config& config);
+    void pushPlaybackState(uint64_t socketKey, bool paused, uint32_t resetCounter);
     void disable(uint64_t socketKey);
     void disableAll();
     std::vector<ComputePass*> getActiveSystems() const;

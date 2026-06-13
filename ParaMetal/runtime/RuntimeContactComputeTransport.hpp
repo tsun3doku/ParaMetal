@@ -39,6 +39,7 @@ public:
 
             if (!package.authored.active || !package.authored.pair.hasValidContact) {
                 controller->disable(socketKey);
+                removePublishedProduct(socketKey);
                 appliedConfigInputHash.erase(socketKey);
                 continue;
             }
@@ -51,10 +52,12 @@ public:
             nextSocketKeys.insert(socketKey);
         }
 
-        for (auto entity : registry.view<ContactPackage, Stale>()) {
-            uint64_t socketKey = static_cast<uint64_t>(entity);
-            controller->disable(socketKey);
-            appliedConfigInputHash.erase(socketKey);
+        for (uint64_t socketKey : activeSocketKeys) {
+            if (nextSocketKeys.find(socketKey) == nextSocketKeys.end()) {
+                controller->disable(socketKey);
+                removePublishedProduct(socketKey);
+                appliedConfigInputHash.erase(socketKey);
+            }
         }
 
         activeSocketKeys = std::move(nextSocketKeys);
@@ -65,10 +68,6 @@ public:
             return;
         }
 
-        auto staleProductView = ecsRegistry->view<ContactProduct, Stale>();
-        for (auto entity : staleProductView) {
-            removePublishedProduct(static_cast<uint64_t>(entity));
-        }
         for (uint64_t socketKey : activeSocketKeys) {
             auto entity = static_cast<ECSEntity>(socketKey);
             const auto& package = ecsRegistry->get<ContactPackage>(entity);

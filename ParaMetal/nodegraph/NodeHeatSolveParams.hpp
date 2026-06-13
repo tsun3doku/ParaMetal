@@ -18,7 +18,7 @@ struct HeatPreviewSettings {
 struct HeatSolveNodeParams {
     bool enabled = false;
     bool paused = false;
-    bool resetRequested = false;
+    uint32_t resetCounter = 0;
     double contactThermalConductance = 16000.0;
     HeatPreviewSettings preview{};
     std::vector<HeatMaterialBinding> materialBindings;

@@ -87,10 +87,10 @@ bool HeatSystemVoronoiStage::finalSubstepWritesBufferB(uint32_t numSubsteps) con
 }
 
 bool HeatSystemVoronoiStage::createDescriptorPool(uint32_t numModels) {
-    // 2 descriptor sets per model 
+    // 2 descriptor sets per model
     uint32_t numSets = numModels * 2;
-    uint32_t storageBufferDescriptors = numSets * 6;
-    uint32_t uniformBufferDescriptors = numSets * 1;
+    uint32_t storageBufferDescriptors = numSets * 7;  // 0,1,2,4,5,6,7
+    uint32_t uniformBufferDescriptors = numSets * 1;  // 3
 
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
 
@@ -120,12 +120,13 @@ bool HeatSystemVoronoiStage::createDescriptorPool(uint32_t numModels) {
 
 bool HeatSystemVoronoiStage::createDescriptorSetLayout() {
     std::vector<VkDescriptorSetLayoutBinding> bindings = {
-        {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // voronoiNodeBuffer
+        {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // simNodeBuffer
         {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // gmlsInterfaceBuffer
         {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // materialNodeBuffer
-        {3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // timeBuffer
+        {3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // playbackUniform
         {4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // tempRead
         {5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // tempWrite
+        {6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // historyBuffer
         {7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // couplingAccumulator
     };
 

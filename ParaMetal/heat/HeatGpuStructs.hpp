@@ -6,9 +6,15 @@
 
 namespace heat {
 
-struct TimeUniform {
+struct SimPlaybackUniform {
+    uint32_t paused;
+    uint32_t resetCounter;
+    uint32_t rewindFrame;
+    uint32_t recordedFrames;
+    uint32_t maxFrames;
     float deltaTime;
     float totalTime;
+    uint32_t _pad;
 };
 
 struct SurfacePoint {
@@ -29,8 +35,8 @@ struct MaterialNode {
     float density;
     float specificHeat;
     float conductivity;
-    float fixedTemperatureValue;  
-    uint32_t boundaryCondition; 
+    float fixedTemperatureValue;
+    uint32_t boundaryCondition;
     uint32_t _pad0;
 };
 

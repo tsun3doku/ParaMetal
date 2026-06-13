@@ -148,6 +148,9 @@ struct HeatPackage {
 
     bool matches(const HeatPackage& other) const {
         return packageHash == other.packageHash &&
+            authored.paused == other.authored.paused &&
+            authored.resetCounter == other.authored.resetCounter &&
+            authored.simulationDuration == other.authored.simulationDuration &&
             display.showHeatOverlay == other.display.showHeatOverlay &&
             display.showFluxVectors == other.display.showFluxVectors &&
             display.showHeatPalette == other.display.showHeatPalette &&

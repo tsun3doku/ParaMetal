@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include "heat/HeatModelRuntime.hpp"
+#include "HeatSystemPlayback.hpp"
 #include "HeatSystemResources.hpp"
 #include "HeatSystemSimStage.hpp"
 #include "HeatSystemSurfaceStage.hpp"
@@ -75,6 +76,7 @@ HeatSystem::HeatSystem(
 }
 
 HeatSystem::~HeatSystem() {
+    cleanup();
 }
 
 void HeatSystem::failInitialization(const char* stage) {
@@ -102,16 +104,19 @@ void HeatSystem::setHeatModels(
         modelSpecificHeat,
         modelConductivity);
     this->modelRuntimeModelIds = modelRuntimeModelIds;
+    this->initialTemps = modelTemperatureByRuntimeId;
 }
 
 
-void HeatSystem::setParams(float updatedContactThermalConductance) {
-    if (contactThermalConductance == updatedContactThermalConductance) {
-        return;
+void HeatSystem::setParams(float updatedContactThermalConductance, float updatedSimulationDuration) {
+    if (contactThermalConductance != updatedContactThermalConductance) {
+        contactThermalConductance = updatedContactThermalConductance;
+        heatParamsDirty = true;
     }
-
-    contactThermalConductance = updatedContactThermalConductance;
-    heatParamsDirty = true;
+    if (simulationDuration != updatedSimulationDuration) {
+        simulationDuration = updatedSimulationDuration;
+        heatParamsDirty = true;
+    }
 }
 
 void HeatSystem::setContactCouplings(const std::vector<ContactCoupling>& contactCouplings) {
@@ -194,10 +199,6 @@ void HeatSystem::addVoronoiModelInput(
 }
 
 void HeatSystem::update() {
-    if (isPaused) {
-        return;
-    }
-
     static auto lastTime = std::chrono::steady_clock::now();
     const auto currentTime = std::chrono::steady_clock::now();
     float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
@@ -206,10 +207,35 @@ void HeatSystem::update() {
         deltaTime = 1.0f / 30.0f;
     }
 
-    auto* timeData = simRuntime.getMappedTimeData();
-    if (timeData) {
-        timeData->deltaTime = deltaTime / static_cast<float>(NUM_SUBSTEPS);
-        timeData->totalTime += deltaTime;
+    if (playbackControls.resetCounter != processedResetCounter) {
+        resetHeatState();
+        processedResetCounter = playbackControls.resetCounter;
+        playbackControls.rewindFrame = 0;
+        for (auto& [id, playback] : playbacks) {
+            if (playback) playback->reset();
+        }
+    }
+
+    // Write playback uniform 
+    auto* playbackData = simRuntime.getMappedPlaybackData();
+    if (playbackData) {
+        playbackData->paused = playbackControls.paused ? 1u : 0u;
+        playbackData->resetCounter = playbackControls.resetCounter;
+        playbackData->rewindFrame = playbackControls.rewindFrame;
+
+        uint32_t recorded = 0;
+        for (const auto& [id, pb] : playbacks) {
+            if (pb) {
+                recorded = std::max(recorded, pb->getRecordedFrames());
+            }
+        }
+        playbackData->recordedFrames = recorded;
+        playbackData->maxFrames = static_cast<uint32_t>(simulationDuration * 30.0f * static_cast<float>(NUM_SUBSTEPS));
+        playbackData->deltaTime = deltaTime / static_cast<float>(NUM_SUBSTEPS);
+
+        if (!playbackControls.paused && playbackControls.rewindFrame == 0) {
+            playbackData->totalTime += deltaTime;
+        }
     }
 
     (void)deltaTime;
@@ -280,6 +306,16 @@ bool HeatSystem::rebuildRuntimeResources(bool forceDescriptorReallocate) {
         auto countIt = simNodeCounts.find(runtimeModelId);
         uint32_t nodeCount = (countIt != simNodeCounts.end()) ? countIt->second : 0;
         heatModel->ensureSimulationBuffers(nodeCount);
+
+        // Initialize or reinitialize playback history for this model
+        uint32_t maxFrames = static_cast<uint32_t>(simulationDuration * 30.0f * static_cast<float>(NUM_SUBSTEPS));
+        auto& playback = playbacks[runtimeModelId];
+        if (!playback) {
+            playback = std::make_unique<HeatSystemPlayback>();
+        }
+        if (!playback->isValid() || playback->getMaxFrames() != maxFrames || playback->getNodeCount() != nodeCount) {
+            playback->initialize(vulkanDevice, memoryAllocator, nodeCount, maxFrames);
+        }
     }
 
     if (!heatVoronoiReady) {
@@ -429,14 +465,24 @@ bool HeatSystem::rebuildRuntimeResources(bool forceDescriptorReallocate) {
             }
         }
 
+        auto playbackIt = playbacks.find(runtimeModelId);
+        VkBuffer historyBuf = VK_NULL_HANDLE;
+        VkDeviceSize historyOff = 0;
+        if (playbackIt != playbacks.end() && playbackIt->second) {
+            historyBuf = playbackIt->second->getHistoryBuffer();
+            historyOff = playbackIt->second->getHistoryBufferOffset();
+        }
+        heatModel->setHistoryBuffer(historyBuf, historyOff);
         heatModel->updateAllDescriptors(
             resources.surfaceDescriptorSetLayout,
             resources.surfaceGradientDescriptorSetLayout,
             resources.surfaceDescriptorPool,
             resources.voronoiDescriptorSetLayout,
             resources.voronoiDescriptorPool,
-            simRuntime.getTimeBuffer(),
-            simRuntime.getTimeBufferOffset(),
+            simRuntime.getPlaybackBuffer(),
+            simRuntime.getPlaybackBufferOffset(),
+            historyBuf,
+            historyOff,
             true); 
     }
 
@@ -449,17 +495,22 @@ void HeatSystem::setActive(bool active) {
     isActive = active;
 }
 
-void HeatSystem::resetHeatState(const std::unordered_map<uint32_t, float>& modelTemperatureByRuntimeId) {
-    simRuntime.reset();
-    resetVoronoiTemperatures(modelTemperatureByRuntimeId);
+void HeatSystem::setPlaybackState(bool paused, uint32_t resetCounter) {
+    playbackControls.paused = paused;
+    playbackControls.resetCounter = resetCounter;
 }
 
-void HeatSystem::resetVoronoiTemperatures(const std::unordered_map<uint32_t, float>& modelTemperatureByRuntimeId) {
+void HeatSystem::resetHeatState() {
+    simRuntime.reset();
+    resetVoronoiTemperatures();
+}
+
+void HeatSystem::resetVoronoiTemperatures() {
     for (const auto& [runtimeModelId, heatModel] : runtime.getActiveModels()) {
         if (!heatModel) continue;
 
-        auto tempIt = modelTemperatureByRuntimeId.find(runtimeModelId);
-        if (tempIt == modelTemperatureByRuntimeId.end()) continue;
+        auto tempIt = initialTemps.find(runtimeModelId);
+        if (tempIt == initialTemps.end()) continue;
 
         float temperature = tempIt->second;
         uint32_t nodeCount = heatModel->getSimNodeCount();
@@ -518,11 +569,9 @@ bool HeatSystem::createComputeCommandBuffers(uint32_t maxFramesInFlight) {
 }
 
 bool HeatSystem::hasDispatchableComputeWork() const {
-    bool isActiveAndNotPaused = isActive && !isPaused;
     bool voronoiIsReady = voronoiReady();
     bool hasBuffers = !computeCommandBuffers.empty();
-    bool result = isActiveAndNotPaused && voronoiIsReady && hasBuffers;
-    return result;
+    return isActive && voronoiIsReady && hasBuffers;
 }
 
 bool HeatSystem::voronoiReady() const {
@@ -584,6 +633,50 @@ void HeatSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t c
             contactRuntimes,
             MAX_NODE_NEIGHBORS,
             NUM_SUBSTEPS);
+
+        // Snapshot final temperatures into playback history (only when running forward)
+        if (!playbackControls.paused && playbackControls.rewindFrame == 0) {
+            const bool finalWritesBufferB = voronoiStage->finalSubstepWritesBufferB(NUM_SUBSTEPS);
+
+            std::vector<VkBufferMemoryBarrier> snapshotBarriers;
+            for (const auto& [modelId, heatModel] : runtime.getActiveModels()) {
+                if (!heatModel || heatModel->getSimNodeCount() == 0) continue;
+                auto pbIt = playbacks.find(modelId);
+                if (pbIt == playbacks.end() || !pbIt->second) continue;
+
+                VkBuffer finalBuf = finalWritesBufferB ? heatModel->getTempBufferB() : heatModel->getTempBufferA();
+                VkDeviceSize finalOff = finalWritesBufferB ? heatModel->getTempBufferBOffset() : heatModel->getTempBufferAOffset();
+
+                VkBufferMemoryBarrier barrier{};
+                barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+                barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+                barrier.buffer = finalBuf;
+                barrier.offset = finalOff;
+                barrier.size = heatModel->getSimNodeCount() * sizeof(float);
+                snapshotBarriers.push_back(barrier);
+            }
+            if (!snapshotBarriers.empty()) {
+                vkCmdPipelineBarrier(
+                    commandBuffer,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    0,
+                    0, nullptr,
+                    static_cast<uint32_t>(snapshotBarriers.size()), snapshotBarriers.data(),
+                    0, nullptr);
+            }
+
+            for (const auto& [modelId, heatModel] : runtime.getActiveModels()) {
+                if (!heatModel || heatModel->getSimNodeCount() == 0) continue;
+                auto pbIt = playbacks.find(modelId);
+                if (pbIt == playbacks.end() || !pbIt->second) continue;
+
+                VkBuffer finalBuf = finalWritesBufferB ? heatModel->getTempBufferB() : heatModel->getTempBufferA();
+                VkDeviceSize finalOff = finalWritesBufferB ? heatModel->getTempBufferBOffset() : heatModel->getTempBufferAOffset();
+                pbIt->second->recordFrame(commandBuffer, finalBuf, finalOff);
+            }
+        }
     }
 
     vkEndCommandBuffer(commandBuffer);
@@ -629,6 +722,10 @@ void HeatSystem::cleanup() {
     cleanupResources();
     simRuntime.cleanup(memoryAllocator);
     runtime.cleanup();
+    for (auto& [id, playback] : playbacks) {
+        if (playback) playback->cleanup();
+    }
+    playbacks.clear();
 }
 
 bool HeatSystem::initializeVoronoiMaterialNodes() {

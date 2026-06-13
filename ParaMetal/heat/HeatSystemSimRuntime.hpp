@@ -9,7 +9,7 @@ class MemoryAllocator;
 class VulkanDevice;
 
 namespace heat {
-struct TimeUniform;
+struct SimPlaybackUniform;
 }
 
 class HeatSystemSimRuntime {
@@ -18,14 +18,14 @@ public:
     void reset();
     void cleanup(MemoryAllocator& memoryAllocator);
 
-    bool isInitialized() const { return timeBuffer != VK_NULL_HANDLE; }
+    bool isInitialized() const { return playbackBuffer != VK_NULL_HANDLE; }
 
-    VkBuffer getTimeBuffer() const { return timeBuffer; }
-    VkDeviceSize getTimeBufferOffset() const { return timeBufferOffset; }
-    heat::TimeUniform* getMappedTimeData() const;
+    VkBuffer getPlaybackBuffer() const { return playbackBuffer; }
+    VkDeviceSize getPlaybackBufferOffset() const { return playbackBufferOffset; }
+    heat::SimPlaybackUniform* getMappedPlaybackData() const;
 
 private:
-    VkBuffer timeBuffer = VK_NULL_HANDLE;
-    VkDeviceSize timeBufferOffset = 0;
-    void* mappedTimeData = nullptr;
+    VkBuffer playbackBuffer = VK_NULL_HANDLE;
+    VkDeviceSize playbackBufferOffset = 0;
+    void* mappedPlaybackData = nullptr;
 };

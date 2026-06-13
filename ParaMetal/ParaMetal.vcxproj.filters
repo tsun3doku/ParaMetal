@@ -204,6 +204,9 @@
     <ClCompile Include="heat\HeatSystemSimRuntime.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="heat\HeatSystemPlayback.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="heat\HeatSystemVoronoiStage.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -933,6 +936,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="heat\HeatGpuStructs.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="heat\HeatSystemPlayback.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="heat\VoronoiSystem.hpp">

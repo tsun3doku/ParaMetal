@@ -47,10 +47,6 @@ public:
             nextSocketKeys.insert(socketKey);
         }
 
-        for (auto entity : registry.view<HeatPackage, Stale>()) {
-            controller->remove(static_cast<uint64_t>(entity));
-        }
-
         for (uint64_t socketKey : activeSocketKeys) {
             if (nextSocketKeys.find(socketKey) == nextSocketKeys.end()) {
                 controller->remove(socketKey);

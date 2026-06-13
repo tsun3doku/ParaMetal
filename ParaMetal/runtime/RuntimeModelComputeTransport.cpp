@@ -37,6 +37,7 @@ void RuntimeModelComputeTransport::sync(const ECSRegistry& registry) {
     for (auto entity : registry.view<ModelPackage, Stale>()) {
         uint64_t socketKey = static_cast<uint64_t>(entity);
         modelRuntime->queueReleaseSocket(socketKey);
+        removePublishedProduct(socketKey);
         appliedConfigInputHash.erase(socketKey);
     }
 
@@ -50,10 +51,6 @@ void RuntimeModelComputeTransport::finalizeSync() {
 
     modelRuntime->flush();
 
-    auto staleProductView = ecsRegistry->view<ModelProduct, Stale>();
-    for (auto entity : staleProductView) {
-        removePublishedProduct(static_cast<uint64_t>(entity));
-    }
     for (uint64_t socketKey : activeSocketKeys) {
         auto entity = static_cast<ECSEntity>(socketKey);
         const auto& package = ecsRegistry->get<ModelPackage>(entity);

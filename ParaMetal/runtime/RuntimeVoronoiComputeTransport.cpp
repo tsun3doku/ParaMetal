@@ -23,6 +23,7 @@ void RuntimeVoronoiComputeTransport::sync(const ECSRegistry& registry) {
         }
         if (!package.authored.active || !inputsReady) {
             controller->disable(socketKey);
+            removePublishedProduct(socketKey);
             appliedConfigInputHash.erase(socketKey);
             continue;
         }
@@ -43,10 +44,12 @@ void RuntimeVoronoiComputeTransport::sync(const ECSRegistry& registry) {
         controller->configure(socketKey, config);
     }
 
-    for (auto entity : registry.view<VoronoiPackage, Stale>()) {
-        uint64_t socketKey = static_cast<uint64_t>(entity);
-        controller->disable(socketKey);
-        appliedConfigInputHash.erase(socketKey);
+    for (uint64_t socketKey : activeSocketKeys) {
+        if (nextSocketKeys.find(socketKey) == nextSocketKeys.end()) {
+            controller->disable(socketKey);
+            removePublishedProduct(socketKey);
+            appliedConfigInputHash.erase(socketKey);
+        }
     }
 
     activeSocketKeys = std::move(nextSocketKeys);
@@ -132,10 +135,6 @@ void RuntimeVoronoiComputeTransport::finalizeSync() {
         return;
     }
 
-    auto staleProductView = ecsRegistry->view<VoronoiProduct, Stale>();
-    for (auto entity : staleProductView) {
-        removePublishedProduct(static_cast<uint64_t>(entity));
-    }
     for (uint64_t socketKey : activeSocketKeys) {
         auto entity = static_cast<ECSEntity>(socketKey);
         if (!ecsRegistry->valid(entity) || !ecsRegistry->all_of<VoronoiPackage>(entity)) {

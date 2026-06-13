@@ -66,8 +66,10 @@ public:
         VkDescriptorPool surfacePool,
         VkDescriptorSetLayout voronoiLayout,
         VkDescriptorPool voronoiPool,
-        VkBuffer timeBuffer,
-        VkDeviceSize timeBufferOffset,
+        VkBuffer playbackBuffer,
+        VkDeviceSize playbackBufferOffset,
+        VkBuffer historyBuffer,
+        VkDeviceSize historyBufferOffset,
         bool forceReallocate = false);
 
     VkDescriptorSet getSurfaceComputeSetA() const { return surfaceComputeSetA; }
@@ -85,6 +87,7 @@ public:
         VkBuffer nodeBuffer, VkDeviceSize nodeOffset, uint32_t nodeCount,
         VkBuffer gmlsBuffer, VkDeviceSize gmlsOffset, uint32_t gmlsCount);
     void setVoronoiToSimNodeId(const std::vector<uint32_t>& mapping);
+    void setHistoryBuffer(VkBuffer buffer, VkDeviceSize offset);
 
     VkBuffer getSimNodeBuffer() const { return simNodeBuffer; }
     VkDeviceSize getSimNodeOffset() const { return simNodeOffset; }
@@ -161,6 +164,8 @@ private:
     VkDeviceSize tempBufferBOffset = 0;
     VkBuffer contactAccumulatorBuffer = VK_NULL_HANDLE;
     VkDeviceSize contactAccumulatorBufferOffset = 0;
+    VkBuffer historyBuffer = VK_NULL_HANDLE;
+    VkDeviceSize historyBufferOffset = 0;
     uint32_t simNodeCount = 0;
     uint32_t simGMLSInterfaceCount = 0;
     bool initialized = false;

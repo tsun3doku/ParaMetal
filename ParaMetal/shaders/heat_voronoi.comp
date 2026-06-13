@@ -10,8 +10,8 @@ struct Node {
 };
 
 struct GMLSInterface {
-    uint neighborIdx;   // local Voronoi cell index (per-model buffer)
-    float conductance;  // FTPA: area / distance
+    uint neighborIdx;   
+    float conductance;  
 };
 
 struct MaterialNode {
@@ -25,8 +25,17 @@ struct MaterialNode {
     uint _pad0;
 };
 
+struct SimPlayback {
+    uint paused;
+    uint resetCounter;
+    uint rewindFrame;
+    uint recordedFrames;
+    uint maxFrames;
+    float deltaTime;
+    float totalTime;
+    uint _pad;
+};
 
-// Single bindings: each descriptor set is for one model
 layout(binding = 0) buffer SimNodeBuffer {
     Node nodes[];
 } simNodeBuffer;
@@ -39,10 +48,9 @@ layout(binding = 2) buffer MaterialNodeBuffer {
     MaterialNode materialNodes[];
 } materialNodeBuffer;
 
-layout(binding = 3) uniform TimeBuffer {
-    float deltaTime;
-    float totalTime;
-} timeBuffer;
+layout(binding = 3) uniform PlaybackBuffer {
+    SimPlayback playback;
+};
 
 layout(binding = 4) buffer TemperatureReadBuffer {
     float temperatures[];
@@ -52,7 +60,10 @@ layout(binding = 5) buffer TemperatureWriteBuffer {
     float temperatures[];
 } tempWrite;
 
-// Coupling accumulator: float2.x = contactK, float2.y = gatheredField
+layout(binding = 6) buffer HistoryBuffer {
+    float data[];
+} historyBuffer;
+
 layout(binding = 7) buffer CouplingAccumulator {
     vec2 accum[];
 } couplingAccumulator;
@@ -67,15 +78,27 @@ void main() {
         return;
     }
 
-    // Ghost cells exist only to bound Voronoi geometry — skip early before loading material data
-    // Fixed temperature boundary condition - inject temperature every substep
+    if (playback.rewindFrame > 0u && playback.rewindFrame < playback.recordedFrames) {
+        uint frameStride = pushConstants.elementCount;
+        uint historyIdx = playback.rewindFrame * frameStride + localNodeID;
+        tempWrite.temperatures[localNodeID] = historyBuffer.data[historyIdx];
+        return;
+    }
+
+    // Fixed temperature boundary condition
     MaterialNode materialNode = materialNodeBuffer.materialNodes[localNodeID];
     if (materialNode.boundaryCondition == 1u) {
         tempWrite.temperatures[localNodeID] = materialNode.fixedTemperatureValue;
         return;
     }
 
-    // Sim node data uses local index (per-model buffer)
+    // Hold current state
+    if (playback.paused == 1u) {
+        tempWrite.temperatures[localNodeID] = tempRead.temperatures[localNodeID];
+        return;
+    }
+
+    // Sim node data uses local index
     Node node = simNodeBuffer.nodes[localNodeID];
     float thermalMass = max(materialNode.thermalMass, 1e-12);
     float currentTemp = tempRead.temperatures[localNodeID];
@@ -83,7 +106,6 @@ void main() {
     float totalConductance = 0.0;
     float totalFlux = 0.0;
 
-    // GMLS interface neighbors: neighborIdx is local (per-model buffer)
     for (uint i = 0; i < node.neighborCount; ++i) {
         GMLSInterface iface = gmlsInterfaceBuffer.interfaces[node.neighborOffset + i];
         float g = iface.conductance;
@@ -93,10 +115,10 @@ void main() {
         totalFlux += g * neighborTemp;
     }
 
-    float dt = timeBuffer.deltaTime;
+    float dt = playback.deltaTime;
     float kappa = materialNode.conductivityPerMass;
 
-    // Contact injection - read pre-calculated values from the coupling gather pass
+    // Contact injection
     vec2 contactAccum = couplingAccumulator.accum[localNodeID];
     float contactK = contactAccum.x;
     float contactKT = contactAccum.y;
@@ -110,8 +132,7 @@ void main() {
     float newTemp     = numerator / denominator;
 
     tempWrite.temperatures[localNodeID] = newTemp;
-    
-    // Auto-clear the coupling accumulator so the next gather substep starts fresh
-    // This entirely removes the need for vkCmdFillBuffer and its heavy pipeline barrier
+
+    // Clear the coupling accumulator so the next gather substep starts fresh
     couplingAccumulator.accum[localNodeID] = vec2(0.0);
 }

@@ -35,14 +35,18 @@ public:
 
             const uint64_t inputHash = buildConfigInputHash(socketKey, package);
             auto hashIt = appliedConfigInputHash.find(socketKey);
-            if (inputHash != 0 && hashIt != appliedConfigInputHash.end() && hashIt->second == inputHash) {
-                nextSocketKeys.insert(socketKey);
-                continue;
-            }
 
             if (!package.authored.active) {
                 controller->disable(socketKey);
+                removePublishedProduct(socketKey);
                 appliedConfigInputHash.erase(socketKey);
+                continue;
+            }
+
+            if (inputHash != 0 && hashIt != appliedConfigInputHash.end() && hashIt->second == inputHash) {
+                // Structural inputs unchanged — push runtime state only
+                controller->pushPlaybackState(socketKey, package.authored.paused, package.authored.resetCounter);
+                nextSocketKeys.insert(socketKey);
                 continue;
             }
 
@@ -54,10 +58,12 @@ public:
             nextSocketKeys.insert(socketKey);
         }
 
-        for (auto entity : registry.view<HeatPackage, Stale>()) {
-            uint64_t socketKey = static_cast<uint64_t>(entity);
-            controller->disable(socketKey);
-            appliedConfigInputHash.erase(socketKey);
+        for (uint64_t socketKey : activeSocketKeys) {
+            if (nextSocketKeys.find(socketKey) == nextSocketKeys.end()) {
+                controller->disable(socketKey);
+                removePublishedProduct(socketKey);
+                appliedConfigInputHash.erase(socketKey);
+            }
         }
 
         activeSocketKeys = std::move(nextSocketKeys);
@@ -68,18 +74,14 @@ public:
             return;
         }
 
-        auto staleProductView = ecsRegistry->view<HeatProduct, Stale>();
-        for (auto entity : staleProductView) {
-            removePublishedProduct(static_cast<uint64_t>(entity));
-        }
-
         for (uint64_t socketKey : activeSocketKeys) {
             auto entity = static_cast<ECSEntity>(socketKey);
             const auto& package = ecsRegistry->get<HeatPackage>(entity);
             const uint64_t inputHash = buildConfigInputHash(socketKey, package);
             auto hashIt = appliedConfigInputHash.find(socketKey);
             const HeatProduct* product = tryGetProduct<HeatProduct>(*ecsRegistry, socketKey);
-            if (!product || hashIt == appliedConfigInputHash.end() || hashIt->second != inputHash) {
+            bool runtimeChanged = !product || product->paused != package.authored.paused || product->resetCounter != package.authored.resetCounter;
+            if (!product || hashIt == appliedConfigInputHash.end() || hashIt->second != inputHash || runtimeChanged) {
                 publishProduct(socketKey);
             }
         }
@@ -103,7 +105,7 @@ private:
         outConfig = {};
         outConfig.active = package.authored.active;
         outConfig.paused = package.authored.paused;
-        outConfig.resetRequested = package.authored.resetRequested;
+        outConfig.resetCounter = package.authored.resetCounter;
         outConfig.contactThermalConductance = package.authored.contactThermalConductance;
         outConfig.modelIntrinsicMeshes.reserve(package.resolvedRemeshHandles.size());
         outConfig.modelRuntimeModelIds.reserve(package.resolvedRemeshHandles.size());
@@ -209,15 +211,15 @@ private:
         }
 
 
+        outConfig.simulationDuration = package.authored.simulationDuration;
         outConfig.computeHash = buildConfigInputHash(socketKey, package);
         return true;
     }
 
+    // Structural hash: only mesh/material/topology inputs. Never runtime control state.
     uint64_t buildConfigInputHash(uint64_t socketKey, const HeatPackage& package) const {
         (void)socketKey;
         uint64_t hash = package.packageHash;
-        NodeGraphHash::combine(hash, static_cast<uint64_t>(package.authored.paused ? 1u : 0u));
-        NodeGraphHash::combine(hash, static_cast<uint64_t>(package.authored.resetRequested ? 1u : 0u));
         for (size_t i = 0; i < package.resolvedRemeshHandles.size(); ++i) {
             const RemeshProduct* product = tryGetProduct<RemeshProduct>(*ecsRegistry, package.resolvedRemeshHandles[i].key);
             if (!product) {
@@ -283,6 +285,7 @@ private:
 
         outProduct.active = system->getIsActive();
         outProduct.paused = system->getIsPaused();
+        outProduct.resetCounter = system->getResetCounter();
         outProduct.modelRuntimeModelIds.reserve(config->modelRuntimeModelIds.size());
         outProduct.modelSurfaceBuffers.reserve(config->modelRuntimeModelIds.size());
         outProduct.modelSurfaceBufferOffsets.reserve(config->modelRuntimeModelIds.size());

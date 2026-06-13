@@ -9,7 +9,7 @@ HeatSolveNodeParams readHeatSolveNodeParams(const NodeGraphNode& node) {
     HeatSolveNodeParams params{};
     params.enabled = NodePanelUtils::readBoolParam(node, nodegraphparams::heatsolve::Enabled, false);
     params.paused = NodePanelUtils::readBoolParam(node, nodegraphparams::heatsolve::Paused, false);
-    params.resetRequested = NodePanelUtils::readBoolParam(node, nodegraphparams::heatsolve::ResetRequested, false);
+    params.resetCounter = static_cast<uint32_t>(NodePanelUtils::readIntParam(node, nodegraphparams::heatsolve::ResetRequested, 0));
     params.contactThermalConductance = NodePanelUtils::readFloatParam(node, nodegraphparams::heatsolve::ContactThermalConductance, 16000.0);
     params.preview.showHeatOverlay = NodePanelUtils::readBoolParam(node, nodegraphparams::heatsolve::ShowHeatOverlay, false);
     params.preview.showFluxVectors = NodePanelUtils::readBoolParam(node, nodegraphparams::heatsolve::ShowFluxVectors, false);
@@ -27,7 +27,7 @@ HeatSolveNodeParams readHeatSolveNodeParams(const NodeGraphNode& node) {
 bool writeHeatSolveNodeParams(NodeGraphEditor& editor, NodeGraphNodeId nodeId, const HeatSolveNodeParams& params) {
     return editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatsolve::Enabled, NodeGraphParamType::Bool, 0.0, 0, params.enabled}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatsolve::Paused, NodeGraphParamType::Bool, 0.0, 0, params.paused}) &&
-        editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatsolve::ResetRequested, NodeGraphParamType::Bool, 0.0, 0, params.resetRequested}) &&
+        editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatsolve::ResetRequested, NodeGraphParamType::Int, 0.0, static_cast<int64_t>(params.resetCounter), false}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatsolve::ContactThermalConductance, NodeGraphParamType::Float, params.contactThermalConductance}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatsolve::ShowHeatOverlay, NodeGraphParamType::Bool, 0.0, 0, params.preview.showHeatOverlay}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatsolve::ShowFluxVectors, NodeGraphParamType::Bool, 0.0, 0, params.preview.showFluxVectors}) &&

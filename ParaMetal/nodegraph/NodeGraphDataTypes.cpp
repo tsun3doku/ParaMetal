@@ -68,7 +68,7 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodeGraphTypeRegistry* typ
         const HeatData* heatData = registry ? registry->get<HeatData>(dataBlock.payloadHandle) : nullptr;
         dataBlock.metadata["heat.active"] = (heatData && heatData->active) ? "true" : "false";
         dataBlock.metadata["heat.paused"] = (heatData && heatData->paused) ? "true" : "false";
-        dataBlock.metadata["heat.reset_requested"] = (heatData && heatData->resetRequested) ? "true" : "false";
+        dataBlock.metadata["heat.reset_counter"] = std::to_string(heatData ? heatData->resetCounter : 0u);
         dataBlock.metadata["heat.model_count"] =
             std::to_string(heatData ? heatData->heatModelHandles.size() : 0u);
         dataBlock.metadata["heat.material_binding_count"] =

@@ -310,6 +310,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="heat\VoronoiSystemComputeController.cpp" />
     <ClCompile Include="heat\HeatSystemRuntime.cpp" />
     <ClCompile Include="heat\HeatSystemSimRuntime.cpp" />
+    <ClCompile Include="heat\HeatSystemPlayback.cpp" />
     <ClCompile Include="heat\HeatSystemVoronoiStage.cpp" />
     <ClCompile Include="contact\ContactSystemRuntime.cpp" />
     <ClCompile Include="heat\HeatSystemSimStage.cpp" />
@@ -499,6 +500,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="contact\ContactSampling.hpp" />
     <ClInclude Include="heat\HeatContactRuntime.hpp" />
     <ClInclude Include="heat\HeatModelRuntime.hpp" />
+    <ClInclude Include="heat\HeatSystemPlayback.hpp" />
     <ClInclude Include="nodegraph\NodeGraphCoreTypes.hpp" />
     <ClInclude Include="nodegraph\NodeGraphPayloadTypes.hpp" />
     <ClInclude Include="nodegraph\NodeGraphRegistry.hpp" />

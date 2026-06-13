@@ -138,6 +138,11 @@ void HeatModelRuntime::cleanup() {
     initialized = false;
 }
 
+void HeatModelRuntime::setHistoryBuffer(VkBuffer buffer, VkDeviceSize offset) {
+    historyBuffer = buffer;
+    historyBufferOffset = offset;
+}
+
 void HeatModelRuntime::setGMLSSurfaceWeights(
     VkBuffer stencilBuffer,
     VkDeviceSize stencilBufferOffset,
@@ -163,8 +168,10 @@ void HeatModelRuntime::updateAllDescriptors(
     VkDescriptorPool surfacePool,
     VkDescriptorSetLayout voronoiLayout,
     VkDescriptorPool voronoiPool,
-    VkBuffer timeBuffer,
-    VkDeviceSize timeBufferOffset,
+    VkBuffer playbackBuffer,
+    VkDeviceSize playbackBufferOffset,
+    VkBuffer historyBuffer,
+    VkDeviceSize historyBufferOffset,
     bool forceReallocate) {
     const size_t intrinsicVertexCount = getIntrinsicVertexCount();
     if (intrinsicVertexCount == 0 ||
@@ -220,7 +227,8 @@ void HeatModelRuntime::updateAllDescriptors(
     // Common info
     VkDescriptorBufferInfo surfaceInfo{ surfaceBuffer, surfaceBufferOffset, sizeof(heat::SurfacePoint) * intrinsicVertexCount };
     VkDescriptorBufferInfo gradientInfo{ surfaceGradientBuffer, surfaceGradientBufferOffset, sizeof(glm::vec4) * intrinsicVertexCount };
-    VkDescriptorBufferInfo timeInfo{ timeBuffer, timeBufferOffset, sizeof(heat::TimeUniform) };
+    VkDescriptorBufferInfo playbackInfo{ playbackBuffer, playbackBufferOffset, sizeof(heat::SimPlaybackUniform) };
+    VkDescriptorBufferInfo historyInfo{ historyBuffer, historyBufferOffset, simNodeCount * sizeof(float) };
     VkDescriptorBufferInfo gmlsStencilInfo{ gmlsSurfaceStencilBuffer, gmlsSurfaceStencilBufferOffset, intrinsicVertexCount * sizeof(voronoi::GMLSSurfaceStencil) };
     VkDescriptorBufferInfo gmlsValueWeightInfo{ gmlsSurfaceWeightBuffer, gmlsSurfaceWeightBufferOffset, gmlsSurfaceWeightCount * sizeof(voronoi::GMLSSurfaceWeight) };
     VkDescriptorBufferInfo gmlsGradientWeightInfo{ gmlsSurfaceGradientWeightBuffer, gmlsSurfaceGradientWeightBufferOffset, gmlsSurfaceGradientWeightCount * sizeof(voronoi::GMLSSurfaceGradientWeight) };
@@ -257,14 +265,15 @@ void HeatModelRuntime::updateAllDescriptors(
         vkUpdateDescriptorSets(vulkanDevice.getDevice(), 5, sGradWrites.data(), 0, nullptr);
 
         // Voronoi Diffusion
-        std::array<VkWriteDescriptorSet, 7> vWrites{};
+        std::array<VkWriteDescriptorSet, 8> vWrites{};
         vWrites[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 0, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &vNodeInfo, nullptr};
         vWrites[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 1, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &vGmlsInfo, nullptr};
         vWrites[2] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 2, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &vMatInfo, nullptr};
-        vWrites[3] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 3, 0, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, nullptr, &timeInfo, nullptr};
+        vWrites[3] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 3, 0, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, nullptr, &playbackInfo, nullptr};
         vWrites[4] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 4, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &nodeTempInfo, nullptr};
         vWrites[5] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 5, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &nodeNextTempInfo, nullptr};
-        vWrites[6] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 7, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &fluxInfo, nullptr};
+        vWrites[6] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 6, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &historyInfo, nullptr};
+        vWrites[7] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 7, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &fluxInfo, nullptr};
         vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(vWrites.size()), vWrites.data(), 0, nullptr);
     }
 }
