@@ -118,7 +118,7 @@ private:
             return false;
         }
 
-        outConfig.computeHash = buildComputeHash(outConfig);
+        outConfig.computeHash = buildConfigInputHash(socketKey, package);
         return true;
     }
 

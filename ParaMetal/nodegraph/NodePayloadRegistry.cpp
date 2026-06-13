@@ -74,8 +74,6 @@ void HeatData::sealPayload() {
         NodeGraphHash::combine(hash, handle.key);
     }
     NodeGraphHash::combine(hash, static_cast<uint64_t>(active ? 1u : 0u));
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(paused ? 1u : 0u));
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(resetRequested ? 1u : 0u));
     NodeGraphHash::combineFloat(hash, contactThermalConductance);
     NodeGraphHash::combine(hash, static_cast<uint64_t>(heatModelHandles.size()));
     for (const NodeDataHandle& handle : heatModelHandles) {

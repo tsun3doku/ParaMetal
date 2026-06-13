@@ -70,28 +70,3 @@ private:
     std::unordered_map<uint64_t, Config> configuredConfigs;
     uint32_t maxFramesInFlight = 0;
 };
-
-inline uint64_t buildComputeHash(const VoronoiSystemComputeController::Config& config) {
-    uint64_t hash = NodeGraphHash::start();
-    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.active ? 1u : 0u));
-    NodeGraphHash::combinePod(hash, config.cellSize);
-    NodeGraphHash::combinePod(hash, config.voxelResolution);
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(config.isPointDomain ? 1u : 0u));
-    NodeGraphHash::combinePodVector(hash, config.pointPositions);
-    NodeGraphHash::combine(hash, config.receiverNodeModelId);
-    NodeGraphHash::combinePodVector(hash, config.receiverGeometryPositions);
-    NodeGraphHash::combinePodVector(hash, config.receiverGeometryTriangleIndices);
-    NodeGraphHash::combinePodVector(hash, config.receiverIntrinsicMesh.vertices);
-    NodeGraphHash::combinePodVector(hash, config.receiverIntrinsicMesh.indices);
-    NodeGraphHash::combinePodVector(hash, config.receiverIntrinsicMesh.faceIds);
-    NodeGraphHash::combinePodVector(hash, config.receiverIntrinsicMesh.triangles);
-    NodeGraphHash::combinePodVector(hash, config.receiverSurfaceVertices);
-    NodeGraphHash::combinePodVector(hash, config.receiverIntrinsicTriangleIndices);
-    NodeGraphHash::combine(hash, config.receiverRuntimeModelId);
-    NodeGraphHash::combinePod(hash, config.meshModelMatrix);
-    NodeGraphHash::combinePodVector(hash, config.receiverSurfaceBuffers);
-    NodeGraphHash::combinePodVector(hash, config.receiverSurfaceBufferOffsets);
-    NodeGraphHash::combinePodVector(hash, config.receiverSurfaceGradientBuffers);
-    NodeGraphHash::combinePodVector(hash, config.receiverSurfaceGradientBufferOffsets);
-    return hash;
-}

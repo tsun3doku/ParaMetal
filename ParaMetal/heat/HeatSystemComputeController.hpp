@@ -109,5 +109,3 @@ private:
     std::unordered_map<uint64_t, Config> configuredConfigs;
     const uint32_t maxFramesInFlight;
 };
-
-uint64_t buildComputeHash(const HeatSystemComputeController::Config& config);

@@ -123,7 +123,7 @@ bool RuntimeVoronoiComputeTransport::tryBuildConfig(
         outConfig.pointPositions = pointPackage.positions;
     }
 
-    outConfig.computeHash = buildComputeHash(outConfig);
+    outConfig.computeHash = buildConfigInputHash(socketKey, package);
     return true;
 }
 

@@ -15,6 +15,11 @@ void ModelDisplayController::apply(uint64_t socketKey, const Config& config) {
 
     syncedSockets.insert(socketKey);
 
+    const auto existingIt = configsBySocket.find(socketKey);
+    if (existingIt != configsBySocket.end() && existingIt->second.displayHash == config.displayHash) {
+        return;
+    }
+
     if (modelRegistry) {
         modelRegistry->setModelVisible(config.runtimeModelId, true);
         modelRegistry->setModelMatrix(config.runtimeModelId, config.modelMatrix);

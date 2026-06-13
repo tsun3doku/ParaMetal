@@ -154,7 +154,7 @@ private:
             outConfig.inputLengthViews[i] = product->inputLengthView;
         }
 
-        // Collect per-model Voronoi products. Heat is the aggregation layer.
+        // Collect Voronoi products
         for (const NodeDataHandle& voronoiHandle : package.authored.voronoiHandles) {
             const VoronoiProduct* product = tryGetProduct<VoronoiProduct>(*ecsRegistry, voronoiHandle.key);
             if (!product || !product->isValid()) {
@@ -209,13 +209,15 @@ private:
         }
 
 
-        outConfig.computeHash = buildComputeHash(outConfig);
+        outConfig.computeHash = buildConfigInputHash(socketKey, package);
         return true;
     }
 
     uint64_t buildConfigInputHash(uint64_t socketKey, const HeatPackage& package) const {
         (void)socketKey;
         uint64_t hash = package.packageHash;
+        NodeGraphHash::combine(hash, static_cast<uint64_t>(package.authored.paused ? 1u : 0u));
+        NodeGraphHash::combine(hash, static_cast<uint64_t>(package.authored.resetRequested ? 1u : 0u));
         for (size_t i = 0; i < package.resolvedRemeshHandles.size(); ++i) {
             const RemeshProduct* product = tryGetProduct<RemeshProduct>(*ecsRegistry, package.resolvedRemeshHandles[i].key);
             if (!product) {

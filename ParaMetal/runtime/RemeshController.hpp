@@ -56,16 +56,3 @@ private:
     std::unordered_map<uint64_t, std::unique_ptr<RemeshSystem>> activeSystems;
     std::unordered_map<uint64_t, Config> configuredConfigs;
 };
-
-inline uint64_t buildComputeHash(const RemeshController::Config& config) {
-    uint64_t hash = NodeGraphHash::start();
-    NodeGraphHash::combine(hash, config.socketKey);
-    NodeGraphHash::combinePodVector(hash, config.pointPositions);
-    NodeGraphHash::combinePodVector(hash, config.triangleIndices);
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(config.iterations));
-    NodeGraphHash::combinePod(hash, config.minAngleDegrees);
-    NodeGraphHash::combinePod(hash, config.maxEdgeLength);
-    NodeGraphHash::combinePod(hash, config.stepSize);
-    NodeGraphHash::combine(hash, config.runtimeModelId);
-    return hash;
-}

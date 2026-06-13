@@ -83,7 +83,7 @@ bool RuntimePointComputeTransport::tryBuildConfig(
     outConfig.socketKey = socketKey;
     outConfig.positions = package.positions;
     outConfig.modelMatrix = toMat4(package.localToWorld);
-    outConfig.computeHash = package.packageHash;
+    outConfig.computeHash = buildConfigInputHash(socketKey, package);
     return true;
 }
 

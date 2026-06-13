@@ -5,6 +5,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "nodegraph/NodeGraphHash.hpp"
+
 class ModelRegistry;
 
 class ModelDisplayController {
@@ -12,6 +14,7 @@ public:
     struct Config {
         uint32_t runtimeModelId = 0;
         glm::mat4 modelMatrix{ 1.0f };
+        uint64_t displayHash = 0;
     };
 
     void setModelRegistry(ModelRegistry* registry);

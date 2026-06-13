@@ -146,7 +146,7 @@ private:
             outConfig.indexCount = modelProduct->indexCount;
             outConfig.modelMatrix = modelProduct->modelMatrix;
         }
-        outConfig.displayHash = buildDisplayHash(outConfig);
+        outConfig.displayHash = buildDisplayHash(outConfig, computeProduct->productHash);
         return true;
     }
 

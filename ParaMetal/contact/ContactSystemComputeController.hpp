@@ -68,23 +68,3 @@ private:
     std::unordered_map<uint64_t, std::unique_ptr<ContactSystem>> activeSystems;
     std::unordered_map<uint64_t, Config> configuredConfigs;
 };
-
-inline uint64_t buildComputeHash(const ContactSystemComputeController::Config& config) {
-    uint64_t hash = NodeGraphHash::start();
-    NodeGraphHash::combinePod(hash, config.minNormalDot);
-    NodeGraphHash::combinePod(hash, config.contactRadius);
-    NodeGraphHash::combinePod(hash, config.modelALocalToWorld);
-    NodeGraphHash::combinePodVector(hash, config.modelAIntrinsicMesh.vertices);
-    NodeGraphHash::combinePodVector(hash, config.modelAIntrinsicMesh.indices);
-    NodeGraphHash::combinePodVector(hash, config.modelAIntrinsicMesh.faceIds);
-    NodeGraphHash::combinePodVector(hash, config.modelAIntrinsicMesh.triangles);
-    NodeGraphHash::combinePod(hash, config.modelBLocalToWorld);
-    NodeGraphHash::combinePodVector(hash, config.modelBIntrinsicMesh.vertices);
-    NodeGraphHash::combinePodVector(hash, config.modelBIntrinsicMesh.indices);
-    NodeGraphHash::combinePodVector(hash, config.modelBIntrinsicMesh.faceIds);
-    NodeGraphHash::combinePodVector(hash, config.modelBIntrinsicMesh.triangles);
-    NodeGraphHash::combine(hash, config.modelARuntimeModelId);
-    NodeGraphHash::combine(hash, config.modelBRuntimeModelId);
-    NodeGraphHash::combinePodVector(hash, config.modelBTriangleIndices);
-    return hash;
-}

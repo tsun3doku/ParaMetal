@@ -1,5 +1,6 @@
 #include "RuntimeModelDisplayTransport.hpp"
 
+#include "nodegraph/NodeGraphHash.hpp"
 #include "util/GeometryUtils.hpp"
 #include "runtime/ModelDisplayController.hpp"
 #include "runtime/RuntimeECS.hpp"
@@ -23,6 +24,13 @@ void RuntimeModelDisplayTransport::sync(const ECSRegistry& registry) {
         ModelDisplayController::Config config{};
         config.runtimeModelId = product ? product->runtimeModelId : 0;
         config.modelMatrix = toMat4(package.localToWorld);
+        uint64_t displayHash = NodeGraphHash::start();
+        NodeGraphHash::combine(displayHash, config.runtimeModelId);
+        NodeGraphHash::combinePod(displayHash, config.modelMatrix);
+        if (product) {
+            NodeGraphHash::combine(displayHash, product->productHash);
+        }
+        config.displayHash = displayHash;
         controller->apply(socketKey, config);
         nextSocketKeys.insert(socketKey);
     }

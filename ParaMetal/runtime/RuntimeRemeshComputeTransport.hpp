@@ -93,7 +93,7 @@ private:
 
         const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, package.sourceMeshHandle.key);
         outConfig.runtimeModelId = modelProduct ? modelProduct->runtimeModelId : 0;
-        outConfig.computeHash = buildComputeHash(outConfig);
+        outConfig.computeHash = buildConfigInputHash(socketKey, package);
         return true;
     }
 

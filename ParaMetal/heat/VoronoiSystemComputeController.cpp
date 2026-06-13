@@ -47,7 +47,6 @@ void VoronoiSystemComputeController::configure(uint64_t socketKey, const Config&
 
     const auto configIt = configuredConfigs.find(socketKey);
     if (configIt != configuredConfigs.end() && configIt->second.computeHash == config.computeHash) {
-        // Hash match
         return;
     }
 

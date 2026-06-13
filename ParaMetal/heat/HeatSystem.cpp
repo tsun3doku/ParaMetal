@@ -168,7 +168,7 @@ void HeatSystem::addVoronoiModelInput(
     if (runtimeModelId == 0 || voronoiNodeCount == 0 || simNodeCount == 0) {
         return;
     }
-
+    
     modelVoronoiNodesByModelId[runtimeModelId] = nodes;
     modelVoronoiNodeBufferByModelId[runtimeModelId] = voronoiNodeBuffer;
     modelVoronoiNodeBufferOffsetByModelId[runtimeModelId] = voronoiNodeBufferOffset;

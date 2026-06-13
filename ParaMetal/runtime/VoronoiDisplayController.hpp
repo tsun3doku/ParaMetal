@@ -79,40 +79,10 @@ private:
     std::unordered_set<uint64_t> syncedSockets;
 };
 
-inline uint64_t buildDisplayHash(const VoronoiDisplayController::Config& config) {
+inline uint64_t buildDisplayHash(const VoronoiDisplayController::Config& config, uint64_t productHash) {
     uint64_t hash = NodeGraphHash::start();
     NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showVoronoi ? 1u : 0u));
     NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showPoints ? 1u : 0u));
-    NodeGraphHash::combine(hash, config.bindingKey);
-    NodeGraphHash::combine(hash, config.runtimeModelId);
-    NodeGraphHash::combinePod(hash, config.nodeBuffer);
-    NodeGraphHash::combine(hash, config.nodeBufferOffset);
-    NodeGraphHash::combine(hash, config.nodeCount);
-    NodeGraphHash::combinePod(hash, config.seedPositionBuffer);
-    NodeGraphHash::combine(hash, config.seedPositionBufferOffset);
-    NodeGraphHash::combinePod(hash, config.neighborIndicesBuffer);
-    NodeGraphHash::combine(hash, config.neighborIndicesBufferOffset);
-    NodeGraphHash::combinePod(hash, config.occupancyPointBuffer);
-    NodeGraphHash::combine(hash, config.occupancyPointBufferOffset);
-    NodeGraphHash::combine(hash, config.occupancyPointCount);
-    NodeGraphHash::combinePod(hash, config.candidateBuffer);
-    NodeGraphHash::combine(hash, config.candidateBufferOffset);
-    NodeGraphHash::combinePod(hash, config.supportingHalfedgeView);
-    NodeGraphHash::combinePod(hash, config.supportingAngleView);
-    NodeGraphHash::combinePod(hash, config.halfedgeView);
-    NodeGraphHash::combinePod(hash, config.edgeView);
-    NodeGraphHash::combinePod(hash, config.triangleView);
-    NodeGraphHash::combinePod(hash, config.lengthView);
-    NodeGraphHash::combinePod(hash, config.inputHalfedgeView);
-    NodeGraphHash::combinePod(hash, config.inputEdgeView);
-    NodeGraphHash::combinePod(hash, config.inputTriangleView);
-    NodeGraphHash::combinePod(hash, config.inputLengthView);
-    NodeGraphHash::combine(hash, config.intrinsicVertexCount);
-    NodeGraphHash::combinePod(hash, config.vertexBuffer);
-    NodeGraphHash::combine(hash, config.vertexBufferOffset);
-    NodeGraphHash::combinePod(hash, config.indexBuffer);
-    NodeGraphHash::combine(hash, config.indexBufferOffset);
-    NodeGraphHash::combine(hash, config.indexCount);
-    NodeGraphHash::combinePod(hash, config.modelMatrix);
+    NodeGraphHash::combine(hash, productHash);
     return hash;
 }
