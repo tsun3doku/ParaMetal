@@ -257,6 +257,8 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="runtime\RuntimeController.cpp" />
     <ClCompile Include="runtime\RenderSettingsManager.cpp" />
     <ClCompile Include="runtime\RenderSettingsController.cpp" />
+    <ClCompile Include="runtime\TimelineController.cpp" />
+    <ClCompile Include="runtime\TimelineRuntime.cpp" />
     <ClCompile Include="runtime\RuntimeInputController.cpp" />
     <ClCompile Include="runtime\RuntimeRenderController.cpp" />
     <ClCompile Include="runtime\RuntimeSystems.cpp" />
@@ -311,7 +313,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="heat\HeatSystemRuntime.cpp" />
     <ClCompile Include="heat\HeatSystemSimRuntime.cpp" />
     <ClCompile Include="heat\HeatSystemPlayback.cpp" />
-    <ClCompile Include="heat\HeatSystemVoronoiStage.cpp" />
+    <ClCompile Include="heat\HeatSystemDiffusionStage.cpp" />
     <ClCompile Include="contact\ContactSystemRuntime.cpp" />
     <ClCompile Include="heat\HeatSystemSimStage.cpp" />
     <ClCompile Include="heat\HeatSystemSurfaceStage.cpp" />
@@ -401,6 +403,8 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="app\VulkanWindow.cpp" />
     <ClCompile Include="render\MainRenderGraph.cpp" />
     <ClCompile Include="app\MainQt.cpp" />
+    <ClCompile Include="app\TimelineWidget.cpp" />
+    <ClCompile Include="app\TimelineNodeController.cpp" />
     <ClCompile Include="py\PyBridge.cpp" />
     <ClCompile Include="py\PyGraphBindings.cpp" />
     <ClCompile Include="py\PyIdBindings.cpp" />
@@ -452,7 +456,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <None Include="shaders\heat_surface_gradient.slang" />
     <None Include="shaders\heat_surface_temp.slang" />
     <None Include="shaders\heat_tetra.comp" />
-    <None Include="shaders\heat_voronoi.comp" />
+    <None Include="shaders\heat_diffusion.slang" />
     <None Include="shaders\intrinsic_normals.frag" />
     <None Include="shaders\intrinsic_normals.geom" />
     <None Include="shaders\intrinsic_normals.vert" />
@@ -501,6 +505,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="heat\HeatContactRuntime.hpp" />
     <ClInclude Include="heat\HeatModelRuntime.hpp" />
     <ClInclude Include="heat\HeatSystemPlayback.hpp" />
+    <ClInclude Include="heat\TimelineSimulation.hpp" />
     <ClInclude Include="nodegraph\NodeGraphCoreTypes.hpp" />
     <ClInclude Include="nodegraph\NodeGraphPayloadTypes.hpp" />
     <ClInclude Include="nodegraph\NodeGraphRegistry.hpp" />
@@ -560,6 +565,8 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="runtime\RuntimeController.hpp" />
     <ClInclude Include="runtime\RenderSettingsManager.hpp" />
     <ClInclude Include="runtime\RenderSettingsController.hpp" />
+    <ClInclude Include="runtime\TimelineController.hpp" />
+    <ClInclude Include="runtime\TimelineRuntime.hpp" />
     <ClInclude Include="runtime\RuntimeInputController.hpp" />
     <ClInclude Include="runtime\RuntimeRenderController.hpp" />
     <ClInclude Include="runtime\RuntimeSystems.hpp" />
@@ -620,9 +627,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="heat\VoronoiSystemRuntime.hpp" />
     <ClInclude Include="heat\VoronoiSystemComputeController.hpp" />
     <ClInclude Include="heat\HeatSystemRuntime.hpp" />
-    <ClInclude Include="heat\HeatSystemResources.hpp" />
-    <ClInclude Include="heat\HeatSystemStageContext.hpp" />
-    <ClInclude Include="heat\HeatSystemVoronoiStage.hpp" />
+    <ClInclude Include="heat\HeatSystemDiffusionStage.hpp" />
     <ClInclude Include="contact\ContactSystemRuntime.hpp" />
     <ClInclude Include="heat\HeatSystemSimStage.hpp" />
     <ClInclude Include="heat\HeatSystemSurfaceStage.hpp" />
@@ -701,6 +706,8 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="spatial\VoxelGrid.hpp" />
     <ClInclude Include="renderers\WireframeRenderer.hpp" />
     <QtMoc Include="app\MainQt.h" />
+    <QtMoc Include="app\TimelineWidget.hpp" />
+    <QtMoc Include="app\TimelineNodeController.hpp" />
     <ClInclude Include="vulkan\MemoryAllocator.hpp" />
     <ClInclude Include="scene\Model.hpp" />
     <ClInclude Include="scene\ModelUploader.hpp" />

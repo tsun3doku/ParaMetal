@@ -14,6 +14,7 @@ class ModelSelection;
 class RenderSettingsController;
 class RuntimeQuery;
 class SceneController;
+class TimelineController;
 struct WindowRuntimeState;
 
 class App {
@@ -27,6 +28,8 @@ public:
     bool isInitialized() const;
 
     const RuntimeQuery* runtimeQuery() const;
+    TimelineController* timelineController();
+    const TimelineController* timelineController() const;
     std::vector<SimulationError> consumeSimulationErrors();
     uint32_t loadModel(const std::string& modelPath, uint32_t preferredModelId = 0);
     void setPanSensitivity(float sensitivity);

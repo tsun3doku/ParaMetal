@@ -2,6 +2,7 @@
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphTypes.hpp"
 #include "NodeGraphParamUtils.hpp"
+#include "heat/HeatGpuStructs.hpp"
 #include "heat/HeatSystemPresets.hpp"
 
 #include <cstdint>
@@ -142,6 +143,11 @@ static NodeTypeDefinition buildHeatModelNode() {
             makeOutputSocket("HeatModel", NodeGraphValueType::Mesh, payloadtypes::HeatModel),
         },
         {
+            makeEnumParamDefinition(
+                nodegraphparams::heatmodel::MaterialPreset,
+                "Material Preset",
+                "Custom",
+                {"Aluminum", "Copper", "Custom", "Iron", "Ceramic"}),
             {nodegraphparams::heatmodel::Density, "Density", NodeGraphParamType::Float, HeatSimDefaults::density, 0, false, "", false},
             {nodegraphparams::heatmodel::SpecificHeat, "Specific Heat", NodeGraphParamType::Float, HeatSimDefaults::specificHeat, 0, false, "", false},
             {nodegraphparams::heatmodel::Conductivity, "Conductivity", NodeGraphParamType::Float, HeatSimDefaults::conductivity, 0, false, "", false},
@@ -207,27 +213,13 @@ static NodeTypeDefinition buildHeatSolveNode() {
             {nodegraphparams::heatsolve::Enabled, "Enabled", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::Paused, "Paused", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::ResetRequested, "Reset Requested", NodeGraphParamType::Int, 0.0, 0, false, "", false},
-            makeArrayParamDefinition(
-                nodegraphparams::heatsolve::MaterialBindings,
-                "Material Bindings",
-                makeStructParamDefinition(
-                    0,
-                    "Material Binding",
-                    {
-                        makeParamField("receiverModelNodeId", makeIntParamDefinition(0, "Receiver Model Node ID")),
-                        makeParamField(
-                            "preset",
-                            makeEnumParamDefinition(
-                                0,
-                                "Preset",
-                                "Aluminum",
-                                {"Aluminum", "Copper", "Custom", "Iron", "Ceramic"})),
-                    })),
             {nodegraphparams::heatsolve::ShowHeatOverlay, "Show Heat Overlay", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::ContactThermalConductance, "Contact Thermal Conductance", NodeGraphParamType::Float, HeatSimDefaults::contactThermalConductance, 0, false, "", false},
             {nodegraphparams::heatsolve::ShowFluxVectors, "Show Flux Vectors", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::ShowHeatPalette, "Show Heat Palette", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::FluxVectorScale, "Flux Vector Scale", NodeGraphParamType::Float, 1.0, 0, false, "", false},
+            {nodegraphparams::heatsolve::RewindFrame, "Rewind Frame", NodeGraphParamType::Int, 0.0, static_cast<int64_t>(heat::NoRewindFrame), false, "", false},
+            {nodegraphparams::heatsolve::SimulationDuration, "Simulation Duration", NodeGraphParamType::Float, 5.0, 0, false, "", false},
         },
     };
 }

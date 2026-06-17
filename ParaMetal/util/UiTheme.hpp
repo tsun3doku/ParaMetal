@@ -30,6 +30,41 @@ inline constexpr QColor ScrollBarTrackColor = QColor(70, 70, 80);
 inline constexpr QColor ScrollBarHandleColor = QColor(100, 100, 110);
 inline constexpr QColor ScrollBarHandleHoverColor = QColor(180, 180, 180);
 
+inline constexpr QColor ToolButtonNormal = QColor(58, 58, 58);       
+inline constexpr QColor ToolButtonHover = QColor(80, 80, 80);        
+inline constexpr QColor ToolButtonPressed = QColor(90, 90, 90);      
+inline constexpr QColor ToolButtonDisabled = QColor(37, 37, 37);     
+inline constexpr QColor ToolButtonDisabledText = QColor(85, 85, 85); 
+inline constexpr QColor IconDefault = QColor(221, 221, 221);         
+
+inline constexpr QColor TimelineBackground = QColor(30, 30, 30);     
+inline constexpr QColor TimelineTrackBg = QColor(51, 51, 51);       
+inline constexpr QColor TimelineTrackFill = QColor(123, 104, 238);   
+inline constexpr QColor TimelineText = QColor(204, 204, 204);        
+inline constexpr QColor TimelineTextDim = QColor(102, 102, 102);    
+
+inline std::string toolButtonStyle() {
+    return
+        "QPushButton {"
+        "  background-color: " + ToolButtonNormal.name().toStdString() + ";"
+        "  border: none;"
+        "  border-radius: 4px;"
+        "  color: " + IconDefault.name().toStdString() + ";"
+        "  font-family: 'Segoe UI';"
+        "  font-size: 11px;"
+        "}"
+        "QPushButton:hover {"
+        "  background-color: " + ToolButtonHover.name().toStdString() + ";"
+        "}"
+        "QPushButton:pressed {"
+        "  background-color: " + ToolButtonPressed.name().toStdString() + ";"
+        "}"
+        "QPushButton:disabled {"
+        "  background-color: " + ToolButtonDisabled.name().toStdString() + ";"
+        "  color: " + ToolButtonDisabledText.name().toStdString() + ";"
+        "}";
+}
+
 inline std::string appStyleSheet() {
     const std::string splitterThickness = std::to_string(SplitterVisualThickness);
     const std::string scrollBarThickness = std::to_string(ScrollBarThickness);

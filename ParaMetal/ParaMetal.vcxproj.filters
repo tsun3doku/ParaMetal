@@ -147,6 +147,12 @@
     <ClCompile Include="runtime\RenderSettingsController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="runtime\TimelineController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime\TimelineRuntime.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="runtime\RuntimeInputController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -207,7 +213,7 @@
     <ClCompile Include="heat\HeatSystemPlayback.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="heat\HeatSystemVoronoiStage.cpp">
+    <ClCompile Include="heat\HeatSystemDiffusionStage.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="contact\ContactSystemRuntime.cpp">
@@ -271,6 +277,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="app\MainQt.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\TimelineWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\TimelineNodeController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="app\SwapchainStage.cpp">
@@ -737,7 +749,7 @@
     <None Include="shaders\grid_label.vert">
       <Filter>Shaders</Filter>
     </None>
-    <None Include="shaders\heat_voronoi.comp">
+    <None Include="shaders\heat_diffusion.slang">
       <Filter>Shaders</Filter>
     </None>
     <None Include="shaders\voronoi_surface.frag">
@@ -848,6 +860,12 @@
     <ClInclude Include="runtime\RenderSettingsController.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="runtime\TimelineController.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\TimelineRuntime.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="runtime\RuntimeInputController.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -911,13 +929,7 @@
     <ClInclude Include="heat\HeatSystemRuntime.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="heat\HeatSystemResources.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="heat\HeatSystemStageContext.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="heat\HeatSystemVoronoiStage.hpp">
+    <ClInclude Include="heat\HeatSystemDiffusionStage.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="contact\ContactSystemRuntime.hpp">
@@ -939,6 +951,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="heat\HeatSystemPlayback.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="heat\TimelineSimulation.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="heat\VoronoiSystem.hpp">
@@ -1409,6 +1424,12 @@
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="app\MainQt.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="app\TimelineWidget.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="app\TimelineNodeController.hpp">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="nodegraph\ui\scene\NodeGraphCanvas.hpp">

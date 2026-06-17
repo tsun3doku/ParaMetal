@@ -98,6 +98,12 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
     system.setContactCouplings(config.contactCouplings);
 }
 
+void HeatSystemComputeController::applyRuntimeState(HeatSystem& system, const Config& config) {
+    system.setActive(config.active);
+    system.setPlaybackState(config.paused, config.resetCounter);
+    system.setRewindFrame(config.rewindFrame);
+}
+
 void HeatSystemComputeController::configure(uint64_t socketKey, const Config& config) {
     if (socketKey == 0) {
         return;
@@ -105,38 +111,31 @@ void HeatSystemComputeController::configure(uint64_t socketKey, const Config& co
 
     auto it = activeSystems.find(socketKey);
     if (it == activeSystems.end()) {
-        auto newInstance = std::make_unique<SystemInstance>();
-        newInstance->system = buildHeatSystem(newInstance->resources);
-        it = activeSystems.emplace(socketKey, std::move(newInstance)).first;
+        auto system = buildHeatSystem();
+        it = activeSystems.emplace(socketKey, std::move(system)).first;
     }
 
-    auto& instance = it->second;
-    if (!instance->system) {
+    auto& system = it->second;
+    if (!system) {
         return;
     }
 
-    // Runtime state: always pushed, never hashed
-    instance->system->setActive(config.active);
-    instance->system->setPlaybackState(config.paused, config.resetCounter);
+    const auto configIt = configuredConfigs.find(socketKey);
+    if (configIt != configuredConfigs.end() && configIt->second.computeHash == config.computeHash) {
+        applyRuntimeState(*system, config);
+        return;
+    }
 
-    // Structural path: only when computeHash changes (mesh/material/topology)
-    configureHeatSystem(*instance->system, config);
-    const bool configured = instance->system->ensureConfigured();
+    configureHeatSystem(*system, config);
+    const bool configured = system->ensureConfigured();
     if (configured) {
         configuredConfigs[socketKey] = config;
-        instance->system->resetHeatState();
     } else {
         configuredConfigs.erase(socketKey);
     }
-}
 
-void HeatSystemComputeController::pushPlaybackState(uint64_t socketKey, bool paused, uint32_t resetCounter) {
-    auto it = activeSystems.find(socketKey);
-    if (it == activeSystems.end() || !it->second->system) {
-        return;
-    }
-
-    it->second->system->setPlaybackState(paused, resetCounter);
+    // Runtime state: pushed after structural path so playback instances exist
+    applyRuntimeState(*system, config);
 }
 
 void HeatSystemComputeController::disable(uint64_t socketKey) {
@@ -147,11 +146,11 @@ void HeatSystemComputeController::disable(uint64_t socketKey) {
     configuredConfigs.erase(socketKey);
     auto it = activeSystems.find(socketKey);
     if (it != activeSystems.end()) {
-        if (it->second->system) {
-            it->second->system->setPlaybackState(false, 0);
-            it->second->system->setActive(false);
-            it->second->system->cleanupResources();
-            it->second->system->cleanup();
+        if (it->second) {
+            it->second->setPlaybackState(false, 0);
+            it->second->setActive(false);
+            it->second->cleanupResources();
+            it->second->cleanup();
         }
         activeSystems.erase(it);
     }
@@ -159,12 +158,12 @@ void HeatSystemComputeController::disable(uint64_t socketKey) {
 
 void HeatSystemComputeController::disableAll() {
     configuredConfigs.clear();
-    for (auto& [key, instance] : activeSystems) {
-        if (instance->system) {
-            instance->system->setPlaybackState(false, 0);
-            instance->system->setActive(false);
-            instance->system->cleanupResources();
-            instance->system->cleanup();
+    for (auto& [key, system] : activeSystems) {
+        if (system) {
+            system->setPlaybackState(false, 0);
+            system->setActive(false);
+            system->cleanupResources();
+            system->cleanup();
         }
     }
     activeSystems.clear();
@@ -173,7 +172,7 @@ void HeatSystemComputeController::disableAll() {
 bool HeatSystemComputeController::isAnyHeatSystemActive() const {
     for (const auto& [key, config] : configuredConfigs) {
         auto systemIt = activeSystems.find(key);
-        if (config.active && systemIt != activeSystems.end() && systemIt->second->system) {
+        if (config.active && systemIt != activeSystems.end() && systemIt->second) {
             return true;
         }
     }
@@ -181,9 +180,8 @@ bool HeatSystemComputeController::isAnyHeatSystemActive() const {
 }
 
 bool HeatSystemComputeController::isAnyHeatSystemPaused() const {
-    for (const auto& [key, config] : configuredConfigs) {
-        auto systemIt = activeSystems.find(key);
-        if (config.active && config.paused && systemIt != activeSystems.end() && systemIt->second->system) {
+    for (const auto& [key, system] : activeSystems) {
+        if (system && system->getIsActive() && system->getIsPaused()) {
             return true;
         }
     }
@@ -195,7 +193,7 @@ bool HeatSystemComputeController::isHeatSystemActive(uint64_t socketKey) const {
     auto systemIt = activeSystems.find(socketKey);
     return configIt != configuredConfigs.end() &&
            systemIt != activeSystems.end() &&
-           systemIt->second->system &&
+           systemIt->second &&
            configIt->second.active;
 }
 
@@ -204,17 +202,16 @@ bool HeatSystemComputeController::isHeatSystemPaused(uint64_t socketKey) const {
     auto systemIt = activeSystems.find(socketKey);
     return configIt != configuredConfigs.end() &&
            systemIt != activeSystems.end() &&
-           systemIt->second->system &&
+           systemIt->second &&
            configIt->second.active &&
-           configIt->second.paused;
+           systemIt->second->getIsPaused();
 }
 
-std::unique_ptr<HeatSystem> HeatSystemComputeController::buildHeatSystem(HeatSystemResources& heatSystemResources) {
+std::unique_ptr<HeatSystem> HeatSystemComputeController::buildHeatSystem() {
     std::unique_ptr<HeatSystem> system = std::make_unique<HeatSystem>(
         vulkanDevice,
         memoryAllocator,
         resourceManager,
-        heatSystemResources,
         maxFramesInFlight,
         renderCommandPool);
     if (!system || !system->isInitialized()) {
@@ -227,9 +224,9 @@ std::unique_ptr<HeatSystem> HeatSystemComputeController::buildHeatSystem(HeatSys
 std::vector<ComputePass*> HeatSystemComputeController::getActiveSystems() const {
     std::vector<ComputePass*> systems;
     systems.reserve(activeSystems.size());
-    for (const auto& [key, instance] : activeSystems) {
-        if (instance->system) {
-            systems.push_back(instance->system.get());
+    for (const auto& [key, system] : activeSystems) {
+        if (system) {
+            systems.push_back(system.get());
         }
     }
     return systems;
@@ -237,10 +234,10 @@ std::vector<ComputePass*> HeatSystemComputeController::getActiveSystems() const 
 
 const HeatSystem* HeatSystemComputeController::getSystem(uint64_t socketKey) const {
     const auto systemIt = activeSystems.find(socketKey);
-    if (systemIt == activeSystems.end() || !systemIt->second->system) {
+    if (systemIt == activeSystems.end() || !systemIt->second) {
         return nullptr;
     }
-    return systemIt->second->system.get();
+    return systemIt->second.get();
 }
 
 const HeatSystemComputeController::Config* HeatSystemComputeController::getConfig(uint64_t socketKey) const {
@@ -251,9 +248,9 @@ const HeatSystemComputeController::Config* HeatSystemComputeController::getConfi
 void HeatSystemComputeController::destroyHeatSystem(uint64_t socketKey) {
     auto it = activeSystems.find(socketKey);
     if (it != activeSystems.end()) {
-        if (it->second->system) {
-            it->second->system->cleanupResources();
-            it->second->system->cleanup();
+        if (it->second) {
+            it->second->cleanupResources();
+            it->second->cleanup();
         }
         activeSystems.erase(it);
     }

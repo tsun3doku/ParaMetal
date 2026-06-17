@@ -4,19 +4,31 @@
 
 #include "nodegraph/NodeGraphBridge.hpp"
 #include "nodegraph/NodeGraphEditor.hpp"
+#include "nodegraph/NodeHeatMaterialPresets.hpp"
 #include "nodegraph/NodeHeatModelParams.hpp"
 #include "NodeGraphWidgetStyle.hpp"
 
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
-#include <QPushButton>
 #include <QVBoxLayout>
 #include <QComboBox>
 
 NodeHeatModelPanel::NodeHeatModelPanel(QWidget* parent)
     : NodePanelBase(parent) {
     QVBoxLayout* layout = static_cast<QVBoxLayout*>(this->layout());
+
+    QHBoxLayout* presetRow = new QHBoxLayout();
+    presetRow->addWidget(new QLabel("Material Preset:", this));
+    materialPresetCombo = new QComboBox(this);
+    nodegraphwidgets::styleComboBox(materialPresetCombo);
+    materialPresetCombo->addItem("Aluminum", static_cast<int>(HeatMaterialPresetId::Aluminum));
+    materialPresetCombo->addItem("Copper", static_cast<int>(HeatMaterialPresetId::Copper));
+    materialPresetCombo->addItem("Iron", static_cast<int>(HeatMaterialPresetId::Iron));
+    materialPresetCombo->addItem("Ceramic", static_cast<int>(HeatMaterialPresetId::Ceramic));
+    materialPresetCombo->addItem("Custom", static_cast<int>(HeatMaterialPresetId::Custom));
+    presetRow->addWidget(materialPresetCombo, 1);
+    layout->addLayout(presetRow);
 
     // Boundary Condition
     QHBoxLayout* bcRow = new QHBoxLayout();
@@ -61,26 +73,25 @@ NodeHeatModelPanel::NodeHeatModelPanel(QWidget* parent)
     conductivityRow->addWidget(conductivityEdit, 1);
     layout->addLayout(conductivityRow);
 
-    QHBoxLayout* actionRow = new QHBoxLayout();
-    applyButton = new QPushButton("Apply Settings", this);
-    actionRow->addWidget(applyButton);
-    layout->addLayout(actionRow);
-
     layout->addStretch();
 
-    connect(applyButton, &QPushButton::clicked, this, [this]() {
-        applySettings();
-    });
+    connect(materialPresetCombo, &QComboBox::currentIndexChanged, this, [this](int) { onPresetEdited(); });
+    connect(boundaryConditionCombo, &QComboBox::currentIndexChanged, this, [this](int) { onSettingsEdited(); });
+    connect(temperatureEdit, &QLineEdit::editingFinished, this, [this]() { onSettingsEdited(); });
+    connect(densityEdit, &QLineEdit::editingFinished, this, [this]() { onMaterialValueEdited(); });
+    connect(specificHeatEdit, &QLineEdit::editingFinished, this, [this]() { onMaterialValueEdited(); });
+    connect(conductivityEdit, &QLineEdit::editingFinished, this, [this]() { onMaterialValueEdited(); });
 }
 
-void NodeHeatModelPanel::applySettings() {
+bool NodeHeatModelPanel::writeParameters() {
     if (!canEdit()) {
         setStatus("Cannot apply settings for this node.");
-        return;
+        return false;
     }
 
     NodeGraphEditor editor(bridge());
     HeatModelNodeParams params{};
+    params.materialPreset = static_cast<HeatMaterialPresetId>(materialPresetCombo->currentData().toInt());
     params.boundaryCondition = static_cast<HeatBoundaryCondition>(boundaryConditionCombo->currentData().toInt());
     params.fixedTemperatureValue = temperatureEdit->text().toDouble();
     params.density = densityEdit->text().toDouble();
@@ -89,10 +100,64 @@ void NodeHeatModelPanel::applySettings() {
     params.initialTemperature = temperatureEdit->text().toDouble();
     if (!writeHeatModelNodeParams(editor, currentNodeId(), params)) {
         setStatus("Failed to update heat model settings.");
+        return false;
+    }
+
+    return true;
+}
+
+void NodeHeatModelPanel::onPresetEdited() {
+    if (isSyncing()) {
         return;
     }
 
-    setStatus("Heat model settings applied.");
+    const auto presetId = static_cast<HeatMaterialPresetId>(materialPresetCombo->currentData().toInt());
+    if (presetId != HeatMaterialPresetId::Custom) {
+        const HeatMaterialPreset& preset = heatMaterialPresetById(presetId);
+        setSyncing(true);
+        densityEdit->setText(QString::number(preset.density, 'f', 1));
+        specificHeatEdit->setText(QString::number(preset.specificHeat, 'f', 1));
+        conductivityEdit->setText(QString::number(preset.conductivity, 'f', 2));
+        setSyncing(false);
+    }
+
+    if (writeParameters()) {
+        setStatus("Heat model settings applied.");
+    }
+}
+
+void NodeHeatModelPanel::onSettingsEdited() {
+    if (isSyncing()) {
+        return;
+    }
+
+    if (writeParameters()) {
+        setStatus("Heat model settings applied.");
+    }
+}
+
+void NodeHeatModelPanel::onMaterialValueEdited() {
+    if (isSyncing()) {
+        return;
+    }
+
+    setSyncing(true);
+    setMaterialPresetCombo(HeatMaterialPresetId::Custom);
+    setSyncing(false);
+
+    if (writeParameters()) {
+        setStatus("Heat model settings applied.");
+    }
+}
+
+void NodeHeatModelPanel::setMaterialPresetCombo(HeatMaterialPresetId presetId) {
+    const int presetValue = static_cast<int>(presetId);
+    for (int i = 0; i < materialPresetCombo->count(); ++i) {
+        if (materialPresetCombo->itemData(i).toInt() == presetValue) {
+            materialPresetCombo->setCurrentIndex(i);
+            return;
+        }
+    }
 }
 
 void NodeHeatModelPanel::refreshFromNode() {
@@ -107,6 +172,9 @@ void NodeHeatModelPanel::refreshFromNode() {
 
     const HeatModelNodeParams params = readHeatModelNodeParams(node);
 
+    setSyncing(true);
+    setMaterialPresetCombo(params.materialPreset);
+
     // Set boundary condition combo
     for (int i = 0; i < boundaryConditionCombo->count(); ++i) {
         if (boundaryConditionCombo->itemData(i).toInt() == static_cast<int>(params.boundaryCondition)) {
@@ -119,4 +187,5 @@ void NodeHeatModelPanel::refreshFromNode() {
     densityEdit->setText(QString::number(params.density, 'f', 1));
     specificHeatEdit->setText(QString::number(params.specificHeat, 'f', 1));
     conductivityEdit->setText(QString::number(params.conductivity, 'f', 2));
+    setSyncing(false);
 }

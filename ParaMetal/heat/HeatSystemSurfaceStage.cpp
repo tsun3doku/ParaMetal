@@ -1,7 +1,6 @@
 #include "HeatSystemSurfaceStage.hpp"
 
 #include "heat/HeatModelRuntime.hpp"
-#include "HeatSystemResources.hpp"
 #include "heat/HeatGpuStructs.hpp"
 #include "scene/Model.hpp"
 
@@ -14,13 +13,43 @@
 #include <iostream>
 #include <vector>
 
-HeatSystemSurfaceStage::HeatSystemSurfaceStage(const HeatSystemStageContext& stageContext)
-    : context(stageContext) {
+HeatSystemSurfaceStage::HeatSystemSurfaceStage(VulkanDevice& device)
+    : vulkanDevice(device) {
+}
+
+HeatSystemSurfaceStage::~HeatSystemSurfaceStage() {
+    VkDevice device = vulkanDevice.getDevice();
+    if (gradientPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device, gradientPipeline, nullptr);
+    }
+    if (pipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device, pipeline, nullptr);
+    }
+    if (gradientPipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(device, gradientPipelineLayout, nullptr);
+    }
+    if (pipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+    }
+    if (gradientDescriptorSetLayout != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(device, gradientDescriptorSetLayout, nullptr);
+    }
+    if (descriptorSetLayout != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+    }
+    if (descriptorPool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+    }
 }
 
 bool HeatSystemSurfaceStage::createDescriptorPool(uint32_t numModels) {
+    if (descriptorPool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(vulkanDevice.getDevice(), descriptorPool, nullptr);
+        descriptorPool = VK_NULL_HANDLE;
+    }
+
     const uint32_t effectiveModels = (numModels > 0) ? numModels : 1;
-    const uint32_t totalSets = effectiveModels * 4;
+    const uint32_t totalSets = effectiveModels * 6;
 
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -35,8 +64,8 @@ bool HeatSystemSurfaceStage::createDescriptorPool(uint32_t numModels) {
     poolInfo.pPoolSizes = poolSizes.data();
     poolInfo.maxSets = totalSets;
 
-    if (vkCreateDescriptorPool(context.vulkanDevice.getDevice(), &poolInfo, nullptr,
-        &context.resources.surfaceDescriptorPool) != VK_SUCCESS) {
+    if (vkCreateDescriptorPool(vulkanDevice.getDevice(), &poolInfo, nullptr,
+        &descriptorPool) != VK_SUCCESS) {
         return false;
     }
     return true;
@@ -67,8 +96,8 @@ bool HeatSystemSurfaceStage::createDescriptorSetLayout() {
     tempLayoutInfo.pBindings = tempBindings.data();
     tempLayoutInfo.pNext = nullptr;
 
-    if (vkCreateDescriptorSetLayout(context.vulkanDevice.getDevice(), &tempLayoutInfo, nullptr,
-        &context.resources.surfaceDescriptorSetLayout) != VK_SUCCESS) {
+    if (vkCreateDescriptorSetLayout(vulkanDevice.getDevice(), &tempLayoutInfo, nullptr,
+        &descriptorSetLayout) != VK_SUCCESS) {
         std::cerr << "[HeatSystem] Failed to create surface temperature descriptor set layout" << std::endl;
         return false;
     }
@@ -98,8 +127,8 @@ bool HeatSystemSurfaceStage::createDescriptorSetLayout() {
     gradientLayoutInfo.pBindings = gradientBindings.data();
     gradientLayoutInfo.pNext = &gradientBindingFlags;
 
-    if (vkCreateDescriptorSetLayout(context.vulkanDevice.getDevice(), &gradientLayoutInfo, nullptr,
-        &context.resources.surfaceGradientDescriptorSetLayout) != VK_SUCCESS) {
+    if (vkCreateDescriptorSetLayout(vulkanDevice.getDevice(), &gradientLayoutInfo, nullptr,
+        &gradientDescriptorSetLayout) != VK_SUCCESS) {
         std::cerr << "[HeatSystem] Failed to create surface gradient descriptor set layout" << std::endl;
         return false;
     }
@@ -111,7 +140,7 @@ bool HeatSystemSurfaceStage::createPipeline() {
     // Temperature pipeline 
     auto tempShaderCode = readFile("shaders/heat_surface_temp_comp.spv");
     VkShaderModule tempShaderModule = VK_NULL_HANDLE;
-    if (createShaderModule(context.vulkanDevice, tempShaderCode, tempShaderModule) != VK_SUCCESS) {
+    if (createShaderModule(vulkanDevice, tempShaderCode, tempShaderModule) != VK_SUCCESS) {
         std::cerr << "[HeatSystem] Failed to create surface temperature compute shader module" << std::endl;
         return false;
     }
@@ -130,13 +159,13 @@ bool HeatSystemSurfaceStage::createPipeline() {
     VkPipelineLayoutCreateInfo tempPipelineLayoutInfo{};
     tempPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     tempPipelineLayoutInfo.setLayoutCount = 1;
-    tempPipelineLayoutInfo.pSetLayouts = &context.resources.surfaceDescriptorSetLayout;
+    tempPipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
     tempPipelineLayoutInfo.pushConstantRangeCount = 1;
     tempPipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-    if (vkCreatePipelineLayout(context.vulkanDevice.getDevice(), &tempPipelineLayoutInfo, nullptr,
-        &context.resources.surfacePipelineLayout) != VK_SUCCESS) {
-        vkDestroyShaderModule(context.vulkanDevice.getDevice(), tempShaderModule, nullptr);
+    if (vkCreatePipelineLayout(vulkanDevice.getDevice(), &tempPipelineLayoutInfo, nullptr,
+        &pipelineLayout) != VK_SUCCESS) {
+        vkDestroyShaderModule(vulkanDevice.getDevice(), tempShaderModule, nullptr);
         std::cerr << "[HeatSystem] Failed to create surface temperature pipeline layout" << std::endl;
         return false;
     }
@@ -144,23 +173,23 @@ bool HeatSystemSurfaceStage::createPipeline() {
     VkComputePipelineCreateInfo tempPipelineInfo{};
     tempPipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
     tempPipelineInfo.stage = tempShaderStageInfo;
-    tempPipelineInfo.layout = context.resources.surfacePipelineLayout;
+    tempPipelineInfo.layout = pipelineLayout;
 
-    if (vkCreateComputePipelines(context.vulkanDevice.getDevice(), VK_NULL_HANDLE, 1,
-        &tempPipelineInfo, nullptr, &context.resources.surfacePipeline) != VK_SUCCESS) {
-        vkDestroyPipelineLayout(context.vulkanDevice.getDevice(), context.resources.surfacePipelineLayout, nullptr);
-        context.resources.surfacePipelineLayout = VK_NULL_HANDLE;
-        vkDestroyShaderModule(context.vulkanDevice.getDevice(), tempShaderModule, nullptr);
+    if (vkCreateComputePipelines(vulkanDevice.getDevice(), VK_NULL_HANDLE, 1,
+        &tempPipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
+        vkDestroyPipelineLayout(vulkanDevice.getDevice(), pipelineLayout, nullptr);
+        pipelineLayout = VK_NULL_HANDLE;
+        vkDestroyShaderModule(vulkanDevice.getDevice(), tempShaderModule, nullptr);
         std::cerr << "[HeatSystem] Failed to create surface temperature compute pipeline" << std::endl;
         return false;
     }
 
-    vkDestroyShaderModule(context.vulkanDevice.getDevice(), tempShaderModule, nullptr);
+    vkDestroyShaderModule(vulkanDevice.getDevice(), tempShaderModule, nullptr);
 
     // Gradient pipeline 
     auto gradientShaderCode = readFile("shaders/heat_surface_gradient_comp.spv");
     VkShaderModule gradientShaderModule = VK_NULL_HANDLE;
-    if (createShaderModule(context.vulkanDevice, gradientShaderCode, gradientShaderModule) != VK_SUCCESS) {
+    if (createShaderModule(vulkanDevice, gradientShaderCode, gradientShaderModule) != VK_SUCCESS) {
         std::cerr << "[HeatSystem] Failed to create surface gradient compute shader module" << std::endl;
         return false;
     }
@@ -174,13 +203,13 @@ bool HeatSystemSurfaceStage::createPipeline() {
     VkPipelineLayoutCreateInfo gradientPipelineLayoutInfo{};
     gradientPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     gradientPipelineLayoutInfo.setLayoutCount = 1;
-    gradientPipelineLayoutInfo.pSetLayouts = &context.resources.surfaceGradientDescriptorSetLayout;
+    gradientPipelineLayoutInfo.pSetLayouts = &gradientDescriptorSetLayout;
     gradientPipelineLayoutInfo.pushConstantRangeCount = 1;
     gradientPipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-    if (vkCreatePipelineLayout(context.vulkanDevice.getDevice(), &gradientPipelineLayoutInfo, nullptr,
-        &context.resources.surfaceGradientPipelineLayout) != VK_SUCCESS) {
-        vkDestroyShaderModule(context.vulkanDevice.getDevice(), gradientShaderModule, nullptr);
+    if (vkCreatePipelineLayout(vulkanDevice.getDevice(), &gradientPipelineLayoutInfo, nullptr,
+        &gradientPipelineLayout) != VK_SUCCESS) {
+        vkDestroyShaderModule(vulkanDevice.getDevice(), gradientShaderModule, nullptr);
         std::cerr << "[HeatSystem] Failed to create surface gradient pipeline layout" << std::endl;
         return false;
     }
@@ -188,33 +217,35 @@ bool HeatSystemSurfaceStage::createPipeline() {
     VkComputePipelineCreateInfo gradientPipelineInfo{};
     gradientPipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
     gradientPipelineInfo.stage = gradientShaderStageInfo;
-    gradientPipelineInfo.layout = context.resources.surfaceGradientPipelineLayout;
+    gradientPipelineInfo.layout = gradientPipelineLayout;
 
-    if (vkCreateComputePipelines(context.vulkanDevice.getDevice(), VK_NULL_HANDLE, 1,
-        &gradientPipelineInfo, nullptr, &context.resources.surfaceGradientPipeline) != VK_SUCCESS) {
-        vkDestroyPipelineLayout(context.vulkanDevice.getDevice(), context.resources.surfaceGradientPipelineLayout, nullptr);
-        context.resources.surfaceGradientPipelineLayout = VK_NULL_HANDLE;
-        vkDestroyShaderModule(context.vulkanDevice.getDevice(), gradientShaderModule, nullptr);
+    if (vkCreateComputePipelines(vulkanDevice.getDevice(), VK_NULL_HANDLE, 1,
+        &gradientPipelineInfo, nullptr, &gradientPipeline) != VK_SUCCESS) {
+        vkDestroyPipelineLayout(vulkanDevice.getDevice(), gradientPipelineLayout, nullptr);
+        gradientPipelineLayout = VK_NULL_HANDLE;
+        vkDestroyShaderModule(vulkanDevice.getDevice(), gradientShaderModule, nullptr);
         std::cerr << "[HeatSystem] Failed to create surface gradient compute pipeline" << std::endl;
         return false;
     }
 
-    vkDestroyShaderModule(context.vulkanDevice.getDevice(), gradientShaderModule, nullptr);
+    vkDestroyShaderModule(vulkanDevice.getDevice(), gradientShaderModule, nullptr);
     return true;
 }
 
 void HeatSystemSurfaceStage::dispatchSurfaceTemperatureUpdates(
     VkCommandBuffer commandBuffer,
     const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
+    bool replayFromHistory,
     bool finalWritesBufferB) const {
-    dispatchSurfacePass(commandBuffer, context.resources.surfacePipeline, context.resources.surfacePipelineLayout, activeModels, finalWritesBufferB, false);
+    dispatchSurfacePass(commandBuffer, pipeline, pipelineLayout, activeModels, replayFromHistory, finalWritesBufferB, false);
 }
 
 void HeatSystemSurfaceStage::dispatchSurfaceGradientUpdates(
     VkCommandBuffer commandBuffer,
     const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
+    bool replayFromHistory,
     bool finalWritesBufferB) const {
-    dispatchSurfacePass(commandBuffer, context.resources.surfaceGradientPipeline, context.resources.surfaceGradientPipelineLayout, activeModels, finalWritesBufferB, true);
+    dispatchSurfacePass(commandBuffer, gradientPipeline, gradientPipelineLayout, activeModels, replayFromHistory, finalWritesBufferB, true);
 }
 
 void HeatSystemSurfaceStage::dispatchSurfacePass(
@@ -222,6 +253,7 @@ void HeatSystemSurfaceStage::dispatchSurfacePass(
     VkPipeline pipeline,
     VkPipelineLayout layout,
     const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
+    bool replayFromHistory,
     bool finalWritesBufferB,
     bool isGradientPass) const {
     if (pipeline == VK_NULL_HANDLE || layout == VK_NULL_HANDLE) return;
@@ -235,7 +267,9 @@ void HeatSystemSurfaceStage::dispatchSurfacePass(
         if (!heatModel || heatModel->getIntrinsicVertexCount() == 0) continue;
 
         VkDescriptorSet set = VK_NULL_HANDLE;
-        if (isGradientPass) {
+        if (replayFromHistory) {
+            set = isGradientPass ? heatModel->getSurfaceGradientHistorySet() : heatModel->getSurfaceHistoryComputeSet();
+        } else if (isGradientPass) {
             set = finalWritesBufferB ? heatModel->getSurfaceGradientComputeSetB() : heatModel->getSurfaceGradientComputeSetA();
         } else {
             set = finalWritesBufferB ? heatModel->getSurfaceComputeSetB() : heatModel->getSurfaceComputeSetA();
@@ -245,6 +279,7 @@ void HeatSystemSurfaceStage::dispatchSurfacePass(
             const uint32_t vertexCount = static_cast<uint32_t>(heatModel->getIntrinsicVertexCount());
             const uint32_t workGroupCount = (vertexCount + 255) / 256;
 
+            surfacePushConstant.elementCount = vertexCount;
             vkCmdPushConstants(commandBuffer, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(heat::HeatModelPushConstant), &surfacePushConstant);
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, nullptr);
             vkCmdDispatch(commandBuffer, workGroupCount, 1, 1);

@@ -1,5 +1,6 @@
 #include "HeatModelRuntime.hpp"
 
+#include "heat/HeatSystemPlayback.hpp"
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 #include "voronoi/VoronoiAdapters.hpp"
@@ -118,6 +119,11 @@ bool HeatModelRuntime::createSurfaceBuffer() {
 }
 
 void HeatModelRuntime::cleanup() {
+    if (playback) {
+        playback->cleanup();
+        playback.reset();
+    }
+
     freeBuffer(memoryAllocator, surfaceBuffer, surfaceBufferOffset);
     freeBuffer(memoryAllocator, materialBuffer, materialBufferOffset);
     freeBuffer(memoryAllocator, surfaceGradientBuffer, surfaceGradientBufferOffset);
@@ -133,14 +139,31 @@ void HeatModelRuntime::cleanup() {
     surfaceComputeSetB = VK_NULL_HANDLE;
     surfaceGradientComputeSetA = VK_NULL_HANDLE;
     surfaceGradientComputeSetB = VK_NULL_HANDLE;
+    surfaceHistoryComputeSet = VK_NULL_HANDLE;
+    surfaceGradientHistorySet = VK_NULL_HANDLE;
 
     cleanupSimulationBuffers();
     initialized = false;
 }
 
-void HeatModelRuntime::setHistoryBuffer(VkBuffer buffer, VkDeviceSize offset) {
+void HeatModelRuntime::setHistoryBuffer(VkBuffer buffer, VkDeviceSize offset, uint32_t frameCapacity) {
     historyBuffer = buffer;
     historyBufferOffset = offset;
+    historyBufferFrameCapacity = frameCapacity;
+}
+
+void HeatModelRuntime::initializePlayback(VulkanDevice& device, MemoryAllocator& allocator, uint32_t frameCapacity) {
+    if (simNodeCount == 0 || frameCapacity == 0) return;
+    ensureSimulationBuffers(simNodeCount);
+    if (!playback) {
+        playback = std::make_unique<HeatSystemPlayback>();
+    }
+    if (!playback->isValid() || playback->getFrameCapacity() != frameCapacity || playback->getNodeCount() != simNodeCount) {
+        playback->initialize(device, allocator, simNodeCount, frameCapacity);
+    }
+    if (playback->isValid()) {
+        setHistoryBuffer(playback->getHistoryBuffer(), playback->getHistoryBufferOffset(), frameCapacity);
+    }
 }
 
 void HeatModelRuntime::setGMLSSurfaceWeights(
@@ -188,6 +211,8 @@ void HeatModelRuntime::updateAllDescriptors(
         surfaceComputeSetB = VK_NULL_HANDLE;
         surfaceGradientComputeSetA = VK_NULL_HANDLE;
         surfaceGradientComputeSetB = VK_NULL_HANDLE;
+        surfaceHistoryComputeSet = VK_NULL_HANDLE;
+        surfaceGradientHistorySet = VK_NULL_HANDLE;
         voronoiDescriptorSetA = VK_NULL_HANDLE;
         voronoiDescriptorSetB = VK_NULL_HANDLE;
     }
@@ -212,6 +237,16 @@ void HeatModelRuntime::updateAllDescriptors(
         }
     }
 
+    if (surfaceHistoryComputeSet == VK_NULL_HANDLE || surfaceGradientHistorySet == VK_NULL_HANDLE) {
+        std::vector<VkDescriptorSetLayout> historyLayouts = { surfaceLayout, gradientLayout };
+        VkDescriptorSetAllocateInfo historyAllocInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, nullptr, surfacePool, 2, historyLayouts.data()};
+        VkDescriptorSet historySets[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+        if (vkAllocateDescriptorSets(vulkanDevice.getDevice(), &historyAllocInfo, historySets) == VK_SUCCESS) {
+            surfaceHistoryComputeSet = historySets[0];
+            surfaceGradientHistorySet = historySets[1];
+        }
+    }
+
     if (voronoiDescriptorSetA == VK_NULL_HANDLE || voronoiDescriptorSetB == VK_NULL_HANDLE) {
         std::vector<VkDescriptorSetLayout> vLayouts = { voronoiLayout, voronoiLayout };
         VkDescriptorSetAllocateInfo vAllocInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, nullptr, voronoiPool, 2, vLayouts.data()};
@@ -222,13 +257,17 @@ void HeatModelRuntime::updateAllDescriptors(
         }
     }
 
-    if (surfaceComputeSetA == VK_NULL_HANDLE || voronoiDescriptorSetA == VK_NULL_HANDLE) return;
+    if (surfaceComputeSetA == VK_NULL_HANDLE ||
+        surfaceGradientComputeSetA == VK_NULL_HANDLE ||
+        surfaceHistoryComputeSet == VK_NULL_HANDLE ||
+        surfaceGradientHistorySet == VK_NULL_HANDLE ||
+        voronoiDescriptorSetA == VK_NULL_HANDLE) return;
 
     // Common info
     VkDescriptorBufferInfo surfaceInfo{ surfaceBuffer, surfaceBufferOffset, sizeof(heat::SurfacePoint) * intrinsicVertexCount };
     VkDescriptorBufferInfo gradientInfo{ surfaceGradientBuffer, surfaceGradientBufferOffset, sizeof(glm::vec4) * intrinsicVertexCount };
     VkDescriptorBufferInfo playbackInfo{ playbackBuffer, playbackBufferOffset, sizeof(heat::SimPlaybackUniform) };
-    VkDescriptorBufferInfo historyInfo{ historyBuffer, historyBufferOffset, simNodeCount * sizeof(float) };
+    VkDescriptorBufferInfo historyInfo{ historyBuffer, historyBufferOffset, static_cast<VkDeviceSize>(historyBufferFrameCapacity) * simNodeCount * sizeof(float) };
     VkDescriptorBufferInfo gmlsStencilInfo{ gmlsSurfaceStencilBuffer, gmlsSurfaceStencilBufferOffset, intrinsicVertexCount * sizeof(voronoi::GMLSSurfaceStencil) };
     VkDescriptorBufferInfo gmlsValueWeightInfo{ gmlsSurfaceWeightBuffer, gmlsSurfaceWeightBufferOffset, gmlsSurfaceWeightCount * sizeof(voronoi::GMLSSurfaceWeight) };
     VkDescriptorBufferInfo gmlsGradientWeightInfo{ gmlsSurfaceGradientWeightBuffer, gmlsSurfaceGradientWeightBufferOffset, gmlsSurfaceGradientWeightCount * sizeof(voronoi::GMLSSurfaceGradientWeight) };
@@ -264,17 +303,37 @@ void HeatModelRuntime::updateAllDescriptors(
         sGradWrites[4] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sGradSets[pass], 12, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsGradientWeightInfo, nullptr};
         vkUpdateDescriptorSets(vulkanDevice.getDevice(), 5, sGradWrites.data(), 0, nullptr);
 
-        // Voronoi Diffusion
-        std::array<VkWriteDescriptorSet, 8> vWrites{};
+        // Diffusion
+        std::array<VkWriteDescriptorSet, 7> vWrites{};
         vWrites[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 0, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &vNodeInfo, nullptr};
         vWrites[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 1, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &vGmlsInfo, nullptr};
         vWrites[2] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 2, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &vMatInfo, nullptr};
         vWrites[3] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 3, 0, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, nullptr, &playbackInfo, nullptr};
         vWrites[4] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 4, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &nodeTempInfo, nullptr};
         vWrites[5] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 5, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &nodeNextTempInfo, nullptr};
-        vWrites[6] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 6, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &historyInfo, nullptr};
-        vWrites[7] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 7, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &fluxInfo, nullptr};
+        vWrites[6] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 7, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &fluxInfo, nullptr};
         vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(vWrites.size()), vWrites.data(), 0, nullptr);
+    }
+
+    // History display sets: bind the full history buffer; per-frame offset updated
+    // separately via updateHistoryDescriptorOffset().
+    {
+        VkDescriptorBufferInfo historyFrameInfo{ historyBuffer, historyBufferOffset, static_cast<VkDeviceSize>(historyBufferFrameCapacity) * simNodeCount * sizeof(float) };
+
+        std::array<VkWriteDescriptorSet, 4> hTempWrites{};
+        hTempWrites[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, surfaceHistoryComputeSet, 0, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &historyFrameInfo, nullptr};
+        hTempWrites[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, surfaceHistoryComputeSet, 1, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &surfaceInfo, nullptr};
+        hTempWrites[2] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, surfaceHistoryComputeSet, 10, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsStencilInfo, nullptr};
+        hTempWrites[3] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, surfaceHistoryComputeSet, 11, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsValueWeightInfo, nullptr};
+        vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(hTempWrites.size()), hTempWrites.data(), 0, nullptr);
+
+        std::array<VkWriteDescriptorSet, 5> hGradWrites{};
+        hGradWrites[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, surfaceGradientHistorySet, 0, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &historyFrameInfo, nullptr};
+        hGradWrites[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, surfaceGradientHistorySet, 1, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &surfaceInfo, nullptr};
+        hGradWrites[2] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, surfaceGradientHistorySet, 2, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gradientInfo, nullptr};
+        hGradWrites[3] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, surfaceGradientHistorySet, 10, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsStencilInfo, nullptr};
+        hGradWrites[4] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, surfaceGradientHistorySet, 12, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsGradientWeightInfo, nullptr};
+        vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(hGradWrites.size()), hGradWrites.data(), 0, nullptr);
     }
 }
 
@@ -368,4 +427,35 @@ void HeatModelRuntime::cleanupSimulationBuffers() {
 
 void HeatModelRuntime::setStencilKDTree(std::unique_ptr<StencilKDTree> kdTree) {
     stencilKDTree = std::move(kdTree);
+}
+
+void HeatModelRuntime::updateHistoryDescriptorOffset(uint32_t displayFrame, VkDeviceSize frameStride) {
+    if (surfaceHistoryComputeSet == VK_NULL_HANDLE ||
+        surfaceGradientHistorySet == VK_NULL_HANDLE ||
+        historyBuffer == VK_NULL_HANDLE ||
+        simNodeCount == 0) {
+        return;
+    }
+
+    VkDeviceSize offset = historyBufferOffset + static_cast<VkDeviceSize>(displayFrame) * frameStride;
+    VkDeviceSize size = static_cast<VkDeviceSize>(simNodeCount) * sizeof(float);
+
+    VkDescriptorBufferInfo bufferInfo{};
+    bufferInfo.buffer = historyBuffer;
+    bufferInfo.offset = offset;
+    bufferInfo.range = size;
+
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = surfaceHistoryComputeSet;
+    write.dstBinding = 0;
+    write.dstArrayElement = 0;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    write.pBufferInfo = &bufferInfo;
+
+    vkUpdateDescriptorSets(vulkanDevice.getDevice(), 1, &write, 0, nullptr);
+
+    write.dstSet = surfaceGradientHistorySet;
+    vkUpdateDescriptorSets(vulkanDevice.getDevice(), 1, &write, 0, nullptr);
 }

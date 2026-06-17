@@ -40,6 +40,20 @@ const RuntimeQuery* App::runtimeQuery() const {
     return nullptr;
 }
 
+TimelineController* App::timelineController() {
+    if (systems) {
+        return systems->timelineController();
+    }
+    return nullptr;
+}
+
+const TimelineController* App::timelineController() const {
+    if (systems) {
+        return systems->timelineController();
+    }
+    return nullptr;
+}
+
 std::vector<SimulationError> App::consumeSimulationErrors() {
     if (systems) {
         return systems->consumeSimulationErrors();

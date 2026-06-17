@@ -10,10 +10,6 @@
 #include <iomanip>
 #include <iostream>
 
-HeatSystemDebugStage::HeatSystemDebugStage(const HeatSystemStageContext& stageContext)
-    : context(stageContext) {
-}
-
 void HeatSystemDebugStage::exportDebugArtifacts(bool debugEnable, uint32_t voronoiNodeCount,
     VkBuffer debugCellGeometryBuffer, VkDeviceSize debugCellGeometryBufferOffset,
     VkBuffer voronoiNodeBuffer, VkDeviceSize voronoiNodeBufferOffset,

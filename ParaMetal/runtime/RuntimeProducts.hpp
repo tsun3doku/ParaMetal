@@ -10,6 +10,7 @@
 #include <vulkan/vulkan.h>
 
 #include "domain/GeometryData.hpp"
+#include "heat/HeatGpuStructs.hpp"
 #include "mesh/remesher/SupportingHalfedge.hpp"
 #include "nodegraph/NodeGraphCoreTypes.hpp"
 #include "nodegraph/NodeGraphHash.hpp"
@@ -192,6 +193,7 @@ struct HeatProduct {
     bool active = false;
     bool paused = false;
     uint32_t resetCounter = 0;
+    uint32_t rewindFrame = heat::NoRewindFrame;
     std::vector<uint32_t> modelRuntimeModelIds;
     std::vector<VkBuffer> modelSurfaceBuffers;
     std::vector<VkDeviceSize> modelSurfaceBufferOffsets;
@@ -347,6 +349,7 @@ inline uint64_t buildProductHash(const HeatProduct& product) {
     NodeGraphHash::combine(hash, static_cast<uint64_t>(product.active ? 1u : 0u));
     NodeGraphHash::combine(hash, static_cast<uint64_t>(product.paused ? 1u : 0u));
     NodeGraphHash::combine(hash, static_cast<uint64_t>(product.resetCounter));
+    NodeGraphHash::combine(hash, static_cast<uint64_t>(product.rewindFrame));
     NodeGraphHash::combinePodVector(hash, product.modelRuntimeModelIds);
     NodeGraphHash::combine(hash, static_cast<uint64_t>(product.modelSurfaceBuffers.size()));
     for (size_t i = 0; i < product.modelSurfaceBuffers.size(); ++i) {

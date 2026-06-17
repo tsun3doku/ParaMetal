@@ -13,7 +13,6 @@
 #include "runtime/RuntimeProducts.hpp"
 #include "domain/HeatData.hpp"
 #include "domain/HeatModelData.hpp"
-#include "heat/HeatSystemPresets.hpp"
 #include "domain/PointData.hpp"
 #include "../util/GeometryUtils.hpp"
 
@@ -225,16 +224,6 @@ HeatPackage RuntimePackageCompiler::buildHeatPackage(
             float density = heatModel->density;
             float specificHeat = heatModel->specificHeat;
             float conductivity = heatModel->conductivity;
-            const uint32_t modelNodeId = static_cast<uint32_t>(heatModelHandle.key);
-            for (const HeatMaterialBinding& binding : heat.materialBindings) {
-                if (binding.modelNodeId == modelNodeId) {
-                    const HeatMaterialPreset& preset = heatMaterialPresetById(binding.presetId);
-                    density = preset.density;
-                    specificHeat = preset.specificHeat;
-                    conductivity = preset.conductivity;
-                    break;
-                }
-            }
 
             package.resolvedRemeshHandles.push_back(heatModel->meshHandle);
             package.resolvedModelHandles.push_back(modelHandle);

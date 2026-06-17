@@ -2,11 +2,23 @@
 #include "heat/HeatSystemPresets.hpp"
 
 #include "NodeGraphEditor.hpp"
+#include "NodeGraphParamUtils.hpp"
 #include "NodeGraphRegistry.hpp"
+#include "NodeGraphUtils.hpp"
+#include "NodeHeatMaterialPresets.hpp"
 #include "nodegraph/ui/widgets/NodePanelUtils.hpp"
 
 HeatModelNodeParams readHeatModelNodeParams(const NodeGraphNode& node) {
     HeatModelNodeParams params{};
+    if (const NodeGraphParamValue* presetValue = findNodeParamValue(node, nodegraphparams::heatmodel::MaterialPreset)) {
+        std::string presetName;
+        if (tryGetParamEnum(*presetValue, presetName)) {
+            HeatMaterialPresetId presetId = HeatMaterialPresetId::Custom;
+            if (tryResolveHeatPresetId(presetName, presetId)) {
+                params.materialPreset = presetId;
+            }
+        }
+    }
     params.density = NodePanelUtils::readFloatParam(
         node,
         nodegraphparams::heatmodel::Density,
@@ -37,6 +49,16 @@ bool writeHeatModelNodeParams(
     NodeGraphNodeId nodeId,
     const HeatModelNodeParams& params) {
     bool ok = true;
+    ok &= editor.setNodeParameter(
+        nodeId,
+        NodeGraphParamValue{
+            nodegraphparams::heatmodel::MaterialPreset,
+            NodeGraphParamType::Enum,
+            0.0,
+            0,
+            false,
+            "",
+            heatMaterialPresetName(params.materialPreset)});
     ok &= editor.setNodeParameter(
         nodeId,
         NodeGraphParamValue{

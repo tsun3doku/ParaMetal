@@ -9,7 +9,6 @@ class NodeGraphBridge;
 class NodeGraphCanvas;
 class NodeGraphScene;
 class NodePanel;
-class PyTerminalWidget;
 class ModelSelection;
 class QTimer;
 class RuntimeQuery;
@@ -27,7 +26,6 @@ public:
     void refreshGraph();
     void resetToDefaultGraph();
 
-    PyTerminalWidget* getPyTerminal() const { return pyTerminal; }
     void syncSelection();
 
 private slots:
@@ -51,7 +49,6 @@ private:
     NodeGraphScene* graphScene = nullptr;
     NodePanel* nodePanel = nullptr;
     NodeGraphCanvas* graphCanvas = nullptr;
-    PyTerminalWidget* pyTerminal = nullptr;
     QTimer* refreshTimer = nullptr;
     bool suppressGraphSelectionHandling = false;
     uint32_t lastObservedRuntimeModelId = 0;

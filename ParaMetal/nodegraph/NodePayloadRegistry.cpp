@@ -79,11 +79,6 @@ void HeatData::sealPayload() {
     for (const NodeDataHandle& handle : heatModelHandles) {
         NodeGraphHash::combine(hash, handle.key);
     }
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(materialBindings.size()));
-    for (const HeatMaterialBinding& binding : materialBindings) {
-        NodeGraphHash::combine(hash, static_cast<uint64_t>(binding.modelNodeId));
-        NodeGraphHash::combine(hash, static_cast<uint64_t>(binding.presetId));
-    }
     payloadHash = hash;
 }
 

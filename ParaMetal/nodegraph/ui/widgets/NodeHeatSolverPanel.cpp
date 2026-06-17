@@ -2,9 +2,7 @@
 #include "nodegraph/NodeGraphRegistry.hpp"
 #include "nodegraph/NodeGraphUtils.hpp"
 
-#include "nodegraph/NodeHeatMaterialPresets.hpp"
 #include "nodegraph/NodeGraphBridge.hpp"
-#include "nodegraph/NodeGraphDebugCache.hpp"
 #include "nodegraph/NodeGraphEditor.hpp"
 #include "nodegraph/NodeHeatSolveParams.hpp"
 #include "NodePanelUtils.hpp"
@@ -14,22 +12,13 @@
 #include "NodeGraphWidgetStyle.hpp"
 #include "runtime/RuntimeInterfaces.hpp"
 
-#include <QAbstractItemView>
 #include <QCheckBox>
-#include <QComboBox>
-#include <QHeaderView>
+#include <QHBoxLayout>
 #include <QLabel>
-#include <QLineEdit>
-#include <QPushButton>
-#include <QTableWidget>
-#include <QTableWidgetItem>
 #include <QTimer>
 #include <QVBoxLayout>
 
-#include <algorithm>
 #include <string>
-#include <unordered_set>
-#include <vector>
 
 NodeHeatSolverPanel::NodeHeatSolverPanel(QWidget* parent)
     : NodePanelBase(parent) {
@@ -41,13 +30,6 @@ NodeHeatSolverPanel::NodeHeatSolverPanel(QWidget* parent)
     statusRow->addWidget(heatStatusValueLabel, 1);
     layout->addLayout(statusRow);
 
-    heatToggleButton = new QPushButton("Start", this);
-    heatPauseButton = new QPushButton("Pause", this);
-    heatResetButton = new QPushButton("Reset", this);
-    layout->addWidget(heatToggleButton);
-    layout->addWidget(heatPauseButton);
-    layout->addWidget(heatResetButton);
-
     layout->addWidget(new QLabel("Solver Settings:", this));
 
     heatContactThermalConductanceRow = new NodeGraphSliderRow("Contact Thermal Conductance", this);
@@ -56,8 +38,11 @@ NodeHeatSolverPanel::NodeHeatSolverPanel(QWidget* parent)
     heatContactThermalConductanceRow->setValue(16000.0);
     layout->addWidget(heatContactThermalConductanceRow);
 
-    heatSolveSettingsApplyButton = new QPushButton("Apply Solver Settings", this);
-    layout->addWidget(heatSolveSettingsApplyButton);
+    heatSimulationDurationRow = new NodeGraphSliderRow("Simulation Duration (s)", this);
+    heatSimulationDurationRow->setRange(0.1, 60.0);
+    heatSimulationDurationRow->setDecimals(1);
+    heatSimulationDurationRow->setValue(5.0);
+    layout->addWidget(heatSimulationDurationRow);
 
     heatOverlayCheckBox = new QCheckBox("Heat Overlay", this);
     layout->addWidget(heatOverlayCheckBox);
@@ -74,69 +59,14 @@ NodeHeatSolverPanel::NodeHeatSolverPanel(QWidget* parent)
     fluxVectorScaleRow->setValue(1.0);
     layout->addWidget(fluxVectorScaleRow);
 
-    layout->addWidget(new QLabel("Receiver Material Bindings:", this));
-
-    QHBoxLayout* bindingSourceRow = new QHBoxLayout();
-    bindingSourceRow->addWidget(new QLabel("Receiver Model Node ID:", this));
-    heatBindingGroupComboBox = new QComboBox(this);
-    heatBindingGroupComboBox->setEditable(true);
-    if (QLineEdit* comboEdit = heatBindingGroupComboBox->lineEdit()) {
-        comboEdit->setFrame(false);
-        comboEdit->setStyleSheet("QLineEdit { background: transparent; border: none; padding: 0; }");
-        comboEdit->setPlaceholderText("e.g. 12");
-    }
-    bindingSourceRow->addWidget(heatBindingGroupComboBox, 1);
-    layout->addLayout(bindingSourceRow);
-
-    QHBoxLayout* bindingPresetRow = new QHBoxLayout();
-    bindingPresetRow->addWidget(new QLabel("Preset:", this));
-    heatBindingPresetComboBox = new QComboBox(this);
-    heatBindingPresetComboBox->addItem("Aluminum");
-    heatBindingPresetComboBox->addItem("Copper");
-    heatBindingPresetComboBox->addItem("Custom");
-    heatBindingPresetComboBox->addItem("Iron");
-    heatBindingPresetComboBox->addItem("Ceramic");
-    bindingPresetRow->addWidget(heatBindingPresetComboBox, 1);
-    layout->addLayout(bindingPresetRow);
-
-    QHBoxLayout* bindingActionRow = new QHBoxLayout();
-    heatBindingAddButton = new QPushButton("Add/Update Receiver", this);
-    heatBindingRemoveButton = new QPushButton("Remove Selected", this);
-    bindingActionRow->addWidget(heatBindingAddButton);
-    bindingActionRow->addWidget(heatBindingRemoveButton);
-    layout->addLayout(bindingActionRow);
-
-    heatBindingsTable = new QTableWidget(this);
-    heatBindingsTable->setColumnCount(2);
-    heatBindingsTable->setHorizontalHeaderLabels({"Receiver Model Node ID", "Preset"});
-    heatBindingsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-    heatBindingsTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    heatBindingsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-    heatBindingsTable->setSelectionMode(QAbstractItemView::SingleSelection);
-    heatBindingsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    heatBindingsTable->setMinimumHeight(nodegraphwidgets::panelTableMinimumHeight);
-    layout->addWidget(heatBindingsTable);
-
-    heatBindingApplyButton = new QPushButton("Apply Material Bindings", this);
-    layout->addWidget(heatBindingApplyButton);
     layout->addWidget(new QLabel("Contact parameters are authored on the Contact node.", this));
     layout->addStretch();
 
     heatStatusTimer = new QTimer(this);
     heatStatusTimer->setInterval(nodegraphwidgets::heatStatusTimerIntervalMs);
 
-    connect(heatToggleButton, &QPushButton::clicked, this, [this]() {
-        toggleHeatSystem();
-    });
-    connect(heatPauseButton, &QPushButton::clicked, this, [this]() {
-        pauseHeatSystem();
-    });
-    connect(heatResetButton, &QPushButton::clicked, this, [this]() {
-        resetHeatSystem();
-    });
-    connect(heatSolveSettingsApplyButton, &QPushButton::clicked, this, [this]() {
-        applySolveSettings();
-    });
+    heatContactThermalConductanceRow->setValueChangedCallback([this](double) { onSolverSettingsEdited(); });
+    heatSimulationDurationRow->setValueChangedCallback([this](double) { onSolverSettingsEdited(); });
     connect(heatOverlayCheckBox, &QCheckBox::toggled, this, [this](bool checked) {
         if (isSyncing()) {
             return;
@@ -215,45 +145,6 @@ NodeHeatSolverPanel::NodeHeatSolverPanel(QWidget* parent)
 
         setStatus("Heat settings applied.");
     });
-    connect(heatBindingAddButton, &QPushButton::clicked, this, [this]() {
-        const QString receiverKey = heatBindingGroupComboBox->currentText().trimmed();
-        const QString presetName = heatBindingPresetComboBox->currentText().trimmed();
-        if (receiverKey.isEmpty() || presetName.isEmpty()) {
-            setStatus("Receiver model ID and preset are required.");
-            return;
-        }
-
-        uint32_t receiverModelId = 0;
-        if (!NodePanelUtils::tryParseUint32Id(receiverKey.toStdString(), receiverModelId) || receiverModelId == 0) {
-            setStatus("Receiver model ID must be a positive integer.");
-            return;
-        }
-
-        int existingRow = -1;
-        for (int row = 0; row < heatBindingsTable->rowCount(); ++row) {
-            QTableWidgetItem* groupItem = heatBindingsTable->item(row, 0);
-            if (groupItem && groupItem->text().compare(receiverKey, Qt::CaseInsensitive) == 0) {
-                existingRow = row;
-                break;
-            }
-        }
-
-        const int targetRow = (existingRow >= 0) ? existingRow : heatBindingsTable->rowCount();
-        if (existingRow < 0) {
-            heatBindingsTable->insertRow(targetRow);
-        }
-        heatBindingsTable->setItem(targetRow, 0, new QTableWidgetItem(receiverKey));
-        heatBindingsTable->setItem(targetRow, 1, new QTableWidgetItem(presetName));
-    });
-    connect(heatBindingRemoveButton, &QPushButton::clicked, this, [this]() {
-        const int row = heatBindingsTable->currentRow();
-        if (row >= 0) {
-            heatBindingsTable->removeRow(row);
-        }
-    });
-    connect(heatBindingApplyButton, &QPushButton::clicked, this, [this]() {
-        applyMaterialBindings();
-    });
     connect(heatStatusTimer, &QTimer::timeout, this, [this]() {
         updateHeatStatus();
     });
@@ -271,124 +162,16 @@ void NodeHeatSolverPanel::refreshFromNode() {
         return;
     }
 
-    refreshBindingGroupOptions();
     setSyncing(true);
     heatContactThermalConductanceRow->setValue(params.contactThermalConductance);
+    heatSimulationDurationRow->setValue(params.simulationDuration);
     heatOverlayCheckBox->setChecked(params.preview.showHeatOverlay);
     fluxVectorsCheckBox->setChecked(params.preview.showFluxVectors);
     heatPaletteCheckBox->setChecked(params.preview.showHeatPalette);
     fluxVectorScaleRow->setValue(params.preview.fluxVectorScale);
-
-    const std::vector<HeatMaterialBinding>& bindingRows = params.materialBindings;
-    heatBindingsTable->setRowCount(0);
-    heatBindingsTable->setRowCount(static_cast<int>(bindingRows.size()));
-    for (int row = 0; row < static_cast<int>(bindingRows.size()); ++row) {
-        const HeatMaterialBinding& bindingRow = bindingRows[static_cast<std::size_t>(row)];
-        heatBindingsTable->setItem(row, 0, new QTableWidgetItem(QString::number(bindingRow.modelNodeId)));
-        heatBindingsTable->setItem(row, 1, new QTableWidgetItem(QString::fromStdString(heatMaterialPresetName(bindingRow.presetId))));
-    }
     setSyncing(false);
 
     updateHeatStatus();
-}
-
-void NodeHeatSolverPanel::refreshBindingGroupOptions() {
-    if (!currentNodeId().isValid()) {
-        return;
-    }
-
-    std::vector<std::string> receiverModelIds;
-    std::unordered_set<std::string> seenReceiverModelIds;
-
-    if (bridge()) {
-        const NodeGraphState state = bridge()->state();
-        const NodeGraphNode* currentNode = state.node(currentNodeId());
-        if (currentNode) {
-            std::unordered_set<uint32_t> seenModelNodeIds;
-            std::vector<uint32_t> modelNodeIds;
-            for (const NodeGraphSocket& inputSocket : currentNode->inputs) {
-                if (inputSocket.valueType != NodeGraphValueType::Volume) {
-                    continue;
-                }
-
-                const NodeGraphEdge* inputEdge = state.incomingEdge(currentNode->id, inputSocket.id);
-                if (!inputEdge) {
-                    continue;
-                }
-
-                std::unordered_set<uint32_t> visitedNodeIds;
-                NodePanelUtils::findUpstreamModelNodeIds(
-                    state,
-                    inputEdge->fromNode,
-                    visitedNodeIds,
-                    seenModelNodeIds,
-                    modelNodeIds);
-            }
-
-            for (uint32_t modelNodeId : modelNodeIds) {
-                if (modelNodeId == 0) {
-                    continue;
-                }
-                const std::string modelNodeIdText = std::to_string(modelNodeId);
-                if (seenReceiverModelIds.insert(modelNodeIdText).second) {
-                    receiverModelIds.push_back(modelNodeIdText);
-                }
-            }
-        }
-    }
-
-    for (int row = 0; row < heatBindingsTable->rowCount(); ++row) {
-        QTableWidgetItem* groupItem = heatBindingsTable->item(row, 0);
-        if (!groupItem) {
-            continue;
-        }
-        uint32_t modelId = 0;
-        if (!NodePanelUtils::tryParseUint32Id(groupItem->text().toStdString(), modelId) || modelId == 0) {
-            continue;
-        }
-
-        const std::string modelIdText = std::to_string(modelId);
-        if (seenReceiverModelIds.insert(modelIdText).second) {
-            receiverModelIds.push_back(modelIdText);
-        }
-    }
-
-    const std::string currentGroupText = heatBindingGroupComboBox->currentText().trimmed().toStdString();
-    uint32_t currentModelId = 0;
-    if (NodePanelUtils::tryParseUint32Id(currentGroupText, currentModelId) && currentModelId != 0) {
-        const std::string currentModelText = std::to_string(currentModelId);
-        if (seenReceiverModelIds.insert(currentModelText).second) {
-            receiverModelIds.push_back(currentModelText);
-        }
-    }
-
-    std::sort(receiverModelIds.begin(), receiverModelIds.end(), [](const std::string& lhs, const std::string& rhs) {
-        uint32_t leftId = 0;
-        uint32_t rightId = 0;
-        const bool leftOk = NodePanelUtils::tryParseUint32Id(lhs, leftId);
-        const bool rightOk = NodePanelUtils::tryParseUint32Id(rhs, rightId);
-        if (leftOk && rightOk) {
-            return leftId < rightId;
-        }
-        return lhs < rhs;
-    });
-
-    heatBindingGroupComboBox->blockSignals(true);
-    heatBindingGroupComboBox->clear();
-    for (const std::string& receiverModelIdText : receiverModelIds) {
-        heatBindingGroupComboBox->addItem(QString::fromStdString(receiverModelIdText));
-    }
-    if (!currentGroupText.empty()) {
-        const int index = heatBindingGroupComboBox->findText(QString::fromStdString(currentGroupText));
-        if (index >= 0) {
-            heatBindingGroupComboBox->setCurrentIndex(index);
-        } else {
-            heatBindingGroupComboBox->setEditText(QString::fromStdString(currentGroupText));
-        }
-    } else if (heatBindingGroupComboBox->count() > 0) {
-        heatBindingGroupComboBox->setCurrentIndex(0);
-    }
-    heatBindingGroupComboBox->blockSignals(false);
 }
 
 void NodeHeatSolverPanel::updateHeatStatus() {
@@ -396,24 +179,12 @@ void NodeHeatSolverPanel::updateHeatStatus() {
     const bool hasNodeState = bridge() && currentNodeId().isValid() && bridge()->getNode(currentNodeId(), node);
     if (!hasNodeState || getNodeTypeId(node.typeId) != nodegraphtypes::HeatSolve) {
         heatStatusValueLabel->setText("Unavailable");
-        heatToggleButton->setEnabled(false);
-        heatPauseButton->setEnabled(false);
-        heatResetButton->setEnabled(false);
         return;
     }
 
-    const HeatSolveNodeParams params = readHeatSolveNodeParams(node);
-    const bool desiredEnabled = params.enabled;
-    const bool desiredPaused = params.paused;
-
-    heatToggleButton->setEnabled(true);
-    heatToggleButton->setText(desiredEnabled ? "Stop" : "Start");
-    heatPauseButton->setEnabled(desiredEnabled);
-    heatPauseButton->setText(desiredPaused ? "Resume" : "Pause");
-    heatResetButton->setEnabled(true);
-
     if (!runtimeQuery) {
-        heatStatusValueLabel->setText(desiredEnabled ? (desiredPaused ? "Queued Paused" : "Queued") : "Stopped");
+        const HeatSolveNodeParams params = readHeatSolveNodeParams(node);
+        heatStatusValueLabel->setText(params.enabled ? (params.paused ? "Queued Paused" : "Queued") : "Stopped");
         return;
     }
 
@@ -421,17 +192,16 @@ void NodeHeatSolverPanel::updateHeatStatus() {
     const bool paused = runtimeQuery->isSimulationPaused();
 
     if (!active) {
-        if (desiredEnabled) {
+        const HeatSolveNodeParams params = readHeatSolveNodeParams(node);
+        if (params.enabled) {
             std::string reason;
             if (bridge() && !bridge()->canExecute(reason)) {
                 heatStatusValueLabel->setText("Blocked");
                 return;
             }
-
-            heatStatusValueLabel->setText(desiredPaused ? "Pending Pause" : "Pending Start");
+            heatStatusValueLabel->setText(params.paused ? "Pending Pause" : "Pending Start");
             return;
         }
-
         heatStatusValueLabel->setText("Stopped");
         return;
     }
@@ -454,128 +224,36 @@ void NodeHeatSolverPanel::stopStatusTimer() {
     heatStatusTimer->stop();
 }
 
-void NodeHeatSolverPanel::toggleHeatSystem() {
-    HeatSolveNodeParams params{};
-    if (!tryLoadNodeParams(params)) {
-        setStatus("Cannot control heat system for this node.");
-        return;
-    }
-
-    params.enabled = !params.enabled;
-    if (!params.enabled) {
-        params.paused = false;
-    }
-    if (!writeNodeParams(params)) {
-        setStatus("Failed to update heat node state.");
-        return;
-    }
-
-    updateHeatStatus();
-    setStatus(params.enabled ? "Heat solve enabled through node graph." : "Heat solve disabled through node graph.");
-}
-
-void NodeHeatSolverPanel::pauseHeatSystem() {
-    HeatSolveNodeParams params{};
-    if (!tryLoadNodeParams(params)) {
-        setStatus("Cannot control heat system for this node.");
-        return;
-    }
-
-    params.paused = !params.paused;
-    if (!writeNodeParams(params)) {
-        setStatus("Failed to update heat pause state.");
-        return;
-    }
-
-    updateHeatStatus();
-    setStatus(params.paused ? "Heat solve pause requested." : "Heat solve resume requested.");
-}
-
-void NodeHeatSolverPanel::resetHeatSystem() {
-    HeatSolveNodeParams params{};
-    if (!tryLoadNodeParams(params)) {
-        setStatus("Cannot control heat system for this node.");
-        return;
-    }
-
-    params.paused = false;
-    params.resetCounter++;
-    if (!writeNodeParams(params)) {
-        setStatus("Failed to request heat reset.");
-        return;
-    }
-
-    updateHeatStatus();
-    setStatus("Heat solve reset requested.");
-}
-
-void NodeHeatSolverPanel::applySolveSettings() {
+bool NodeHeatSolverPanel::writeSolverSettings() {
     if (!canEdit()) {
         setStatus("Cannot apply solver settings for this node.");
-        return;
+        return false;
     }
 
     HeatSolveNodeParams params{};
     if (!tryLoadNodeParams(params)) {
         setStatus("Cannot apply solver settings for this node.");
-        return;
+        return false;
     }
 
     params.contactThermalConductance = heatContactThermalConductanceRow->value();
+    params.simulationDuration = heatSimulationDurationRow->value();
     if (!writeNodeParams(params)) {
         setStatus("Failed to update solver settings.");
-        return;
+        return false;
     }
 
-    setStatus("Solver settings applied.");
+    return true;
 }
 
-void NodeHeatSolverPanel::applyMaterialBindings() {
-    if (!canEdit()) {
-        setStatus("Cannot apply material bindings for this node.");
+void NodeHeatSolverPanel::onSolverSettingsEdited() {
+    if (isSyncing()) {
         return;
     }
 
-    std::vector<HeatMaterialBinding> rows;
-    rows.reserve(static_cast<std::size_t>(heatBindingsTable->rowCount()));
-    for (int row = 0; row < heatBindingsTable->rowCount(); ++row) {
-        QTableWidgetItem* groupItem = heatBindingsTable->item(row, 0);
-        QTableWidgetItem* presetItem = heatBindingsTable->item(row, 1);
-        if (!groupItem || !presetItem) {
-            continue;
-        }
-
-        const std::string receiverKey = groupItem->text().toStdString();
-        const std::string presetName = presetItem->text().toStdString();
-        if (receiverKey.empty() || presetName.empty()) {
-            continue;
-        }
-
-        HeatMaterialBinding materialRow{};
-        if (!tryMakeMaterialBinding(receiverKey, presetName, materialRow)) {
-            continue;
-        }
-        rows.push_back(materialRow);
+    if (writeSolverSettings()) {
+        setStatus("Solver settings applied.");
     }
-
-    if (rows.empty()) {
-        setStatus("No valid receiver material bindings to apply.");
-        return;
-    }
-
-    HeatSolveNodeParams params{};
-    if (!tryLoadNodeParams(params)) {
-        setStatus("Cannot apply material bindings for this node.");
-        return;
-    }
-
-    params.materialBindings = std::move(rows);
-    if (!writeNodeParams(params)) {
-        setStatus("Failed to update material bindings.");
-        return;
-    }
-
-    setStatus("Receiver material bindings applied.");
 }
 
 bool NodeHeatSolverPanel::writeNodeParams(const HeatSolveNodeParams& params) {

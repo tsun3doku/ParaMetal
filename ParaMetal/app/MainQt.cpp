@@ -1,7 +1,9 @@
 #include "MainQt.h"
 #include "App.h"
 #include "nodegraph/NodeGraphBridge.hpp"
+#include "nodegraph/NodeGraphRegistry.hpp"
 #include "nodegraph/NodeGraphSave.hpp"
+#include "nodegraph/NodeGraphUtils.hpp"
 #include "nodegraph/ui/scene/NodeGraphEditorWidget.hpp"
 #include "py/PyBridge.hpp"
 #include "py/PyTerminalWidget.hpp"
@@ -9,6 +11,8 @@
 #include "scene/CameraController.hpp"
 #include "util/UiTheme.hpp"
 #include "VulkanWindow.hpp"
+#include "TimelineWidget.hpp"
+#include "TimelineNodeController.hpp"
 
 #include <QAction>
 #include <QApplication>
@@ -57,15 +61,30 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     mainSplitter->setChildrenCollapsible(false);
 #ifdef Q_OS_WIN
     mainSplitter->setAttribute(Qt::WA_NativeWindow, true);
-#endif    
-    hostLayout->addWidget(mainSplitter);
+#endif
+    hostLayout->addWidget(mainSplitter, 1);
+
+    pyTerminal = new PyTerminalWidget(mainSplitter);
+    pyTerminal->setMinimumWidth(0);
+    mainSplitter->addWidget(pyTerminal);
+    mainSplitter->setCollapsible(0, true);
+
+    QWidget* workAreaHost = new QWidget(mainSplitter);
+    QVBoxLayout* workAreaLayout = new QVBoxLayout(workAreaHost);
+    workAreaLayout->setContentsMargins(0, 0, 0, 0);
+    workAreaLayout->setSpacing(0);
+
+    QSplitter* nodeViewportSplitter = new QSplitter(Qt::Horizontal, workAreaHost);
+    ui::configureSplitter(*nodeViewportSplitter);
+    nodeViewportSplitter->setOpaqueResize(true);
 
     if (nodeGraphEditor) {
+        nodeGraphEditor->setMinimumWidth(360);
         nodeGraphEditor->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
-        mainSplitter->addWidget(nodeGraphEditor);
+        nodeViewportSplitter->addWidget(nodeGraphEditor);
     }
 
-    QWidget* viewportHost = new QWidget(mainSplitter);
+    QWidget* viewportHost = new QWidget(nodeViewportSplitter);
     QVBoxLayout* viewportLayout = new QVBoxLayout(viewportHost);
     viewportLayout->setContentsMargins(0, 0, 0, 0);
     viewportLayout->setSpacing(0);
@@ -74,12 +93,33 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     viewportContainer->setFocusPolicy(Qt::StrongFocus);
     viewportContainer->setMinimumSize(320, 240);
     viewportLayout->addWidget(viewportContainer);
-    viewportHost->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    mainSplitter->addWidget(viewportHost);
 
+    viewportHost->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    nodeViewportSplitter->addWidget(viewportHost);
+    nodeViewportSplitter->setStretchFactor(0, 0);
+    nodeViewportSplitter->setStretchFactor(1, 1);
+    nodeViewportSplitter->setSizes({360, 1080});
+
+    workAreaLayout->addWidget(nodeViewportSplitter, 1);
+
+    timelineWidget = new TimelineWidget(workAreaHost);
+    timelineWidget->setMaximumHeight(60);
+    timelineWidget->setMinimumHeight(60);
+    workAreaLayout->addWidget(timelineWidget);
+
+    mainSplitter->addWidget(workAreaHost);
+    mainSplitter->setCollapsible(1, false);
     mainSplitter->setStretchFactor(0, 0);
     mainSplitter->setStretchFactor(1, 1);
-    mainSplitter->setSizes({700, 900});
+    mainSplitter->setSizes({320, 1280});
+
+    if (pyTerminal && nodeGraphEditor) {
+        connect(pyTerminal, &PyTerminalWidget::defaultGraphRequested,
+                nodeGraphEditor, &NodeGraphEditorWidget::resetToDefaultGraph);
+    }
+
+    timelineNodeController = new TimelineNodeController(this);
+    timelineNodeController->setTimelineWidget(timelineWidget);
 
     setCentralWidget(centralHost);
     connect(mainSplitter, &QSplitter::splitterMoved, this, [this](int, int) {
@@ -105,21 +145,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     });
 }
 
-MainWindow::~MainWindow() {
-}
-
 void MainWindow::setApp(App* application) {
     app = application;
     if (viewportWindow) {
         viewportWindow->setApp(app);
     }
-    if (nodeGraphEditor) {
-        boundRuntimeQuery = app ? app->runtimeQuery() : nullptr;
-        nodeGraphEditor->setRuntimeQuery(boundRuntimeQuery);
-        boundSceneController = app ? app->getSceneController() : nullptr;
-        nodeGraphEditor->setSceneController(boundSceneController);
-        boundModelSelection = app ? app->getModelSelection() : nullptr;
-        nodeGraphEditor->setModelSelection(boundModelSelection);
+    if (timelineNodeController) {
+        timelineNodeController->setApp(app);
     }
     syncNodeGraphBridge();
     if (NodeGraphBridge* bridge = app ? app->getNodeGraphBridge() : nullptr) {
@@ -293,49 +325,33 @@ void MainWindow::syncNodeGraphBridge() {
         setProjectModified(false);
     }
     pybridge::setBridge(bridge);
-    if (bridge) {
-        if (PyTerminalWidget* term = nodeGraphEditor->getPyTerminal()) {
-            term->initializeInterpreter();
-        }
+    if (bridge && pyTerminal) {
+        pyTerminal->initializeInterpreter();
     }
     nodeGraphEditor->syncSelection();
 }
 
 void MainWindow::setNodeGraphVisible(bool visible) {
-    if (!mainSplitter || !nodeGraphEditor) {
-        return;
-    }
-
-    QList<int> sizes = mainSplitter->sizes();
-    if (sizes.size() < 2) {
+    if (!nodeGraphEditor) {
         return;
     }
 
     if (visible) {
         nodeGraphEditor->show();
-        if (sizes[0] <= 1) {
-            sizes[0] = std::max(nodeGraphEditor->minimumWidth(), lastNodeGraphWidth);
-            mainSplitter->setSizes(sizes);
-        }
         return;
     }
 
-    lastNodeGraphWidth = std::max(nodeGraphEditor->minimumWidth(), sizes[0]);
     nodeGraphEditor->hide();
 }
 
 void MainWindow::setPyTerminalVisible(bool visible) {
-    if (!nodeGraphEditor) {
-        return;
-    }
-    PyTerminalWidget* term = nodeGraphEditor->getPyTerminal();
-    if (!term) {
+    if (!pyTerminal) {
         return;
     }
     if (visible) {
-        term->show();
+        pyTerminal->show();
     } else {
-        term->hide();
+        pyTerminal->hide();
     }
 }
 

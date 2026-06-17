@@ -13,19 +13,20 @@ class NodeGraphBridge;
 class PyTerminalWidget;
 class RuntimeQuery;
 class SceneController;
+class TimelineNodeController;
 class QCloseEvent;
 class QWidget;
 class VulkanWindow;
 class QSplitter;
 class QMenu;
 class QMenuBar;
+class TimelineWidget;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
 public:
     MainWindow(QWidget* parent = nullptr);
-    ~MainWindow();
 
     void setApp(App* application);
 
@@ -66,10 +67,12 @@ private:
     VulkanWindow* viewportWindow = nullptr;
     QWidget* viewportContainer = nullptr;
     NodeGraphEditorWidget* nodeGraphEditor = nullptr;
+    PyTerminalWidget* pyTerminal = nullptr;
     NodeGraphBridge* boundNodeGraphBridge = nullptr;
     const SceneController* boundSceneController = nullptr;
     ModelSelection* boundModelSelection = nullptr;
     const RuntimeQuery* boundRuntimeQuery = nullptr;
     QSplitter* mainSplitter = nullptr;
-    int lastNodeGraphWidth = 320;
+    TimelineWidget* timelineWidget = nullptr;
+    TimelineNodeController* timelineNodeController = nullptr;
 };

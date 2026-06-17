@@ -3,12 +3,10 @@
 #include <cstring>
 
 #include "heat/HeatModelRuntime.hpp"
-#include "HeatSystemPlayback.hpp"
-#include "HeatSystemResources.hpp"
+#include "heat/HeatSystemPlayback.hpp"
 #include "HeatSystemSimStage.hpp"
 #include "HeatSystemSurfaceStage.hpp"
-#include "HeatSystemStageContext.hpp"
-#include "HeatSystemVoronoiStage.hpp"
+#include "HeatSystemDiffusionStage.hpp"
 #include "contact/ContactSystemComputeStage.hpp"
 #include "heat/HeatGpuStructs.hpp"
 #include "heat/HeatContactRuntime.hpp"
@@ -30,40 +28,30 @@ HeatSystem::HeatSystem(
     VulkanDevice& vulkanDevice,
     MemoryAllocator& memoryAllocator,
     ModelRegistry& resourceManager,
-    HeatSystemResources& resources,
     uint32_t maxFramesInFlight,
     CommandPool& renderCommandPool)
     : vulkanDevice(vulkanDevice),
       memoryAllocator(memoryAllocator),
       resourceManager(resourceManager),
-      resources(resources),
       renderCommandPool(renderCommandPool),
       runtime(),
       maxFramesInFlight(maxFramesInFlight) {
 
-    HeatSystemStageContext stageContext{
-        vulkanDevice,
-        memoryAllocator,
-        resourceManager,
-        renderCommandPool,
-        resources
-    };
-
-    simStage = std::make_unique<HeatSystemSimStage>(stageContext);
-    surfaceStage = std::make_unique<HeatSystemSurfaceStage>(stageContext);
-    voronoiStage = std::make_unique<HeatSystemVoronoiStage>(stageContext);
+    simStage = std::make_unique<HeatSystemSimStage>();
+    surfaceStage = std::make_unique<HeatSystemSurfaceStage>(vulkanDevice);
+    diffusionStage = std::make_unique<HeatSystemDiffusionStage>(vulkanDevice);
     contactStage = std::make_unique<ContactSystemComputeStage>(vulkanDevice);
 
     if (!surfaceStage->createDescriptorPool(0) ||  
         !surfaceStage->createDescriptorSetLayout() ||
         !surfaceStage->createPipeline() ||
-        !voronoiStage->createDescriptorPool(32) ||
-        !voronoiStage->createDescriptorSetLayout() ||
-        !voronoiStage->createPipeline() ||
+        !diffusionStage->createDescriptorPool(32) ||
+        !diffusionStage->createDescriptorSetLayout() ||
+        !diffusionStage->createPipeline() ||
         !contactStage->createDescriptorPool(32) ||
         !contactStage->createDescriptorSetLayout() ||
         !contactStage->createPipeline()) {
-        failInitialization("create contact compute resources");
+        failInitialization("create compute resources");
         return;
     }
 
@@ -113,10 +101,17 @@ void HeatSystem::setParams(float updatedContactThermalConductance, float updated
         contactThermalConductance = updatedContactThermalConductance;
         heatParamsDirty = true;
     }
-    if (simulationDuration != updatedSimulationDuration) {
-        simulationDuration = updatedSimulationDuration;
+    if (timeline.getDuration() != updatedSimulationDuration) {
+        timeline.setDuration(updatedSimulationDuration);
         heatParamsDirty = true;
     }
+}
+
+uint32_t HeatSystem::computeTimelineFrameCount() const {
+    if (timeline.getDuration() <= 0.0f) {
+        return 0;
+    }
+    return std::max(1u, static_cast<uint32_t>(std::ceil(timeline.getDuration() * TimelineFPS)));
 }
 
 void HeatSystem::setContactCouplings(const std::vector<ContactCoupling>& contactCouplings) {
@@ -140,6 +135,7 @@ void HeatSystem::clearVoronoiInputs() {
     modelGMLSSurfaceStencilBufferOffsetByModelId.clear();
     modelGMLSSurfaceWeightBufferByModelId.clear();
     modelGMLSSurfaceWeightBufferOffsetByModelId.clear();
+    modelGMLSSurfaceWeightCountByModelId.clear();
     modelGMLSSurfaceGradientWeightBufferByModelId.clear();
     modelGMLSSurfaceGradientWeightBufferOffsetByModelId.clear();
     modelVoronoiSeedFlagsByModelId.clear();
@@ -203,42 +199,61 @@ void HeatSystem::update() {
     const auto currentTime = std::chrono::steady_clock::now();
     float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
     lastTime = currentTime;
-    if (deltaTime > (1.0f / 30.0f)) {
-        deltaTime = 1.0f / 30.0f;
+
+    const float maxFrameDelta = 1.0f / TimelineFPS;
+    if (deltaTime > maxFrameDelta) {
+        deltaTime = maxFrameDelta;
     }
 
-    if (playbackControls.resetCounter != processedResetCounter) {
-        resetHeatState();
-        processedResetCounter = playbackControls.resetCounter;
-        playbackControls.rewindFrame = 0;
-        for (auto& [id, playback] : playbacks) {
-            if (playback) playback->reset();
-        }
-    }
+    processResetTrigger();
+    forwardSim(deltaTime);
+}
 
-    // Write playback uniform 
+void HeatSystem::processResetTrigger() {
+    if (timeline.getResetCounter() != processedResetCounter) {
+        processedResetCounter = timeline.getResetCounter();
+        resetSimulationState();
+    }
+}
+
+void HeatSystem::forwardSim(float deltaTime) {
     auto* playbackData = simRuntime.getMappedPlaybackData();
-    if (playbackData) {
-        playbackData->paused = playbackControls.paused ? 1u : 0u;
-        playbackData->resetCounter = playbackControls.resetCounter;
-        playbackData->rewindFrame = playbackControls.rewindFrame;
-
-        uint32_t recorded = 0;
-        for (const auto& [id, pb] : playbacks) {
-            if (pb) {
-                recorded = std::max(recorded, pb->getRecordedFrames());
-            }
-        }
-        playbackData->recordedFrames = recorded;
-        playbackData->maxFrames = static_cast<uint32_t>(simulationDuration * 30.0f * static_cast<float>(NUM_SUBSTEPS));
-        playbackData->deltaTime = deltaTime / static_cast<float>(NUM_SUBSTEPS);
-
-        if (!playbackControls.paused && playbackControls.rewindFrame == 0) {
-            playbackData->totalTime += deltaTime;
-        }
+    if (!playbackData) {
+        timeline.setPosition(0.0f);
+        shouldStepPhysics = false;
+        return;
     }
 
-    (void)deltaTime;
+    const bool isPlaying = timeline.isPlaying();
+    const bool isPaused = timeline.isPaused();
+    const bool isScrubbing = timeline.isScrubbing();
+    const float duration = timeline.getDuration();
+
+    playbackData->resetCounter = timeline.getResetCounter();
+    playbackData->recordedTimelineFrames = getRecordedTimelineFrames();
+    playbackData->timelineFrameCount = computeTimelineFrameCount();
+
+    shouldStepPhysics = isPlaying && !isPaused && !isScrubbing && simulatedTime < duration;
+
+    if (shouldStepPhysics) {
+        const float remaining = std::max(0.0f, duration - simulatedTime);
+        const float simDelta = std::min(deltaTime, remaining);
+        playbackData->deltaTime = simDelta / static_cast<float>(NumSubsteps);
+        simulatedTime = std::min(duration, simulatedTime + simDelta);
+    } else {
+        playbackData->deltaTime = 0.0f;
+    }
+
+    // Advance display timeline.
+    if (isScrubbing) {
+        timeline.setPosition(static_cast<float>(timeline.getScrubFrame()) / TimelineFPS);
+    } else if (isPlaying && !isPaused) {
+        timeline.advancePosition(deltaTime);
+        // During recording, the display must not run ahead of the physics frontier;
+        // otherwise it would read stale live data before the next physics step finishes.
+        timeline.setPosition(std::min(timeline.getCurrentPosition(), simulatedTime));
+    }
+
 }
 
 bool HeatSystem::ensureConfigured() {
@@ -250,33 +265,78 @@ bool HeatSystem::ensureConfigured() {
 }
 
 bool HeatSystem::rebuildRuntimeResources(bool forceDescriptorReallocate) {
-    const bool modelsReady = runtime.ensureModelBindings(
-        vulkanDevice,
-        memoryAllocator,
-        renderCommandPool);
+    const bool modelsReady = runtime.ensureModelBindings(vulkanDevice, memoryAllocator, renderCommandPool);
     if (!modelsReady) {
         return false;
     }
 
-    std::unordered_map<uint32_t, HeatModelRuntime*> activeModels;
-    for (const auto& [runtimeModelId, heatModel] : runtime.getActiveModels()) {
-        if (heatModel) {
-            activeModels[runtimeModelId] = heatModel.get();
-
-            // Cache KDtree for spatial searches 
-            const auto seedFlagsIt = modelVoronoiSeedFlagsByModelId.find(runtimeModelId);
-            const auto seedPositionsIt = modelVoronoiSeedPositionsByModelId.find(runtimeModelId);
-            if (seedFlagsIt != modelVoronoiSeedFlagsByModelId.end() && seedPositionsIt != modelVoronoiSeedPositionsByModelId.end()) {
-                heatModel->setStencilKDTree(std::make_unique<StencilKDTree>(seedFlagsIt->second, seedPositionsIt->second));
-            }
-        }
-    }
+    rebuildStencilKDTrees();
 
     const bool heatVoronoiReady = rebuildVoronoiRuntime();
 
-    // Update GMLS surface weights
+    configureGMLSSurfaceWeights(heatVoronoiReady);
+
+    if (!heatVoronoiReady) {
+        for (auto& r : contactRuntimes) {
+            if (r) {
+                r->cleanup(memoryAllocator);
+            }
+        }
+        contactRuntimes.clear();
+        hasContact = false;
+        simRuntime.cleanup(memoryAllocator);
+        return false;
+    }
+
+    // Initialize playback on each model.
+    // +1 because history stores the initial state at time 0 plus one frame per
+    // physics step up to and including the state at time = duration.
+    const uint32_t frameCapacity = computeHistoryFrameCapacity();
     for (const auto& [runtimeModelId, heatModel] : runtime.getActiveModels()) {
-        if (!heatModel || runtimeModelId == 0) {
+        if (!heatModel) continue;
+        auto countIt = simNodeCounts.find(runtimeModelId);
+        uint32_t nodeCount = (countIt != simNodeCounts.end()) ? countIt->second : 0;
+        heatModel->ensureSimulationBuffers(nodeCount);
+        heatModel->initializePlayback(vulkanDevice, memoryAllocator, frameCapacity);
+    }
+
+    if (!recreateDescriptorPools()) {
+        return false;
+    }
+
+    bool simInitResult = simRuntime.initialize(vulkanDevice, memoryAllocator);
+    const bool simReady = simInitResult && diffusionStage;
+    if (!simReady) return false;
+
+    configureModelSimResources();
+    rebuildContactRuntimes(forceDescriptorReallocate);
+    updateModelDescriptors();
+
+    voronoiConfigDirty = false;
+    heatParamsDirty = false;
+    resetSimulationState();
+    return true;
+}
+
+void HeatSystem::rebuildStencilKDTrees() {
+    for (const auto& [runtimeModelId, heatModel] : runtime.getActiveModels()) {
+        if (!heatModel) continue;
+
+        const auto seedFlagsIt = modelVoronoiSeedFlagsByModelId.find(runtimeModelId);
+        const auto seedPositionsIt = modelVoronoiSeedPositionsByModelId.find(runtimeModelId);
+        if (seedFlagsIt != modelVoronoiSeedFlagsByModelId.end() &&
+            seedPositionsIt != modelVoronoiSeedPositionsByModelId.end()) {
+            heatModel->setStencilKDTree(std::make_unique<StencilKDTree>(seedFlagsIt->second, seedPositionsIt->second));
+        }
+    }
+}
+
+void HeatSystem::configureGMLSSurfaceWeights(bool heatVoronoiReady) {
+    for (const auto& [runtimeModelId, heatModel] : runtime.getActiveModels()) {
+        if (!heatModel || runtimeModelId == 0) continue;
+
+        if (!heatVoronoiReady) {
+            heatModel->setGMLSSurfaceWeights(VK_NULL_HANDLE, 0, VK_NULL_HANDLE, 0, 0, VK_NULL_HANDLE, 0, 0);
             continue;
         }
 
@@ -288,10 +348,6 @@ bool HeatSystem::rebuildRuntimeResources(bool forceDescriptorReallocate) {
         const auto gradientWeightIt = modelGMLSSurfaceGradientWeightBufferByModelId.find(runtimeModelId);
         const auto gradientWeightOffsetIt = modelGMLSSurfaceGradientWeightBufferOffsetByModelId.find(runtimeModelId);
         const auto gradientWeightCountIt = modelGMLSSurfaceGradientWeightCountByModelId.find(runtimeModelId);
-        if (!heatVoronoiReady) {
-            heatModel->setGMLSSurfaceWeights(VK_NULL_HANDLE, 0, VK_NULL_HANDLE, 0, 0, VK_NULL_HANDLE, 0, 0);
-            continue;
-        }
 
         heatModel->setGMLSSurfaceWeights(
             stencilIt != modelGMLSSurfaceStencilBufferByModelId.end() ? stencilIt->second : VK_NULL_HANDLE,
@@ -302,64 +358,26 @@ bool HeatSystem::rebuildRuntimeResources(bool forceDescriptorReallocate) {
             gradientWeightIt != modelGMLSSurfaceGradientWeightBufferByModelId.end() ? gradientWeightIt->second : VK_NULL_HANDLE,
             gradientWeightOffsetIt != modelGMLSSurfaceGradientWeightBufferOffsetByModelId.end() ? gradientWeightOffsetIt->second : 0,
             gradientWeightCountIt != modelGMLSSurfaceGradientWeightCountByModelId.end() ? gradientWeightCountIt->second : 0);
-
-        auto countIt = simNodeCounts.find(runtimeModelId);
-        uint32_t nodeCount = (countIt != simNodeCounts.end()) ? countIt->second : 0;
-        heatModel->ensureSimulationBuffers(nodeCount);
-
-        // Initialize or reinitialize playback history for this model
-        uint32_t maxFrames = static_cast<uint32_t>(simulationDuration * 30.0f * static_cast<float>(NUM_SUBSTEPS));
-        auto& playback = playbacks[runtimeModelId];
-        if (!playback) {
-            playback = std::make_unique<HeatSystemPlayback>();
-        }
-        if (!playback->isValid() || playback->getMaxFrames() != maxFrames || playback->getNodeCount() != nodeCount) {
-            playback->initialize(vulkanDevice, memoryAllocator, nodeCount, maxFrames);
-        }
     }
+}
 
-    if (!heatVoronoiReady) {
-        for (auto& r : contactRuntimes) {
-            if (r) {
-                r->cleanup(memoryAllocator);
-            }
-        }
-        contactRuntimes.clear();
-        resources.hasContact = false;
-        simRuntime.cleanup(memoryAllocator);
-
-        return false;
-    }
-
+bool HeatSystem::recreateDescriptorPools() {
     uint32_t numModels = static_cast<uint32_t>(modelRuntimeModelIds.size());
 
-    if (resources.surfaceDescriptorPool != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(vulkanDevice.getDevice(), resources.surfaceDescriptorPool, nullptr);
-        resources.surfaceDescriptorPool = VK_NULL_HANDLE;
-    }
     if (!surfaceStage->createDescriptorPool(numModels)) {
         return false;
     }
 
-    // Recreate Voronoi descriptor pool
-    if (resources.voronoiDescriptorPool != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(vulkanDevice.getDevice(), resources.voronoiDescriptorPool, nullptr);
-        resources.voronoiDescriptorPool = VK_NULL_HANDLE;
-    }
-    if (!voronoiStage->createDescriptorPool(numModels)) {
+    if (!diffusionStage->createDescriptorPool(numModels)) {
         return false;
     }
 
-    // Initialize sim runtime 
-    bool simInitResult = simRuntime.initialize(vulkanDevice, memoryAllocator);
+    return true;
+}
 
-    const bool simReady = simInitResult && voronoiStage;
-    if (!simReady) return false;
-
+void HeatSystem::configureModelSimResources() {
     for (const auto& [runtimeModelId, heatModel] : runtime.getActiveModels()) {
-        if (!heatModel) {
-            continue;
-        }
+        if (!heatModel) continue;
 
         const auto countIt = simNodeCounts.find(runtimeModelId);
         const auto nodeBufferIt = modelSimNodeBufferByModelId.find(runtimeModelId);
@@ -368,6 +386,7 @@ bool HeatSystem::rebuildRuntimeResources(bool forceDescriptorReallocate) {
         const auto gmlsInterfaceOffsetIt = modelSimGMLSInterfaceBufferOffsetByModelId.find(runtimeModelId);
         const auto gmlsInterfaceCountIt = simGMLSInterfaceCounts.find(runtimeModelId);
         const auto voronoiToSimIt = modelVoronoiToSimByModelId.find(runtimeModelId);
+
         if (countIt == simNodeCounts.end() ||
             nodeBufferIt == modelSimNodeBufferByModelId.end() ||
             nodeBufferOffsetIt == modelSimNodeBufferOffsetByModelId.end() ||
@@ -389,55 +408,53 @@ bool HeatSystem::rebuildRuntimeResources(bool forceDescriptorReallocate) {
             heatModel->setVoronoiToSimNodeId(voronoiToSimIt->second);
         }
     }
+}
 
-    if (contactStage) {
-        const bool rebuildContacts = contactCouplingsDirty || heatParamsDirty || forceDescriptorReallocate;
-        if (rebuildContacts) {
-            for (auto& r : contactRuntimes) {
-                if (r) {
-                    r->cleanup(memoryAllocator);
-                }
-            }
-            contactRuntimes.clear();
-
-            for (const ContactCoupling& coupling : contactCouplings) {
-                if (!coupling.isValid()) {
-                    continue;
-                }
-
-                auto itA = activeModels.find(coupling.modelARuntimeModelId);
-                auto itB = activeModels.find(coupling.modelBRuntimeModelId);
-                if (itA == activeModels.end() || itB == activeModels.end() || !itA->second || !itB->second) {
-                    continue;
-                }
-
-                auto runtimePtr = std::make_unique<HeatContactRuntime>();
-                if (!runtimePtr->build(
-                        vulkanDevice,
-                        memoryAllocator,
-                        coupling,
-                        *itA->second,
-                        *itB->second,
-                        contactThermalConductance)) {
-                    runtimePtr->cleanup(memoryAllocator);
-                    continue;
-                }
-
-                if (!runtimePtr->createDescriptorSets(*contactStage, *itA->second, *itB->second)) {
-                    runtimePtr->cleanup(memoryAllocator);
-                    continue;
-                }
-
-                contactRuntimes.push_back(std::move(runtimePtr));
-            }
-
-            contactCouplingsDirty = false;
-        }
+void HeatSystem::rebuildContactRuntimes(bool forceDescriptorReallocate) {
+    if (!contactStage) {
+        hasContact = false;
+        return;
     }
 
-    resources.hasContact = !contactRuntimes.empty();
+    const bool rebuildContacts = contactCouplingsDirty || heatParamsDirty || forceDescriptorReallocate;
+    if (!rebuildContacts) {
+        hasContact = !contactRuntimes.empty();
+        return;
+    }
 
-    // Update descriptors on each HeatModelRuntime using its own buffers
+    for (auto& r : contactRuntimes) {
+        if (r) {
+            r->cleanup(memoryAllocator);
+        }
+    }
+    contactRuntimes.clear();
+
+    for (const ContactCoupling& coupling : contactCouplings) {
+        if (!coupling.isValid()) continue;
+
+        auto* modelA = getModelByRuntimeId(coupling.modelARuntimeModelId);
+        auto* modelB = getModelByRuntimeId(coupling.modelBRuntimeModelId);
+        if (!modelA || !modelB) continue;
+
+        auto runtimePtr = std::make_unique<HeatContactRuntime>();
+        if (!runtimePtr->build(vulkanDevice, memoryAllocator, coupling, *modelA, *modelB, contactThermalConductance)) {
+            runtimePtr->cleanup(memoryAllocator);
+            continue;
+        }
+
+        if (!runtimePtr->createDescriptorSets(*contactStage, *modelA, *modelB)) {
+            runtimePtr->cleanup(memoryAllocator);
+            continue;
+        }
+
+        contactRuntimes.push_back(std::move(runtimePtr));
+    }
+
+    contactCouplingsDirty = false;
+    hasContact = !contactRuntimes.empty();
+}
+
+void HeatSystem::updateModelDescriptors() {
     for (const auto& [runtimeModelId, heatModel] : runtime.getActiveModels()) {
         if (!heatModel || heatModel->getIntrinsicVertexCount() == 0) continue;
 
@@ -445,50 +462,28 @@ bool HeatSystem::rebuildRuntimeResources(bool forceDescriptorReallocate) {
         uint32_t nodeCount = (itCount != simNodeCounts.end()) ? itCount->second : 0;
         if (nodeCount == 0) continue;
 
-        const auto nodeBufferIt = modelSimNodeBufferByModelId.find(runtimeModelId);
-        const auto nodeBufferOffsetIt = modelSimNodeBufferOffsetByModelId.find(runtimeModelId);
-        const auto gmlsInterfaceIt = modelSimGMLSInterfaceBufferByModelId.find(runtimeModelId);
-        const auto gmlsInterfaceOffsetIt = modelSimGMLSInterfaceBufferOffsetByModelId.find(runtimeModelId);
-        const auto gmlsInterfaceCountIt = simGMLSInterfaceCounts.find(runtimeModelId);
-        const auto voronoiToSimIt = modelVoronoiToSimByModelId.find(runtimeModelId);
-        if (nodeBufferIt != modelSimNodeBufferByModelId.end() &&
-            nodeBufferOffsetIt != modelSimNodeBufferOffsetByModelId.end() &&
-            gmlsInterfaceIt != modelSimGMLSInterfaceBufferByModelId.end() &&
-            gmlsInterfaceOffsetIt != modelSimGMLSInterfaceBufferOffsetByModelId.end() &&
-            gmlsInterfaceCountIt != simGMLSInterfaceCounts.end()) {
-            heatModel->setSimResources(
-                nodeBufferIt->second, nodeBufferOffsetIt->second, nodeCount,
-                gmlsInterfaceIt->second, gmlsInterfaceOffsetIt->second,
-                gmlsInterfaceCountIt->second);
-            if (voronoiToSimIt != modelVoronoiToSimByModelId.end()) {
-                heatModel->setVoronoiToSimNodeId(voronoiToSimIt->second);
-            }
-        }
-
-        auto playbackIt = playbacks.find(runtimeModelId);
+        auto* playback = heatModel->getPlayback();
         VkBuffer historyBuf = VK_NULL_HANDLE;
         VkDeviceSize historyOff = 0;
-        if (playbackIt != playbacks.end() && playbackIt->second) {
-            historyBuf = playbackIt->second->getHistoryBuffer();
-            historyOff = playbackIt->second->getHistoryBufferOffset();
+        uint32_t historyFrameCap = 0;
+        if (playback) {
+            historyBuf = playback->getHistoryBuffer();
+            historyOff = playback->getHistoryBufferOffset();
+            historyFrameCap = playback->getFrameCapacity();
         }
-        heatModel->setHistoryBuffer(historyBuf, historyOff);
+        heatModel->setHistoryBuffer(historyBuf, historyOff, historyFrameCap);
         heatModel->updateAllDescriptors(
-            resources.surfaceDescriptorSetLayout,
-            resources.surfaceGradientDescriptorSetLayout,
-            resources.surfaceDescriptorPool,
-            resources.voronoiDescriptorSetLayout,
-            resources.voronoiDescriptorPool,
+            surfaceStage->getDescriptorSetLayout(),
+            surfaceStage->getGradientDescriptorSetLayout(),
+            surfaceStage->getDescriptorPool(),
+            diffusionStage->getDescriptorSetLayout(),
+            diffusionStage->getDescriptorPool(),
             simRuntime.getPlaybackBuffer(),
             simRuntime.getPlaybackBufferOffset(),
             historyBuf,
             historyOff,
-            true); 
+            true);
     }
-
-    voronoiConfigDirty = false;
-    heatParamsDirty = false;
-    return true;
 }
 
 void HeatSystem::setActive(bool active) {
@@ -496,13 +491,55 @@ void HeatSystem::setActive(bool active) {
 }
 
 void HeatSystem::setPlaybackState(bool paused, uint32_t resetCounter) {
-    playbackControls.paused = paused;
-    playbackControls.resetCounter = resetCounter;
+    timeline.setPlaying(!paused);
+    timeline.setResetCounter(resetCounter);
 }
 
-void HeatSystem::resetHeatState() {
+void HeatSystem::setRewindFrame(uint32_t frame) {
+    timeline.setScrubFrame(frame);
+    if (frame != heat::NoRewindFrame) {
+        timeline.setPosition(static_cast<float>(frame) / TimelineFPS);
+    }
+}
+
+uint32_t HeatSystem::getRewindFrame() const {
+    return timeline.getScrubFrame();
+}
+
+uint32_t HeatSystem::getRecordedTimelineFrames() const {
+    uint32_t maxRecorded = 0;
+    for (const auto& [id, heatModel] : runtime.getActiveModels()) {
+        if (heatModel) {
+            auto* pb = heatModel->getPlayback();
+            if (pb) maxRecorded = std::max(maxRecorded, pb->getRecordedFrameCount());
+        }
+    }
+    return maxRecorded;
+}
+
+uint32_t HeatSystem::getTimelineFrameCount() const {
+    return computeTimelineFrameCount();
+}
+
+void HeatSystem::resetSimulationState() {
+    timeline.setPosition(0.0f);
+    timeline.setScrubFrame(heat::NoRewindFrame);
+    simulatedTime = 0.0f;
+    shouldStepPhysics = false;
+    needsInitialCapture = true;
     simRuntime.reset();
     resetVoronoiTemperatures();
+
+    for (const auto& [id, heatModel] : runtime.getActiveModels()) {
+        if (!heatModel) {
+            continue;
+        }
+
+        auto* playback = heatModel->getPlayback();
+        if (playback) {
+            playback->reset();
+        }
+    }
 }
 
 void HeatSystem::resetVoronoiTemperatures() {
@@ -621,111 +658,107 @@ void HeatSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t c
     if (hasWork &&
         simStage &&
         surfaceStage &&
-        voronoiStage) {
+        diffusionStage) {
+        const auto* pbData = simRuntime.getMappedPlaybackData();
+        const uint32_t recordedFrames = getRecordedTimelineFrames();
+
+        // Capture the initial state (time 0) on the first frame after a reset/rebuild.
+        if (needsInitialCapture) {
+            for (const auto& [id, heatModel] : runtime.getActiveModels()) {
+                if (!heatModel || heatModel->getSimNodeCount() == 0) continue;
+
+                VkBufferMemoryBarrier barrier{};
+                barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+                barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+                barrier.buffer = heatModel->getTempBufferA();
+                barrier.offset = heatModel->getTempBufferAOffset();
+                barrier.size = heatModel->getSimNodeCount() * sizeof(float);
+                vkCmdPipelineBarrier(commandBuffer,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    0, 0, nullptr, 1, &barrier, 0, nullptr);
+
+                auto* pb = heatModel->getPlayback();
+                if (pb) {
+                    pb->recordFrame(commandBuffer,
+                        heatModel->getTempBufferA(),
+                        heatModel->getTempBufferAOffset());
+                }
+            }
+            needsInitialCapture = false;
+        }
+
+        // Physics step. Capture while there is room in the history buffer, which
+        // includes the initial state plus one frame per physics step up to duration.
+        const bool captureFrame = shouldStepPhysics &&
+            recordedFrames < computeHistoryFrameCapacity();
+
         simStage->recordComputeCommands(
             commandBuffer,
             currentFrame,
-            simRuntime,
             runtime.getActiveModels(),
-            *voronoiStage,
-            *surfaceStage,
+            *diffusionStage,
             *contactStage,
             contactRuntimes,
-            MAX_NODE_NEIGHBORS,
-            NUM_SUBSTEPS);
+            shouldStepPhysics,
+            captureFrame,
+            NumSubsteps);
 
-        // Snapshot final temperatures into playback history (only when running forward)
-        if (!playbackControls.paused && playbackControls.rewindFrame == 0) {
-            const bool finalWritesBufferB = voronoiStage->finalSubstepWritesBufferB(NUM_SUBSTEPS);
+        // Display pass
+        const float displayTime = timeline.getCurrentPosition();
+        const uint32_t displayFrame = static_cast<uint32_t>(displayTime * TimelineFPS);
+        const bool replayFromHistory = displayFrame < recordedFrames;
 
-            std::vector<VkBufferMemoryBarrier> snapshotBarriers;
-            for (const auto& [modelId, heatModel] : runtime.getActiveModels()) {
+        if (replayFromHistory) {
+            for (const auto& [id, heatModel] : runtime.getActiveModels()) {
+                if (!heatModel) continue;
+                auto* pb = heatModel->getPlayback();
+                if (!pb) continue;
+                heatModel->updateHistoryDescriptorOffset(displayFrame, pb->getFrameStride());
+            }
+        }
+
+        const bool finalWritesBufferB = diffusionStage->finalSubstepWritesBufferB(NumSubsteps);
+
+        if (shouldStepPhysics) {
+            std::vector<VkBufferMemoryBarrier> surfaceReadBarriers;
+            for (const auto& [id, heatModel] : runtime.getActiveModels()) {
                 if (!heatModel || heatModel->getSimNodeCount() == 0) continue;
-                auto pbIt = playbacks.find(modelId);
-                if (pbIt == playbacks.end() || !pbIt->second) continue;
 
                 VkBuffer finalBuf = finalWritesBufferB ? heatModel->getTempBufferB() : heatModel->getTempBufferA();
                 VkDeviceSize finalOff = finalWritesBufferB ? heatModel->getTempBufferBOffset() : heatModel->getTempBufferAOffset();
 
                 VkBufferMemoryBarrier barrier{};
                 barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-                barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-                barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+                barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT;
+                barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
                 barrier.buffer = finalBuf;
                 barrier.offset = finalOff;
                 barrier.size = heatModel->getSimNodeCount() * sizeof(float);
-                snapshotBarriers.push_back(barrier);
+                surfaceReadBarriers.push_back(barrier);
             }
-            if (!snapshotBarriers.empty()) {
-                vkCmdPipelineBarrier(
-                    commandBuffer,
+            if (!surfaceReadBarriers.empty()) {
+                vkCmdPipelineBarrier(commandBuffer,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
                     VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                    VK_PIPELINE_STAGE_TRANSFER_BIT,
-                    0,
-                    0, nullptr,
-                    static_cast<uint32_t>(snapshotBarriers.size()), snapshotBarriers.data(),
+                    0, 0, nullptr,
+                    static_cast<uint32_t>(surfaceReadBarriers.size()), surfaceReadBarriers.data(),
                     0, nullptr);
             }
+        }
 
-            for (const auto& [modelId, heatModel] : runtime.getActiveModels()) {
-                if (!heatModel || heatModel->getSimNodeCount() == 0) continue;
-                auto pbIt = playbacks.find(modelId);
-                if (pbIt == playbacks.end() || !pbIt->second) continue;
+        surfaceStage->dispatchSurfaceTemperatureUpdates(
+            commandBuffer, runtime.getActiveModels(),
+            replayFromHistory, finalWritesBufferB);
 
-                VkBuffer finalBuf = finalWritesBufferB ? heatModel->getTempBufferB() : heatModel->getTempBufferA();
-                VkDeviceSize finalOff = finalWritesBufferB ? heatModel->getTempBufferBOffset() : heatModel->getTempBufferAOffset();
-                pbIt->second->recordFrame(commandBuffer, finalBuf, finalOff);
-            }
+        if (currentFrame % 4 == 0) {
+            surfaceStage->dispatchSurfaceGradientUpdates(
+                commandBuffer, runtime.getActiveModels(),
+                replayFromHistory, finalWritesBufferB);
         }
     }
 
     vkEndCommandBuffer(commandBuffer);
-}
-
-void HeatSystem::cleanupResources() {
-    if (resources.surfacePipeline != VK_NULL_HANDLE) {
-        vkDestroyPipeline(vulkanDevice.getDevice(), resources.surfacePipeline, nullptr);
-        resources.surfacePipeline = VK_NULL_HANDLE;
-    }
-    if (resources.surfacePipelineLayout != VK_NULL_HANDLE) {
-        vkDestroyPipelineLayout(vulkanDevice.getDevice(), resources.surfacePipelineLayout, nullptr);
-        resources.surfacePipelineLayout = VK_NULL_HANDLE;
-    }
-    if (resources.surfaceDescriptorPool != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(vulkanDevice.getDevice(), resources.surfaceDescriptorPool, nullptr);
-        resources.surfaceDescriptorPool = VK_NULL_HANDLE;
-    }
-    if (resources.surfaceDescriptorSetLayout != VK_NULL_HANDLE) {
-        vkDestroyDescriptorSetLayout(vulkanDevice.getDevice(), resources.surfaceDescriptorSetLayout, nullptr);
-        resources.surfaceDescriptorSetLayout = VK_NULL_HANDLE;
-    }
-    if (resources.voronoiPipeline != VK_NULL_HANDLE) {
-        vkDestroyPipeline(vulkanDevice.getDevice(), resources.voronoiPipeline, nullptr);
-        resources.voronoiPipeline = VK_NULL_HANDLE;
-    }
-    if (resources.voronoiPipelineLayout != VK_NULL_HANDLE) {
-        vkDestroyPipelineLayout(vulkanDevice.getDevice(), resources.voronoiPipelineLayout, nullptr);
-        resources.voronoiPipelineLayout = VK_NULL_HANDLE;
-    }
-    if (resources.voronoiDescriptorPool != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(vulkanDevice.getDevice(), resources.voronoiDescriptorPool, nullptr);
-        resources.voronoiDescriptorPool = VK_NULL_HANDLE;
-    }
-    if (resources.voronoiDescriptorSetLayout != VK_NULL_HANDLE) {
-        vkDestroyDescriptorSetLayout(vulkanDevice.getDevice(), resources.voronoiDescriptorSetLayout, nullptr);
-        resources.voronoiDescriptorSetLayout = VK_NULL_HANDLE;
-    }
-
-    resources.hasContact = false;
-}
-void HeatSystem::cleanup() {
-    cleanupResources();
-    simRuntime.cleanup(memoryAllocator);
-    runtime.cleanup();
-    for (auto& [id, playback] : playbacks) {
-        if (playback) playback->cleanup();
-    }
-    playbacks.clear();
 }
 
 bool HeatSystem::initializeVoronoiMaterialNodes() {
@@ -765,7 +798,7 @@ bool HeatSystem::initializeVoronoiMaterialNodes() {
         }
 
         VkCommandBuffer cmd = renderCommandPool.beginCommands();
-        VkBufferCopy region{nodeBufferOffset, stagingOff, nodeBufferSize};
+        VkBufferCopy region{ nodeBufferOffset, stagingOff, nodeBufferSize };
         vkCmdCopyBuffer(cmd, simNodeBuffer, stagingBuf, 1, &region);
         renderCommandPool.endCommands(cmd);
 
@@ -796,4 +829,14 @@ bool HeatSystem::initializeVoronoiMaterialNodes() {
 bool HeatSystem::rebuildVoronoiRuntime() {
     if (modelRuntimeModelIds.empty() || modelVoronoiNodeBufferByModelId.empty()) return false;
     return initializeVoronoiMaterialNodes();
+}
+
+void HeatSystem::cleanupResources() {
+    hasContact = false;
+}
+
+void HeatSystem::cleanup() {
+    cleanupResources();
+    simRuntime.cleanup(memoryAllocator);
+    runtime.cleanup();
 }

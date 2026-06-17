@@ -8,13 +8,13 @@ HeatSystemPlayback::~HeatSystemPlayback() {
     cleanup();
 }
 
-bool HeatSystemPlayback::initialize(VulkanDevice& device, MemoryAllocator& alloc, uint32_t nodeCount_, uint32_t maxFrames_) {
+bool HeatSystemPlayback::initialize(VulkanDevice& device, MemoryAllocator& alloc, uint32_t nodeCount_, uint32_t frameCapacity_) {
     cleanup();
-    if (nodeCount_ == 0 || maxFrames_ == 0) {
+    if (nodeCount_ == 0 || frameCapacity_ == 0) {
         return false;
     }
 
-    VkDeviceSize totalSize = static_cast<VkDeviceSize>(maxFrames_) * static_cast<VkDeviceSize>(nodeCount_) * sizeof(float);
+    VkDeviceSize totalSize = static_cast<VkDeviceSize>(frameCapacity_) * static_cast<VkDeviceSize>(nodeCount_) * sizeof(float);
     auto [buffer, offset] = alloc.allocate(
         totalSize,
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -30,7 +30,7 @@ bool HeatSystemPlayback::initialize(VulkanDevice& device, MemoryAllocator& alloc
     historyBuffer = buffer;
     historyBufferOffset = offset;
     nodeCount = nodeCount_;
-    maxFrames = maxFrames_;
+    frameCapacity = frameCapacity_;
     recordedFrames = 0;
     frameStride = static_cast<VkDeviceSize>(nodeCount_) * sizeof(float);
     return true;
@@ -44,13 +44,13 @@ void HeatSystemPlayback::cleanup() {
     historyBuffer = VK_NULL_HANDLE;
     historyBufferOffset = 0;
     nodeCount = 0;
-    maxFrames = 0;
+    frameCapacity = 0;
     recordedFrames = 0;
     frameStride = 0;
 }
 
 void HeatSystemPlayback::recordFrame(VkCommandBuffer cmd, VkBuffer srcTempBuffer, VkDeviceSize srcOffset) {
-    if (historyBuffer == VK_NULL_HANDLE || recordedFrames >= maxFrames) {
+    if (historyBuffer == VK_NULL_HANDLE || recordedFrames >= frameCapacity) {
         return;
     }
 

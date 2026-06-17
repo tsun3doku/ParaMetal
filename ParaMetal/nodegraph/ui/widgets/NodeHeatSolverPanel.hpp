@@ -4,10 +4,7 @@
 #include "nodegraph/NodeHeatSolveParams.hpp"
 
 class QCheckBox;
-class QComboBox;
 class QLabel;
-class QPushButton;
-class QTableWidget;
 class QTimer;
 class NodeGraphSliderRow;
 class RuntimeQuery;
@@ -18,7 +15,6 @@ public:
 
     void bind(NodeGraphBridge* nodeGraphBridge, const RuntimeQuery* runtimeQuery);
 
-    void refreshBindingGroupOptions();
     void updateHeatStatus();
 
     void startStatusTimer();
@@ -30,29 +26,17 @@ protected:
 private:
     bool writeNodeParams(const HeatSolveNodeParams& params);
     bool tryLoadNodeParams(HeatSolveNodeParams& outParams) const;
-    void toggleHeatSystem();
-    void pauseHeatSystem();
-    void resetHeatSystem();
-    void applySolveSettings();
-    void applyMaterialBindings();
+    bool writeSolverSettings();
+    void onSolverSettingsEdited();
 
     const RuntimeQuery* runtimeQuery = nullptr;
 
     QLabel* heatStatusValueLabel = nullptr;
-    QPushButton* heatToggleButton = nullptr;
-    QPushButton* heatPauseButton = nullptr;
-    QPushButton* heatResetButton = nullptr;
     NodeGraphSliderRow* heatContactThermalConductanceRow = nullptr;
+    NodeGraphSliderRow* heatSimulationDurationRow = nullptr;
     QCheckBox* heatOverlayCheckBox = nullptr;
     QCheckBox* fluxVectorsCheckBox = nullptr;
     QCheckBox* heatPaletteCheckBox = nullptr;
     NodeGraphSliderRow* fluxVectorScaleRow = nullptr;
-    QPushButton* heatSolveSettingsApplyButton = nullptr;
-    QComboBox* heatBindingGroupComboBox = nullptr;
-    QComboBox* heatBindingPresetComboBox = nullptr;
-    QPushButton* heatBindingAddButton = nullptr;
-    QPushButton* heatBindingRemoveButton = nullptr;
-    QPushButton* heatBindingApplyButton = nullptr;
-    QTableWidget* heatBindingsTable = nullptr;
     QTimer* heatStatusTimer = nullptr;
 };

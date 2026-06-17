@@ -39,6 +39,8 @@ public:
     void cleanup();
 
 private:
+    float getTemperature(uint32_t modelId) const;
+    void configureModelProperties(HeatModelRuntime* model, uint32_t modelId) const;
     std::vector<SupportingHalfedge::IntrinsicMesh> activeModelIntrinsicMeshes;
     std::vector<uint32_t> activeModelRuntimeModelIds;
     std::unordered_map<uint32_t, float> activeModelTemperatureByRuntimeId;

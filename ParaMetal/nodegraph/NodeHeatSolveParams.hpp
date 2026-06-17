@@ -1,9 +1,7 @@
 #pragma once
 
 #include "NodeGraphTypes.hpp"
-#include "NodeHeatMaterialPresets.hpp"
-
-#include <vector>
+#include "heat/HeatGpuStructs.hpp"
 
 class NodeGraphEditor;
 struct NodeGraphNode;
@@ -19,9 +17,10 @@ struct HeatSolveNodeParams {
     bool enabled = false;
     bool paused = false;
     uint32_t resetCounter = 0;
+    uint32_t rewindFrame = heat::NoRewindFrame;
     double contactThermalConductance = 16000.0;
+    double simulationDuration = 5.0;
     HeatPreviewSettings preview{};
-    std::vector<HeatMaterialBinding> materialBindings;
 };
 
 HeatSolveNodeParams readHeatSolveNodeParams(const NodeGraphNode& node);

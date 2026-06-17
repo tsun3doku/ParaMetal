@@ -33,9 +33,6 @@ public:
             uint64_t socketKey = static_cast<uint64_t>(entity);
             const auto& package = registry.get<HeatPackage>(entity);
 
-            const uint64_t inputHash = buildConfigInputHash(socketKey, package);
-            auto hashIt = appliedConfigInputHash.find(socketKey);
-
             if (!package.authored.active) {
                 controller->disable(socketKey);
                 removePublishedProduct(socketKey);
@@ -43,12 +40,6 @@ public:
                 continue;
             }
 
-            if (inputHash != 0 && hashIt != appliedConfigInputHash.end() && hashIt->second == inputHash) {
-                // Structural inputs unchanged — push runtime state only
-                controller->pushPlaybackState(socketKey, package.authored.paused, package.authored.resetCounter);
-                nextSocketKeys.insert(socketKey);
-                continue;
-            }
 
             HeatSystemComputeController::Config config{};
             if (!tryBuildConfig(socketKey, package, config)) {
@@ -80,7 +71,7 @@ public:
             const uint64_t inputHash = buildConfigInputHash(socketKey, package);
             auto hashIt = appliedConfigInputHash.find(socketKey);
             const HeatProduct* product = tryGetProduct<HeatProduct>(*ecsRegistry, socketKey);
-            bool runtimeChanged = !product || product->paused != package.authored.paused || product->resetCounter != package.authored.resetCounter;
+            bool runtimeChanged = !product || product->paused != package.authored.paused || product->resetCounter != package.authored.resetCounter || product->rewindFrame != package.authored.rewindFrame;
             if (!product || hashIt == appliedConfigInputHash.end() || hashIt->second != inputHash || runtimeChanged) {
                 publishProduct(socketKey);
             }
@@ -106,6 +97,7 @@ private:
         outConfig.active = package.authored.active;
         outConfig.paused = package.authored.paused;
         outConfig.resetCounter = package.authored.resetCounter;
+        outConfig.rewindFrame = package.authored.rewindFrame;
         outConfig.contactThermalConductance = package.authored.contactThermalConductance;
         outConfig.modelIntrinsicMeshes.reserve(package.resolvedRemeshHandles.size());
         outConfig.modelRuntimeModelIds.reserve(package.resolvedRemeshHandles.size());
@@ -220,6 +212,8 @@ private:
     uint64_t buildConfigInputHash(uint64_t socketKey, const HeatPackage& package) const {
         (void)socketKey;
         uint64_t hash = package.packageHash;
+        NodeGraphHash::combineFloat(hash, package.authored.contactThermalConductance);
+        NodeGraphHash::combineFloat(hash, package.authored.simulationDuration);
         for (size_t i = 0; i < package.resolvedRemeshHandles.size(); ++i) {
             const RemeshProduct* product = tryGetProduct<RemeshProduct>(*ecsRegistry, package.resolvedRemeshHandles[i].key);
             if (!product) {
@@ -286,6 +280,7 @@ private:
         outProduct.active = system->getIsActive();
         outProduct.paused = system->getIsPaused();
         outProduct.resetCounter = system->getResetCounter();
+        outProduct.rewindFrame = system->getRewindFrame();
         outProduct.modelRuntimeModelIds.reserve(config->modelRuntimeModelIds.size());
         outProduct.modelSurfaceBuffers.reserve(config->modelRuntimeModelIds.size());
         outProduct.modelSurfaceBufferOffsets.reserve(config->modelRuntimeModelIds.size());

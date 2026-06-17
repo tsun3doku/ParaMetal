@@ -70,12 +70,13 @@ namespace heatsolve {
 constexpr uint32_t Enabled = 1;
 constexpr uint32_t Paused = 2;
 constexpr uint32_t ResetRequested = 3;
-constexpr uint32_t MaterialBindings = 4;
 constexpr uint32_t ShowHeatOverlay = 5;
 constexpr uint32_t ContactThermalConductance = 6;
 constexpr uint32_t ShowFluxVectors = 7;
 constexpr uint32_t FluxVectorScale = 8;
 constexpr uint32_t ShowHeatPalette = 9;
+constexpr uint32_t RewindFrame = 10;
+constexpr uint32_t SimulationDuration = 11;
 }
 
 namespace voronoi {
@@ -102,6 +103,7 @@ constexpr uint32_t Conductivity = 3;
 constexpr uint32_t InitialTemperature = 4;
 constexpr uint32_t BoundaryCondition = 5;
 constexpr uint32_t FixedTemperatureValue = 6;
+constexpr uint32_t MaterialPreset = 7;
 }
 
 namespace points {

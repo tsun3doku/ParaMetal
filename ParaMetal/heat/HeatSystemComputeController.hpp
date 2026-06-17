@@ -9,8 +9,8 @@
 #include <glm/glm.hpp>
 
 #include "HeatSystem.hpp"
+#include "HeatGpuStructs.hpp"
 #include "HeatSystemPresets.hpp"
-#include "HeatSystemResources.hpp"
 #include "framegraph/ComputePass.hpp"
 #include "mesh/remesher/SupportingHalfedge.hpp"
 #include "voronoi/VoronoiGpuStructs.hpp"
@@ -26,6 +26,7 @@ public:
         bool active = false;
         bool paused = false;
         uint32_t resetCounter = 0;
+        uint32_t rewindFrame = heat::NoRewindFrame;
         float contactThermalConductance = 16000.0f;
         float simulationDuration = 5.0f;
         std::vector<SupportingHalfedge::IntrinsicMesh> modelIntrinsicMeshes;
@@ -84,7 +85,6 @@ public:
     bool isHeatSystemPaused(uint64_t socketKey) const;
 
     void configure(uint64_t socketKey, const Config& config);
-    void pushPlaybackState(uint64_t socketKey, bool paused, uint32_t resetCounter);
     void disable(uint64_t socketKey);
     void disableAll();
     std::vector<ComputePass*> getActiveSystems() const;
@@ -94,20 +94,16 @@ public:
     void destroyHeatSystem(uint64_t socketKey);
 
 private:
-    struct SystemInstance {
-        HeatSystemResources resources;
-        std::unique_ptr<HeatSystem> system;
-    };
-
-    std::unique_ptr<HeatSystem> buildHeatSystem(HeatSystemResources& heatSystemResources);
+    std::unique_ptr<HeatSystem> buildHeatSystem();
     void configureHeatSystem(HeatSystem& system, const Config& config);
+    void applyRuntimeState(HeatSystem& system, const Config& config);
 
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
     ModelRegistry& resourceManager;
     CommandPool& renderCommandPool;
 
-    std::unordered_map<uint64_t, std::unique_ptr<SystemInstance>> activeSystems;
+    std::unordered_map<uint64_t, std::unique_ptr<HeatSystem>> activeSystems;
     std::unordered_map<uint64_t, Config> configuredConfigs;
     const uint32_t maxFramesInFlight;
 };

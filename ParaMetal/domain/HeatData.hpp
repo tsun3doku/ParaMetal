@@ -3,6 +3,8 @@
 #include "nodegraph/NodeGraphCoreTypes.hpp"
 #include "heat/HeatSystemPresets.hpp"
 
+#include <cstdint>
+#include <limits>
 #include <vector>
 
 //                                                      [ Invariant:
@@ -12,11 +14,6 @@
 //                                                          backend/controller objects or GPU resources 
 //                                                        - This header must not be included in any backend ]
 
-struct HeatMaterialBinding {
-    uint32_t modelNodeId = 0;
-    HeatMaterialPresetId presetId = HeatMaterialPresetId::Aluminum;
-};
-
 struct HeatData {
     uint64_t payloadHash = 0;
     uint64_t voronoiPayloadHash = 0;
@@ -24,12 +21,12 @@ struct HeatData {
     std::vector<NodeDataHandle> voronoiHandles;
     std::vector<NodeDataHandle> contactHandles;
     std::vector<NodeDataHandle> heatModelHandles;
-    std::vector<HeatMaterialBinding> materialBindings;
     float contactThermalConductance = 16000.0f;
     float simulationDuration = 5.0f;
     bool active = false;
     bool paused = false;
     uint32_t resetCounter = 0;
+    uint32_t rewindFrame = std::numeric_limits<uint32_t>::max();
 
     void sealPayload();
 };

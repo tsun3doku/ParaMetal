@@ -7,6 +7,7 @@ class NodeGraphEditor;
 struct NodeGraphNode;
 
 struct HeatModelNodeParams {
+    HeatMaterialPresetId materialPreset = HeatMaterialPresetId::Custom;
     double density = 1000.0;
     double specificHeat = 1000.0;
     double conductivity = 1.0;

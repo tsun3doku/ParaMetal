@@ -15,12 +15,16 @@ protected:
     void refreshFromNode() override;
 
 private:
-    void applySettings();
+    bool writeParameters();
+    void onPresetEdited();
+    void onSettingsEdited();
+    void onMaterialValueEdited();
+    void setMaterialPresetCombo(HeatMaterialPresetId presetId);
 
+    QComboBox* materialPresetCombo = nullptr;
     QComboBox* boundaryConditionCombo = nullptr;
     QLineEdit* temperatureEdit = nullptr;
     QLineEdit* densityEdit = nullptr;
     QLineEdit* specificHeatEdit = nullptr;
     QLineEdit* conductivityEdit = nullptr;
-    QPushButton* applyButton = nullptr;
 };

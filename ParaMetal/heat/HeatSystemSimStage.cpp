@@ -1,33 +1,45 @@
 #include "HeatSystemSimStage.hpp"
 
 #include "heat/HeatModelRuntime.hpp"
-#include "HeatSystemResources.hpp"
-#include "HeatSystemSurfaceStage.hpp"
-#include "HeatSystemVoronoiStage.hpp"
+#include "heat/HeatSystemPlayback.hpp"
+#include "HeatSystemDiffusionStage.hpp"
 #include "contact/ContactSystemComputeStage.hpp"
 #include "heat/HeatContactRuntime.hpp"
-#include <glm/mat4x4.hpp>
-#include <glm/gtc/matrix_inverse.hpp>
-#include <iostream>
-#include <limits>
-
-HeatSystemSimStage::HeatSystemSimStage(const HeatSystemStageContext& stageContext)
-    : context(stageContext) {
-}
 
 void HeatSystemSimStage::recordComputeCommands(
     VkCommandBuffer commandBuffer,
     uint32_t currentFrame,
-    const HeatSystemSimRuntime& simRuntime,
     const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
-    const HeatSystemVoronoiStage& voronoiStage,
-    const HeatSystemSurfaceStage& surfaceStage,
+    const HeatSystemDiffusionStage& diffusionStage,
     const ContactSystemComputeStage& contactStage,
     const std::vector<std::unique_ptr<HeatContactRuntime>>& contactRuntimes,
-    uint32_t maxNodeNeighbors,
+    bool steppingPhysics,
+    bool captureFrame,
     uint32_t numSubsteps) const {
-    if (activeModels.empty() || numSubsteps == 0) return;
+    if (!steppingPhysics || activeModels.empty() || numSubsteps == 0) return;
 
+    recordSim(
+        commandBuffer,
+        currentFrame,
+        activeModels,
+        diffusionStage,
+        contactStage,
+        contactRuntimes,
+        numSubsteps);
+
+    if (captureFrame) {
+        recordHistoryCapture(commandBuffer, activeModels, diffusionStage, numSubsteps);
+    }
+}
+
+void HeatSystemSimStage::recordSim(
+    VkCommandBuffer commandBuffer,
+    uint32_t currentFrame,
+    const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
+    const HeatSystemDiffusionStage& diffusionStage,
+    const ContactSystemComputeStage& contactStage,
+    const std::vector<std::unique_ptr<HeatContactRuntime>>& contactRuntimes,
+    uint32_t numSubsteps) const {
     const uint32_t workGroupSize = 256;
 
     for (uint32_t substepIndex = 0; substepIndex < numSubsteps; ++substepIndex) {
@@ -80,7 +92,7 @@ void HeatSystemSimStage::recordComputeCommands(
             VkDescriptorSet modelSet = isEven ? modelPtr->getVoronoiDescriptorSetA() : modelPtr->getVoronoiDescriptorSetB();
 
             if (modelSet != VK_NULL_HANDLE) {
-                voronoiStage.dispatchDiffusionSubstep(commandBuffer, modelSet, pushConstant, (modelPtr->getSimNodeCount() + workGroupSize - 1) / workGroupSize);
+                diffusionStage.dispatchDiffusionSubstep(commandBuffer, modelSet, pushConstant, (modelPtr->getSimNodeCount() + workGroupSize - 1) / workGroupSize);
             }
         }
 
@@ -128,17 +140,59 @@ void HeatSystemSimStage::recordComputeCommands(
         }
     }
 
-    const bool finalWritesBufferB = voronoiStage.finalSubstepWritesBufferB(numSubsteps);
+    const bool finalWritesBufferB = diffusionStage.finalSubstepWritesBufferB(numSubsteps);
     for (const auto& [modelId, heatModel] : activeModels) {
         if (!heatModel || heatModel->getSimNodeCount() == 0) continue;
 
-        voronoiStage.insertFinalTemperatureBarrier(commandBuffer, numSubsteps, heatModel->getTempBufferA(), heatModel->getTempBufferAOffset(), heatModel->getTempBufferB(), heatModel->getTempBufferBOffset(), heatModel->getSimNodeCount() * sizeof(float));
+        diffusionStage.insertFinalTemperatureBarrier(commandBuffer, numSubsteps, heatModel->getTempBufferA(), heatModel->getTempBufferAOffset(), heatModel->getTempBufferB(), heatModel->getTempBufferBOffset(), heatModel->getSimNodeCount() * sizeof(float));
 
     }
 
-    surfaceStage.dispatchSurfaceTemperatureUpdates(commandBuffer, activeModels, finalWritesBufferB);
-    if (currentFrame % 4 == 0) {
-        surfaceStage.dispatchSurfaceGradientUpdates(commandBuffer, activeModels, finalWritesBufferB);
+}
+
+void HeatSystemSimStage::recordHistoryCapture(
+    VkCommandBuffer commandBuffer,
+    const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
+    const HeatSystemDiffusionStage& diffusionStage,
+    uint32_t numSubsteps) const {
+    const bool finalWritesBufferB = diffusionStage.finalSubstepWritesBufferB(numSubsteps);
+
+    std::vector<VkBufferMemoryBarrier> snapshotBarriers;
+    for (const auto& [modelId, heatModel] : activeModels) {
+        if (!heatModel || heatModel->getSimNodeCount() == 0) continue;
+        auto* playback = heatModel->getPlayback();
+        if (!playback) continue;
+
+        VkBuffer finalBuf = finalWritesBufferB ? heatModel->getTempBufferB() : heatModel->getTempBufferA();
+        VkDeviceSize finalOff = finalWritesBufferB ? heatModel->getTempBufferBOffset() : heatModel->getTempBufferAOffset();
+
+        VkBufferMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        barrier.buffer = finalBuf;
+        barrier.offset = finalOff;
+        barrier.size = heatModel->getSimNodeCount() * sizeof(float);
+        snapshotBarriers.push_back(barrier);
     }
-    
+    if (!snapshotBarriers.empty()) {
+        vkCmdPipelineBarrier(
+            commandBuffer,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            0,
+            0, nullptr,
+            static_cast<uint32_t>(snapshotBarriers.size()), snapshotBarriers.data(),
+            0, nullptr);
+    }
+
+    for (const auto& [modelId, heatModel] : activeModels) {
+        if (!heatModel || heatModel->getSimNodeCount() == 0) continue;
+        auto* playback = heatModel->getPlayback();
+        if (!playback) continue;
+
+        VkBuffer finalBuf = finalWritesBufferB ? heatModel->getTempBufferB() : heatModel->getTempBufferA();
+        VkDeviceSize finalOff = finalWritesBufferB ? heatModel->getTempBufferBOffset() : heatModel->getTempBufferAOffset();
+        playback->recordFrame(commandBuffer, finalBuf, finalOff);
+    }
 }

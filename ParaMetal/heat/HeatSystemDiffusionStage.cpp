@@ -1,6 +1,5 @@
-#include "HeatSystemVoronoiStage.hpp"
+#include "HeatSystemDiffusionStage.hpp"
 
-#include "HeatSystemResources.hpp"
 #include "HeatSystemSimRuntime.hpp"
 #include "heat/HeatGpuStructs.hpp"
 #include "voronoi/VoronoiGpuStructs.hpp"
@@ -13,19 +12,35 @@
 #include <iostream>
 #include <vector>
 
-HeatSystemVoronoiStage::HeatSystemVoronoiStage(const HeatSystemStageContext& stageContext)
-    : context(stageContext) {
+HeatSystemDiffusionStage::HeatSystemDiffusionStage(VulkanDevice& device)
+    : vulkanDevice(device) {
 }
 
-void HeatSystemVoronoiStage::dispatchDiffusionSubstep(
+HeatSystemDiffusionStage::~HeatSystemDiffusionStage() {
+    VkDevice device = vulkanDevice.getDevice();
+    if (pipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device, pipeline, nullptr);
+    }
+    if (pipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+    }
+    if (descriptorSetLayout != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+    }
+    if (descriptorPool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+    }
+}
+
+void HeatSystemDiffusionStage::dispatchDiffusionSubstep(
     VkCommandBuffer commandBuffer,
     VkDescriptorSet descriptorSet,
     const heat::HeatModelPushConstant& pushConstant,
     uint32_t workGroupCount) const {
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, context.resources.voronoiPipeline);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
     vkCmdPushConstants(
         commandBuffer,
-        context.resources.voronoiPipelineLayout,
+        pipelineLayout,
         VK_SHADER_STAGE_COMPUTE_BIT,
         0,
         sizeof(heat::HeatModelPushConstant),
@@ -33,7 +48,7 @@ void HeatSystemVoronoiStage::dispatchDiffusionSubstep(
     vkCmdBindDescriptorSets(
         commandBuffer,
         VK_PIPELINE_BIND_POINT_COMPUTE,
-        context.resources.voronoiPipelineLayout,
+        pipelineLayout,
         0,
         1,
         &descriptorSet,
@@ -42,7 +57,7 @@ void HeatSystemVoronoiStage::dispatchDiffusionSubstep(
     vkCmdDispatch(commandBuffer, workGroupCount, 1, 1);
 }
 
-void HeatSystemVoronoiStage::insertFinalTemperatureBarrier(
+void HeatSystemDiffusionStage::insertFinalTemperatureBarrier(
     VkCommandBuffer commandBuffer,
     uint32_t numSubsteps,
     VkBuffer bufferA,
@@ -79,17 +94,22 @@ void HeatSystemVoronoiStage::insertFinalTemperatureBarrier(
         nullptr);
 }
 
-bool HeatSystemVoronoiStage::finalSubstepWritesBufferB(uint32_t numSubsteps) const {
+bool HeatSystemDiffusionStage::finalSubstepWritesBufferB(uint32_t numSubsteps) const {
     if (numSubsteps == 0) {
         return false;
     }
     return ((numSubsteps - 1) % 2 == 0);
 }
 
-bool HeatSystemVoronoiStage::createDescriptorPool(uint32_t numModels) {
+bool HeatSystemDiffusionStage::createDescriptorPool(uint32_t numModels) {
+    if (descriptorPool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(vulkanDevice.getDevice(), descriptorPool, nullptr);
+        descriptorPool = VK_NULL_HANDLE;
+    }
+
     // 2 descriptor sets per model
     uint32_t numSets = numModels * 2;
-    uint32_t storageBufferDescriptors = numSets * 7;  // 0,1,2,4,5,6,7
+    uint32_t storageBufferDescriptors = numSets * 6;  // 0,1,2,4,5,7
     uint32_t uniformBufferDescriptors = numSets * 1;  // 3
 
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
@@ -108,17 +128,17 @@ bool HeatSystemVoronoiStage::createDescriptorPool(uint32_t numModels) {
     poolInfo.maxSets = numSets;
 
     if (vkCreateDescriptorPool(
-            context.vulkanDevice.getDevice(),
+            vulkanDevice.getDevice(),
             &poolInfo,
             nullptr,
-            &context.resources.voronoiDescriptorPool) != VK_SUCCESS) {
-        std::cerr << "[HeatSystem] Failed to create Voronoi descriptor pool" << std::endl;
+            &descriptorPool) != VK_SUCCESS) {
+        std::cerr << "[HeatSystem] Failed to create Diffusion descriptor pool" << std::endl;
         return false;
     }
     return true;
 }
 
-bool HeatSystemVoronoiStage::createDescriptorSetLayout() {
+bool HeatSystemDiffusionStage::createDescriptorSetLayout() {
     std::vector<VkDescriptorSetLayoutBinding> bindings = {
         {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // simNodeBuffer
         {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // gmlsInterfaceBuffer
@@ -126,7 +146,6 @@ bool HeatSystemVoronoiStage::createDescriptorSetLayout() {
         {3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // playbackUniform
         {4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // tempRead
         {5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // tempWrite
-        {6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // historyBuffer
         {7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // couplingAccumulator
     };
 
@@ -138,20 +157,20 @@ bool HeatSystemVoronoiStage::createDescriptorSetLayout() {
     layoutInfo.pNext = nullptr;
 
     if (vkCreateDescriptorSetLayout(
-            context.vulkanDevice.getDevice(),
+            vulkanDevice.getDevice(),
             &layoutInfo,
             nullptr,
-            &context.resources.voronoiDescriptorSetLayout) != VK_SUCCESS) {
+            &descriptorSetLayout) != VK_SUCCESS) {
         return false;
     }
     return true;
 }
 
-bool HeatSystemVoronoiStage::createPipeline() {
-    const auto computeShaderCode = readFile("shaders/heat_voronoi_comp.spv");
+bool HeatSystemDiffusionStage::createPipeline() {
+    const auto computeShaderCode = readFile("shaders/heat_diffusion_comp.spv");
     VkShaderModule computeShaderModule = VK_NULL_HANDLE;
-    if (createShaderModule(context.vulkanDevice, computeShaderCode, computeShaderModule) != VK_SUCCESS) {
-        std::cerr << "[HeatSystem] Failed to create Voronoi compute shader module" << std::endl;
+    if (createShaderModule(vulkanDevice, computeShaderCode, computeShaderModule) != VK_SUCCESS) {
+        std::cerr << "[HeatSystem] Failed to create Diffusion compute shader module" << std::endl;
         return false;
     }
 
@@ -169,39 +188,39 @@ bool HeatSystemVoronoiStage::createPipeline() {
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &context.resources.voronoiDescriptorSetLayout;
+    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
     if (vkCreatePipelineLayout(
-            context.vulkanDevice.getDevice(),
+            vulkanDevice.getDevice(),
             &pipelineLayoutInfo,
             nullptr,
-            &context.resources.voronoiPipelineLayout) != VK_SUCCESS) {
-        vkDestroyShaderModule(context.vulkanDevice.getDevice(), computeShaderModule, nullptr);
-        std::cerr << "[HeatSystem] Failed to create Voronoi pipeline layout" << std::endl;
+            &pipelineLayout) != VK_SUCCESS) {
+        vkDestroyShaderModule(vulkanDevice.getDevice(), computeShaderModule, nullptr);
+        std::cerr << "[HeatSystem] Failed to create Diffusion pipeline layout" << std::endl;
         return false;
     }
 
     VkComputePipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
     pipelineInfo.stage = computeShaderStageInfo;
-    pipelineInfo.layout = context.resources.voronoiPipelineLayout;
+    pipelineInfo.layout = pipelineLayout;
 
     if (vkCreateComputePipelines(
-            context.vulkanDevice.getDevice(),
+            vulkanDevice.getDevice(),
             VK_NULL_HANDLE,
             1,
             &pipelineInfo,
             nullptr,
-            &context.resources.voronoiPipeline) != VK_SUCCESS) {
-        vkDestroyPipelineLayout(context.vulkanDevice.getDevice(), context.resources.voronoiPipelineLayout, nullptr);
-        context.resources.voronoiPipelineLayout = VK_NULL_HANDLE;
-        vkDestroyShaderModule(context.vulkanDevice.getDevice(), computeShaderModule, nullptr);
-        std::cerr << "[HeatSystem] Failed to create Voronoi compute pipeline" << std::endl;
+            &pipeline) != VK_SUCCESS) {
+        vkDestroyPipelineLayout(vulkanDevice.getDevice(), pipelineLayout, nullptr);
+        pipelineLayout = VK_NULL_HANDLE;
+        vkDestroyShaderModule(vulkanDevice.getDevice(), computeShaderModule, nullptr);
+        std::cerr << "[HeatSystem] Failed to create Diffusion compute pipeline" << std::endl;
         return false;
     }
 
-    vkDestroyShaderModule(context.vulkanDevice.getDevice(), computeShaderModule, nullptr);
+    vkDestroyShaderModule(vulkanDevice.getDevice(), computeShaderModule, nullptr);
     return true;
 }

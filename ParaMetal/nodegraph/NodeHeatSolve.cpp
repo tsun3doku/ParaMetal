@@ -4,6 +4,7 @@
 #include "NodeGraphUtils.hpp"
 
 #include "NodeGraphHash.hpp"
+#include "heat/HeatGpuStructs.hpp"
 #include "NodeHeatSolveParams.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
 #include "domain/HeatModelData.hpp"
@@ -21,11 +22,10 @@ void NodeHeatSolve::execute(NodeGraphKernelContext& context) const {
     std::vector<NodeDataHandle> heatModelHandles;
     std::vector<NodeDataHandle> voronoiHandles;
     std::vector<NodeDataHandle> contactHandles;
-    std::vector<HeatMaterialBinding> materialBindings;
     const HeatSolveNodeParams params = readHeatSolveNodeParams(context.node);
 
     const NodeGraphNodeId activeNodeId =
-        selectHeatSolveNode(context.executionState.state, context.executionState);
+        selectHeatSolveNode(context.executionState.state);
     NodePayloadRegistry* const payloadRegistry = context.executionState.services.payloadRegistry;
 
     // Collect all VoronoiData from Volume inputs (variadic socket)
@@ -76,13 +76,14 @@ void NodeHeatSolve::execute(NodeGraphKernelContext& context) const {
             heatModelHandles,
             voronoiHandles,
             contactHandles,
-            materialBindings,
             0,
             0,
             16000.0f,
+            5.0f,
             false,
             false,
-            false);
+            false,
+            heat::NoRewindFrame);
         return;
     }
 
@@ -112,14 +113,12 @@ void NodeHeatSolve::execute(NodeGraphKernelContext& context) const {
             }
             const HeatModelData* heatModel = payloadRegistry->get<HeatModelData>(block.payloadHandle);
             if (heatModel && heatModel->meshHandle.key != 0) {
-                if (seenModelHandles.insert(heatModel->meshHandle).second) {
+                if (seenModelHandles.insert(block.payloadHandle).second) {
                     heatModelHandles.push_back(block.payloadHandle);
                 }
             }
         }
     }
-
-    materialBindings = params.materialBindings;
 
     // Combine all contact payload hashes
     uint64_t combinedContactHash = 0;
@@ -134,13 +133,14 @@ void NodeHeatSolve::execute(NodeGraphKernelContext& context) const {
         heatModelHandles,
         voronoiHandles,
         contactHandles,
-        materialBindings,
         combinedVoronoiHash,
         combinedContactHash,
         static_cast<float>(params.contactThermalConductance),
+        static_cast<float>(params.simulationDuration),
         active,
         active ? wantsPaused : false,
-        active ? params.resetCounter : 0);
+        active ? params.resetCounter : 0,
+        active ? params.rewindFrame : heat::NoRewindFrame);
 }
 
 void NodeHeatSolve::populateOutputPayloads(
@@ -148,13 +148,14 @@ void NodeHeatSolve::populateOutputPayloads(
     const std::vector<NodeDataHandle>& heatModelHandles,
     const std::vector<NodeDataHandle>& voronoiHandles,
     const std::vector<NodeDataHandle>& contactHandles,
-    const std::vector<HeatMaterialBinding>& materialBindings,
     uint64_t voronoiPayloadHash,
     uint64_t contactPayloadHash,
     float contactThermalConductance,
+    float simulationDuration,
     bool active,
     bool paused,
-    uint32_t resetCounter) {
+    uint32_t resetCounter,
+    uint32_t rewindFrame) {
     NodePayloadRegistry* const payloadRegistry = context.executionState.services.payloadRegistry;
     for (std::size_t outputIndex = 0; outputIndex < context.outputs.size() && outputIndex < context.node.outputs.size(); ++outputIndex) {
         NodeDataBlock& outputValue = context.outputs[outputIndex];
@@ -175,11 +176,12 @@ void NodeHeatSolve::populateOutputPayloads(
             heatData.voronoiHandles = voronoiHandles;
             heatData.contactHandles = contactHandles;
             heatData.heatModelHandles = heatModelHandles;
-            heatData.materialBindings = materialBindings;
             heatData.contactThermalConductance = contactThermalConductance;
+            heatData.simulationDuration = simulationDuration;
             heatData.active = active;
             heatData.paused = paused;
             heatData.resetCounter = resetCounter;
+            heatData.rewindFrame = rewindFrame;
             outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(heatData));
         }
 
@@ -189,7 +191,7 @@ void NodeHeatSolve::populateOutputPayloads(
 
 bool NodeHeatSolve::computeInputHash(const NodeGraphKernelHashContext& context, uint64_t& outHash) const {
     const NodeGraphNodeId activeNodeId =
-        selectHeatSolveNode(context.executionState.state, context.executionState);
+        selectHeatSolveNode(context.executionState.state);
     outHash = NodeGraphHash::start();
     NodeGraphHash::combine(outHash, static_cast<uint64_t>(context.node.id.value));
 
@@ -226,13 +228,8 @@ bool NodeHeatSolve::computeInputHash(const NodeGraphKernelHashContext& context, 
     }
 
     const HeatSolveNodeParams params = readHeatSolveNodeParams(context.node);
-    const std::vector<HeatMaterialBinding>& materialBindings = params.materialBindings;
-    NodeGraphHash::combine(outHash, static_cast<uint64_t>(materialBindings.size()));
-    for (const HeatMaterialBinding& binding : materialBindings) {
-        NodeGraphHash::combine(outHash, static_cast<uint64_t>(binding.modelNodeId));
-        NodeGraphHash::combine(outHash, static_cast<uint64_t>(binding.presetId));
-    }
     NodeGraphHash::combineFloat(outHash, static_cast<float>(params.contactThermalConductance));
+    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.simulationDuration));
     const bool active = activeNodeId.isValid() && activeNodeId == context.node.id;
     NodeGraphHash::combine(outHash, static_cast<uint64_t>(active ? 1u : 0u));
     NodeGraphHash::combine(outHash, static_cast<uint64_t>(active && params.paused ? 1u : 0u));
@@ -242,9 +239,7 @@ bool NodeHeatSolve::computeInputHash(const NodeGraphKernelHashContext& context, 
 }
 
 NodeGraphNodeId NodeHeatSolve::selectHeatSolveNode(
-    const NodeGraphState& state,
-    const NodeGraphKernelExecutionState& executionState) {
-    (void)executionState;
+    const NodeGraphState& state) {
     NodeGraphNodeId selectedNodeId{};
     for (const auto& [id, node] : state.nodes) {
         if (getNodeTypeId(node.typeId) != nodegraphtypes::HeatSolve) {

@@ -7,13 +7,13 @@
 
 #include <vulkan/vulkan.h>
 
-#include "HeatSystemStageContext.hpp"
-
 class HeatModelRuntime;
+class VulkanDevice;
 
 class HeatSystemSurfaceStage {
 public:
-    explicit HeatSystemSurfaceStage(const HeatSystemStageContext& stageContext);
+    explicit HeatSystemSurfaceStage(VulkanDevice& device);
+    ~HeatSystemSurfaceStage();
 
     bool createDescriptorPool(uint32_t numModels);
     bool createDescriptorSetLayout();
@@ -21,12 +21,18 @@ public:
     void dispatchSurfaceTemperatureUpdates(
         VkCommandBuffer commandBuffer,
         const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
+        bool replayFromHistory,
         bool finalWritesBufferB) const;
 
     void dispatchSurfaceGradientUpdates(
         VkCommandBuffer commandBuffer,
         const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
+        bool replayFromHistory,
         bool finalWritesBufferB) const;
+
+    VkDescriptorPool getDescriptorPool() const { return descriptorPool; }
+    VkDescriptorSetLayout getDescriptorSetLayout() const { return descriptorSetLayout; }
+    VkDescriptorSetLayout getGradientDescriptorSetLayout() const { return gradientDescriptorSetLayout; }
 
 private:
     void dispatchSurfacePass(
@@ -34,8 +40,16 @@ private:
         VkPipeline pipeline,
         VkPipelineLayout layout,
         const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
+        bool replayFromHistory,
         bool finalWritesBufferB,
         bool isGradientPass) const;
 
-    HeatSystemStageContext context;
+    VulkanDevice& vulkanDevice;
+    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
+    VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout gradientDescriptorSetLayout = VK_NULL_HANDLE;
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout gradientPipelineLayout = VK_NULL_HANDLE;
+    VkPipeline gradientPipeline = VK_NULL_HANDLE;
 };

@@ -13,6 +13,7 @@
 
 struct StencilKDTree;
 
+class HeatSystemPlayback;
 class VulkanDevice;
 class MemoryAllocator;
 class CommandPool;
@@ -76,6 +77,8 @@ public:
     VkDescriptorSet getSurfaceComputeSetB() const { return surfaceComputeSetB; }
     VkDescriptorSet getSurfaceGradientComputeSetA() const { return surfaceGradientComputeSetA; }
     VkDescriptorSet getSurfaceGradientComputeSetB() const { return surfaceGradientComputeSetB; }
+    VkDescriptorSet getSurfaceHistoryComputeSet() const { return surfaceHistoryComputeSet; }
+    VkDescriptorSet getSurfaceGradientHistorySet() const { return surfaceGradientHistorySet; }
 
     const SupportingHalfedge::IntrinsicMesh& getIntrinsicMesh() const { return intrinsicMesh; }
 
@@ -87,7 +90,10 @@ public:
         VkBuffer nodeBuffer, VkDeviceSize nodeOffset, uint32_t nodeCount,
         VkBuffer gmlsBuffer, VkDeviceSize gmlsOffset, uint32_t gmlsCount);
     void setVoronoiToSimNodeId(const std::vector<uint32_t>& mapping);
-    void setHistoryBuffer(VkBuffer buffer, VkDeviceSize offset);
+    void setHistoryBuffer(VkBuffer buffer, VkDeviceSize offset, uint32_t frameCapacity);
+
+    void initializePlayback(VulkanDevice& device, MemoryAllocator& allocator, uint32_t frameCapacity);
+    HeatSystemPlayback* getPlayback() const { return playback.get(); }
 
     VkBuffer getSimNodeBuffer() const { return simNodeBuffer; }
     VkDeviceSize getSimNodeOffset() const { return simNodeOffset; }
@@ -112,6 +118,8 @@ public:
 
     void setStencilKDTree(std::unique_ptr<StencilKDTree> kdTree);
     StencilKDTree* getStencilKDTree() const { return stencilKDTree.get(); }
+
+    void updateHistoryDescriptorOffset(uint32_t displayFrame, VkDeviceSize frameStride);
 
 private:
     VulkanDevice& vulkanDevice;
@@ -145,7 +153,9 @@ private:
     VkDescriptorSet surfaceComputeSetB = VK_NULL_HANDLE;
     VkDescriptorSet surfaceGradientComputeSetA = VK_NULL_HANDLE;
     VkDescriptorSet surfaceGradientComputeSetB = VK_NULL_HANDLE;
-    
+    VkDescriptorSet surfaceHistoryComputeSet = VK_NULL_HANDLE;
+    VkDescriptorSet surfaceGradientHistorySet = VK_NULL_HANDLE;
+
     VkBuffer materialBuffer = VK_NULL_HANDLE;
     VkDeviceSize materialBufferOffset = 0;
 
@@ -166,9 +176,11 @@ private:
     VkDeviceSize contactAccumulatorBufferOffset = 0;
     VkBuffer historyBuffer = VK_NULL_HANDLE;
     VkDeviceSize historyBufferOffset = 0;
+    uint32_t historyBufferFrameCapacity = 0;
     uint32_t simNodeCount = 0;
     uint32_t simGMLSInterfaceCount = 0;
     bool initialized = false;
 
     std::unique_ptr<StencilKDTree> stencilKDTree;
+    std::unique_ptr<HeatSystemPlayback> playback;
 };

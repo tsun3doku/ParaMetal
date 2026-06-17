@@ -13,6 +13,8 @@
 #include "RuntimeInterfaces.hpp"
 #include "SimulationError.hpp"
 #include "SceneContext.hpp"
+#include "TimelineController.hpp"
+#include "TimelineRuntime.hpp"
 #include "VulkanCoreContext.hpp"
 
 class NodeGraphBridge;
@@ -33,6 +35,8 @@ public:
     bool isInitialized() const;
 
     const RuntimeQuery* runtimeQuery() const;
+    TimelineController* timelineController();
+    const TimelineController* timelineController() const;
     std::vector<SimulationError> consumeSimulationErrors();
     uint32_t loadModel(const std::string& modelPath, uint32_t preferredModelId = 0);
     void setPanSensitivity(float sensitivity);
@@ -52,6 +56,19 @@ private:
     void cleanup();
     bool isSimulationActive() const override;
     bool isSimulationPaused() const override;
+    float getSimulationTotalTime() const override;
+    uint32_t getSimulationRecordedTimelineFrames() const override;
+    uint32_t getSimulationTimelineFrameCount() const override;
+    float getSimulationDuration() const override;
+    uint32_t getSimulationResetCounter() const override;
+    uint32_t getSimulationRewindFrame() const override;
+    bool isTimelinePlaying() const override;
+    uint32_t getTimelineCurrentFrame() const override;
+    uint32_t getTimelineFrameCount() const override;
+    uint32_t getTimelineStartDisplayFrame() const override;
+    uint32_t getTimelineEndDisplayFrame() const override;
+    float getTimelineCurrentSeconds() const override;
+    float getTimelineDurationSeconds() const override;
 
     WindowRuntimeState* windowRuntimeState = nullptr;
     bool initialized = false;
@@ -67,4 +84,6 @@ private:
 
     RenderSettingsManager settingsManager;
     RenderSettingsController settingsController{&settingsManager};
+    TimelineRuntime timelineRuntime;
+    TimelineController timelineControllerInstance{&timelineRuntime};
 };

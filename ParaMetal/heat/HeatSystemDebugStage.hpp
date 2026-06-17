@@ -4,14 +4,12 @@
 
 #include <vulkan/vulkan.h>
 
-#include "HeatSystemStageContext.hpp"
-
 class MemoryAllocator;
 class CommandPool;
 
 class HeatSystemDebugStage {
 public:
-    explicit HeatSystemDebugStage(const HeatSystemStageContext& stageContext);
+    explicit HeatSystemDebugStage() = default;
 
     void exportDebugArtifacts(bool debugEnable, uint32_t voronoiNodeCount,
         VkBuffer debugCellGeometryBuffer, VkDeviceSize debugCellGeometryBufferOffset,
@@ -28,7 +26,4 @@ public:
         VkBuffer voronoiNodeBuffer, VkDeviceSize voronoiNodeBufferOffset,
         VkBuffer voronoiDumpBuffer, VkDeviceSize voronoiDumpBufferOffset,
         MemoryAllocator& memoryAllocator, CommandPool& renderCommandPool);
-
-private:
-    HeatSystemStageContext context;
 };

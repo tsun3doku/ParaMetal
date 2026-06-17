@@ -1,20 +1,19 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 
 #include <glm/glm.hpp>
 
 namespace heat {
 
+inline constexpr uint32_t NoRewindFrame = std::numeric_limits<uint32_t>::max();
+
 struct SimPlaybackUniform {
-    uint32_t paused;
     uint32_t resetCounter;
-    uint32_t rewindFrame;
-    uint32_t recordedFrames;
-    uint32_t maxFrames;
+    uint32_t recordedTimelineFrames;
+    uint32_t timelineFrameCount;
     float deltaTime;
-    float totalTime;
-    uint32_t _pad;
 };
 
 struct SurfacePoint {

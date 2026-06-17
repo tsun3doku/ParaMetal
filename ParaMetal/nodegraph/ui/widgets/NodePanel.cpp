@@ -463,9 +463,6 @@ void NodePanel::refreshRuntimeDebugViews() {
     if (currentNodeTypeId == nodegraphtypes::Group) {
         groupPanel->refreshSourceOptions();
     }
-    if (currentNodeTypeId == nodegraphtypes::HeatSolve) {
-        heatSolverPanel->refreshBindingGroupOptions();
-    }
     updateDataflowView();
     updateSpreadsheetView();
 }

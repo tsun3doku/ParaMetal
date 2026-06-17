@@ -27,7 +27,9 @@ bool HeatSystemSimRuntime::initialize(VulkanDevice& vulkanDevice, MemoryAllocato
 }
 
 void HeatSystemSimRuntime::reset() {
-    if (mappedPlaybackData) std::memset(mappedPlaybackData, 0, sizeof(heat::SimPlaybackUniform));
+    if (mappedPlaybackData) {
+        std::memset(mappedPlaybackData, 0, sizeof(heat::SimPlaybackUniform));
+    }
 }
 
 void HeatSystemSimRuntime::cleanup(MemoryAllocator& memoryAllocator) {
