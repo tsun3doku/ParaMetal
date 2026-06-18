@@ -1,5 +1,6 @@
 #include "ModelComputeRuntime.hpp"
 
+#include "hash/HashProduct.hpp"
 #include "framegraph/FrameSync.hpp"
 #include "scene/ModelUploader.hpp"
 #include "render/RenderConfig.hpp"
@@ -123,7 +124,7 @@ bool ModelComputeRuntime::exportProduct(uint32_t runtimeModelId, ModelProduct& o
     }
 
     outProduct.runtimeModelId = runtimeModelId;
-    outProduct.productHash = buildProductHash(outProduct);
+    HashProduct::seal(outProduct);
     return outProduct.isValid();
 }
 

@@ -5,7 +5,8 @@
 #include "NodeGraphUtils.hpp"
 
 #include "NodeGraphBridge.hpp"
-#include "NodeGraphHash.hpp"
+#include "hash/HashBuilder.hpp"
+#include "hash/HashNodeCache.hpp"
 #include "NodeContactParams.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
 
@@ -28,19 +29,15 @@ void NodeContact::execute(NodeGraphKernelContext& context) const {
     NodePayloadRegistry* const payloadRegistry = context.executionState.services.payloadRegistry;
 
     NodeDataHandle emitterMeshHandle{};
-    uint64_t emitterPayloadHash = 0;
     bool hasEmitterEndpoint = false;
     if (payloadRegistry && emitterInput && emitterInput->payloadHandle.key != 0) {
-        emitterPayloadHash = payloadRegistry->resolvePayloadHash(emitterInput->payloadHandle);
         emitterMeshHandle = payloadRegistry->resolveMeshHandle(emitterInput->dataType, emitterInput->payloadHandle);
         hasEmitterEndpoint = emitterMeshHandle.key != 0;
     }
 
     NodeDataHandle receiverMeshHandle{};
-    uint64_t receiverPayloadHash = 0;
     bool hasReceiverEndpoint = false;
     if (payloadRegistry && receiverInput && receiverInput->payloadHandle.key != 0) {
-        receiverPayloadHash = payloadRegistry->resolvePayloadHash(receiverInput->payloadHandle);
         receiverMeshHandle = payloadRegistry->resolveMeshHandle(receiverInput->dataType, receiverInput->payloadHandle);
         hasReceiverEndpoint = receiverMeshHandle.key != 0;
     }
@@ -68,44 +65,30 @@ void NodeContact::execute(NodeGraphKernelContext& context) const {
         contactData.pair.endpointA.meshHandle = emitterMeshHandle;
         contactData.pair.endpointB.payloadHandle = receiverInput->payloadHandle;
         contactData.pair.endpointB.meshHandle = receiverMeshHandle;
-        contactData.emitterPayloadHash = emitterPayloadHash;
-        contactData.receiverPayloadHash = receiverPayloadHash;
         contactData.pair.minNormalDot = static_cast<float>(params.minNormalDot);
         contactData.pair.contactRadius = static_cast<float>(params.contactRadius);
         contactData.pair.hasValidContact = true;
         contactData.active = true;
 
         const uint64_t payloadKey = NodeSocketKey(context.node.id, outputSocket.id);
-        outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(contactData));
+        outputValue.payloadHandle = payloadRegistry->store(payloadKey, contactData, context.outputHashes);
         populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 
-bool NodeContact::computeInputHash(const NodeGraphKernelHashContext& context, uint64_t& outHash) const {
-    const NodeGraphSocket* emitterSocket = context.node.input("SurfaceA");
-    const NodeGraphSocket* receiverSocket = context.node.input("SurfaceB");
-
-    const EvaluatedSocketValue* emitterInputValue =
-        emitterSocket ? readEvaluatedInput(context.node, emitterSocket->id, context.executionState) : nullptr;
-    const NodeDataBlock* emitterInput = readInputValue(emitterInputValue);
-    if (emitterInput && emitterInput->payloadHandle.key == 0) {
-        emitterInput = nullptr;
-    }
-    const EvaluatedSocketValue* receiverInputValue =
-        receiverSocket ? readEvaluatedInput(context.node, receiverSocket->id, context.executionState) : nullptr;
-    const NodeDataBlock* receiverInput = readInputValue(receiverInputValue);
-    if (receiverInput && receiverInput->payloadHandle.key == 0) {
-        receiverInput = nullptr;
-    }
-
-    outHash = NodeGraphHash::start();
-    NodeGraphHash::combine(outHash, static_cast<uint64_t>(context.node.id.value));
-    NodeGraphHash::combineInputHash(outHash, emitterInput);
-    NodeGraphHash::combineInputHash(outHash, receiverInput);
+HashValues NodeContact::computeOutputHashes(const NodeGraphKernelHashContext& context) const {
+    uint64_t hash = HashBuilder::start();
+    HashBuilder::combineString(hash, nodegraphtypes::Contact);
+    HashNodeCache::combineSocket(hash, context, "SurfaceA", HashDomain::Geometry);
+    HashNodeCache::combineSocket(hash, context, "SurfaceB", HashDomain::Geometry);
 
     const ContactNodeParams params = readContactNodeParams(context.node);
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.minNormalDot));
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.contactRadius));
+    HashBuilder::combineFloat(hash, static_cast<float>(params.minNormalDot));
+    HashBuilder::combineFloat(hash, static_cast<float>(params.contactRadius));
 
-    return true;
+    HashValues values{};
+    values.full = hash;
+    values.geometry = hash;
+    values.simulation = hash;
+    return values;
 }

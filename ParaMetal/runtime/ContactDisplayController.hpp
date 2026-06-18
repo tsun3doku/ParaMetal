@@ -1,5 +1,6 @@
 #pragma once
 
+#include "hash/HashBuilder.hpp"
 #include "runtime/RuntimePackages.hpp"
 #include "runtime/RuntimeProducts.hpp"
 
@@ -46,9 +47,9 @@ private:
     std::unordered_set<uint64_t> syncedSockets;
 };
 
-inline uint64_t buildDisplayHash(const ContactDisplayController::Config& config, uint64_t productHash) {
-    uint64_t hash = NodeGraphHash::start();
-    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showContactLines ? 1u : 0u));
-    NodeGraphHash::combine(hash, productHash);
+inline uint64_t buildDisplayHash(const ContactDisplayController::Config& config, uint64_t productDisplayHash) {
+    uint64_t hash = HashBuilder::start();
+    HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showContactLines ? 1u : 0u));
+    HashBuilder::combine(hash, productDisplayHash);
     return hash;
 }

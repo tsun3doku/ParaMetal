@@ -1,5 +1,6 @@
 #include "NodeMerge.hpp"
-#include "NodeGraphHash.hpp"
+#include "hash/HashBuilder.hpp"
+#include "hash/HashNodeCache.hpp"
 #include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
@@ -80,10 +81,9 @@ void NodeMerge::execute(NodeGraphKernelContext& context) const {
             }
         }
 
-        payload.sealPayload();
         const uint64_t payloadKey = NodeSocketKey(context.node.id, context.node.outputs[0].id);
         outputValue.dataType = payloadtypes::Points;
-        outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(payload));
+        outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, context.outputHashes);
         populateMetadata(outputValue, nullptr, payloadRegistry);
 
     } else if (dataType == payloadtypes::Geometry || dataType == payloadtypes::Remesh) {
@@ -165,28 +165,24 @@ void NodeMerge::execute(NodeGraphKernelContext& context) const {
             }
         }
 
-        payload.groups = std::move(mergedGroups);
-        payload.triangleGroupIds = std::move(mergedTriangleGroupIds);
+        payload.groups = mergedGroups;
+        payload.triangleGroupIds = mergedTriangleGroupIds;
 
-        payload.sealPayload();
         const uint64_t payloadKey = NodeSocketKey(context.node.id, context.node.outputs[0].id);
         outputValue.dataType = payloadtypes::Geometry;
-        outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(payload));
+        outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, context.outputHashes);
         populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 
-bool NodeMerge::computeInputHash(const NodeGraphKernelHashContext& context, uint64_t& outHash) const {
-    outHash = NodeGraphHash::start();
-    NodeGraphHash::combine(outHash, static_cast<uint64_t>(context.node.id.value));
+HashValues NodeMerge::computeOutputHashes(const NodeGraphKernelHashContext& context) const {
+    uint64_t hash = HashBuilder::start();
+    HashBuilder::combineString(hash, nodegraphtypes::Merge);
+    HashNodeCache::combineSocketList(hash, context, "Geometry", HashDomain::Geometry);
 
-    const NodeGraphSocket* inSocket = context.node.input("Geometry");
-    if (inSocket) {
-        const auto evals = readEvaluatedInputs(context.node, inSocket->id, context.executionState);
-        for (const EvaluatedSocketValue* input : evals) {
-            const NodeDataBlock* inputData = (input && input->status == EvaluatedSocketStatus::Value) ? &input->data : nullptr;
-            NodeGraphHash::combineInputHash(outHash, inputData);
-        }
-    }
-    return true;
+    HashValues values{};
+    values.full = hash;
+    values.geometry = hash;
+    values.simulation = hash;
+    return values;
 }

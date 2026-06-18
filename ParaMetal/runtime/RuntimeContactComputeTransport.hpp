@@ -5,6 +5,8 @@
 
 #include "contact/ContactSystem.hpp"
 #include "contact/ContactSystemComputeController.hpp"
+#include "hash/HashBuilder.hpp"
+#include "hash/HashProduct.hpp"
 #include "runtime/RuntimeECS.hpp"
 #include "runtime/RuntimePackages.hpp"
 
@@ -123,14 +125,14 @@ private:
 
     uint64_t buildConfigInputHash(uint64_t socketKey, const ContactPackage& package) const {
         (void)socketKey;
-        uint64_t hash = package.packageHash;
+        uint64_t hash = package.hashes.simulation;
         const RemeshProduct* modelARemeshProduct = tryGetProduct<RemeshProduct>(*ecsRegistry, package.modelAMeshHandle.key);
         const RemeshProduct* modelBRemeshProduct = tryGetProduct<RemeshProduct>(*ecsRegistry, package.modelBMeshHandle.key);
         if (!modelARemeshProduct || !modelBRemeshProduct) {
             return 0;
         }
-        NodeGraphHash::combine(hash, modelARemeshProduct->productHash);
-        NodeGraphHash::combine(hash, modelBRemeshProduct->productHash);
+        HashBuilder::combine(hash, modelARemeshProduct->hashes.geometry);
+        HashBuilder::combine(hash, modelBRemeshProduct->hashes.geometry);
         return hash;
     }
 
@@ -180,7 +182,7 @@ private:
         outProduct.modelBRuntimeModelId = coupling->modelBRuntimeModelId;
         outProduct.outlineVertices = system->getOutlineVertices();
         outProduct.correspondenceVertices = system->getCorrespondenceVertices();
-        outProduct.productHash = buildProductHash(outProduct);
+        HashProduct::seal(outProduct);
         return outProduct.isValid();
     }
 

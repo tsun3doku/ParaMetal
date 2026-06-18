@@ -1,5 +1,6 @@
 #pragma once
 
+#include "hash/HashValues.hpp"
 #include "nodegraph/NodeGraphCoreTypes.hpp"
 #include "heat/HeatSystemPresets.hpp"
 
@@ -17,9 +18,8 @@ enum class HeatBoundaryCondition {
 };
 
 struct HeatModelData {
-    uint64_t payloadHash = 0;
+    HashValues hashes{};
     NodeDataHandle meshHandle{};
-    uint64_t meshPayloadHash = 0;
 
     // Material
     float density = HeatSimDefaults::density;
@@ -33,5 +33,4 @@ struct HeatModelData {
     HeatBoundaryCondition boundaryCondition = HeatBoundaryCondition::None;
     float fixedTemperatureValue = HeatSimDefaults::ambientTemperature;
 
-    void sealPayload();
 };

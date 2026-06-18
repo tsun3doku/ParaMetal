@@ -5,6 +5,8 @@
 #include <unordered_set>
 
 #include "contact/ContactTypes.hpp"
+#include "hash/HashBuilder.hpp"
+#include "hash/HashProduct.hpp"
 #include "heat/HeatModelRuntime.hpp"
 #include "heat/HeatSystem.hpp"
 #include "heat/HeatSystemComputeController.hpp"
@@ -211,29 +213,27 @@ private:
     // Structural hash: only mesh/material/topology inputs. Never runtime control state.
     uint64_t buildConfigInputHash(uint64_t socketKey, const HeatPackage& package) const {
         (void)socketKey;
-        uint64_t hash = package.packageHash;
-        NodeGraphHash::combineFloat(hash, package.authored.contactThermalConductance);
-        NodeGraphHash::combineFloat(hash, package.authored.simulationDuration);
+        uint64_t hash = package.hashes.simulation;
         for (size_t i = 0; i < package.resolvedRemeshHandles.size(); ++i) {
             const RemeshProduct* product = tryGetProduct<RemeshProduct>(*ecsRegistry, package.resolvedRemeshHandles[i].key);
             if (!product) {
                 return 0;
             }
-            NodeGraphHash::combine(hash, product->productHash);
+            HashBuilder::combine(hash, product->hashes.geometry);
         }
         for (const NodeDataHandle& voronoiHandle : package.authored.voronoiHandles) {
             const VoronoiProduct* product = tryGetProduct<VoronoiProduct>(*ecsRegistry, voronoiHandle.key);
             if (!product) {
                 return 0;
             }
-            NodeGraphHash::combine(hash, product->productHash);
+            HashBuilder::combine(hash, product->hashes.simulation);
         }
         for (const NodeDataHandle& contactHandle : package.authored.contactHandles) {
             const ContactProduct* product = tryGetProduct<ContactProduct>(*ecsRegistry, contactHandle.key);
             if (!product) {
                 return 0;
             }
-            NodeGraphHash::combine(hash, product->productHash);
+            HashBuilder::combine(hash, product->hashes.simulation);
         }
         return hash;
     }
@@ -305,7 +305,7 @@ private:
             outProduct.modelSurfaceGradientBufferOffsets.push_back(heatModel->getSurfaceGradientBufferOffset());
         }
 
-        outProduct.productHash = buildProductHash(outProduct);
+        HashProduct::seal(outProduct);
         return outProduct.isValid();
     }
 

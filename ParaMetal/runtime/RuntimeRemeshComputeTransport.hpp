@@ -1,5 +1,7 @@
 #pragma once
 
+#include "hash/HashBuilder.hpp"
+#include "hash/HashProduct.hpp"
 #include "runtime/RemeshController.hpp"
 #include "runtime/RuntimeECS.hpp"
 #include "runtime/RuntimePackages.hpp"
@@ -97,12 +99,12 @@ private:
 
     uint64_t buildConfigInputHash(uint64_t socketKey, const RemeshPackage& package) const {
         (void)socketKey;
-        uint64_t hash = package.packageHash;
+        uint64_t hash = package.hashes.geometry;
         const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, package.sourceMeshHandle.key);
         if (!modelProduct) {
             return 0;
         }
-        NodeGraphHash::combine(hash, modelProduct->productHash);
+        HashBuilder::combine(hash, modelProduct->hashes.geometry);
         return hash;
     }
 
@@ -162,7 +164,7 @@ private:
         outProduct.inputEdgeView = gpu.viewEInput;
         outProduct.inputTriangleView = gpu.viewTInput;
         outProduct.inputLengthView = gpu.viewLInput;
-        outProduct.productHash = buildProductHash(outProduct);
+        HashProduct::seal(outProduct);
         return outProduct.isValid();
     }
 

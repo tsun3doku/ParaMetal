@@ -64,6 +64,7 @@ struct NodeGraphKernelContext {
     const std::vector<const EvaluatedSocketValue*>& inputs;
     std::vector<NodeDataBlock>& outputs;
     const NodeGraphKernelExecutionState& executionState;
+    HashValues outputHashes{};
 };
 
 struct NodeGraphKernelHashContext {
@@ -77,11 +78,7 @@ public:
     virtual ~NodeKernel() = default;
     virtual const char* typeId() const = 0;
     virtual void execute(NodeGraphKernelContext& context) const = 0;
-    virtual bool computeInputHash(const NodeGraphKernelHashContext& context, uint64_t& outHash) const {
-        (void)context;
-        (void)outHash;
-        return false;
-    }
+    virtual HashValues computeOutputHashes(const NodeGraphKernelHashContext& context) const = 0;
 };
 
 class NodeGraphKernels {
@@ -89,16 +86,16 @@ public:
     NodeGraphKernels();
 
     bool hasKernel(const NodeTypeId& typeId) const;
-    bool computeInputHash(
+    HashValues computeOutputHashes(
         const NodeGraphNode& node,
         const NodeGraphKernelExecutionState& executionState,
-        const std::vector<const EvaluatedSocketValue*>& inputs,
-        uint64_t& outHash) const;
+        const std::vector<const EvaluatedSocketValue*>& inputs) const;
     void executeNode(
         const NodeGraphNode& node,
         const NodeGraphKernelExecutionState& executionState,
         const std::vector<const EvaluatedSocketValue*>& inputs,
-        std::vector<NodeDataBlock>& outputs) const;
+        std::vector<NodeDataBlock>& outputs,
+        HashValues outputHashes) const;
 
 private:
     void registerDefaultKernels();

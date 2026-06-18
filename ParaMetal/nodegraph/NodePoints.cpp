@@ -1,6 +1,7 @@
 #include "NodePoints.hpp"
 
-#include "NodeGraphHash.hpp"
+#include "hash/HashBuilder.hpp"
+#include "hash/HashNodeCache.hpp"
 #include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
@@ -65,21 +66,24 @@ void NodePoints::execute(NodeGraphKernelContext& context) const {
         }
 
         payload.active = true;
-        payload.sealPayload();
-
         const uint64_t payloadKey = NodeSocketKey(context.node.id, outputSocket.id);
-        outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(payload));
+        outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, context.outputHashes);
         populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 
-bool NodePoints::computeInputHash(const NodeGraphKernelHashContext& context, uint64_t& outHash) const {
+HashValues NodePoints::computeOutputHashes(const NodeGraphKernelHashContext& context) const {
     const PointsNodeParams params = readPointsNodeParams(context.node);
-    outHash = NodeGraphHash::start();
-    NodeGraphHash::combine(outHash, static_cast<uint64_t>(context.node.id.value));
-    NodeGraphHash::combine(outHash, static_cast<uint64_t>(params.pointCount));
-    NodeGraphHash::combineFloat(outHash, params.dimX);
-    NodeGraphHash::combineFloat(outHash, params.dimY);
-    NodeGraphHash::combineFloat(outHash, params.dimZ);
-    return true;
+    uint64_t hash = HashBuilder::start();
+    HashBuilder::combineString(hash, nodegraphtypes::Points);
+    HashBuilder::combine(hash, static_cast<uint64_t>(params.pointCount));
+    HashBuilder::combineFloat(hash, params.dimX);
+    HashBuilder::combineFloat(hash, params.dimY);
+    HashBuilder::combineFloat(hash, params.dimZ);
+
+    HashValues values{};
+    values.full = hash;
+    values.geometry = hash;
+    values.simulation = hash;
+    return values;
 }

@@ -2,7 +2,8 @@
 #include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
-#include "NodeGraphHash.hpp"
+#include "hash/HashBuilder.hpp"
+#include "hash/HashNodeCache.hpp"
 #include "nodegraph/ui/widgets/NodePanelUtils.hpp"
 #include "NodePayloadRegistry.hpp"
 
@@ -64,7 +65,7 @@ void NodeGroup::execute(NodeGraphKernelContext& context) const {
         const bool changed = applyAssignment(updatedGeometry, sourceGroupName, targetGroupName);
         if (changed) {
             const uint64_t payloadKey = NodeSocketKey(context.node.id, outputSocket.id);
-            outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(updatedGeometry));
+            outputValue.payloadHandle = payloadRegistry->store(payloadKey, updatedGeometry, context.outputHashes);
         } else {
             outputValue.payloadHandle = inputMeshValue->payloadHandle;
         }
@@ -155,23 +156,17 @@ bool NodeGroup::applyAssignment(
     return changed;
 }
 
-bool NodeGroup::computeInputHash(const NodeGraphKernelHashContext& context, uint64_t& outHash) const {
-    const NodeDataBlock* inputMeshValue = nullptr;
-    for (const EvaluatedSocketValue* input : context.inputs) {
-        if (!input || input->status != EvaluatedSocketStatus::Value) {
-            continue;
-        }
-        if (input->data.payloadHandle.key != 0) {
-            inputMeshValue = &input->data;
-            break;
-        }
-    }
+HashValues NodeGroup::computeOutputHashes(const NodeGraphKernelHashContext& context) const {
+    uint64_t hash = HashBuilder::start();
+    HashBuilder::combineString(hash, nodegraphtypes::Group);
+    HashNodeCache::combineSocket(hash, context, NodeGraphValueType::Mesh, HashDomain::Geometry);
+    HashBuilder::combine(hash, static_cast<uint64_t>(NodePanelUtils::readBoolParam(context.node, nodegraphparams::group::Enabled, true) ? 1u : 0u));
+    HashBuilder::combineString(hash, NodePanelUtils::readStringParam(context.node, nodegraphparams::group::SourceName));
+    HashBuilder::combineString(hash, NodePanelUtils::readStringParam(context.node, nodegraphparams::group::TargetName));
 
-    outHash = NodeGraphHash::start();
-    NodeGraphHash::combine(outHash, static_cast<uint64_t>(context.node.id.value));
-    NodeGraphHash::combineInputHash(outHash, inputMeshValue);
-    NodeGraphHash::combine(outHash, static_cast<uint64_t>(NodePanelUtils::readBoolParam(context.node, nodegraphparams::group::Enabled, true) ? 1u : 0u));
-    NodeGraphHash::combineString(outHash, NodePanelUtils::readStringParam(context.node, nodegraphparams::group::SourceName));
-    NodeGraphHash::combineString(outHash, NodePanelUtils::readStringParam(context.node, nodegraphparams::group::TargetName));
-    return true;
+    HashValues values{};
+    values.full = hash;
+    values.geometry = hash;
+    values.simulation = hash;
+    return values;
 }

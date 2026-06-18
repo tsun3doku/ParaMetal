@@ -3,7 +3,8 @@
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
 
-#include "NodeGraphHash.hpp"
+#include "hash/HashBuilder.hpp"
+#include "hash/HashNodeCache.hpp"
 #include "NodePayloadRegistry.hpp"
 #include "NodeTransformParams.hpp"
 #include "domain/PointData.hpp"
@@ -37,16 +38,15 @@ void NodeTransform::execute(NodeGraphKernelContext& context) const {
                 toMat4(forwardedGeometry.localToWorld) * transformMat);
             const uint64_t payloadKey = NodeSocketKey(context.node.id, context.node.outputs[0].id);
             outputValue.dataType = payloadtypes::Geometry;
-            outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(forwardedGeometry));
+            outputValue.payloadHandle = payloadRegistry->store(payloadKey, forwardedGeometry, context.outputHashes);
         } else if (const PointData* inputPointData = payloadRegistry->resolvePoints(inputData->payloadHandle)) {
             if (!inputPointData->positions.empty()) {
                 PointData forwardedPoints = *inputPointData;
                 forwardedPoints.localToWorld = toMatrixArray(
                     toMat4(forwardedPoints.localToWorld) * transformMat);
-                forwardedPoints.sealPayload();
                 const uint64_t payloadKey = NodeSocketKey(context.node.id, context.node.outputs[0].id);
                 outputValue.dataType = payloadtypes::Points;
-                outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(forwardedPoints));
+                outputValue.payloadHandle = payloadRegistry->store(payloadKey, forwardedPoints, context.outputHashes);
             }
         }
     }
@@ -54,17 +54,17 @@ void NodeTransform::execute(NodeGraphKernelContext& context) const {
     populateMetadata(outputValue, nullptr, payloadRegistry);
 }
 
-bool NodeTransform::computeInputHash(const NodeGraphKernelHashContext& context, uint64_t& outHash) const {
-    const NodeGraphSocket* inSocket = context.node.input("Geometry");
-    const EvaluatedSocketValue* inputEval =
-        inSocket ? readEvaluatedInput(context.node, inSocket->id, context.executionState) : nullptr;
-    const NodeDataBlock* inputData = readInputValue(inputEval);
+HashValues NodeTransform::computeOutputHashes(const NodeGraphKernelHashContext& context) const {
+    uint64_t hash = HashBuilder::start();
+    HashBuilder::combineString(hash, nodegraphtypes::Transform);
+    HashNodeCache::combineOptionalSocket(hash, context, "Geometry", HashDomain::Geometry);
+    combineTransformParams(context.node, hash);
 
-    outHash = NodeGraphHash::start();
-    NodeGraphHash::combine(outHash, static_cast<uint64_t>(context.node.id.value));
-    NodeGraphHash::combineInputHash(outHash, inputData);
-    combineTransformParams(context.node, outHash);
-    return true;
+    HashValues values{};
+    values.full = hash;
+    values.geometry = hash;
+    values.simulation = hash;
+    return values;
 }
 
 glm::mat4 NodeTransform::buildLocalTransform(const NodeGraphNode& node) {
@@ -90,15 +90,15 @@ glm::mat4 NodeTransform::buildLocalTransform(const NodeGraphNode& node) {
 
 void NodeTransform::combineTransformParams(const NodeGraphNode& node, uint64_t& outHash) {
     const TransformNodeParams params = readTransformNodeParams(node);
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.translateX));
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.translateY));
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.translateZ));
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.rotateXDegrees));
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.rotateYDegrees));
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.rotateZDegrees));
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.scaleX));
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.scaleY));
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.scaleZ));
+    HashBuilder::combineFloat(outHash, static_cast<float>(params.translateX));
+    HashBuilder::combineFloat(outHash, static_cast<float>(params.translateY));
+    HashBuilder::combineFloat(outHash, static_cast<float>(params.translateZ));
+    HashBuilder::combineFloat(outHash, static_cast<float>(params.rotateXDegrees));
+    HashBuilder::combineFloat(outHash, static_cast<float>(params.rotateYDegrees));
+    HashBuilder::combineFloat(outHash, static_cast<float>(params.rotateZDegrees));
+    HashBuilder::combineFloat(outHash, static_cast<float>(params.scaleX));
+    HashBuilder::combineFloat(outHash, static_cast<float>(params.scaleY));
+    HashBuilder::combineFloat(outHash, static_cast<float>(params.scaleZ));
 }
 
 std::array<float, 16> NodeTransform::buildLocalTransformArray(const NodeGraphNode& node) {

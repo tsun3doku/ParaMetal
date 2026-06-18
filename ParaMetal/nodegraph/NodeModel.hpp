@@ -9,7 +9,7 @@ class NodeModel final : public NodeKernel {
 public:
     const char* typeId() const override;
     void execute(NodeGraphKernelContext& context) const override;
-    bool computeInputHash(const NodeGraphKernelHashContext& context, uint64_t& outHash) const override;
+    HashValues computeOutputHashes(const NodeGraphKernelHashContext& context) const override;
 
 private:
     static bool parseObjGeometry(const std::string& modelPath, GeometryData& geometry);

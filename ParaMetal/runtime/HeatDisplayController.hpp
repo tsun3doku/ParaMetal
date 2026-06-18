@@ -1,5 +1,6 @@
 #pragma once
 
+#include "hash/HashBuilder.hpp"
 #include "runtime/RuntimePackages.hpp"
 #include "runtime/RuntimeProducts.hpp"
 #include "domain/HeatModelData.hpp"
@@ -66,17 +67,17 @@ private:
     std::unordered_set<uint64_t> syncedSockets;
 };
 
-inline uint64_t buildDisplayHash(const HeatDisplayController::Config& config, uint64_t productHash) {
-    uint64_t hash = NodeGraphHash::start();
-    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showHeatOverlay ? 1u : 0u));
-    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showFluxVectors ? 1u : 0u));
-    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showHeatPalette ? 1u : 0u));
-    NodeGraphHash::combinePod(hash, config.fluxVectorScale);
-    NodeGraphHash::combinePod(hash, config.heatPaletteMinTemp);
-    NodeGraphHash::combinePod(hash, config.heatPaletteMaxTemp);
-    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.authoredActive ? 1u : 0u));
-    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.active ? 1u : 0u));
-    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.paused ? 1u : 0u));
-    NodeGraphHash::combine(hash, productHash);
+inline uint64_t buildDisplayHash(const HeatDisplayController::Config& config, uint64_t productDisplayHash) {
+    uint64_t hash = HashBuilder::start();
+    HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showHeatOverlay ? 1u : 0u));
+    HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showFluxVectors ? 1u : 0u));
+    HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showHeatPalette ? 1u : 0u));
+    HashBuilder::combinePod(hash, config.fluxVectorScale);
+    HashBuilder::combinePod(hash, config.heatPaletteMinTemp);
+    HashBuilder::combinePod(hash, config.heatPaletteMaxTemp);
+    HashBuilder::combinePod(hash, static_cast<uint64_t>(config.authoredActive ? 1u : 0u));
+    HashBuilder::combinePod(hash, static_cast<uint64_t>(config.active ? 1u : 0u));
+    HashBuilder::combinePod(hash, static_cast<uint64_t>(config.paused ? 1u : 0u));
+    HashBuilder::combine(hash, productDisplayHash);
     return hash;
 }

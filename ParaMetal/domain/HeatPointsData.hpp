@@ -10,8 +10,6 @@ struct HeatPointsData {
     std::vector<uint32_t> boundaryConditions;
     std::vector<float> fixedTemperatures;
     float initialTemperature = 293.15f;
-    uint64_t payloadHash = 0;
     bool active = false;
 
-    void sealPayload();
 };

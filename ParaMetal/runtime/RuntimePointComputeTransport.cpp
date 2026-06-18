@@ -1,7 +1,7 @@
 #include "RuntimePointComputeTransport.hpp"
 
 #include "runtime/PointComputeRuntime.hpp"
-#include "nodegraph/NodeGraphHash.hpp"
+#include "hash/HashBuilder.hpp"
 #include "util/GeometryUtils.hpp"
 
 #include <iostream>
@@ -85,10 +85,10 @@ bool RuntimePointComputeTransport::tryBuildConfig(
 
 uint64_t RuntimePointComputeTransport::buildConfigInputHash(uint64_t socketKey, const PointPackage& package) const {
     (void)socketKey;
-    uint64_t hash = package.packageHash;
+    uint64_t hash = package.hashes.geometry;
     const PointProduct* product = tryGetProduct<PointProduct>(*ecsRegistry, socketKey);
     if (product) {
-        NodeGraphHash::combine(hash, product->productHash);
+        HashBuilder::combine(hash, product->hashes.geometry);
     }
     return hash;
 }

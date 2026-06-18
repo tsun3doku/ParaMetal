@@ -120,7 +120,10 @@ void NodeGraphRuntime::applyDelta(const NodeGraphDelta& delta) {
                 runtimeServices.payloadRegistry->clear();
             }
         } else if (!dirtyNodeIds.empty()) {
-            invalidateNodeCaches(dirtyNodeIds);
+            for (uint32_t nodeId : dirtyNodeIds) {
+                lastHashByNodeId.erase(nodeId);
+                cachedOutputsByNodeId.erase(nodeId);
+            }
         }
     }
     graphState.revision = delta.toRevision;
@@ -227,19 +230,17 @@ void NodeGraphRuntime::execute(NodeGraphEvaluationState* outState, const NodeGra
                 incomingEdgesByInputSocket,
                 state.outputBySocket};
 
-            uint64_t inputHash = 0;
-            bool canHash = kernels.computeInputHash(node, kernelState, inputValues, inputHash);
+            HashValues outputHashes = kernels.computeOutputHashes(node, kernelState, inputValues);
+            uint64_t cacheHash = outputHashes.full;
             bool reusedCache = false;
-            if (canHash) {
-                const auto hashIt = lastHashByNodeId.find(node.id.value);
-                const auto cacheIt = cachedOutputsByNodeId.find(node.id.value);
-                if (hashIt != lastHashByNodeId.end() &&
-                    cacheIt != cachedOutputsByNodeId.end() &&
-                    hashIt->second == inputHash &&
-                    cacheIt->second.size() == node.outputs.size()) {
-                    outputValues = cacheIt->second;
-                    reusedCache = true;
-                }
+            const auto hashIt = lastHashByNodeId.find(node.id.value);
+            const auto cacheIt = cachedOutputsByNodeId.find(node.id.value);
+            if (hashIt != lastHashByNodeId.end() &&
+                cacheIt != cachedOutputsByNodeId.end() &&
+                hashIt->second == cacheHash &&
+                cacheIt->second.size() == node.outputs.size()) {
+                outputValues = cacheIt->second;
+                reusedCache = true;
             }
 
             if (!reusedCache) {
@@ -280,12 +281,10 @@ void NodeGraphRuntime::execute(NodeGraphEvaluationState* outState, const NodeGra
                         populateMetadata(output, nullptr, nullptr);
                     }
                 }
-                kernels.executeNode(node, kernelState, inputValues, outputValues);
+                kernels.executeNode(node, kernelState, inputValues, outputValues, outputHashes);
 
-                if (canHash) {
-                    lastHashByNodeId[node.id.value] = inputHash;
-                    cachedOutputsByNodeId[node.id.value] = outputValues;
-                }
+                lastHashByNodeId[node.id.value] = cacheHash;
+                cachedOutputsByNodeId[node.id.value] = outputValues;
             }
 
             for (std::size_t outputIndex = 0; outputIndex < node.outputs.size(); ++outputIndex) {
@@ -306,32 +305,4 @@ void NodeGraphRuntime::execute(NodeGraphEvaluationState* outState, const NodeGra
 void NodeGraphRuntime::clearNodeCaches() {
     lastHashByNodeId.clear();
     cachedOutputsByNodeId.clear();
-}
-
-void NodeGraphRuntime::invalidateNodeCaches(const std::unordered_set<uint32_t>& dirtyNodeIds) {
-    if (dirtyNodeIds.empty()) {
-        return;
-    }
-
-    std::unordered_set<uint32_t> invalidatedNodeIds = dirtyNodeIds;
-    bool changed = true;
-    while (changed) {
-        changed = false;
-        for (const auto& [id, edge] : graphState.edges) {
-            if (!edge.fromNode.isValid() || !edge.toNode.isValid()) {
-                continue;
-            }
-            if (invalidatedNodeIds.find(edge.fromNode.value) == invalidatedNodeIds.end()) {
-                continue;
-            }
-            if (invalidatedNodeIds.insert(edge.toNode.value).second) {
-                changed = true;
-            }
-        }
-    }
-
-    for (uint32_t nodeId : invalidatedNodeIds) {
-        lastHashByNodeId.erase(nodeId);
-        cachedOutputsByNodeId.erase(nodeId);
-    }
 }

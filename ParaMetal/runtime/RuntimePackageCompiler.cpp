@@ -3,7 +3,8 @@
 #include "nodegraph/NodeGraphPayloadTypes.hpp"
 #include "nodegraph/NodeGraphRegistry.hpp"
 #include "nodegraph/NodeGraphUtils.hpp"
-#include "nodegraph/NodeGraphHash.hpp"
+#include "hash/HashBuilder.hpp"
+#include "hash/HashPackage.hpp"
 #include "nodegraph/NodeContactParams.hpp"
 #include "nodegraph/NodeHeatSolveParams.hpp"
 #include "nodegraph/NodeRemeshParams.hpp"
@@ -14,102 +15,17 @@
 #include "domain/HeatData.hpp"
 #include "domain/HeatModelData.hpp"
 #include "domain/PointData.hpp"
+#include "domain/VoronoiData.hpp"
 #include "../util/GeometryUtils.hpp"
 
-#include <set>
+#include <unordered_map>
 #include <unordered_set>
-
-static void combineDependencyKey(uint64_t& hash, const NodeDataHandle& handle) {
-    NodeGraphHash::combine(hash, handle.key);
-}
-
-static uint64_t buildModelPackageHash(const ModelPackage& package) {
-    uint64_t hash = NodeGraphHash::start();
-    NodeGraphHash::combine(hash, 1u);
-    NodeGraphHash::combine(hash, package.geometry.payloadHash);
-    NodeGraphHash::combinePod(hash, package.localToWorld);
-    return hash;
-}
-
-static uint64_t buildRemeshPackageHash(const RemeshPackage& package, const ECSRegistry& ecsRegistry) {
-    uint64_t hash = NodeGraphHash::start();
-    NodeGraphHash::combine(hash, 2u);
-    NodeGraphHash::combine(hash, package.sourceGeometry.payloadHash);
-    NodeGraphHash::combine(hash, package.sourceMeshHandle.key);
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(package.iterations));
-    NodeGraphHash::combineFloat(hash, package.minAngleDegrees);
-    NodeGraphHash::combineFloat(hash, package.maxEdgeLength);
-    NodeGraphHash::combineFloat(hash, package.stepSize);
-    return hash;
-}
-
-static uint64_t buildVoronoiPackageHash(const VoronoiPackage& package, const ECSRegistry& ecsRegistry) {
-    uint64_t hash = NodeGraphHash::start();
-    NodeGraphHash::combine(hash, 3u);
-    NodeGraphHash::combine(hash, package.authored.payloadHash);
-    NodeGraphHash::combine(hash, package.voronoiHandle.key);
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(package.domainType));
-    NodeGraphHash::combine(hash, package.pointsPayloadHandle.key);
-    NodeGraphHash::combine(hash, package.modelMeshHandle.key);
-    NodeGraphHash::combine(hash, package.modelRemeshHandle.key);
-    NodeGraphHash::combinePod(hash, package.modelLocalToWorld);
-    return hash;
-}
-
-static uint64_t buildContactPackageHash(const ContactPackage& package, const ECSRegistry& ecsRegistry) {
-    uint64_t hash = NodeGraphHash::start();
-    NodeGraphHash::combine(hash, 4u);
-    NodeGraphHash::combine(hash, package.authored.payloadHash);
-    NodeGraphHash::combine(hash, package.contactHandle.key);
-    NodeGraphHash::combine(hash, package.modelAMeshHandle.key);
-    NodeGraphHash::combine(hash, package.modelBMeshHandle.key);
-    return hash;
-}
-
-static uint64_t buildHeatPackageHash(const HeatPackage& package, const ECSRegistry& ecsRegistry) {
-    uint64_t hash = NodeGraphHash::start();
-    NodeGraphHash::combine(hash, 5u);
-    NodeGraphHash::combine(hash, package.authored.payloadHash);
-    NodeGraphHash::combine(hash, package.heatHandle.key);
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(package.authored.voronoiHandles.size()));
-    for (const NodeDataHandle& handle : package.authored.voronoiHandles) {
-        combineDependencyKey(hash, handle);
-    }
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(package.authored.contactHandles.size()));
-    for (const NodeDataHandle& handle : package.authored.contactHandles) {
-        combineDependencyKey(hash, handle);
-    }
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(package.resolvedRemeshHandles.size()));
-    for (size_t i = 0; i < package.resolvedRemeshHandles.size(); ++i) {
-        NodeGraphHash::combine(hash, package.resolvedRemeshHandles[i].key);
-        NodeGraphHash::combine(hash, package.resolvedModelHandles[i].key);
-        NodeGraphHash::combineFloat(hash, package.resolvedDensity[i]);
-        NodeGraphHash::combineFloat(hash, package.resolvedSpecificHeat[i]);
-        NodeGraphHash::combineFloat(hash, package.resolvedConductivity[i]);
-        NodeGraphHash::combineFloat(hash, package.resolvedInitialTemperature[i]);
-        NodeGraphHash::combine(hash, static_cast<uint64_t>(package.resolvedBoundaryConditions[i]));
-        NodeGraphHash::combineFloat(hash, package.resolvedFixedTemperatureValues[i]);
-    }
-    return hash;
-}
-
-static uint64_t buildPointPackageHash(const PointPackage& package) {
-    uint64_t hash = NodeGraphHash::start();
-    NodeGraphHash::combine(hash, 6u);
-    NodeGraphHash::combine(hash, package.pointsPayloadHandle.key);
-    NodeGraphHash::combinePodVector(hash, package.positions);
-    NodeGraphHash::combine(hash, static_cast<uint64_t>(package.pointCount));
-    for (float v : package.localToWorld) {
-        NodeGraphHash::combineFloat(hash, v);
-    }
-    return hash;
-}
 
 ModelPackage RuntimePackageCompiler::buildModelPackage(const GeometryData& geometry) const {
     ModelPackage package{};
     package.geometry = geometry;
     package.localToWorld = geometry.localToWorld;
-    package.packageHash = buildModelPackageHash(package);
+    HashPackage::seal(package);
     return package;
 }
 
@@ -141,7 +57,7 @@ RemeshPackage RuntimePackageCompiler::buildRemeshPackage(
     package.display.normalLength = static_cast<float>(nodeParams.normalLength);
     package.remeshHandle = remeshHandle;
     package.sourceMeshHandle = remesh.sourceMeshHandle;
-    package.packageHash = buildRemeshPackageHash(package, registry);
+    HashPackage::seal(package);
     return package;
 }
 
@@ -184,7 +100,7 @@ VoronoiPackage RuntimePackageCompiler::buildVoronoiPackage(
     const VoronoiNodeParams nodeParams = readVoronoiNodeParams(node);
     package.display.showVoronoi = nodeParams.preview.showVoronoi;
     package.display.showPoints = nodeParams.preview.showPoints;
-    package.packageHash = buildVoronoiPackageHash(package, registry);
+    HashPackage::seal(package);
     return package;
 }
 
@@ -204,39 +120,63 @@ HeatPackage RuntimePackageCompiler::buildHeatPackage(
     package.display.showHeatPalette = nodeParams.preview.showHeatPalette;
     package.display.fluxVectorScale = static_cast<float>(nodeParams.preview.fluxVectorScale);
 
-    if (payloadRegistry) {
-        std::unordered_set<uint64_t> seenRemeshKeys;
-        for (const NodeDataHandle& heatModelHandle : heat.heatModelHandles) {
-            const HeatModelData* heatModel = payloadRegistry->get<HeatModelData>(heatModelHandle);
-            if (!heatModel || heatModel->meshHandle.key == 0) {
-                continue;
-            }
-            if (!seenRemeshKeys.insert(heatModel->meshHandle.key).second) {
-                continue;
-            }
+    const auto invalidatePackage = [&package]() {
+        package.authored.active = false;
+        HashPackage::seal(package);
+        return package;
+    };
 
-            NodeDataHandle modelHandle;
-            const GeometryData* geometry = payloadRegistry->resolveGeometry(heatModel->meshHandle, &modelHandle);
-            if (!geometry || modelHandle.key == 0) {
-                continue;
-            }
+    if (!payloadRegistry) {
+        return invalidatePackage();
+    }
 
-            float density = heatModel->density;
-            float specificHeat = heatModel->specificHeat;
-            float conductivity = heatModel->conductivity;
-
-            package.resolvedRemeshHandles.push_back(heatModel->meshHandle);
-            package.resolvedModelHandles.push_back(modelHandle);
-            package.resolvedDensity.push_back(density);
-            package.resolvedSpecificHeat.push_back(specificHeat);
-            package.resolvedConductivity.push_back(conductivity);
-            package.resolvedInitialTemperature.push_back(heatModel->initialTemperature);
-            package.resolvedBoundaryConditions.push_back(static_cast<uint32_t>(heatModel->boundaryCondition));
-            package.resolvedFixedTemperatureValues.push_back(heatModel->fixedTemperatureValue);
+    std::unordered_map<uint64_t, const HeatModelData*> heatModelByRemeshKey;
+    for (const NodeDataHandle& heatModelHandle : heat.heatModelHandles) {
+        const HeatModelData* heatModel = payloadRegistry->get<HeatModelData>(heatModelHandle);
+        if (!heatModel || heatModel->meshHandle.key == 0) {
+            return invalidatePackage();
+        }
+        if (!heatModelByRemeshKey.emplace(heatModel->meshHandle.key, heatModel).second) {
+            return invalidatePackage();
         }
     }
 
-    package.packageHash = buildHeatPackageHash(package, registry);
+    // Resolve materials by pairing each Voronoi domain with its matching HeatModel
+    std::unordered_set<uint64_t> usedHeatModelRemeshKeys;
+    for (const NodeDataHandle& voronoiHandle : heat.voronoiHandles) {
+        const VoronoiData* voronoi = payloadRegistry->get<VoronoiData>(voronoiHandle);
+        if (!voronoi || !voronoi->active || voronoi->modelMeshHandle.key == 0) {
+            return invalidatePackage();
+        }
+
+        auto it = heatModelByRemeshKey.find(voronoi->modelMeshHandle.key);
+        if (it == heatModelByRemeshKey.end()) {
+            return invalidatePackage();
+        }
+        usedHeatModelRemeshKeys.insert(voronoi->modelMeshHandle.key);
+
+        const HeatModelData* heatModel = it->second;
+        NodeDataHandle modelHandle;
+        const GeometryData* geometry = payloadRegistry->resolveGeometry(heatModel->meshHandle, &modelHandle);
+        if (!geometry || modelHandle.key == 0) {
+            return invalidatePackage();
+        }
+
+        package.resolvedRemeshHandles.push_back(heatModel->meshHandle);
+        package.resolvedModelHandles.push_back(modelHandle);
+        package.resolvedDensity.push_back(heatModel->density);
+        package.resolvedSpecificHeat.push_back(heatModel->specificHeat);
+        package.resolvedConductivity.push_back(heatModel->conductivity);
+        package.resolvedInitialTemperature.push_back(heatModel->initialTemperature);
+        package.resolvedBoundaryConditions.push_back(static_cast<uint32_t>(heatModel->boundaryCondition));
+        package.resolvedFixedTemperatureValues.push_back(heatModel->fixedTemperatureValue);
+    }
+
+    if (usedHeatModelRemeshKeys.size() != heatModelByRemeshKey.size()) {
+        return invalidatePackage();
+    }
+
+    HashPackage::seal(package);
     return package;
 }
 
@@ -254,7 +194,7 @@ PointPackage RuntimePackageCompiler::buildPointPackage(
     package.positions = pointData.positions;
     package.pointCount = static_cast<uint32_t>(pointData.positions.size());
     package.localToWorld = pointData.localToWorld;
-    package.packageHash = buildPointPackageHash(package);
+    HashPackage::seal(package);
     return package;
 }
 
@@ -294,7 +234,7 @@ ContactPackage RuntimePackageCompiler::buildContactPackage(
     package.modelAMeshHandle = endpointA.meshHandle;
     package.modelBMeshHandle = endpointB.meshHandle;
 
-    package.packageHash = buildContactPackageHash(package, registry);
+    HashPackage::seal(package);
     return package;
 }
 
@@ -357,7 +297,7 @@ void RuntimePackageCompiler::compileMeshPoints(
         package.pointCount = static_cast<uint32_t>(pointData->positions.size());
         package.localToWorld = pointData->localToWorld;
 
-        // Look up upstream remesh via the Geometry input socket
+        // Look up upstream remesh from Geometry input socket
         const uint64_t inSocketKey = NodeSocketKey(node.id, node.inputs[0].id).value;
         const auto upstreamIt = execState.upstreamSocket.find(inSocketKey);
         if (upstreamIt != execState.upstreamSocket.end() && upstreamIt->second != 0) {
@@ -375,7 +315,7 @@ void RuntimePackageCompiler::compileMeshPoints(
             }
         }
 
-        package.packageHash = buildPointPackageHash(package);
+        HashPackage::seal(package);
         applyPackage<PointPackage>(registry, outSocketKey, package, staleEntities);
     }
 }
@@ -509,7 +449,7 @@ void RuntimePackageCompiler::compileMerge(
                 }
             }
             package.pointCount = static_cast<uint32_t>(package.positions.size());
-            package.packageHash = buildPointPackageHash(package);
+            HashPackage::seal(package);
             applyPackage<PointPackage>(registry, outSocketKey, package, staleEntities);
         }
     }
@@ -578,7 +518,7 @@ void RuntimePackageCompiler::compileTransform(
             package.pointCount = upPkg.pointCount;
             const std::array<float, 16> localTransform = NodeTransform::buildLocalTransformArray(node);
             package.localToWorld = toMatrixArray(toMat4(upPkg.localToWorld) * toMat4(localTransform));
-            package.packageHash = buildPointPackageHash(package);
+            HashPackage::seal(package);
             applyPackage<PointPackage>(registry, outSocketKey, package, staleEntities);
         }
     }

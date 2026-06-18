@@ -24,7 +24,6 @@ private:
     void applyChange(const NodeGraphChange& change);
     void execute(NodeGraphEvaluationState* outState, const NodeGraphCompiled& compiled);
     void clearNodeCaches();
-    void invalidateNodeCaches(const std::unordered_set<uint32_t>& dirtyNodeIds);
     EvaluatedSocketValue makeMissingSocketValue() const;
     EvaluatedSocketValue makeErrorSocketValue(std::string error) const;
     EvaluatedSocketValue makeValueSocketValue(const NodeDataBlock& data) const;

@@ -6,6 +6,7 @@
 #include "heat/HeatSystemPresets.hpp"
 
 #include <cstdint>
+#include <initializer_list>
 
 namespace payloadtypes {
     uint8_t None = 0;
@@ -44,6 +45,34 @@ static NodeSocketSignature makeOutputSocket(
     return signature;
 }
 
+static NodeSocketSignature makePolymorphicInputSocket(
+    const char* name,
+    std::initializer_list<NodeGraphValueType> acceptedValueTypes,
+    bool variadic = false,
+    bool required = true) {
+    NodeSocketSignature signature{};
+    signature.name = name;
+    signature.direction = NodeGraphSocketDirection::Input;
+    signature.valueType = NodeGraphValueType::None;
+    signature.acceptedValueTypes = acceptedValueTypes;
+    signature.variadic = variadic;
+    signature.required = required;
+    return signature;
+}
+
+static NodeSocketSignature makePolymorphicOutputSocket(
+    const char* name,
+    std::initializer_list<NodeGraphValueType> acceptedValueTypes,
+    uint8_t producedPayloadType) {
+    NodeSocketSignature signature{};
+    signature.name = name;
+    signature.direction = NodeGraphSocketDirection::Output;
+    signature.valueType = NodeGraphValueType::None;
+    signature.acceptedValueTypes = acceptedValueTypes;
+    signature.contract.producedPayloadType = producedPayloadType;
+    return signature;
+}
+
 static NodeTypeDefinition buildModelNode() {
     return {
         nodegraphtypes::Model,
@@ -59,25 +88,14 @@ static NodeTypeDefinition buildModelNode() {
 }
 
 static NodeTypeDefinition buildTransformNode() {
-    NodeSocketSignature inSocket{};
-    inSocket.name = "Geometry";
-    inSocket.direction = NodeGraphSocketDirection::Input;
-    inSocket.valueType = NodeGraphValueType::None;
-    inSocket.acceptedValueTypes = {NodeGraphValueType::Mesh, NodeGraphValueType::Points};
-    inSocket.required = false;
-
-    NodeSocketSignature outSocket{};
-    outSocket.name = "Geometry";
-    outSocket.direction = NodeGraphSocketDirection::Output;
-    outSocket.valueType = NodeGraphValueType::None;
-    outSocket.acceptedValueTypes = {NodeGraphValueType::Mesh, NodeGraphValueType::Points};
-    outSocket.contract.producedPayloadType = payloadtypes::None;
-
     return {
         nodegraphtypes::Transform,
         "Transform",
         NodeGraphNodeCategory::Meshing,
-        {inSocket, outSocket},
+        {
+            makePolymorphicInputSocket("Geometry", {NodeGraphValueType::Mesh, NodeGraphValueType::Points}, false, false),
+            makePolymorphicOutputSocket("Geometry", {NodeGraphValueType::Mesh, NodeGraphValueType::Points}, payloadtypes::None),
+        },
         {
             {nodegraphparams::transform::TranslateX, "Translate X", NodeGraphParamType::Float, 0.0, 0, false, "", false},
             {nodegraphparams::transform::TranslateY, "Translate Y", NodeGraphParamType::Float, 0.0, 0, false, "", false},
@@ -117,7 +135,7 @@ static NodeTypeDefinition buildRemeshNode() {
         NodeGraphNodeCategory::Meshing,
         {
             makeInputSocket("Mesh", NodeGraphValueType::Mesh),
-            makeOutputSocket("Mesh", NodeGraphValueType::Mesh, payloadtypes::Remesh),
+            makeOutputSocket("Remesh", NodeGraphValueType::Remesh, payloadtypes::Remesh),
         },
         {
             {nodegraphparams::remesh::Iterations, "Iterations", NodeGraphParamType::Int, 0.0, 1, false, "", false},
@@ -139,8 +157,8 @@ static NodeTypeDefinition buildHeatModelNode() {
         "Heat Model",
         NodeGraphNodeCategory::System,
         {
-            makeInputSocket("Mesh", NodeGraphValueType::Mesh),
-            makeOutputSocket("HeatModel", NodeGraphValueType::Mesh, payloadtypes::HeatModel),
+            makeInputSocket("Remesh", NodeGraphValueType::Remesh),
+            makeOutputSocket("HeatModel", NodeGraphValueType::HeatModel, payloadtypes::HeatModel),
         },
         {
             makeEnumParamDefinition(
@@ -168,8 +186,8 @@ static NodeTypeDefinition buildContactNode() {
         "Contact",
         NodeGraphNodeCategory::System,
         {
-            makeInputSocket("SurfaceA", NodeGraphValueType::Mesh),
-            makeInputSocket("SurfaceB", NodeGraphValueType::Mesh),
+            makeInputSocket("SurfaceA", NodeGraphValueType::Remesh),
+            makeInputSocket("SurfaceB", NodeGraphValueType::Remesh),
             makeOutputSocket("Field", NodeGraphValueType::Field, payloadtypes::Contact),
         },
         {
@@ -186,7 +204,7 @@ static NodeTypeDefinition buildVoronoiNode() {
         "Voronoi",
         NodeGraphNodeCategory::System,
         {
-            makeInputSocket("Mesh", NodeGraphValueType::Mesh, false, false),
+            makeInputSocket("Remesh", NodeGraphValueType::Remesh, false, false),
             makeInputSocket("Points", NodeGraphValueType::Points, false, true),
             makeOutputSocket("Volume", NodeGraphValueType::Volume, payloadtypes::Voronoi),
         },
@@ -207,6 +225,7 @@ static NodeTypeDefinition buildHeatSolveNode() {
         {
             makeInputSocket("Volume", NodeGraphValueType::Volume, true),
             makeInputSocket("Field", NodeGraphValueType::Field, true),
+            makeInputSocket("HeatModel", NodeGraphValueType::HeatModel, true, false),
             makeOutputSocket("Heat", NodeGraphValueType::None, payloadtypes::Heat),
         },
         {
@@ -260,7 +279,7 @@ static NodeTypeDefinition buildMeshPointsNode() {
         "Mesh Points",
         NodeGraphNodeCategory::PointSurface,
         {
-            makeInputSocket("Geometry", NodeGraphValueType::Mesh),
+            makePolymorphicInputSocket("Geometry", {NodeGraphValueType::Mesh, NodeGraphValueType::Remesh}),
             makeOutputSocket("Points", NodeGraphValueType::Points, payloadtypes::Points),
         },
         {},
@@ -268,34 +287,22 @@ static NodeTypeDefinition buildMeshPointsNode() {
 }
 
 static NodeTypeDefinition buildMergeNode() {
-    NodeSocketSignature inSocket{};
-    inSocket.name = "Geometry";
-    inSocket.direction = NodeGraphSocketDirection::Input;
-    inSocket.valueType = NodeGraphValueType::None;
-    inSocket.acceptedValueTypes = {NodeGraphValueType::Mesh, NodeGraphValueType::Points};
-    inSocket.variadic = true;
-    inSocket.required = true;
-
-    NodeSocketSignature outSocket{};
-    outSocket.name = "Geometry";
-    outSocket.direction = NodeGraphSocketDirection::Output;
-    outSocket.valueType = NodeGraphValueType::None;
-    outSocket.acceptedValueTypes = {NodeGraphValueType::Mesh, NodeGraphValueType::Points};
-    outSocket.contract.producedPayloadType = payloadtypes::None;
-
     return {
         nodegraphtypes::Merge,
         "Merge",
         NodeGraphNodeCategory::Meshing,
-        {inSocket, outSocket},
+        {
+            makePolymorphicInputSocket("Geometry", {NodeGraphValueType::Mesh, NodeGraphValueType::Points}, true),
+            makePolymorphicOutputSocket("Geometry", {NodeGraphValueType::Mesh, NodeGraphValueType::Points}, payloadtypes::None),
+        },
         {},
     };
 }
 
 void initNodeGraph(NodeGraphRegistry& registry) {
     payloadtypes::Geometry   = registry.registerPayloadType("geometry", NodeGraphValueType::Mesh);
-    payloadtypes::Remesh     = registry.registerPayloadType("remesh",   NodeGraphValueType::Mesh);
-    payloadtypes::HeatModel  = registry.registerPayloadType("heat_model", NodeGraphValueType::Mesh);
+    payloadtypes::Remesh     = registry.registerPayloadType("remesh",   NodeGraphValueType::Remesh);
+    payloadtypes::HeatModel  = registry.registerPayloadType("heat_model", NodeGraphValueType::HeatModel);
     payloadtypes::Heat       = registry.registerPayloadType("heat",      NodeGraphValueType::None);
     payloadtypes::Voronoi    = registry.registerPayloadType("voronoi",   NodeGraphValueType::Volume);
     payloadtypes::Contact    = registry.registerPayloadType("contact",   NodeGraphValueType::Field);

@@ -36,5 +36,6 @@ private:
     App* app = nullptr;
     QPointer<TimelineWidget> timelineWidget;
     QTimer* syncTimer = nullptr;
-    uint64_t lastTimelineRangeRevision = UINT64_MAX;
+    float timelineDurationSeconds = -1.0f;
+    uint32_t timelineFrameCount = UINT32_MAX;
 };

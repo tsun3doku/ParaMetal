@@ -1,6 +1,7 @@
 #include "NodeMeshPoints.hpp"
 
-#include "NodeGraphHash.hpp"
+#include "hash/HashBuilder.hpp"
+#include "hash/HashNodeCache.hpp"
 #include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
@@ -56,22 +57,20 @@ void NodeMeshPoints::execute(NodeGraphKernelContext& context) const {
 
         payload.localToWorld = geometryData->localToWorld;
         payload.active = true;
-        payload.sealPayload();
-
         const uint64_t payloadKey = NodeSocketKey(context.node.id, outputSocket.id);
-        outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(payload));
+        outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, context.outputHashes);
         populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 
-bool NodeMeshPoints::computeInputHash(const NodeGraphKernelHashContext& context, uint64_t& outHash) const {
-    const NodeGraphSocket* inSocket = context.node.input("Geometry");
-    const EvaluatedSocketValue* inputEval =
-        inSocket ? readEvaluatedInput(context.node, inSocket->id, context.executionState) : nullptr;
-    const NodeDataBlock* inputData = readInputValue(inputEval);
+HashValues NodeMeshPoints::computeOutputHashes(const NodeGraphKernelHashContext& context) const {
+    uint64_t hash = HashBuilder::start();
+    HashBuilder::combineString(hash, nodegraphtypes::MeshPoints);
+    HashNodeCache::combineSocket(hash, context, "Geometry", HashDomain::Geometry);
 
-    outHash = NodeGraphHash::start();
-    NodeGraphHash::combine(outHash, static_cast<uint64_t>(context.node.id.value));
-    NodeGraphHash::combineInputHash(outHash, inputData);
-    return true;
+    HashValues values{};
+    values.full = hash;
+    values.geometry = hash;
+    values.simulation = hash;
+    return values;
 }

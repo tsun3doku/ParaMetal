@@ -26,7 +26,8 @@ TimelineNodeController::TimelineNodeController(QObject* parent)
 
 void TimelineNodeController::setApp(App* app_) {
     app = app_;
-    lastTimelineRangeRevision = UINT64_MAX;
+    timelineDurationSeconds = -1.0f;
+    timelineFrameCount = UINT32_MAX;
     updateTimelineBinding();
     syncAuthoredTimelineRange();
 }
@@ -69,11 +70,6 @@ void TimelineNodeController::syncAuthoredTimelineRange() {
         return;
     }
 
-    const uint64_t revision = b->getRevision();
-    if (revision == lastTimelineRangeRevision) {
-        return;
-    }
-
     const NodeGraphNodeId nodeId = findTimelineHeatSolveNode();
     if (!nodeId.isValid()) {
         return;
@@ -90,9 +86,16 @@ void TimelineNodeController::syncAuthoredTimelineRange() {
     const uint32_t maxFrame = durationSeconds > 0.0f
         ? std::max(1u, static_cast<uint32_t>(std::ceil(durationSeconds * authoredTimelineFps)))
         : 0u;
+    const uint32_t frameCount = maxFrame + 1u;
+    if (durationSeconds == timelineDurationSeconds &&
+        frameCount == timelineFrameCount) {
+        return;
+    }
+
     timeline->setFps(authoredTimelineFps);
-    timeline->setFrameCount(maxFrame + 1u);
-    lastTimelineRangeRevision = revision;
+    timeline->setFrameCount(frameCount);
+    timelineDurationSeconds = durationSeconds;
+    timelineFrameCount = frameCount;
 }
 
 NodeGraphBridge* TimelineNodeController::bridge() const {

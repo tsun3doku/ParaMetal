@@ -83,7 +83,7 @@ private:
         outConfig.modelBRuntimeModelId = computeProduct->modelBRuntimeModelId;
         outConfig.outlineVertices = computeProduct->outlineVertices;
         outConfig.correspondenceVertices = computeProduct->correspondenceVertices;
-        outConfig.displayHash = buildDisplayHash(outConfig, computeProduct->productHash);
+        outConfig.displayHash = buildDisplayHash(outConfig, computeProduct->hashes.display);
         return true;
     }
 

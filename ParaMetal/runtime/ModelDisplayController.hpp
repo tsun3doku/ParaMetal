@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "nodegraph/NodeGraphHash.hpp"
+#include "hash/HashBuilder.hpp"
 
 class ModelRegistry;
 

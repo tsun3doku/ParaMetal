@@ -157,7 +157,7 @@ private:
             }
         }
 
-        outConfig.displayHash = buildDisplayHash(outConfig, computeProduct->productHash);
+        outConfig.displayHash = buildDisplayHash(outConfig, computeProduct->hashes.display);
         return true;
     }
 

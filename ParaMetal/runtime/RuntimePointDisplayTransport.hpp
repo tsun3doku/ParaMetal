@@ -76,7 +76,7 @@ private:
         outConfig.vertexBufferOffset = product->positionBufferOffset;
         outConfig.pointCount = product->pointCount;
         outConfig.modelMatrix = product->modelMatrix;
-        outConfig.displayHash = product->productHash;
+        outConfig.displayHash = product->hashes.display;
         return true;
     }
 

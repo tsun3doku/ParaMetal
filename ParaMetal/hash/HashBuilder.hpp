@@ -1,19 +1,23 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <type_traits>
 #include <vector>
 
-struct NodeDataBlock;
+//                                                          [ HashBuilder
+//                                                            -Low level deterministic FNV-1a hash mixer
+//                                                            -All higher level hashing (payload, package,
+//                                                             product, node cache) is built on top of this ]
 
-class NodeGraphHash {
+class HashBuilder {
 public:
     static uint64_t start();
+
     static void combine(uint64_t& hash, uint64_t value);
     static void combineFloat(uint64_t& hash, float value);
     static void combineString(uint64_t& hash, const std::string& value);
-    static void combineInputHash(uint64_t& hash, const NodeDataBlock* input);
     static void combineBytes(uint64_t& hash, const void* data, size_t size);
 
     template <typename T>

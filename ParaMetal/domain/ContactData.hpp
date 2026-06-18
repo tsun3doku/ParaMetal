@@ -1,5 +1,6 @@
 #pragma once
 
+#include "hash/HashValues.hpp"
 #include "nodegraph/NodeGraphCoreTypes.hpp"
 
 #include <cstdint>
@@ -26,11 +27,8 @@ struct ContactPairData {
 };
 
 struct ContactData {
-    uint64_t payloadHash = 0;
-    uint64_t emitterPayloadHash = 0;
-    uint64_t receiverPayloadHash = 0;
+    HashValues hashes{};
     ContactPairData pair{};
     bool active = false;
 
-    void sealPayload();
 };

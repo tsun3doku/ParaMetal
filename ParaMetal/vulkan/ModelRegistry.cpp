@@ -8,6 +8,7 @@
 
 #include "MemoryAllocator.hpp"
 #include "runtime/RuntimeProducts.hpp"
+#include "hash/HashProduct.hpp"
 #include "scene/Model.hpp"
 #include "ModelRegistry.hpp"
 
@@ -118,7 +119,7 @@ bool ModelRegistry::exportProduct(uint32_t modelID, ModelProduct& outProduct) co
     outProduct.renderIndexBufferOffset = model->getRenderIndexBufferOffset();
     outProduct.renderIndexCount = static_cast<uint32_t>(model->getRenderIndices().size());
     outProduct.modelMatrix = model->getModelMatrix();
-    outProduct.productHash = buildProductHash(outProduct);
+    HashProduct::seal(outProduct);
     return outProduct.isValid();
 }
 

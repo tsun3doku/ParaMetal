@@ -1,4 +1,6 @@
 #include "RuntimeVoronoiComputeTransport.hpp"
+#include "hash/HashBuilder.hpp"
+#include "hash/HashProduct.hpp"
 #include "heat/VoronoiSystemComputeController.hpp"
 #include "runtime/RuntimePackages.hpp"
 #include "util/GeometryUtils.hpp"
@@ -183,13 +185,13 @@ void RuntimeVoronoiComputeTransport::publishProduct(uint64_t socketKey) {
 
 uint64_t RuntimeVoronoiComputeTransport::buildConfigInputHash(uint64_t socketKey, const VoronoiPackage& package) const {
     (void)socketKey;
-    uint64_t hash = package.packageHash;
+    uint64_t hash = package.hashes.simulation;
 
     if (package.pointsPayloadHandle.key != 0 && ecsRegistry) {
         auto pointsEntity = static_cast<ECSEntity>(package.pointsPayloadHandle.key);
         if (ecsRegistry->valid(pointsEntity) && ecsRegistry->all_of<PointPackage>(pointsEntity)) {
             const auto& pointPackage = ecsRegistry->get<PointPackage>(pointsEntity);
-            NodeGraphHash::combine(hash, pointPackage.packageHash);
+            HashBuilder::combine(hash, pointPackage.hashes.geometry);
         }
     }
 
@@ -199,8 +201,8 @@ uint64_t RuntimeVoronoiComputeTransport::buildConfigInputHash(uint64_t socketKey
         if (!remeshProduct || !modelProduct) {
             return 0;
         }
-        NodeGraphHash::combine(hash, remeshProduct->productHash);
-        NodeGraphHash::combine(hash, modelProduct->productHash);
+        HashBuilder::combine(hash, remeshProduct->hashes.geometry);
+        HashBuilder::combine(hash, modelProduct->hashes.geometry);
     }
     return hash;
 }
@@ -279,7 +281,7 @@ bool RuntimeVoronoiComputeTransport::buildProduct(uint64_t socketKey, VoronoiPro
         outProduct.seedPositions.push_back(glm::vec3(pos));
     }
 
-    outProduct.productHash = buildProductHash(outProduct);
+    HashProduct::seal(outProduct);
     if (!outProduct.isValid()) {
         return false;
     }

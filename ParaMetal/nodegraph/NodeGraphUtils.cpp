@@ -170,6 +170,8 @@ std::string valueTypeToString(NodeGraphValueType value) {
     switch (value) {
     case NodeGraphValueType::None:       return "None";
     case NodeGraphValueType::Mesh:       return "Mesh";
+    case NodeGraphValueType::Remesh:     return "Remesh";
+    case NodeGraphValueType::HeatModel:  return "HeatModel";
     case NodeGraphValueType::Points:     return "Points";
     case NodeGraphValueType::Volume:     return "Volume";
     case NodeGraphValueType::Field:      return "Field";

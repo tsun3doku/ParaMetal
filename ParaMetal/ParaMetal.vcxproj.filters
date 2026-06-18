@@ -432,7 +432,16 @@
     <ClCompile Include="nodegraph\NodeGraphDataTypes.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="nodegraph\NodeGraphHash.cpp">
+    <ClCompile Include="hash\HashBuilder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="hash\HashNodeCache.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="hash\HashPackage.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="hash\HashProduct.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="nodegraph\NodeGraphRuntime.cpp">
@@ -1175,7 +1184,19 @@
     <ClInclude Include="nodegraph\NodeGraphDataTypes.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="nodegraph\NodeGraphHash.hpp">
+    <ClInclude Include="hash\HashBuilder.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="hash\HashNodeCache.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="hash\HashPackage.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="hash\HashProduct.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="hash\HashValues.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\NodeGraphRuntime.hpp">

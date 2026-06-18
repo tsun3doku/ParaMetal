@@ -1,5 +1,6 @@
 #include "PointComputeRuntime.hpp"
 
+#include "hash/HashProduct.hpp"
 #include "renderers/PointRenderer.hpp"
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/MemoryAllocator.hpp"
@@ -102,6 +103,6 @@ bool PointComputeRuntime::exportProduct(uint64_t socketKey, PointProduct& outPro
     outProduct.positionBufferOffset = inst.offset;
     outProduct.pointCount = inst.pointCount;
     outProduct.modelMatrix = inst.modelMatrix;
-    outProduct.productHash = buildProductHash(outProduct);
+    HashProduct::seal(outProduct);
     return outProduct.isValid();
 }

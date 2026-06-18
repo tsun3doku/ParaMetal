@@ -1,5 +1,6 @@
 #pragma once
 
+#include "hash/HashBuilder.hpp"
 #include "runtime/RuntimePackages.hpp"
 #include "runtime/RuntimeProducts.hpp"
 
@@ -78,12 +79,12 @@ private:
     std::unordered_set<uint64_t> syncedSockets;
 };
 
-inline uint64_t buildDisplayHash(const RemeshDisplayController::Config& config, uint64_t productHash) {
-    uint64_t hash = NodeGraphHash::start();
-    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showRemeshOverlay ? 1u : 0u));
-    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showFaceNormals ? 1u : 0u));
-    NodeGraphHash::combinePod(hash, static_cast<uint64_t>(config.showVertexNormals ? 1u : 0u));
-    NodeGraphHash::combinePod(hash, config.normalLength);
-    NodeGraphHash::combine(hash, productHash);
+inline uint64_t buildDisplayHash(const RemeshDisplayController::Config& config, uint64_t productDisplayHash) {
+    uint64_t hash = HashBuilder::start();
+    HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showRemeshOverlay ? 1u : 0u));
+    HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showFaceNormals ? 1u : 0u));
+    HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showVertexNormals ? 1u : 0u));
+    HashBuilder::combinePod(hash, config.normalLength);
+    HashBuilder::combine(hash, productDisplayHash);
     return hash;
 }

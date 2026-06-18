@@ -24,33 +24,33 @@ bool NodeGraphKernels::hasKernel(const NodeTypeId& typeId) const {
     return kernelByTypeId.find(getNodeTypeId(typeId)) != kernelByTypeId.end();
 }
 
-bool NodeGraphKernels::computeInputHash(
+HashValues NodeGraphKernels::computeOutputHashes(
     const NodeGraphNode& node,
     const NodeGraphKernelExecutionState& executionState,
-    const std::vector<const EvaluatedSocketValue*>& inputs,
-    uint64_t& outHash) const {
+    const std::vector<const EvaluatedSocketValue*>& inputs) const {
     const NodeTypeId canonicalTypeId = getNodeTypeId(node.typeId);
     const auto kernelIt = kernelByTypeId.find(canonicalTypeId);
     if (kernelIt == kernelByTypeId.end() || !kernelIt->second) {
-        return false;
+        return {};
     }
 
     NodeGraphKernelHashContext context{node, inputs, executionState};
-    return kernelIt->second->computeInputHash(context, outHash);
+    return kernelIt->second->computeOutputHashes(context);
 }
 
 void NodeGraphKernels::executeNode(
     const NodeGraphNode& node,
     const NodeGraphKernelExecutionState& executionState,
     const std::vector<const EvaluatedSocketValue*>& inputs,
-    std::vector<NodeDataBlock>& outputs) const {
+    std::vector<NodeDataBlock>& outputs,
+    HashValues outputHashes) const {
     const NodeTypeId canonicalTypeId = getNodeTypeId(node.typeId);
     const auto kernelIt = kernelByTypeId.find(canonicalTypeId);
     if (kernelIt == kernelByTypeId.end() || !kernelIt->second) {
         return;
     }
 
-    NodeGraphKernelContext context{node, inputs, outputs, executionState};
+    NodeGraphKernelContext context{node, inputs, outputs, executionState, outputHashes};
 
     kernelIt->second->execute(context);
 }

@@ -10,6 +10,7 @@
 #include "domain/HeatData.hpp"
 #include "domain/RemeshData.hpp"
 #include "domain/VoronoiData.hpp"
+#include "hash/HashValues.hpp"
 #include "mesh/remesher/SupportingHalfedge.hpp"
 #include "nodegraph/NodeGraphProductTypes.hpp"
 
@@ -22,7 +23,7 @@
 //                                                     - Packages are the runtime application boundary ]
 
 struct ModelPackage {
-    uint64_t packageHash = 0;
+    HashValues hashes{};
     GeometryData geometry;
     std::array<float, 16> localToWorld{
         1.0f, 0.0f, 0.0f, 0.0f,
@@ -32,7 +33,7 @@ struct ModelPackage {
     };
 
     bool matches(const ModelPackage& other) const {
-        return packageHash == other.packageHash;
+        return hashes.full == other.hashes.full;
     }
 };
 
@@ -48,7 +49,7 @@ struct RemeshPackage {
         }
     };
 
-    uint64_t packageHash = 0;
+    HashValues hashes{};
     GeometryData sourceGeometry;
     int iterations = 1;
     float minAngleDegrees = 20.0f;
@@ -59,11 +60,7 @@ struct RemeshPackage {
     NodeDataHandle sourceMeshHandle{};
 
     bool matches(const RemeshPackage& other) const {
-        return packageHash == other.packageHash &&
-            display.showRemeshOverlay == other.display.showRemeshOverlay &&
-            display.showFaceNormals == other.display.showFaceNormals &&
-            display.showVertexNormals == other.display.showVertexNormals &&
-            display.normalLength == other.display.normalLength;
+        return hashes.full == other.hashes.full;
     }
 };
 
@@ -77,7 +74,7 @@ struct VoronoiPackage {
         }
     };
 
-    uint64_t packageHash = 0;
+    HashValues hashes{};
     VoronoiData authored;
     NodeDataHandle voronoiHandle{};
     DisplaySettings display{};
@@ -93,14 +90,12 @@ struct VoronoiPackage {
     NodeDataHandle pointsPayloadHandle{};
 
     bool matches(const VoronoiPackage& other) const {
-        return packageHash == other.packageHash &&
-            display.showVoronoi == other.display.showVoronoi &&
-            display.showPoints == other.display.showPoints;
+        return hashes.full == other.hashes.full;
     }
 };
 
 struct PointPackage {
-    uint64_t packageHash = 0;
+    HashValues hashes{};
     NodeDataHandle pointsPayloadHandle{};
     std::vector<glm::vec4> positions;
     uint32_t pointCount = 0;
@@ -112,8 +107,7 @@ struct PointPackage {
     };
 
     bool matches(const PointPackage& other) const {
-        return packageHash == other.packageHash &&
-            localToWorld == other.localToWorld;
+        return hashes.full == other.hashes.full;
     }
 };
 
@@ -131,7 +125,7 @@ struct HeatPackage {
         }
     };
 
-    uint64_t packageHash = 0;
+    HashValues hashes{};
     HeatData authored;
     NodeDataHandle heatHandle{};
     DisplaySettings display{};
@@ -147,18 +141,7 @@ struct HeatPackage {
     std::vector<float> resolvedFixedTemperatureValues;
 
     bool matches(const HeatPackage& other) const {
-        return packageHash == other.packageHash &&
-            authored.paused == other.authored.paused &&
-            authored.resetCounter == other.authored.resetCounter &&
-            authored.rewindFrame == other.authored.rewindFrame &&
-            authored.contactThermalConductance == other.authored.contactThermalConductance &&
-            authored.simulationDuration == other.authored.simulationDuration &&
-            display.showHeatOverlay == other.display.showHeatOverlay &&
-            display.showFluxVectors == other.display.showFluxVectors &&
-            display.showHeatPalette == other.display.showHeatPalette &&
-            display.fluxVectorScale == other.display.fluxVectorScale &&
-            display.heatPaletteMinTemp == other.display.heatPaletteMinTemp &&
-            display.heatPaletteMaxTemp == other.display.heatPaletteMaxTemp;
+        return hashes.full == other.hashes.full;
     }
 };
 
@@ -171,7 +154,7 @@ struct ContactPackage {
         }
     };
 
-    uint64_t packageHash = 0;
+    HashValues hashes{};
     ContactData authored;
     NodeDataHandle contactHandle{};
     DisplaySettings display{};
@@ -191,7 +174,6 @@ struct ContactPackage {
     NodeDataHandle modelBMeshHandle{};
 
     bool matches(const ContactPackage& other) const {
-        return packageHash == other.packageHash &&
-            display.showContactLines == other.display.showContactLines;
+        return hashes.full == other.hashes.full;
     }
 };

@@ -4,7 +4,8 @@
 #include "NodeGraphUtils.hpp"
 
 #include "NodeGraphBridge.hpp"
-#include "NodeGraphHash.hpp"
+#include "hash/HashBuilder.hpp"
+#include "hash/HashNodeCache.hpp"
 #include "NodeRemeshParams.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
 
@@ -28,10 +29,8 @@ void NodeRemesh::execute(NodeGraphKernelContext& context) const {
 
     const bool hasValidInput = payloadRegistry && upstreamGeometryValue;
     if (hasValidInput) {
-        const uint64_t sourcePayloadHash = payloadRegistry->resolvePayloadHash(upstreamGeometryValue->payloadHandle);
         const RemeshNodeParams params = readRemeshNodeParams(context.node);
         remeshData.sourceMeshHandle = upstreamGeometryValue->payloadHandle;
-        remeshData.sourcePayloadHash = sourcePayloadHash;
         remeshData.iterations = params.iterations;
         remeshData.minAngleDegrees = static_cast<float>(params.minAngleDegrees);
         remeshData.maxEdgeLength = static_cast<float>(params.maxEdgeLength);
@@ -51,29 +50,24 @@ void NodeRemesh::execute(NodeGraphKernelContext& context) const {
         }
 
         const uint64_t payloadKey = NodeSocketKey(context.node.id, outputSocket.id);
-        outputValue.payloadHandle = payloadRegistry->store(payloadKey, remeshData);
+        outputValue.payloadHandle = payloadRegistry->store(payloadKey, remeshData, context.outputHashes);
         populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 
-bool NodeRemesh::computeInputHash(const NodeGraphKernelHashContext& context, uint64_t& outHash) const {
-    const NodeGraphSocket* meshInputSocket = context.node.input(NodeGraphValueType::Mesh);
-    const EvaluatedSocketValue* inputValueState =
-        meshInputSocket ? readEvaluatedInput(context.node, meshInputSocket->id, context.executionState) : nullptr;
-    const NodeDataBlock* inputValue = readInputValue(inputValueState);
-    if (inputValue &&
-        inputValue->dataType != payloadtypes::Geometry &&
-        inputValue->dataType != payloadtypes::Remesh) {
-        inputValue = nullptr;
-    }
-
+HashValues NodeRemesh::computeOutputHashes(const NodeGraphKernelHashContext& context) const {
     const RemeshNodeParams params = readRemeshNodeParams(context.node);
-    outHash = NodeGraphHash::start();
-    NodeGraphHash::combine(outHash, static_cast<uint64_t>(context.node.id.value));
-    NodeGraphHash::combineInputHash(outHash, inputValue);
-    NodeGraphHash::combine(outHash, static_cast<uint64_t>(params.iterations));
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.minAngleDegrees));
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.maxEdgeLength));
-    NodeGraphHash::combineFloat(outHash, static_cast<float>(params.stepSize));
-    return true;
+    uint64_t hash = HashBuilder::start();
+    HashBuilder::combineString(hash, nodegraphtypes::Remesh);
+    HashNodeCache::combineSocket(hash, context, NodeGraphValueType::Mesh, HashDomain::Geometry);
+    HashBuilder::combine(hash, static_cast<uint64_t>(params.iterations));
+    HashBuilder::combineFloat(hash, static_cast<float>(params.minAngleDegrees));
+    HashBuilder::combineFloat(hash, static_cast<float>(params.maxEdgeLength));
+    HashBuilder::combineFloat(hash, static_cast<float>(params.stepSize));
+
+    HashValues values{};
+    values.full = hash;
+    values.geometry = hash;
+    values.simulation = hash;
+    return values;
 }

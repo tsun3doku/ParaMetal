@@ -1,5 +1,6 @@
 #pragma once
 
+#include "hash/HashValues.hpp"
 #include "NodeGraphCoreTypes.hpp"
 #include "NodeGraphTypes.hpp"
 
@@ -8,7 +9,6 @@
 #include <memory>
 #include <typeindex>
 #include <unordered_map>
-#include <utility>
 
 struct GeometryData;
 struct PointData;
@@ -18,14 +18,16 @@ public:
     NodePayloadRegistry() = default;
 
     template <typename T>
-    NodeDataHandle store(uint64_t key, T payload) {
+    NodeDataHandle store(uint64_t key, const T& payload, const HashValues& hashes) {
         if (key == 0) {
             return {};
         }
-        payload.sealPayload();
+        T stored = payload;
+        stored.hashes = hashes;
         Entry entry{};
-        entry.payload = std::make_shared<T>(std::move(payload));
+        entry.payload = std::make_shared<T>(stored);
         entry.type = std::type_index(typeid(T));
+        entry.hashes = hashes;
         entries[key] = entry;
         NodeDataHandle handle{};
         handle.key = key;
@@ -49,12 +51,13 @@ public:
     NodeDataHandle resolveMeshHandle(uint8_t type, const NodeDataHandle& handle) const;
     const GeometryData* resolveGeometry(const NodeDataHandle& handle, NodeDataHandle* outSourceHandle = nullptr) const;
     const PointData* resolvePoints(const NodeDataHandle& handle) const;
-    uint64_t resolvePayloadHash(const NodeDataHandle& handle) const;
+    uint64_t resolveHash(const NodeDataHandle& handle, HashDomain domain) const;
 
 private:
     struct Entry {
         std::shared_ptr<void> payload;
         std::type_index type{typeid(void)};
+        HashValues hashes{};
     };
 
     std::unordered_map<uint64_t, Entry> entries;

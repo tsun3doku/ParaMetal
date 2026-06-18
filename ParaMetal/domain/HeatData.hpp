@@ -1,5 +1,6 @@
 #pragma once
 
+#include "hash/HashValues.hpp"
 #include "nodegraph/NodeGraphCoreTypes.hpp"
 #include "heat/HeatSystemPresets.hpp"
 
@@ -15,9 +16,7 @@
 //                                                        - This header must not be included in any backend ]
 
 struct HeatData {
-    uint64_t payloadHash = 0;
-    uint64_t voronoiPayloadHash = 0;
-    uint64_t contactPayloadHash = 0;
+    HashValues hashes{};
     std::vector<NodeDataHandle> voronoiHandles;
     std::vector<NodeDataHandle> contactHandles;
     std::vector<NodeDataHandle> heatModelHandles;
@@ -28,5 +27,4 @@ struct HeatData {
     uint32_t resetCounter = 0;
     uint32_t rewindFrame = std::numeric_limits<uint32_t>::max();
 
-    void sealPayload();
 };

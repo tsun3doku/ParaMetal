@@ -85,7 +85,7 @@ bool RuntimeModelComputeTransport::tryBuildRuntimeModelPath(
 
 uint64_t RuntimeModelComputeTransport::buildConfigInputHash(uint64_t socketKey, const ModelPackage& package) const {
     (void)socketKey;
-    return package.packageHash;
+    return package.hashes.geometry;
 }
 
 void RuntimeModelComputeTransport::removePublishedProduct(uint64_t socketKey) {

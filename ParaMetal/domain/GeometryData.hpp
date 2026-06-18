@@ -1,5 +1,6 @@
 #pragma once
 
+#include "hash/HashValues.hpp"
 #include "nodegraph/NodeGraphCoreTypes.hpp"
 #include "nodegraph/NodeGraphTypes.hpp"
 
@@ -22,7 +23,7 @@ struct GeometryGroup {
 };
 
 struct GeometryData {
-    uint64_t payloadHash = 0;
+    HashValues hashes{};
     std::string baseModelPath;
     std::array<float, 16> localToWorld{
         1.0f, 0.0f, 0.0f, 0.0f,
@@ -35,5 +36,4 @@ struct GeometryData {
     std::vector<uint32_t> triangleGroupIds;
     std::vector<GeometryGroup> groups;
 
-    void sealPayload();
 };

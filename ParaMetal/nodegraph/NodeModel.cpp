@@ -3,7 +3,8 @@
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
 
-#include "NodeGraphHash.hpp"
+#include "hash/HashBuilder.hpp"
+#include "hash/HashNodeCache.hpp"
 #include "NodeModelParams.hpp"
 #include "NodePayloadRegistry.hpp"
 
@@ -48,16 +49,21 @@ void NodeModel::execute(NodeGraphKernelContext& context) const {
         }
 
         const uint64_t payloadKey = NodeSocketKey(context.node.id, outputSocket.id);
-        outputValue.payloadHandle = payloadRegistry->store(payloadKey, geometry);
+        outputValue.payloadHandle = payloadRegistry->store(payloadKey, geometry, context.outputHashes);
         populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 
-bool NodeModel::computeInputHash(const NodeGraphKernelHashContext& context, uint64_t& outHash) const {
-    outHash = NodeGraphHash::start();
-    NodeGraphHash::combine(outHash, static_cast<uint64_t>(context.node.id.value));
-    NodeGraphHash::combineString(outHash, readModelNodeParams(context.node).path);
-    return true;
+HashValues NodeModel::computeOutputHashes(const NodeGraphKernelHashContext& context) const {
+    uint64_t hash = HashBuilder::start();
+    HashBuilder::combineString(hash, nodegraphtypes::Model);
+    HashBuilder::combineString(hash, readModelNodeParams(context.node).path);
+
+    HashValues values{};
+    values.full = hash;
+    values.geometry = hash;
+    values.simulation = hash;
+    return values;
 }
 
 bool NodeModel::parseObjGeometry(const std::string& modelPath, GeometryData& geometry) {

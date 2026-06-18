@@ -1,5 +1,6 @@
 #pragma once
 
+#include "hash/HashValues.hpp"
 #include "domain/GeometryData.hpp"
 
 #include <cstdint>
@@ -13,14 +14,12 @@
 //                                                        - They must not be used directly by any backends ]
 
 struct RemeshData {
-    uint64_t payloadHash = 0;
+    HashValues hashes{};
     NodeDataHandle sourceMeshHandle{};
-    uint64_t sourcePayloadHash = 0;
     int iterations = 1;
     float minAngleDegrees = 20.0f;
     float maxEdgeLength = 0.1f;
     float stepSize = 0.25f;
     bool active = false;
 
-    void sealPayload();
 };

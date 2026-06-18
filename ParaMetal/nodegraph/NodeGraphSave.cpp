@@ -186,6 +186,9 @@ QString NodeGraphSave::valueTypeToString(NodeGraphValueType value) {
 bool NodeGraphSave::valueTypeFromString(const QString& text, NodeGraphValueType& outValue) {
     if (text == "None") outValue = NodeGraphValueType::None;
     else if (text == "Mesh") outValue = NodeGraphValueType::Mesh;
+    else if (text == "Remesh") outValue = NodeGraphValueType::Remesh;
+    else if (text == "HeatModel") outValue = NodeGraphValueType::HeatModel;
+    else if (text == "Points") outValue = NodeGraphValueType::Points;
     else if (text == "Volume") outValue = NodeGraphValueType::Volume;
     else if (text == "Field") outValue = NodeGraphValueType::Field;
     else if (text == "Vector3") outValue = NodeGraphValueType::Vector3;

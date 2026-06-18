@@ -3,6 +3,7 @@
 #include <iostream>
 #include "VoronoiSystem.hpp"
 #include "runtime/RuntimeProducts.hpp"
+#include "hash/HashProduct.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/ModelRegistry.hpp"
 #include "vulkan/VulkanDevice.hpp"
@@ -205,7 +206,7 @@ bool VoronoiSystemComputeController::disabledProductExport(uint64_t socketKey, V
         outProduct.modelSeedPositions.push_back(std::move(seedPositions));
     }
 
-    outProduct.productHash = buildProductHash(outProduct);
+    HashProduct::seal(outProduct);
 
     return outProduct.isValid();
 }

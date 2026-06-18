@@ -328,7 +328,10 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="nodegraph\ui\scene\NodeGraphEditorWidget.cpp" />
     <ClCompile Include="nodegraph\NodeGraphEditor.cpp" />
     <ClCompile Include="nodegraph\NodeGraphDataTypes.cpp" />
-    <ClCompile Include="nodegraph\NodeGraphHash.cpp" />
+    <ClCompile Include="hash\HashBuilder.cpp" />
+    <ClCompile Include="hash\HashNodeCache.cpp" />
+    <ClCompile Include="hash\HashPackage.cpp" />
+    <ClCompile Include="hash\HashProduct.cpp" />
     <ClCompile Include="nodegraph\NodeGraphRuntime.cpp" />
     <ClCompile Include="nodegraph\NodeGraphKernels.cpp" />
     <ClCompile Include="nodegraph\NodePayloadRegistry.cpp" />
@@ -642,7 +645,11 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <QtMoc Include="nodegraph\ui\scene\NodeGraphEditorWidget.hpp" />
     <ClInclude Include="nodegraph\NodeGraphEditor.hpp" />
     <ClInclude Include="nodegraph\NodeGraphDataTypes.hpp" />
-    <ClInclude Include="nodegraph\NodeGraphHash.hpp" />
+    <ClInclude Include="hash\HashBuilder.hpp" />
+    <ClInclude Include="hash\HashNodeCache.hpp" />
+    <ClInclude Include="hash\HashPackage.hpp" />
+    <ClInclude Include="hash\HashProduct.hpp" />
+    <ClInclude Include="hash\HashValues.hpp" />
     <ClInclude Include="nodegraph\NodeGraphRuntime.hpp" />
     <ClInclude Include="nodegraph\NodeGraphDebugCache.hpp" />
     <ClInclude Include="nodegraph\NodeGraphKernels.hpp" />
