@@ -112,6 +112,35 @@ VkResult createStagingBuffer(MemoryAllocator& allocator, VkDeviceSize size, VkBu
     return VK_SUCCESS;
 }
 
+VkResult createDownloadStagingBuffer(MemoryAllocator& allocator, VkDeviceSize size, VkBuffer& outBuffer, VkDeviceSize& outOffset, void** outMappedPtr) {
+    freeBuffer(allocator, outBuffer, outOffset);
+    if (outMappedPtr) {
+        *outMappedPtr = nullptr;
+    }
+
+    if (size == 0) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkBufferUsageFlags usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+    auto [buffer, offset] = allocator.allocate(size, usage, properties);
+    outBuffer = buffer;
+    outOffset = offset;
+
+    void* mappedPtr = allocator.getMappedPointer(buffer, offset);
+    if (!mappedPtr) {
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    if (outMappedPtr) {
+        *outMappedPtr = mappedPtr;
+    }
+
+    return VK_SUCCESS;
+}
+
 VkResult createUniformBuffer(MemoryAllocator& allocator, VulkanDevice& device, VkDeviceSize size, VkBuffer& outBuffer, VkDeviceSize& outOffset, void** outMappedPtr) {
     freeBuffer(allocator, outBuffer, outOffset);
     if (outMappedPtr) {
@@ -199,12 +228,40 @@ VkResult uploadDeviceBuffer(
     outOffset = offset;
 
     VkCommandBuffer cmd = commandPool.beginCommands();
+    if (cmd == VK_NULL_HANDLE) {
+        std::cerr << "[UPLOAD] beginCommands failed"
+                  << " dstBuffer=" << outBuffer
+                  << " dstOffset=" << outOffset
+                  << " size=" << size
+                  << " usage=" << usage
+                  << std::endl;
+        allocator.free(stagingBuffer, stagingOffset);
+        allocator.free(outBuffer, outOffset);
+        outBuffer = VK_NULL_HANDLE;
+        outOffset = 0;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
     VkBufferCopy region{};
     region.srcOffset = stagingOffset;
     region.dstOffset = outOffset;
     region.size = size;
     vkCmdCopyBuffer(cmd, stagingBuffer, outBuffer, 1, &region);
-    commandPool.endCommands(cmd);
+    if (!commandPool.endCommands(cmd)) {
+        std::cerr << "[UPLOAD] copy failed"
+                  << " srcBuffer=" << stagingBuffer
+                  << " srcOffset=" << region.srcOffset
+                  << " dstBuffer=" << outBuffer
+                  << " dstOffset=" << region.dstOffset
+                  << " size=" << region.size
+                  << " usage=" << usage
+                  << std::endl;
+        allocator.free(stagingBuffer, stagingOffset);
+        allocator.free(outBuffer, outOffset);
+        outBuffer = VK_NULL_HANDLE;
+        outOffset = 0;
+        return VK_ERROR_DEVICE_LOST;
+    }
 
     allocator.free(stagingBuffer, stagingOffset);
     return VK_SUCCESS;
@@ -224,17 +281,32 @@ VkResult downloadDeviceBuffer(
     VkBuffer stagingBuffer = VK_NULL_HANDLE;
     VkDeviceSize stagingOffset = 0;
     void* stagingData = nullptr;
-    if (createStagingBuffer(allocator, size, stagingBuffer, stagingOffset, &stagingData) != VK_SUCCESS || !stagingData) {
+    if (createDownloadStagingBuffer(allocator, size, stagingBuffer, stagingOffset, &stagingData) != VK_SUCCESS || !stagingData) {
         return VK_ERROR_MEMORY_MAP_FAILED;
     }
 
     VkCommandBuffer cmd = commandPool.beginCommands();
+    if (cmd == VK_NULL_HANDLE) {
+        allocator.free(stagingBuffer, stagingOffset);
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
     VkBufferCopy region{};
     region.srcOffset = srcOffset;
     region.dstOffset = stagingOffset;
     region.size = size;
     vkCmdCopyBuffer(cmd, srcBuffer, stagingBuffer, 1, &region);
-    commandPool.endCommands(cmd);
+    if (!commandPool.endCommands(cmd)) {
+        std::cerr << "[DOWNLOAD] copy failed"
+                  << " srcBuffer=" << srcBuffer
+                  << " srcOffset=" << region.srcOffset
+                  << " dstBuffer=" << stagingBuffer
+                  << " dstOffset=" << region.dstOffset
+                  << " size=" << region.size
+                  << std::endl;
+        allocator.free(stagingBuffer, stagingOffset);
+        return VK_ERROR_DEVICE_LOST;
+    }
 
     std::memcpy(dstData, stagingData, static_cast<size_t>(size));
 

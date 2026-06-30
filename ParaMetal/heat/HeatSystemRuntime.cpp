@@ -94,7 +94,7 @@ bool HeatSystemRuntime::ensureModelBindings(
         }
     }
 
-    // Create, recreate, or update each incoming model
+    // Create, recreate or update each incoming model
     std::unordered_set<uint32_t> seenModelIds;
     for (std::size_t index = 0; index < pairCount; ++index) {
         const uint32_t modelId = activeModelRuntimeModelIds[index];
@@ -118,7 +118,7 @@ bool HeatSystemRuntime::ensureModelBindings(
                 std::cerr << "[HeatSystemRuntime] Failed to initialize heat model for model " << modelId << std::endl;
             }
         } else if (it->second->getIntrinsicVertexCount() != incomingVertexCount) {
-            // GEOMETRY CHANGED — full recreate
+            // GEOMETRY CHANGED 
             it->second->cleanup();
             auto heatModel = std::make_unique<HeatModelRuntime>(
                 vulkanDevice, memoryAllocator, incomingMesh, renderCommandPool,
@@ -131,7 +131,7 @@ bool HeatSystemRuntime::ensureModelBindings(
                 activeModels.erase(it);
             }
         } else {
-            // EXISTING MODEL, SAME GEOMETRY — update parameters only
+            // EXISTING MODEL AND SAME GEOMETRY UPDATE PARAMS ONLY
             configureModelProperties(it->second.get(), modelId);
         }
     }

@@ -9,7 +9,7 @@
 #include <cstdint>
 
 class App;
-class NodeGraphBridge;
+class NodeGraph;
 class QTimer;
 class TimelineWidget;
 
@@ -30,7 +30,7 @@ private slots:
 private:
     NodeGraphNodeId findTimelineHeatSolveNode() const;
     bool isTimelineAtEnd() const;
-    NodeGraphBridge* bridge() const;
+    NodeGraph* bridge() const;
     void updateTimelineBinding();
 
     App* app = nullptr;

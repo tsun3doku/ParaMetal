@@ -8,7 +8,7 @@
 #include "runtime/SimulationError.hpp"
 #include "runtime/RuntimeSystems.hpp"
 
-class NodeGraphBridge;
+class NodeGraph;
 class CameraController;
 class ModelSelection;
 class RenderSettingsController;
@@ -33,11 +33,11 @@ public:
     std::vector<SimulationError> consumeSimulationErrors();
     uint32_t loadModel(const std::string& modelPath, uint32_t preferredModelId = 0);
     void setPanSensitivity(float sensitivity);
-    void setRenderPaused(bool paused);
+    void setSimPaused(bool paused);
     RenderSettingsController* getSettingsController();
     const RenderSettingsController* getSettingsController() const;
-    NodeGraphBridge* getNodeGraphBridge();
-    const NodeGraphBridge* getNodeGraphBridge() const;
+    NodeGraph* getNodeGraph();
+    const NodeGraph* getNodeGraph() const;
     CameraController* getCameraController();
     const CameraController* getCameraController() const;
     SceneController* getSceneController();

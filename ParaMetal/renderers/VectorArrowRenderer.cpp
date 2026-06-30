@@ -104,132 +104,88 @@ bool VectorArrowRenderer::createDescriptorSetLayout() {
 
 bool VectorArrowRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
     const uint32_t maxVectorFields = 64;
-    const uint32_t totalSets = maxFramesInFlight * maxVectorFields;
 
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[0].descriptorCount = totalSets * 2;  // 2 storage buffers (surface + gradient)
+    poolSizes[0].descriptorCount = maxVectorFields * 2;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[1].descriptorCount = totalSets;
+    poolSizes[1].descriptorCount = maxVectorFields;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = totalSets;
+    poolInfo.maxSets = maxVectorFields;
 
-    if (vkCreateDescriptorPool(vulkanDevice.getDevice(), &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
-        std::cerr << "VectorArrowRenderer: Failed to create descriptor pool" << std::endl;
-        return false;
-    }
-
-    return true;
-}
-
-bool VectorArrowRenderer::updateDescriptorSetVector(
-    const VectorRenderBinding& vector,
-    uint32_t maxFramesInFlight,
-    std::vector<VkDescriptorSet>& targetSets) {
-    if (targetSets.empty() || targetSets.size() != maxFramesInFlight) {
-        targetSets.clear();
-        targetSets.resize(maxFramesInFlight);
-
-        std::vector<VkDescriptorSetLayout> layouts(maxFramesInFlight, descriptorSetLayout);
-
-        VkDescriptorSetAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        allocInfo.descriptorPool = descriptorPool;
-        allocInfo.descriptorSetCount = maxFramesInFlight;
-        allocInfo.pSetLayouts = layouts.data();
-
-        if (vkAllocateDescriptorSets(vulkanDevice.getDevice(), &allocInfo, targetSets.data()) != VK_SUCCESS) {
-            targetSets.clear();
+    descriptorPools.resize(maxFramesInFlight, VK_NULL_HANDLE);
+    for (uint32_t i = 0; i < maxFramesInFlight; ++i) {
+        if (vkCreateDescriptorPool(vulkanDevice.getDevice(), &poolInfo, nullptr, &descriptorPools[i]) != VK_SUCCESS) {
+            std::cerr << "VectorArrowRenderer: Failed to create descriptor pool " << i << std::endl;
             return false;
         }
     }
 
-    VkDescriptorBufferInfo surfaceInfo{};
-    surfaceInfo.buffer = vector.surfaceBuffer;
-    surfaceInfo.offset = vector.surfaceBufferOffset;
-    surfaceInfo.range = VK_WHOLE_SIZE;
-
-    VkDescriptorBufferInfo gradientInfo{};
-    gradientInfo.buffer = vector.gradientBuffer;
-    gradientInfo.offset = vector.gradientBufferOffset;
-    gradientInfo.range = VK_WHOLE_SIZE;
-
-    for (uint32_t frame = 0; frame < maxFramesInFlight; ++frame) {
-        VkDescriptorBufferInfo uboInfo{};
-        uboInfo.buffer = uniformBufferManager.getUniformBuffers()[frame];
-        uboInfo.offset = uniformBufferManager.getUniformBufferOffsets()[frame];
-        uboInfo.range = sizeof(UniformBufferObject);
-
-        std::array<VkWriteDescriptorSet, 3> writes{};
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = targetSets[frame];
-        writes[0].dstBinding = 0;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[0].descriptorCount = 1;
-        writes[0].pBufferInfo = &surfaceInfo;
-
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = targetSets[frame];
-        writes[1].dstBinding = 1;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[1].descriptorCount = 1;
-        writes[1].pBufferInfo = &gradientInfo;
-
-        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[2].dstSet = targetSets[frame];
-        writes[2].dstBinding = 2;
-        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[2].descriptorCount = 1;
-        writes[2].pBufferInfo = &uboInfo;
-
-        vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-    }
-
     return true;
 }
 
-void VectorArrowRenderer::updateDescriptors(
-    const std::vector<VectorRenderBinding>& vectors,
-    uint32_t maxFramesInFlight,
-    bool forceReallocate) {
-    if (!initialized) {
-        return;
-    }
+VkDescriptorSet VectorArrowRenderer::allocateDescriptorSet(VkDescriptorPool pool) {
+    VkDescriptorSetLayout layouts[] = { descriptorSetLayout };
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = pool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = layouts;
 
-    if (forceReallocate && descriptorPool != VK_NULL_HANDLE) {
-        vkResetDescriptorPool(vulkanDevice.getDevice(), descriptorPool, 0);
-        vectorDescriptorSets.clear();
-    }
-
-    std::unordered_set<uint64_t> liveKeys;
-    liveKeys.reserve(vectors.size());
-
-    for (const VectorRenderBinding& vector : vectors) {
-        if (vector.bindingKey == 0 || vector.gradientBuffer == VK_NULL_HANDLE || vector.sampleCount == 0) {
-            continue;
-        }
-
-        liveKeys.insert(vector.bindingKey);
-        auto& sets = vectorDescriptorSets[vector.bindingKey];
-        if (!updateDescriptorSetVector(vector, maxFramesInFlight, sets)) {
-            vectorDescriptorSets.erase(vector.bindingKey);
-            std::cerr << "VectorArrowRenderer: Failed to allocate/update vector descriptor sets"
-                      << " bindingKey=" << vector.bindingKey
-                      << std::endl;
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    if (vkAllocateDescriptorSets(vulkanDevice.getDevice(), &allocInfo, &set) != VK_SUCCESS) {
+        static bool loggedOnce = false;
+        if (!loggedOnce) {
+            std::cerr << "VectorArrowRenderer: Descriptor pool exhaustion / failed to allocate descriptor set." << std::endl;
+            loggedOnce = true;
         }
     }
+    return set;
+}
 
-    for (auto it = vectorDescriptorSets.begin(); it != vectorDescriptorSets.end();) {
-        if (liveKeys.find(it->first) == liveKeys.end()) {
-            it = vectorDescriptorSets.erase(it);
-        } else {
-            ++it;
-        }
-    }
+void VectorArrowRenderer::updateDescriptorSet(VkDescriptorSet set, uint32_t frameIndex, const VectorRenderBinding& binding) {
+    VkDescriptorBufferInfo surfaceInfo{};
+    surfaceInfo.buffer = binding.surfaceBuffer;
+    surfaceInfo.offset = binding.surfaceBufferOffset;
+    surfaceInfo.range = VK_WHOLE_SIZE;
+
+    VkDescriptorBufferInfo gradientInfo{};
+    gradientInfo.buffer = binding.gradientBuffer;
+    gradientInfo.offset = binding.gradientBufferOffset;
+    gradientInfo.range = VK_WHOLE_SIZE;
+
+    VkDescriptorBufferInfo uboInfo{};
+    uboInfo.buffer = uniformBufferManager.getUniformBuffers()[frameIndex];
+    uboInfo.offset = uniformBufferManager.getUniformBufferOffsets()[frameIndex];
+    uboInfo.range = sizeof(UniformBufferObject);
+
+    std::array<VkWriteDescriptorSet, 3> writes{};
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = set;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[0].descriptorCount = 1;
+    writes[0].pBufferInfo = &surfaceInfo;
+
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = set;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[1].descriptorCount = 1;
+    writes[1].pBufferInfo = &gradientInfo;
+
+    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[2].dstSet = set;
+    writes[2].dstBinding = 2;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[2].descriptorCount = 1;
+    writes[2].pBufferInfo = &uboInfo;
+
+    vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
 bool VectorArrowRenderer::createPipeline(VkRenderPass renderPass) {
@@ -255,19 +211,19 @@ bool VectorArrowRenderer::createPipeline(VkRenderPass renderPass) {
         return false;
     }
 
-    VkPipelineShaderStageCreateInfo vertStage{};
-    vertStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vertStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vertStage.module = vertShaderModule;
-    vertStage.pName = "main";
+    VkPipelineShaderStageCreateInfo shaderStages[2]{};
+    shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    shaderStages[0].module = vertShaderModule;
+    shaderStages[0].pName = "main";
 
-    VkPipelineShaderStageCreateInfo fragStage{};
-    fragStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragStage.module = fragShaderModule;
-    fragStage.pName = "main";
+    shaderStages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    shaderStages[1].module = fragShaderModule;
+    shaderStages[1].pName = "main";
 
-    VkPipelineShaderStageCreateInfo shaderStages[] = { vertStage, fragStage };
+    VkPipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 
     VkVertexInputBindingDescription bindingDescription{};
     bindingDescription.binding = 0;
@@ -280,8 +236,6 @@ bool VectorArrowRenderer::createPipeline(VkRenderPass renderPass) {
     attributeDescription.format = VK_FORMAT_R32G32B32_SFLOAT;
     attributeDescription.offset = 0;
 
-    VkPipelineVertexInputStateCreateInfo vertexInput{};
-    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertexInput.vertexBindingDescriptionCount = 1;
     vertexInput.pVertexBindingDescriptions = &bindingDescription;
     vertexInput.vertexAttributeDescriptionCount = 1;
@@ -340,11 +294,7 @@ bool VectorArrowRenderer::createPipeline(VkRenderPass renderPass) {
     colorBlending.attachmentCount = 2;
     colorBlending.pAttachments = colorAttachments;
 
-    std::array<VkDynamicState, 2> dynamicStates = {
-        VK_DYNAMIC_STATE_VIEWPORT,
-        VK_DYNAMIC_STATE_SCISSOR,
-    };
-
+    std::vector<VkDynamicState> dynamicStates = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
     VkPipelineDynamicStateCreateInfo dynamicState{};
     dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
     dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
@@ -402,14 +352,17 @@ bool VectorArrowRenderer::createPipeline(VkRenderPass renderPass) {
 void VectorArrowRenderer::render(
     VkCommandBuffer commandBuffer,
     uint32_t frameIndex,
-    const std::vector<VectorRenderBinding>& vectors) const {
+    const std::vector<VectorRenderBinding>& vectors) {
     if (!initialized ||
         pipeline == VK_NULL_HANDLE ||
         pipelineLayout == VK_NULL_HANDLE ||
         vertexBuffer == VK_NULL_HANDLE ||
-        vectors.empty()) {
+        vectors.empty() ||
+        frameIndex >= descriptorPools.size()) {
         return;
     }
+
+    vkResetDescriptorPool(vulkanDevice.getDevice(), descriptorPools[frameIndex], 0);
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
@@ -418,15 +371,16 @@ void VectorArrowRenderer::render(
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, vertexOffsets);
 
     for (const VectorRenderBinding& vector : vectors) {
-        if (vector.bindingKey == 0 || vector.gradientBuffer == VK_NULL_HANDLE || vector.sampleCount == 0) {
+        if (vector.bindingKey == 0) {
             continue;
         }
 
-        auto descriptorIt = vectorDescriptorSets.find(vector.bindingKey);
-        if (descriptorIt == vectorDescriptorSets.end() || frameIndex >= descriptorIt->second.size()) {
+        VkDescriptorSet set = allocateDescriptorSet(descriptorPools[frameIndex]);
+        if (set == VK_NULL_HANDLE) {
             continue;
         }
-        const VkDescriptorSet descriptorSet = descriptorIt->second[frameIndex];
+
+        updateDescriptorSet(set, frameIndex, vector);
 
         vkCmdBindDescriptorSets(
             commandBuffer,
@@ -434,7 +388,7 @@ void VectorArrowRenderer::render(
             pipelineLayout,
             0,
             1,
-            &descriptorSet,
+            &set,
             0,
             nullptr);
 
@@ -464,10 +418,12 @@ void VectorArrowRenderer::cleanup() {
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
         pipelineLayout = VK_NULL_HANDLE;
     }
-    if (descriptorPool != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-        descriptorPool = VK_NULL_HANDLE;
+    for (auto pool : descriptorPools) {
+        if (pool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(device, pool, nullptr);
+        }
     }
+    descriptorPools.clear();
     if (descriptorSetLayout != VK_NULL_HANDLE) {
         vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
         descriptorSetLayout = VK_NULL_HANDLE;
@@ -475,6 +431,5 @@ void VectorArrowRenderer::cleanup() {
     freeBuffer(memoryAllocator, vertexBuffer, vertexBufferOffset);
 
     vertexCount = 0;
-    vectorDescriptorSets.clear();
     initialized = false;
 }

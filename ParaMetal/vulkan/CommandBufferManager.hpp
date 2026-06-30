@@ -9,7 +9,7 @@ public:
     ~CommandPool();
     
     VkCommandBuffer beginCommands();  
-    void endCommands(VkCommandBuffer commandBuffer);
+    bool endCommands(VkCommandBuffer commandBuffer);
 
     void copyBuffer(VkBuffer srcBuffer, VkDeviceSize srcOffset, VkBuffer dstBuffer, VkDeviceSize dstOffset, VkDeviceSize size);
     void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);

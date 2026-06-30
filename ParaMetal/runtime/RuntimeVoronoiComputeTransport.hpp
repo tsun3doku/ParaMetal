@@ -1,11 +1,8 @@
 #pragma once
 
 #include "heat/VoronoiSystemComputeController.hpp"
-#include "runtime/RuntimeECS.hpp"
 #include "runtime/RuntimePackages.hpp"
-
-#include <unordered_set>
-#include <vector>
+#include "runtime/RuntimeProductManager.hpp"
 
 class RuntimeVoronoiComputeTransport {
 public:
@@ -13,22 +10,14 @@ public:
         controller = updatedController;
     }
 
-    void setECSRegistry(ECSRegistry* updatedRegistry) {
-        ecsRegistry = updatedRegistry;
+    void setProducts(RuntimeProductManager* updatedProducts) {
+        products = updatedProducts;
     }
 
-    void sync(const ECSRegistry& registry);
-    void finalizeSync();
+    ProductHandle apply(uint64_t socketKey, const VoronoiPackage& package);
+    void remove(uint64_t socketKey);
 
 private:
-    bool tryBuildConfig(uint64_t socketKey, const VoronoiPackage& package, VoronoiSystemComputeController::Config& outConfig) const;
-    void removePublishedProduct(uint64_t socketKey);
-    void publishProduct(uint64_t socketKey);
-    bool buildProduct(uint64_t socketKey, VoronoiProduct& outProduct) const;
-    uint64_t buildConfigInputHash(uint64_t socketKey, const VoronoiPackage& package) const;
-
     VoronoiSystemComputeController* controller = nullptr;
-    ECSRegistry* ecsRegistry = nullptr;
-    std::unordered_set<uint64_t> activeSocketKeys;
-    std::unordered_map<uint64_t, uint64_t> appliedConfigInputHash;
+    RuntimeProductManager* products = nullptr;
 };

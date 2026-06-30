@@ -35,7 +35,7 @@ bool findFirstUpstreamNodeByType(const NodeGraphState& state, NodeGraphNodeId st
                 continue;
             }
 
-            const NodeGraphEdge* incomingEdge = state.incomingEdge(currentNodeId, inputSocket.id);
+            const NodeGraphEdge* incomingEdge = state.edges.incomingEdge(currentNodeId, inputSocket.id);
             if (!incomingEdge || !incomingEdge->fromNode.isValid()) {
                 continue;
             }
@@ -118,52 +118,31 @@ static bool validateFieldValues(
     return true;
 }
 
-const EvaluatedSocketValue* readEvaluatedInput(
-    const NodeGraphNode& node,
-    NodeGraphSocketId inputSocketId,
-    const NodeGraphKernelExecutionState& executionState) {
-    const auto edgeIt = executionState.incomingEdgeByInputSocket.find(NodeSocketKey(node.id, inputSocketId).value);
-    if (edgeIt == executionState.incomingEdgeByInputSocket.end() || !edgeIt->second) {
-        return nullptr;
-    }
-
-    const NodeGraphEdge& edge = *edgeIt->second;
-    const auto valueIt = executionState.outputBySocket.find(NodeSocketKey(edge.fromNode, edge.fromSocket).value);
-    if (valueIt == executionState.outputBySocket.end()) {
-        return nullptr;
-    }
-
-    return &valueIt->second;
-}
-
-std::vector<const EvaluatedSocketValue*> readEvaluatedInputs(
-    const NodeGraphNode& node,
-    NodeGraphSocketId inputSocketId,
-    const NodeGraphKernelExecutionState& executionState) {
-    std::vector<const EvaluatedSocketValue*> results;
-    const auto edgesIt = executionState.incomingEdgesByInputSocket.find(NodeSocketKey(node.id, inputSocketId).value);
-    if (edgesIt == executionState.incomingEdgesByInputSocket.end() || edgesIt->second.empty()) {
-        return results;
-    }
-
-    results.reserve(edgesIt->second.size());
-    for (const NodeGraphEdge* edge : edgesIt->second) {
-        if (!edge) continue;
-        const auto valueIt = executionState.outputBySocket.find(NodeSocketKey(edge->fromNode, edge->fromSocket).value);
-        if (valueIt != executionState.outputBySocket.end()) {
-            results.push_back(&valueIt->second);
+std::size_t inputIndexOf(const NodeGraphNode& node, NodeGraphSocketId inputSocketId) {
+    for (std::size_t i = 0; i < node.inputs.size(); ++i) {
+        if (node.inputs[i].id == inputSocketId) {
+            return i;
         }
     }
-
-    return results;
+    return node.inputs.size();
 }
 
-const NodeDataBlock* readInputValue(const EvaluatedSocketValue* input) {
-    if (!input || input->status != EvaluatedSocketStatus::Value) {
-        return nullptr;
+std::size_t inputIndexOf(const NodeGraphNode& node, const char* socketName) {
+    for (std::size_t i = 0; i < node.inputs.size(); ++i) {
+        if (node.inputs[i].name == socketName) {
+            return i;
+        }
     }
+    return node.inputs.size();
+}
 
-    return &input->data;
+std::size_t inputIndexOf(const NodeGraphNode& node, NodeGraphValueType socketType) {
+    for (std::size_t i = 0; i < node.inputs.size(); ++i) {
+        if (node.inputs[i].valueType == socketType) {
+            return i;
+        }
+    }
+    return node.inputs.size();
 }
 
 std::string valueTypeToString(NodeGraphValueType value) {
@@ -194,7 +173,7 @@ static const NodeGraphNode* findNode(const NodeGraph& document, NodeGraphNodeId 
     return document.findNode(id);
 }
 static const NodeGraphEdge* findIncomingEdge(const NodeGraphState& state, NodeGraphNodeId toNode, NodeGraphSocketId toSocket) {
-    return state.incomingEdge(toNode, toSocket);
+    return state.edges.incomingEdge(toNode, toSocket);
 }
 static const NodeGraphEdge* findIncomingEdge(const NodeGraph& document, NodeGraphNodeId toNode, NodeGraphSocketId toSocket) {
     return document.findIncomingEdge(toNode, toSocket);

@@ -107,5 +107,7 @@ bool VoronoiPointRuntime::createVoronoiBuffers() {
 }
 
 void VoronoiPointRuntime::cleanup() {
-    freeBuffer(memoryAllocator, candidateBuffer, candidateBufferOffset);
+    // candidateBuffer owned by published VoronoiProduct / RuntimeProducts.
+    candidateBuffer = VK_NULL_HANDLE;
+    candidateBufferOffset = 0;
 }

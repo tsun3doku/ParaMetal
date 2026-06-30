@@ -38,9 +38,9 @@ NodeGraphScene::NodeGraphScene(QObject* parent)
     });
 }
 
-void NodeGraphScene::setBridge(NodeGraphBridge* bridgePtr) {
-    bridge = bridgePtr;
-    editor.setBridge(bridgePtr);
+void NodeGraphScene::setGraph(NodeGraph* graphPtr) {
+    bridge = graphPtr;
+    editor.setGraph(graphPtr);
     if (!bridge) {
         clearSceneState();
         return;
@@ -106,8 +106,7 @@ void NodeGraphScene::applyDelta(const NodeGraphDelta& delta) {
             if (change.reason == NodeGraphChangeReason::State) {
                 const auto itemIt = nodeItemsById.find(change.node.id.value);
                 if (itemIt != nodeItemsById.end() && itemIt->second) {
-                    itemIt->second->setDisplayEnabled(change.node.displayEnabled);
-                    itemIt->second->setFrozen(change.node.frozen);
+                    itemIt->second->setNodeState(change.node.state);
                     break;
                 }
             }
@@ -1025,8 +1024,7 @@ bool NodeGraphScene::handleNodeCapClick(const QPointF& scenePos) {
 
     if (region == nodegraphscene::NodeHitRegion::LeftCap) {
         setSelectedNode(nodeId);
-        if (editor.setNodeFrozen(nodeId, !nodeItem->frozen())) {
-            reportStatus(nodeItem->frozen() ? "Node unfrozen." : "Node frozen.");
+        if (editor.toggleNodeFrozen(nodeId)) {
             applyPendingChanges();
         }
         return true;
@@ -1034,8 +1032,7 @@ bool NodeGraphScene::handleNodeCapClick(const QPointF& scenePos) {
 
     if (region == nodegraphscene::NodeHitRegion::RightCap) {
         setSelectedNode(nodeId);
-        if (editor.setNodeDisplayEnabled(nodeId, !nodeItem->displayEnabled())) {
-            reportStatus(nodeItem->displayEnabled() ? "Node display disabled." : "Node display enabled.");
+        if (editor.toggleNodeDisplay(nodeId)) {
             applyPendingChanges();
         }
         return true;

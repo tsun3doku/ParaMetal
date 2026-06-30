@@ -32,12 +32,12 @@ private:
     bool createWireframeTexture();
     void pruneStaleSocketResources();
     void releaseDescriptorSetsForSocket(uint64_t socketKey);
-    void allocateDescriptorSetsForSocket(uint64_t socketKey, uint32_t maxFramesInFlight);
-    void allocateNormalsDescriptorSetsForSocket(uint64_t socketKey, uint32_t maxFramesInFlight);
-    void allocateVertexNormalsDescriptorSetsForSocket(uint64_t socketKey, uint32_t maxFramesInFlight);
-    void updatePayloadDescriptorSetsForSocket(uint64_t socketKey, const RemeshDisplayController::Config& config);
-    void updatePayloadNormalsDescriptorSetsForSocket(uint64_t socketKey, const RemeshDisplayController::Config& config);
-    void updatePayloadVertexNormalsDescriptorSetsForSocket(uint64_t socketKey, const RemeshDisplayController::Config& config);
+    void allocateSupportingHalfedgeDescriptorSets(uint64_t socketKey, uint32_t maxFramesInFlight);
+    void allocateFaceNormalDescriptorSets(uint64_t socketKey, uint32_t maxFramesInFlight);
+    void allocateVertexNormalDescriptorSets(uint64_t socketKey, uint32_t maxFramesInFlight);
+    void updateSupportingHalfedgeDescriptorSet(uint64_t socketKey, const RemeshDisplayController::Config& config, uint32_t currentFrame);
+    void updateFaceNormalDescriptorSet(uint64_t socketKey, const RemeshDisplayController::Config& config, uint32_t currentFrame);
+    void updateVertexNormalDescriptorSet(uint64_t socketKey, const RemeshDisplayController::Config& config, uint32_t currentFrame);
 
     bool createSupportingHalfedgeDescriptorPool(uint32_t maxFramesInFlight);
     bool createSupportingHalfedgeDescriptorSetLayout();

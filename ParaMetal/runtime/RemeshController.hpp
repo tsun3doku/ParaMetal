@@ -8,16 +8,16 @@
 
 #include "mesh/remesher/Remesher.hpp"
 #include "runtime/RemeshSystem.hpp"
-#include "runtime/RuntimeProducts.hpp"
 
 class MemoryAllocator;
 class ModelRegistry;
 class VulkanDevice;
 
+struct RemeshProduct;
+
 class RemeshController {
 public:
     struct Config {
-        uint64_t socketKey = 0;
         std::vector<float> pointPositions;
         std::vector<uint32_t> triangleIndices;
         int iterations = 1;
@@ -30,13 +30,10 @@ public:
 
     RemeshController(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, ModelRegistry& resourceManager, std::atomic<bool>& isOperating);
 
-    void configure(const Config& config);
-    void disable(uint64_t socketKey);
-    void disable();
-    const RemeshSystem* getSystem(uint64_t socketKey) const;
-
-    Remesher& getRemesher() { return remesher; }
-    const Remesher& getRemesher() const { return remesher; }
+    void apply(uint64_t socketKey, const Config& config);
+    bool buildProduct(uint64_t socketKey, RemeshProduct& product);
+    void remove(uint64_t socketKey);
+    void disableAll();
 
 private:
     class OperatingScope {
@@ -54,5 +51,4 @@ private:
     std::atomic<bool>& isOperating;
     Remesher remesher;
     std::unordered_map<uint64_t, std::unique_ptr<RemeshSystem>> activeSystems;
-    std::unordered_map<uint64_t, Config> configuredConfigs;
 };

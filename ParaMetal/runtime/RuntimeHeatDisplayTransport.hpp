@@ -2,7 +2,8 @@
 
 #include "nodegraph/NodeGraphProductTypes.hpp"
 #include "runtime/HeatDisplayController.hpp"
-#include "runtime/RuntimeECS.hpp"
+#include "runtime/RuntimePackageManager.hpp"
+#include "runtime/RuntimeProductManager.hpp"
 
 #include <algorithm>
 #include <iostream>
@@ -15,37 +16,30 @@ public:
         controller = updatedController;
     }
 
-    void setECSRegistry(ECSRegistry* updatedRegistry) {
-        ecsRegistry = updatedRegistry;
+    void setManagers(RuntimePackageManager*, RuntimeProductManager* updatedProducts) {
+        products = updatedProducts;
     }
 
-    void setVisibleKeys(const std::unordered_set<uint64_t>* keys) {
-        visibleKeys = keys;
-    }
-
-    void sync(const ECSRegistry& registry) {
+    void sync(const RuntimePackageManager& registry, const std::unordered_set<uint64_t>& visibleKeys) {
         if (!controller) {
             return;
         }
 
         std::unordered_set<uint64_t> nextSocketKeys;
-        auto view = registry.view<HeatPackage>(entt::exclude<Stale>);
-        for (auto entity : view) {
-            uint64_t socketKey = static_cast<uint64_t>(entity);
-            if (visibleKeys && visibleKeys->find(socketKey) == visibleKeys->end()) {
-                continue;
+        registry.forEach<HeatPackage>([&](uint64_t socketKey, const HeatPackage& package) {
+            if (visibleKeys.find(socketKey) == visibleKeys.end()) {
+                return;
             }
 
-            const auto& package = registry.get<HeatPackage>(entity);
             HeatDisplayController::Config config{};
             if (!tryBuildConfig(socketKey, package, config)) {
                 controller->remove(socketKey);
-                continue;
+                return;
             }
 
             controller->apply(socketKey, config);
             nextSocketKeys.insert(socketKey);
-        }
+        });
 
         for (uint64_t socketKey : activeSocketKeys) {
             if (nextSocketKeys.find(socketKey) == nextSocketKeys.end()) {
@@ -64,15 +58,18 @@ public:
     }
 
 private:
-    bool tryBuildConfig(uint64_t socketKey, const HeatPackage& package, HeatDisplayController::Config& outConfig) const {
-        if (!controller || !ecsRegistry || socketKey == 0) {
+    bool tryBuildConfig(
+        uint64_t socketKey,
+        const HeatPackage& package,
+        HeatDisplayController::Config& outConfig) const {
+        if (!controller || !products || socketKey == 0) {
             return false;
         }
         if (!package.display.anyVisible()) {
             return false;
         }
 
-        const HeatProduct* computeProduct = tryGetProduct<HeatProduct>(*ecsRegistry, socketKey);
+        const HeatProduct* computeProduct = products->resolve<HeatProduct>(package.productHandle);
         if (!computeProduct || !computeProduct->isValid()) {
             return false;
         }
@@ -85,12 +82,12 @@ private:
         outConfig.heatPaletteMinTemp = package.display.heatPaletteMinTemp;
         outConfig.heatPaletteMaxTemp = package.display.heatPaletteMaxTemp;
         outConfig.authoredActive = package.authored.active;
-        outConfig.active = computeProduct->active;
-        outConfig.paused = computeProduct->paused;
+        outConfig.active = package.authored.active;
+        outConfig.paused = package.authored.paused;
 
-        for (size_t i = 0; i < package.resolvedRemeshHandles.size(); ++i) {
-            const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, package.resolvedModelHandles[i].key);
-            const RemeshProduct* remeshProduct = tryGetProduct<RemeshProduct>(*ecsRegistry, package.resolvedRemeshHandles[i].key);
+        for (size_t i = 0; i < package.remeshProducts.size(); ++i) {
+            const ModelProduct* modelProduct = products->resolve<ModelProduct>(package.modelProducts[i]);
+            const RemeshProduct* remeshProduct = products->resolve<RemeshProduct>(package.remeshProducts[i]);
             if (!remeshProduct || !modelProduct || modelProduct->runtimeModelId == 0) {
                 return false;
             }
@@ -155,6 +152,8 @@ private:
                 outConfig.modelSurfaceGradientBuffers.push_back(VK_NULL_HANDLE);
                 outConfig.modelSurfaceGradientBufferOffsets.push_back(0);
             }
+
+
         }
 
         outConfig.displayHash = buildDisplayHash(outConfig, computeProduct->hashes.display);
@@ -162,7 +161,6 @@ private:
     }
 
     HeatDisplayController* controller = nullptr;
-    ECSRegistry* ecsRegistry = nullptr;
-    const std::unordered_set<uint64_t>* visibleKeys = nullptr;
+    RuntimeProductManager* products = nullptr;
     std::unordered_set<uint64_t> activeSocketKeys;
 };

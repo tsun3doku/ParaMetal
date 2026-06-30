@@ -222,6 +222,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
   <ItemGroup>
     <ClCompile Include="nodegraph\NodeGraphRegistry.cpp" />
     <ClCompile Include="nodegraph\NodeGraphTypeRegistry.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphNodeState.cpp" />
     <ClCompile Include="nodegraph\NodeGraphInit.cpp" />
     <ClCompile Include="nodegraph\NodeGraphParamUtils.cpp" />
     <ClCompile Include="nodegraph\NodeGraphUtils.cpp" />
@@ -246,6 +247,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="runtime\RemeshDisplayController.cpp" />
     <ClCompile Include="runtime\RemeshController.cpp" />
     <ClCompile Include="runtime\RemeshSystem.cpp" />
+    <ClCompile Include="runtime\RuntimeProductManager.cpp" />
     <ClCompile Include="runtime\RuntimePackageCompiler.cpp" />
     <ClCompile Include="runtime\RuntimeModelComputeTransport.cpp" />
     <ClCompile Include="runtime\RuntimeModelDisplayTransport.cpp" />
@@ -253,6 +255,9 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="runtime\PointComputeRuntime.cpp" />
     <ClCompile Include="runtime\PointDisplayController.cpp" />
     <ClCompile Include="runtime\RuntimeVoronoiComputeTransport.cpp" />
+    <ClCompile Include="runtime\RuntimeRemeshComputeTransport.cpp" />
+    <ClCompile Include="runtime\RuntimeContactComputeTransport.cpp" />
+    <ClCompile Include="runtime\RuntimeHeatComputeTransport.cpp" />
     <ClCompile Include="runtime\VoronoiDisplayController.cpp" />
     <ClCompile Include="runtime\RuntimeController.cpp" />
     <ClCompile Include="runtime\RenderSettingsManager.cpp" />
@@ -320,7 +325,6 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="heat\HeatSystemDebugStage.cpp" />
     <ClCompile Include="scene\LightingSystem.cpp" />
     <ClCompile Include="scene\MaterialSystem.cpp" />
-    <ClCompile Include="nodegraph\NodeGraphBridge.cpp" />
     <ClCompile Include="nodegraph\NodeGraphController.cpp" />
     <ClCompile Include="nodegraph\NodeGraph.cpp" />
     <ClCompile Include="nodegraph\NodeGraphSave.cpp" />
@@ -332,6 +336,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="hash\HashNodeCache.cpp" />
     <ClCompile Include="hash\HashPackage.cpp" />
     <ClCompile Include="hash\HashProduct.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphEdges.cpp" />
     <ClCompile Include="nodegraph\NodeGraphRuntime.cpp" />
     <ClCompile Include="nodegraph\NodeGraphKernels.cpp" />
     <ClCompile Include="nodegraph\NodePayloadRegistry.cpp" />
@@ -511,6 +516,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="heat\TimelineSimulation.hpp" />
     <ClInclude Include="nodegraph\NodeGraphCoreTypes.hpp" />
     <ClInclude Include="nodegraph\NodeGraphPayloadTypes.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphNodeState.hpp" />
     <ClInclude Include="nodegraph\NodeGraphRegistry.hpp" />
     <ClInclude Include="nodegraph\NodeGraphTypeRegistry.hpp" />
     <ClInclude Include="nodegraph\NodeGraphInit.hpp" />
@@ -564,7 +570,9 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="runtime\SceneContext.hpp" />
     <ClInclude Include="runtime\RenderContext.hpp" />
     <ClInclude Include="runtime\RuntimePackageCompiler.hpp" />
+    <ClInclude Include="runtime\RuntimePackageManager.hpp" />
     <ClInclude Include="runtime\RuntimePackages.hpp" />
+    <ClInclude Include="runtime\RuntimeProductManager.hpp" />
     <ClInclude Include="runtime\RuntimeController.hpp" />
     <ClInclude Include="runtime\RenderSettingsManager.hpp" />
     <ClInclude Include="runtime\RenderSettingsController.hpp" />
@@ -574,7 +582,6 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="runtime\RuntimeRenderController.hpp" />
     <ClInclude Include="runtime\RuntimeSystems.hpp" />
     <ClInclude Include="runtime\RuntimeInterfaces.hpp" />
-    <ClInclude Include="runtime\RuntimeECS.hpp" />
     <ClInclude Include="render\WindowRuntimeState.hpp" />
     <ClInclude Include="scene\SceneController.hpp" />
     <ClInclude Include="vulkan\MemoryPool.hpp" />
@@ -637,7 +644,6 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="heat\HeatSystemDebugStage.hpp" />
     <ClInclude Include="scene\LightingSystem.hpp" />
     <ClInclude Include="scene\MaterialSystem.hpp" />
-    <ClInclude Include="nodegraph\NodeGraphBridge.hpp" />
     <ClInclude Include="nodegraph\NodeGraphController.hpp" />
     <ClInclude Include="nodegraph\NodeGraph.hpp" />
     <ClInclude Include="nodegraph\NodeGraphSave.hpp" />
@@ -645,12 +651,15 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <QtMoc Include="nodegraph\ui\scene\NodeGraphEditorWidget.hpp" />
     <ClInclude Include="nodegraph\NodeGraphEditor.hpp" />
     <ClInclude Include="nodegraph\NodeGraphDataTypes.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphEdges.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphEvaluatedTypes.hpp" />
     <ClInclude Include="hash\HashBuilder.hpp" />
     <ClInclude Include="hash\HashNodeCache.hpp" />
     <ClInclude Include="hash\HashPackage.hpp" />
     <ClInclude Include="hash\HashProduct.hpp" />
     <ClInclude Include="hash\HashValues.hpp" />
     <ClInclude Include="nodegraph\NodeGraphRuntime.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphState.hpp" />
     <ClInclude Include="nodegraph\NodeGraphDebugCache.hpp" />
     <ClInclude Include="nodegraph\NodeGraphKernels.hpp" />
     <ClInclude Include="nodegraph\NodeModel.hpp" />

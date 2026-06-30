@@ -46,6 +46,7 @@ void HeatOverlayRenderer::apply(uint64_t socketKey, const HeatDisplayController:
         return;
     }
 
+
     configsBySocket[socketKey] = config;
     rebuildBindings();
 }
@@ -56,6 +57,7 @@ void HeatOverlayRenderer::remove(uint64_t socketKey) {
     }
 
     configsBySocket.erase(socketKey);
+
     rebuildBindings();
 }
 
@@ -72,8 +74,8 @@ void HeatOverlayRenderer::rebuildBindings() {
     float heatPaletteMax = 100.0f;
 
     for (const auto& [socketKey, config] : configsBySocket) {
-        (void)socketKey;
         if (!config.active && !config.paused) {
+
             continue;
         }
 
@@ -87,7 +89,28 @@ void HeatOverlayRenderer::rebuildBindings() {
             surfaceBindings.reserve(surfaceBindings.size() + config.models.size());
             for (size_t index = 0; index < config.models.size(); ++index) {
                 const auto& modelProduct = config.models[index];
-                if (!modelProduct.isValid()) {
+                if (!modelProduct.isValid() ||
+                    modelProduct.runtimeModelId == 0 ||
+                    modelProduct.renderVertexBuffer == VK_NULL_HANDLE ||
+                    modelProduct.renderIndexBuffer == VK_NULL_HANDLE ||
+                    modelProduct.renderIndexCount == 0) {
+                    continue;
+                }
+
+                if (index >= config.modelSurfaceBuffers.size() ||
+                    config.modelSurfaceBuffers[index] == VK_NULL_HANDLE ||
+                    index >= config.modelBufferViews.size()) {
+                    continue;
+                }
+
+                bool viewsValid = true;
+                for (int j = 0; j < 10; ++j) {
+                    if (config.modelBufferViews[index][j] == VK_NULL_HANDLE) {
+                        viewsValid = false;
+                        break;
+                    }
+                }
+                if (!viewsValid) {
                     continue;
                 }
 
@@ -102,6 +125,7 @@ void HeatOverlayRenderer::rebuildBindings() {
                 binding.bufferViews = config.modelBufferViews[index];
                 binding.surfaceBuffer = config.modelSurfaceBuffers[index];
                 binding.surfaceBufferOffset = config.modelSurfaceBufferOffsets[index];
+
                 surfaceBindings.push_back(binding);
             }
         }
@@ -110,6 +134,7 @@ void HeatOverlayRenderer::rebuildBindings() {
             for (size_t index = 0; index < config.models.size(); ++index) {
                 if (config.models[index].isValid() &&
                     index < config.modelSurfaceBuffers.size() &&
+                    config.modelSurfaceBuffers[index] != VK_NULL_HANDLE &&
                     index < config.modelSurfaceBufferOffsets.size() &&
                     index < config.modelSurfaceGradientBuffers.size() &&
                     index < config.modelSurfaceGradientBufferOffsets.size() &&
@@ -125,14 +150,14 @@ void HeatOverlayRenderer::rebuildBindings() {
                     vectorBinding.sampleCount = config.modelSurfacePointCounts[index];
                     vectorBinding.modelMatrix = config.models[index].modelMatrix;
                     vectorBinding.scale = config.fluxVectorScale;
+
                     fluxVectorBindings.push_back(vectorBinding);
                 }
             }
         }
     }
 
-    surfaceRenderer->updateDescriptors(surfaceBindings, maxFramesInFlight, true);
-    vectorArrowRenderer->updateDescriptors(fluxVectorBindings, maxFramesInFlight, true);
+
 
     if (heatPaletteRenderer) {
         heatPaletteRenderer->setVisible(heatPaletteVisible);

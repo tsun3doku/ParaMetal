@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-class NodeGraphBridge;
+class NodeGraph;
 
 class NodeGraphEditor {
 public:
@@ -28,17 +28,17 @@ public:
     };
 
     NodeGraphEditor() = default;
-    explicit NodeGraphEditor(NodeGraphBridge* bridge);
-    explicit NodeGraphEditor(NodeGraphBridge& bridge);
+    explicit NodeGraphEditor(NodeGraph* bridge);
+    explicit NodeGraphEditor(NodeGraph& bridge);
 
-    void setBridge(NodeGraphBridge* bridgePtr);
+    void setGraph(NodeGraph* graphPtr);
     void resetToDefaultGraph();
 
     NodeGraphNodeId addNode(const NodeTypeId& typeId, const std::string& title, float x, float y);
     bool removeNode(NodeGraphNodeId nodeId);
     bool moveNode(NodeGraphNodeId nodeId, float x, float y);
-    bool setNodeDisplayEnabled(NodeGraphNodeId nodeId, bool enabled);
-    bool setNodeFrozen(NodeGraphNodeId nodeId, bool frozen);
+    bool toggleNodeFrozen(NodeGraphNodeId nodeId);
+    bool toggleNodeDisplay(NodeGraphNodeId nodeId);
     bool setNodeParameter(NodeGraphNodeId nodeId, const NodeGraphParamValue& parameter);
     bool updateNodeParameter(NodeGraphNodeId nodeId, uint32_t paramId, const std::function<bool(NodeGraphParamValue&)>& updater);
     bool connectSockets(
@@ -57,5 +57,5 @@ public:
         std::vector<NodeGraphNodeId>& outCreatedNodeIds);
 
 private:
-    NodeGraphBridge* bridge = nullptr;
+    NodeGraph* bridge = nullptr;
 };

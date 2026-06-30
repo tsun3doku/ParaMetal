@@ -1,6 +1,6 @@
 #include "NodeVoronoiPanel.hpp"
 #include "nodegraph/NodeGraphRegistry.hpp"
-#include "nodegraph/NodeGraphBridge.hpp"
+#include "nodegraph/NodeGraph.hpp"
 #include "nodegraph/NodeGraphEditor.hpp"
 #include "NodeGraphSliderRow.hpp"
 #include "nodegraph/NodeVoronoiParams.hpp"

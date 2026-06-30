@@ -19,40 +19,40 @@ const char* NodeMerge::typeId() const {
     return nodegraphtypes::Merge;
 }
 
-void NodeMerge::execute(NodeGraphKernelContext& context) const {
-    NodePayloadRegistry* const payloadRegistry = context.executionState.services.payloadRegistry;
+void NodeMerge::execute(NodeKernelEval& eval) const {
+    NodePayloadRegistry* const payloadRegistry = eval.runtime.payloadRegistry;
     if (!payloadRegistry) {
         return;
     }
 
-    const NodeGraphSocket* inSocket = context.node.input("Geometry");
-    if (!inSocket) {
+    const std::size_t geometrySocketIndex = inputIndexOf(eval.node, "Geometry");
+    if (geometrySocketIndex >= eval.inputs.size()) {
         return;
     }
 
-    const auto evals = readEvaluatedInputs(context.node, inSocket->id, context.executionState);
-    
+    const std::vector<const NodeDataBlock*>& inputs = eval.inputs[geometrySocketIndex];
+
     // Determine the effective dataType based on the first valid input
     uint8_t dataType = payloadtypes::None;
-    for (const auto* eval : evals) {
-        if (eval && eval->status == EvaluatedSocketStatus::Value && eval->data.payloadHandle.key != 0) {
-            if (eval->data.dataType == payloadtypes::Points ||
-                eval->data.dataType == payloadtypes::Geometry ||
-                eval->data.dataType == payloadtypes::Remesh) {
-                dataType = eval->data.dataType;
+    for (const NodeDataBlock* block : inputs) {
+        if (block && block->payloadHandle.key != 0) {
+            if (block->dataType == payloadtypes::Points ||
+                block->dataType == payloadtypes::Geometry ||
+                block->dataType == payloadtypes::Remesh) {
+                dataType = block->dataType;
                 break;
             }
         }
     }
 
-    NodeDataBlock& outputValue = context.outputs[0];
+    NodeDataBlock& outputValue = eval.outputs[0];
     outputValue = {};
 
     if (dataType == payloadtypes::Points) {
         std::vector<const PointData*> pointInputs;
-        for (const auto* eval : evals) {
-            if (eval && eval->status == EvaluatedSocketStatus::Value && eval->data.dataType == payloadtypes::Points && eval->data.payloadHandle.key != 0) {
-                const PointData* pointData = payloadRegistry->get<PointData>(eval->data.payloadHandle);
+        for (const NodeDataBlock* block : inputs) {
+            if (block && block->dataType == payloadtypes::Points && block->payloadHandle.key != 0) {
+                const PointData* pointData = payloadRegistry->get<PointData>(block->payloadHandle);
                 if (pointData && pointData->active && !pointData->positions.empty()) {
                     pointInputs.push_back(pointData);
                 }
@@ -81,18 +81,18 @@ void NodeMerge::execute(NodeGraphKernelContext& context) const {
             }
         }
 
-        const uint64_t payloadKey = NodeSocketKey(context.node.id, context.node.outputs[0].id);
+        const uint64_t payloadKey = NodeSocketKey(eval.node.id, eval.node.outputs[0].id);
         outputValue.dataType = payloadtypes::Points;
-        outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, context.outputHashes);
+        outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, eval.outputHashes);
         populateMetadata(outputValue, nullptr, payloadRegistry);
 
     } else if (dataType == payloadtypes::Geometry || dataType == payloadtypes::Remesh) {
         std::vector<const GeometryData*> geometryInputs;
-        for (const auto* eval : evals) {
-            if (eval && eval->status == EvaluatedSocketStatus::Value && 
-                (eval->data.dataType == payloadtypes::Geometry || eval->data.dataType == payloadtypes::Remesh) && 
-                eval->data.payloadHandle.key != 0) {
-                const GeometryData* geometryData = payloadRegistry->resolveGeometry(eval->data.payloadHandle);
+        for (const NodeDataBlock* block : inputs) {
+            if (block &&
+                (block->dataType == payloadtypes::Geometry || block->dataType == payloadtypes::Remesh) &&
+                block->payloadHandle.key != 0) {
+                const GeometryData* geometryData = payloadRegistry->resolveGeometry(block->payloadHandle);
                 if (geometryData && !geometryData->pointPositions.empty()) {
                     geometryInputs.push_back(geometryData);
                 }
@@ -168,21 +168,21 @@ void NodeMerge::execute(NodeGraphKernelContext& context) const {
         payload.groups = mergedGroups;
         payload.triangleGroupIds = mergedTriangleGroupIds;
 
-        const uint64_t payloadKey = NodeSocketKey(context.node.id, context.node.outputs[0].id);
+        const uint64_t payloadKey = NodeSocketKey(eval.node.id, eval.node.outputs[0].id);
         outputValue.dataType = payloadtypes::Geometry;
-        outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, context.outputHashes);
+        outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, eval.outputHashes);
         populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 
-HashValues NodeMerge::computeOutputHashes(const NodeGraphKernelHashContext& context) const {
-    uint64_t hash = HashBuilder::start();
-    HashBuilder::combineString(hash, nodegraphtypes::Merge);
-    HashNodeCache::combineSocketList(hash, context, "Geometry", HashDomain::Geometry);
+HashValues NodeMerge::computeOutputHashes(const NodeKernelHash& hash) const {
+    uint64_t hashValue = HashBuilder::start();
+    HashBuilder::combineString(hashValue, nodegraphtypes::Merge);
+    HashNodeCache::combineSocketList(hashValue, hash, "Geometry", HashDomain::Geometry);
 
     HashValues values{};
-    values.full = hash;
-    values.geometry = hash;
-    values.simulation = hash;
+    values.full = hashValue;
+    values.geometry = hashValue;
+    values.simulation = hashValue;
     return values;
 }

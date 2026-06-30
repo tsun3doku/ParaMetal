@@ -1,4 +1,4 @@
-﻿#include "CommandBufferManager.hpp"
+#include "CommandBufferManager.hpp"
 #include <stdexcept>
 #include <iostream>
 
@@ -50,23 +50,66 @@ VkCommandBuffer CommandPool::beginCommands() {
     return commandBuffer;
 }
 
-void CommandPool::endCommands(VkCommandBuffer commandBuffer) {
-    vkEndCommandBuffer(commandBuffer);
+bool CommandPool::endCommands(VkCommandBuffer commandBuffer) {
+    if (commandBuffer == VK_NULL_HANDLE) {
+        return false;
+    }
+
+    const VkResult endResult = vkEndCommandBuffer(commandBuffer);
+    if (endResult != VK_SUCCESS) {
+        std::cerr << "[CommandPool] Failed to end command buffer from: " << debugName
+                  << " VkResult=" << static_cast<int>(endResult) << std::endl;
+        std::lock_guard<std::mutex> poolLock(poolMutex);
+        vkFreeCommandBuffers(vulkanDevice.getDevice(), pool, 1, &commandBuffer);
+        return false;
+    }
     
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
-    
-    // Protect queue submission with global mutex
-    {
-        std::lock_guard<std::mutex> queueLock(queueSubmitMutex);
-        vkQueueSubmit(vulkanDevice.getGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
-        vkQueueWaitIdle(vulkanDevice.getGraphicsQueue());
+
+    VkFence fence = VK_NULL_HANDLE;
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    const VkResult fenceResult = vkCreateFence(vulkanDevice.getDevice(), &fenceInfo, nullptr, &fence);
+    if (fenceResult != VK_SUCCESS) {
+        std::cerr << "[CommandPool] Failed to create one-shot fence for: " << debugName
+                  << " VkResult=" << static_cast<int>(fenceResult) << std::endl;
+        std::lock_guard<std::mutex> poolLock(poolMutex);
+        vkFreeCommandBuffers(vulkanDevice.getDevice(), pool, 1, &commandBuffer);
+        return false;
     }
     
+    VkResult submitResult = VK_SUCCESS;
+    {
+        std::lock_guard<std::mutex> queueLock(queueSubmitMutex);
+        submitResult = vkQueueSubmit(vulkanDevice.getGraphicsQueue(), 1, &submitInfo, fence);
+    }
+
+    if (submitResult != VK_SUCCESS) {
+        std::cerr << "[CommandPool] Failed to submit one-shot command buffer from: " << debugName
+                  << " VkResult=" << static_cast<int>(submitResult)
+                  << "; leaving command buffer allocated because GPU ownership was not proven."
+                  << std::endl;
+        vkDestroyFence(vulkanDevice.getDevice(), fence, nullptr);
+        return false;
+    }
+
+    const VkResult waitResult = vkWaitForFences(vulkanDevice.getDevice(), 1, &fence, VK_TRUE, UINT64_MAX);
+    if (waitResult != VK_SUCCESS) {
+        std::cerr << "[CommandPool] Failed waiting for one-shot command buffer from: " << debugName
+                  << " VkResult=" << static_cast<int>(waitResult)
+                  << "; leaving command buffer/fence allocated because GPU completion was not proven."
+                  << std::endl;
+        return false;
+    }
+
+    vkDestroyFence(vulkanDevice.getDevice(), fence, nullptr);
+
     std::lock_guard<std::mutex> poolLock(poolMutex);
     vkFreeCommandBuffers(vulkanDevice.getDevice(), pool, 1, &commandBuffer);
+    return true;
 }
 
 void CommandPool::copyBuffer(VkBuffer srcBuffer, VkDeviceSize srcOffset, 

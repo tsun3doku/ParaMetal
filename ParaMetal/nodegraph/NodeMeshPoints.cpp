@@ -13,12 +13,16 @@ const char* NodeMeshPoints::typeId() const {
     return nodegraphtypes::MeshPoints;
 }
 
-void NodeMeshPoints::execute(NodeGraphKernelContext& context) const {
-    NodePayloadRegistry* const payloadRegistry = context.executionState.services.payloadRegistry;
+void NodeMeshPoints::execute(NodeKernelEval& eval) const {
+    NodePayloadRegistry* const payloadRegistry = eval.runtime.payloadRegistry;
+    const std::size_t geometrySocketIndex = inputIndexOf(eval.node, "Geometry");
+    const NodeDataBlock* inputData =
+        (geometrySocketIndex < eval.inputs.size() && !eval.inputs[geometrySocketIndex].empty())
+            ? eval.inputs[geometrySocketIndex].front() : nullptr;
 
-    for (std::size_t outputIndex = 0; outputIndex < context.outputs.size() && outputIndex < context.node.outputs.size(); ++outputIndex) {
-        NodeDataBlock& outputValue = context.outputs[outputIndex];
-        const NodeGraphSocket& outputSocket = context.node.outputs[outputIndex];
+    for (std::size_t outputIndex = 0; outputIndex < eval.outputs.size() && outputIndex < eval.node.outputs.size(); ++outputIndex) {
+        NodeDataBlock& outputValue = eval.outputs[outputIndex];
+        const NodeGraphSocket& outputSocket = eval.node.outputs[outputIndex];
         outputValue = {};
         outputValue.dataType = outputSocket.contract.producedPayloadType;
 
@@ -26,11 +30,6 @@ void NodeMeshPoints::execute(NodeGraphKernelContext& context) const {
             populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
-
-        const NodeGraphSocket* inSocket = context.node.input("Geometry");
-        const EvaluatedSocketValue* inputEval =
-            inSocket ? readEvaluatedInput(context.node, inSocket->id, context.executionState) : nullptr;
-        const NodeDataBlock* inputData = readInputValue(inputEval);
 
         if (!inputData || inputData->payloadHandle.key == 0) {
             populateMetadata(outputValue, nullptr, payloadRegistry);
@@ -57,20 +56,20 @@ void NodeMeshPoints::execute(NodeGraphKernelContext& context) const {
 
         payload.localToWorld = geometryData->localToWorld;
         payload.active = true;
-        const uint64_t payloadKey = NodeSocketKey(context.node.id, outputSocket.id);
-        outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, context.outputHashes);
+        const uint64_t payloadKey = NodeSocketKey(eval.node.id, outputSocket.id);
+        outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, eval.outputHashes);
         populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 
-HashValues NodeMeshPoints::computeOutputHashes(const NodeGraphKernelHashContext& context) const {
-    uint64_t hash = HashBuilder::start();
-    HashBuilder::combineString(hash, nodegraphtypes::MeshPoints);
-    HashNodeCache::combineSocket(hash, context, "Geometry", HashDomain::Geometry);
+HashValues NodeMeshPoints::computeOutputHashes(const NodeKernelHash& hash) const {
+    uint64_t hashValue = HashBuilder::start();
+    HashBuilder::combineString(hashValue, nodegraphtypes::MeshPoints);
+    HashNodeCache::combineSocket(hashValue, hash, "Geometry", HashDomain::Geometry);
 
     HashValues values{};
-    values.full = hash;
-    values.geometry = hash;
-    values.simulation = hash;
+    values.full = hashValue;
+    values.geometry = hashValue;
+    values.simulation = hashValue;
     return values;
 }

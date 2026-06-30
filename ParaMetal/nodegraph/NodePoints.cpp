@@ -15,13 +15,13 @@ const char* NodePoints::typeId() const {
     return nodegraphtypes::Points;
 }
 
-void NodePoints::execute(NodeGraphKernelContext& context) const {
-    const PointsNodeParams params = readPointsNodeParams(context.node);
-    NodePayloadRegistry* const payloadRegistry = context.executionState.services.payloadRegistry;
+void NodePoints::execute(NodeKernelEval& eval) const {
+    const PointsNodeParams params = readPointsNodeParams(eval.node);
+    NodePayloadRegistry* const payloadRegistry = eval.runtime.payloadRegistry;
 
-    for (std::size_t outputIndex = 0; outputIndex < context.outputs.size() && outputIndex < context.node.outputs.size(); ++outputIndex) {
-        NodeDataBlock& outputValue = context.outputs[outputIndex];
-        const NodeGraphSocket& outputSocket = context.node.outputs[outputIndex];
+    for (std::size_t outputIndex = 0; outputIndex < eval.outputs.size() && outputIndex < eval.node.outputs.size(); ++outputIndex) {
+        NodeDataBlock& outputValue = eval.outputs[outputIndex];
+        const NodeGraphSocket& outputSocket = eval.node.outputs[outputIndex];
         outputValue = {};
         outputValue.dataType = outputSocket.contract.producedPayloadType;
 
@@ -66,24 +66,24 @@ void NodePoints::execute(NodeGraphKernelContext& context) const {
         }
 
         payload.active = true;
-        const uint64_t payloadKey = NodeSocketKey(context.node.id, outputSocket.id);
-        outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, context.outputHashes);
+        const uint64_t payloadKey = NodeSocketKey(eval.node.id, outputSocket.id);
+        outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, eval.outputHashes);
         populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 
-HashValues NodePoints::computeOutputHashes(const NodeGraphKernelHashContext& context) const {
-    const PointsNodeParams params = readPointsNodeParams(context.node);
-    uint64_t hash = HashBuilder::start();
-    HashBuilder::combineString(hash, nodegraphtypes::Points);
-    HashBuilder::combine(hash, static_cast<uint64_t>(params.pointCount));
-    HashBuilder::combineFloat(hash, params.dimX);
-    HashBuilder::combineFloat(hash, params.dimY);
-    HashBuilder::combineFloat(hash, params.dimZ);
+HashValues NodePoints::computeOutputHashes(const NodeKernelHash& hash) const {
+    const PointsNodeParams params = readPointsNodeParams(hash.node);
+    uint64_t hashValue = HashBuilder::start();
+    HashBuilder::combineString(hashValue, nodegraphtypes::Points);
+    HashBuilder::combine(hashValue, static_cast<uint64_t>(params.pointCount));
+    HashBuilder::combineFloat(hashValue, params.dimX);
+    HashBuilder::combineFloat(hashValue, params.dimY);
+    HashBuilder::combineFloat(hashValue, params.dimZ);
 
     HashValues values{};
-    values.full = hash;
-    values.geometry = hash;
-    values.simulation = hash;
+    values.full = hashValue;
+    values.geometry = hashValue;
+    values.simulation = hashValue;
     return values;
 }

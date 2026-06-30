@@ -2,6 +2,8 @@
 
 #include "render/HeatOverlayRenderer.hpp"
 
+#include <iostream>
+
 void HeatDisplayController::setOverlayRenderer(render::HeatOverlayRenderer* updatedOverlayRenderer) {
     overlayRenderer = updatedOverlayRenderer;
 }

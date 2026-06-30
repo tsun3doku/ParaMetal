@@ -10,7 +10,7 @@
 
 class Camera;
 class GizmoController;
-class NodeGraphBridge;
+class NodeGraph;
 class ModelSelection;
 class ModelRegistry;
 class SceneController;
@@ -23,7 +23,7 @@ public:
         ModelSelection& modelSelection,
         ModelRegistry& resourceManager,
         SceneController& sceneController,
-        NodeGraphBridge& nodeGraphBridge,
+        NodeGraph& graph,
         const SwapchainManager& swapchainManager,
         InputActionHandler& actionHandler);
     ~InputController() = default;
@@ -47,7 +47,7 @@ private:
     ModelSelection& modelSelection;
     ModelRegistry& resourceManager;
     SceneController& sceneController;
-    NodeGraphBridge& nodeGraphBridge;
+    NodeGraph& graph;
     const SwapchainManager& swapchainManager;
     InputActionHandler& actionHandler;
 

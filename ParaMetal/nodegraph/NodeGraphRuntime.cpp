@@ -2,127 +2,147 @@
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
 
-#include "NodeGraphBridge.hpp"
 #include "NodePayloadRegistry.hpp"
 
+#include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
-NodeGraphRuntime::NodeGraphRuntime(NodeGraphBridge* nodeGraphBridge, const NodeRuntimeServices& services)
-    : bridge(nodeGraphBridge),
-      runtimeServices(services) {
+NodeGraphRuntime::NodeGraphRuntime(const NodeRuntimeServices& services)
+    : runtimeServices(services) {
 }
 
 NodeGraphRuntime::~NodeGraphRuntime() = default;
 
-EvaluatedSocketValue NodeGraphRuntime::makeMissingSocketValue() const {
-    EvaluatedSocketValue value{};
-    value.status = EvaluatedSocketStatus::Missing;
-    return value;
+void NodeGraphRuntime::setOutputProductHandle(
+    uint64_t socketKey,
+    const ProductHandle& productHandle) {
+    if (socketKey == 0) {
+        return;
+    }
+
+    if (productHandle.isValid()) {
+        productBySocket[socketKey] = productHandle;
+        currentEvaluationState.productBySocket[socketKey] = productHandle;
+    } else {
+        productBySocket.erase(socketKey);
+        currentEvaluationState.productBySocket.erase(socketKey);
+    }
 }
 
-EvaluatedSocketValue NodeGraphRuntime::makeErrorSocketValue(std::string error) const {
-    EvaluatedSocketValue value{};
-    value.status = EvaluatedSocketStatus::Error;
-    value.error = std::move(error);
-    return value;
+void NodeGraphRuntime::publishOutputs(
+    const NodeGraphNode& node,
+    const std::vector<NodeDataBlock>& outputs,
+    NodeGraphEvaluationState& state,
+    bool frozen) const {
+    const std::size_t count = std::min(outputs.size(), node.outputs.size());
+    for (std::size_t i = 0; i < count; ++i) {
+        EvaluatedSocketValue value{};
+        value.status = EvaluatedSocketStatus::Value;
+        value.data = outputs[i];
+        value.data.isFrozen = frozen;
+        state.outputBySocket[NodeSocketKey(node.id, node.outputs[i].id).value] = value;
+    }
 }
 
-EvaluatedSocketValue NodeGraphRuntime::makeValueSocketValue(const NodeDataBlock& data) const {
-    EvaluatedSocketValue value{};
-    value.status = EvaluatedSocketStatus::Value;
-    value.data = data;
-    return value;
+bool NodeGraphRuntime::publishCachedOutputs(
+    const NodeGraphNode& node,
+    NodeGraphEvaluationState& state) const {
+    const auto it = cachedOutputsByNodeId.find(node.id.value);
+    if (it == cachedOutputsByNodeId.end() ||
+        it->second.outputs.size() != node.outputs.size()) {
+        return false;
+    }
+
+    publishOutputs(node, it->second.outputs, state, it->second.pinned);
+    return true;
 }
 
-void NodeGraphRuntime::propagateSkippedNodeOutputs(
+void NodeGraphRuntime::publishBlockedOutputs(
     const NodeGraphNode& node,
     EvaluatedSocketStatus status,
     const std::string& error,
     NodeGraphEvaluationState& state) const {
-    const EvaluatedSocketValue skippedValue =
-        (status == EvaluatedSocketStatus::Error)
-        ? makeErrorSocketValue(error)
-        : makeMissingSocketValue();
+    EvaluatedSocketValue blockedValue{};
+    blockedValue.status = status;
+    if (status == EvaluatedSocketStatus::Error) {
+        blockedValue.error = error;
+    }
     for (const NodeGraphSocket& outputSocket : node.outputs) {
-        state.outputBySocket[NodeSocketKey(node.id, outputSocket.id).value] = skippedValue;
+        state.outputBySocket[NodeSocketKey(node.id, outputSocket.id).value] = blockedValue;
     }
 }
 
-bool NodeGraphRuntime::evaluateNodeInputs(
+NodeGraphRuntime::EvaluatedNodeInputs NodeGraphRuntime::evaluateNodeInputs(
     const NodeGraphNode& node,
-    const std::unordered_map<uint64_t, const NodeGraphEdge*>& incomingEdgeByInputSocket,
-    const NodeGraphEvaluationState& state,
-    std::vector<const EvaluatedSocketValue*>& outInputs,
-    EvaluatedSocketStatus& outStatus,
-    std::string& outError) const {
-    outInputs.assign(node.inputs.size(), nullptr);
-    outStatus = EvaluatedSocketStatus::Value;
-    outError.clear();
+    const NodeGraphState& graphState,
+    const NodeGraphEvaluationState& state) const {
+
+    EvaluatedNodeInputs result;
+    result.values.assign(node.inputs.size(), {});
 
     for (std::size_t inputIndex = 0; inputIndex < node.inputs.size(); ++inputIndex) {
         const NodeGraphSocket& inputSocket = node.inputs[inputIndex];
-        const auto edgeIt = incomingEdgeByInputSocket.find(NodeSocketKey(node.id, inputSocket.id).value);
-        if (edgeIt == incomingEdgeByInputSocket.end() || !edgeIt->second) {
+        const std::vector<const NodeGraphEdge*> incomingEdges =
+            graphState.edges.incoming(node.id, inputSocket.id);
+
+        if (incomingEdges.empty()) {
             if (!inputSocket.required) {
-                outInputs[inputIndex] = nullptr;
                 continue;
             }
-            outStatus = EvaluatedSocketStatus::Missing;
-            return false;
+            result.status = EvaluatedSocketStatus::Missing;
+            return result;
         }
 
-        const NodeGraphEdge& edge = *edgeIt->second;
-        const auto outputIt = state.outputBySocket.find(NodeSocketKey(edge.fromNode, edge.fromSocket).value);
-        if (outputIt == state.outputBySocket.end()) {
-            if (!inputSocket.required) {
-                outInputs[inputIndex] = nullptr;
+        for (const NodeGraphEdge* edgePtr : incomingEdges) {
+            if (!edgePtr) {
                 continue;
             }
-            outStatus = EvaluatedSocketStatus::Missing;
-            return false;
-        }
+            const NodeGraphEdge& edge = *edgePtr;
+            const auto outputIt = state.outputBySocket.find(NodeSocketKey(edge.fromNode, edge.fromSocket).value);
+            if (outputIt == state.outputBySocket.end()) {
+                if (!inputSocket.required) {
+                    continue;
+                }
+                result.status = EvaluatedSocketStatus::Missing;
+                return result;
+            }
 
-        const EvaluatedSocketValue& inputValue = outputIt->second;
-        outInputs[inputIndex] = &inputValue;
-        if (inputValue.status == EvaluatedSocketStatus::Value) {
-            continue;
-        }
+            const EvaluatedSocketValue& inputValue = outputIt->second;
+            if (inputValue.status != EvaluatedSocketStatus::Value) {
+                result.status = inputValue.status;
+                result.error = inputValue.error;
+                return result;
+            }
 
-        outStatus = inputValue.status;
-        outError = inputValue.error;
-        return false;
+            result.values[inputIndex].push_back(&inputValue.data);
+        }
     }
 
-    return true;
+    return result;
 }
 
 void NodeGraphRuntime::applyDelta(const NodeGraphDelta& delta) {
     if (!delta.changes.empty()) {
-        bool shouldClearCaches = false;
-        std::unordered_set<uint32_t> dirtyNodeIds;
+        bool topologyChanged = false;
         for (const NodeGraphChange& change : delta.changes) {
             if (change.reason == NodeGraphChangeReason::Topology) {
-                shouldClearCaches = true;
-            }
-            if (change.reason == NodeGraphChangeReason::Parameter &&
-                change.type == NodeGraphChangeType::NodeUpsert &&
-                change.node.id.isValid()) {
-                dirtyNodeIds.insert(change.node.id.value);
+                topologyChanged = true;
             }
             applyChange(change);
         }
-        if (shouldClearCaches) {
-            clearNodeCaches();
-            if (runtimeServices.payloadRegistry) {
-                runtimeServices.payloadRegistry->clear();
+        if (topologyChanged) {
+            for (auto it = cachedOutputsByNodeId.begin(); it != cachedOutputsByNodeId.end();) {
+                if (it->second.pinned) {
+                    ++it;
+                } else {
+                    it = cachedOutputsByNodeId.erase(it);
+                }
             }
-        } else if (!dirtyNodeIds.empty()) {
-            for (uint32_t nodeId : dirtyNodeIds) {
-                lastHashByNodeId.erase(nodeId);
-                cachedOutputsByNodeId.erase(nodeId);
+            if (runtimeServices.payloadRegistry && cachedOutputsByNodeId.empty()) {
+                runtimeServices.payloadRegistry->clear();
             }
         }
     }
@@ -141,59 +161,43 @@ void NodeGraphRuntime::applyChange(const NodeGraphChange& change) {
     }
     case NodeGraphChangeType::NodeRemoved:
         graphState.nodes.erase(change.nodeId.value);
-        for (auto it = graphState.edges.begin(); it != graphState.edges.end(); ) {
-            if (it->second.fromNode == change.nodeId || it->second.toNode == change.nodeId) {
-                it = graphState.edges.erase(it);
-            } else {
-                ++it;
+        {
+            std::vector<NodeGraphEdgeId> removedEdgeIds;
+            for (const auto& [edgeKey, edge] : graphState.edges) {
+                if (edge.fromNode == change.nodeId || edge.toNode == change.nodeId) {
+                    removedEdgeIds.push_back(edge.id);
+                }
+            }
+            for (NodeGraphEdgeId edgeId : removedEdgeIds) {
+                graphState.edges.remove(edgeId);
             }
         }
         break;
     case NodeGraphChangeType::EdgeUpsert:
-        graphState.edges[change.edge.id.value] = change.edge;
+        graphState.edges.upsert(change.edge);
         break;
     case NodeGraphChangeType::EdgeRemoved:
-        graphState.edges.erase(change.edgeId.value);
+        graphState.edges.remove(change.edgeId);
         break;
     }
 }
 
-void NodeGraphRuntime::tick(NodeGraphEvaluationState* outState, const NodeGraphCompiled& compiled) {
-    if (!bridge) {
-        if (outState) {
-            outState->upstreamSocket.clear();
-            outState->outputBySocket.clear();
-        }
-        return;
-    }
-    execute(outState, compiled);
+void NodeGraphRuntime::tick(const NodeGraphCompiled& compiled) {
+    execute(compiled);
 }
 
-void NodeGraphRuntime::execute(NodeGraphEvaluationState* outState, const NodeGraphCompiled& compiled) {
+void NodeGraphRuntime::execute(const NodeGraphCompiled& compiled) {
     if (graphState.nodes.size() > 0 && compiled.executionOrder.size() != graphState.nodes.size()) {
-        if (outState) {
-            outState->upstreamSocket.clear();
-            outState->outputBySocket.clear();
-        }
+        currentEvaluationState.outputBySocket.clear();
+        currentEvaluationState.productBySocket.clear();
         return;
     }
 
     const std::vector<NodeGraphNodeId>& executionOrder = compiled.executionOrder;
-    std::unordered_map<uint64_t, const NodeGraphEdge*> incomingEdgeByInputSocket;
-    incomingEdgeByInputSocket.reserve(graphState.edges.size() * 2);
-    std::unordered_map<uint64_t, std::vector<const NodeGraphEdge*>> incomingEdgesByInputSocket;
-    incomingEdgesByInputSocket.reserve(graphState.edges.size() * 2);
-    NodeGraphEvaluationState state{};
-    state.upstreamSocket.reserve(graphState.edges.size() * 2);
-    state.outputBySocket.reserve(graphState.edges.size() * 2);
-    for (const auto& [id, edge] : graphState.edges) {
-        const uint64_t inputKey = NodeSocketKey(edge.toNode, edge.toSocket).value;
-        incomingEdgeByInputSocket[inputKey] = &edge;
-        incomingEdgesByInputSocket[inputKey].push_back(&edge);
-        const uint64_t sourceKey = NodeSocketKey(edge.fromNode, edge.fromSocket).value;
-        state.upstreamSocket[inputKey] = sourceKey;
-        state.upstreamSockets[inputKey].push_back(sourceKey);
-    }
+    currentEvaluationState.outputBySocket.clear();
+    currentEvaluationState.productBySocket = productBySocket;
+    currentEvaluationState.outputBySocket.reserve(graphState.edges.size() * 2);
+    NodeGraphEvaluationState& state = currentEvaluationState;
 
     for (NodeGraphNodeId nodeId : executionOrder) {
         auto it = graphState.nodes.find(nodeId.value);
@@ -202,107 +206,118 @@ void NodeGraphRuntime::execute(NodeGraphEvaluationState* outState, const NodeGra
         }
 
         const NodeGraphNode& node = it->second;
-        const NodeTypeId typeId = getNodeTypeId(node.typeId);
 
-        std::vector<const EvaluatedSocketValue*> inputValues;
-        inputValues.reserve(node.inputs.size());
-        EvaluatedSocketStatus blockedStatus = EvaluatedSocketStatus::Value;
-        std::string blockedError;
-        if (!evaluateNodeInputs(
-                node,
-                incomingEdgeByInputSocket,
-                state,
-                inputValues,
-                blockedStatus,
-                blockedError)) {
-            propagateSkippedNodeOutputs(node, blockedStatus, blockedError, state);
+        bool pinned = (node.state.frozenState() == NodeGraphNodeState::FrozenState::Frozen);
+        if (!pinned) {
+            for (NodeGraphNodeId upstreamNodeId : graphState.edges.upstreamNodes(node.id)) {
+                auto cacheIt = cachedOutputsByNodeId.find(upstreamNodeId.value);
+                if (cacheIt != cachedOutputsByNodeId.end() && cacheIt->second.pinned) {
+                    pinned = true;
+                    break;
+                }
+            }
+        }
+
+        // Pinned nodes bypass input evaluation and republish their cached output
+        if (pinned) {
+            auto cacheIt = cachedOutputsByNodeId.find(node.id.value);
+            if (cacheIt != cachedOutputsByNodeId.end()) {
+                cacheIt->second.pinned = true;
+            }
+            if (!publishCachedOutputs(node, state)) {
+                publishBlockedOutputs(
+                    node,
+                    EvaluatedSocketStatus::Error,
+                    "Frozen node has no cached output.",
+                    state);
+            }
             continue;
         }
 
-        std::vector<NodeDataBlock> outputValues;
-        outputValues.reserve(node.outputs.size());
-        if (kernels.hasKernel(typeId)) {
-            const NodeGraphKernelExecutionState kernelState{
-                graphState,
-                *bridge,
-                runtimeServices,
-                incomingEdgeByInputSocket,
-                incomingEdgesByInputSocket,
-                state.outputBySocket};
-
-            HashValues outputHashes = kernels.computeOutputHashes(node, kernelState, inputValues);
-            uint64_t cacheHash = outputHashes.full;
-            bool reusedCache = false;
-            const auto hashIt = lastHashByNodeId.find(node.id.value);
-            const auto cacheIt = cachedOutputsByNodeId.find(node.id.value);
-            if (hashIt != lastHashByNodeId.end() &&
-                cacheIt != cachedOutputsByNodeId.end() &&
-                hashIt->second == cacheHash &&
-                cacheIt->second.size() == node.outputs.size()) {
-                outputValues = cacheIt->second;
-                reusedCache = true;
-            }
-
-            if (!reusedCache) {
-                outputValues.resize(node.outputs.size());
-                std::vector<const NodeDataBlock*> inputDataValues(inputValues.size(), nullptr);
-                for (std::size_t inputIndex = 0; inputIndex < inputValues.size(); ++inputIndex) {
-                    const EvaluatedSocketValue* inputValue = inputValues[inputIndex];
-                    if (inputValue && inputValue->status == EvaluatedSocketStatus::Value) {
-                        inputDataValues[inputIndex] = &inputValue->data;
-                    }
-                }
-                {
-                    std::unordered_map<std::string, std::string> mergedMetadata;
-                    std::vector<NodeGraphNodeId> mergedLineage;
-                    std::unordered_set<uint32_t> seenNodeIds;
-                    for (const NodeDataBlock* input : inputDataValues) {
-                        if (!input) continue;
-                        for (const auto& metadataEntry : input->metadata) {
-                            mergedMetadata[metadataEntry.first] = metadataEntry.second;
-                        }
-                        for (NodeGraphNodeId lineageNodeId : input->lineageNodeIds) {
-                            if (!lineageNodeId.isValid()) continue;
-                            if (seenNodeIds.insert(lineageNodeId.value).second) {
-                                mergedLineage.push_back(lineageNodeId);
-                            }
-                        }
-                    }
-                    if (node.id.isValid() && seenNodeIds.insert(node.id.value).second) {
-                        mergedLineage.push_back(node.id);
-                    }
-                    mergedMetadata["graph.producer_node_id"] = std::to_string(node.id.value);
-                    mergedMetadata["graph.producer_type_id"] = getNodeTypeId(node.typeId);
-                    mergedMetadata["graph.lineage_depth"] = std::to_string(mergedLineage.size());
-                    for (NodeDataBlock& output : outputValues) {
-                        output = {};
-                        output.metadata = mergedMetadata;
-                        output.lineageNodeIds = mergedLineage;
-                        populateMetadata(output, nullptr, nullptr);
-                    }
-                }
-                kernels.executeNode(node, kernelState, inputValues, outputValues, outputHashes);
-
-                lastHashByNodeId[node.id.value] = cacheHash;
-                cachedOutputsByNodeId[node.id.value] = outputValues;
-            }
-
-            for (std::size_t outputIndex = 0; outputIndex < node.outputs.size(); ++outputIndex) {
-                state.outputBySocket[NodeSocketKey(node.id, node.outputs[outputIndex].id).value] =
-                    makeValueSocketValue(outputValues[outputIndex]);
-            }
+        // Evaluate inputs
+        EvaluatedNodeInputs inputs = evaluateNodeInputs(node, graphState, state);
+        if (!inputs.ready()) {
+            publishBlockedOutputs(node, inputs.status, inputs.error, state);
+            continue;
         }
-    }
 
-    if (outState) {
-        outState->upstreamSocket = std::move(state.upstreamSocket);
-        outState->upstreamSockets = std::move(state.upstreamSockets);
-        outState->outputBySocket = std::move(state.outputBySocket);
-        outState->executionOrder = executionOrder;
+        // Live evaluation
+        const NodeTypeId typeId = getNodeTypeId(node.typeId);
+        if (!kernels.hasKernel(typeId)) {
+            continue;
+        }
+
+        evaluateLiveNode(node, inputs, state);
     }
 }
 
-void NodeGraphRuntime::clearNodeCaches() {
-    lastHashByNodeId.clear();
-    cachedOutputsByNodeId.clear();
+void NodeGraphRuntime::evaluateLiveNode(
+    const NodeGraphNode& node,
+    const EvaluatedNodeInputs& inputs,
+    NodeGraphEvaluationState& state) {
+
+    const NodeKernelRuntime kernelRuntime{
+        graphState,
+        runtimeServices.payloadRegistry,
+        runtimeServices};
+
+    HashValues outputHashes = kernels.computeOutputHashes(node, kernelRuntime, inputs.values);
+    uint64_t cacheHash = outputHashes.full;
+
+    // Cache hit
+    const auto cacheIt = cachedOutputsByNodeId.find(node.id.value);
+    if (cacheIt != cachedOutputsByNodeId.end() &&
+        cacheIt->second.hash == cacheHash &&
+        cacheIt->second.outputs.size() == node.outputs.size()) {
+        cacheIt->second.pinned = false;
+        publishOutputs(node, cacheIt->second.outputs, state, /*frozen=*/false);
+        return;
+    }
+
+    std::vector<NodeDataBlock> outputValues(node.outputs.size());
+
+    {
+        std::unordered_map<std::string, std::string> mergedMetadata;
+        std::vector<NodeGraphNodeId> mergedLineage;
+        std::unordered_set<uint32_t> seenNodeIds;
+        for (const std::vector<const NodeDataBlock*>& socketInputs : inputs.values) {
+            for (const NodeDataBlock* input : socketInputs) {
+                if (!input) continue;
+                for (const auto& metadataEntry : input->metadata) {
+                    mergedMetadata[metadataEntry.first] = metadataEntry.second;
+                }
+                for (NodeGraphNodeId lineageNodeId : input->lineageNodeIds) {
+                    if (!lineageNodeId.isValid()) continue;
+                    if (seenNodeIds.insert(lineageNodeId.value).second) {
+                        mergedLineage.push_back(lineageNodeId);
+                    }
+                }
+            }
+        }
+        if (node.id.isValid() && seenNodeIds.insert(node.id.value).second) {
+            mergedLineage.push_back(node.id);
+        }
+        mergedMetadata["graph.producer_node_id"] = std::to_string(node.id.value);
+        mergedMetadata["graph.producer_type_id"] = getNodeTypeId(node.typeId);
+        mergedMetadata["graph.lineage_depth"] = std::to_string(mergedLineage.size());
+        for (NodeDataBlock& output : outputValues) {
+            output = {};
+            output.metadata = mergedMetadata;
+            output.lineageNodeIds = mergedLineage;
+            populateMetadata(output, nullptr, nullptr);
+        }
+    }
+
+    kernels.executeNode(node, kernelRuntime, inputs.values, outputValues, outputHashes);
+
+    for (NodeDataBlock& output : outputValues) {
+        output.hashes = outputHashes;
+    }
+
+    // Store cache and publish
+    CachedNodeOutputs& entry = cachedOutputsByNodeId[node.id.value];
+    entry.hash = cacheHash;
+    entry.outputs = std::move(outputValues);
+    entry.pinned = false;
+    publishOutputs(node, entry.outputs, state, /*frozen=*/false);
 }

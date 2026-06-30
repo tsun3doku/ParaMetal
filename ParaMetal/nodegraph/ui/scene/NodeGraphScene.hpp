@@ -1,6 +1,6 @@
 #pragma once
 
-#include "nodegraph/NodeGraphBridge.hpp"
+#include "nodegraph/NodeGraph.hpp"
 #include "nodegraph/NodeGraphEditor.hpp"
 
 #include <string>
@@ -24,7 +24,7 @@ class NodeGraphScene : public QGraphicsScene {
 public:
     explicit NodeGraphScene(QObject* parent = nullptr);
 
-    void setBridge(NodeGraphBridge* bridge);
+    void setGraph(NodeGraph* bridge);
     void applyPendingChanges();
     void setSelectedNode(NodeGraphNodeId nodeId);
     void clearNodeSelection();
@@ -51,7 +51,7 @@ private:
     static constexpr int EdgeToSocketRole = 7;
     static constexpr int EdgeBaseColorRole = 8;
 
-    NodeGraphBridge* bridge = nullptr;
+    NodeGraph* bridge = nullptr;
     NodeGraphEditor editor;
     uint64_t lastSeenRevision = 0;
     QGraphicsPathItem* activeDragLine = nullptr;

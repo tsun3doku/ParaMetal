@@ -6,6 +6,8 @@
 #include "contact/ContactSystemComputeStage.hpp"
 #include "heat/HeatContactRuntime.hpp"
 
+#include <iostream>
+
 void HeatSystemSimStage::recordComputeCommands(
     VkCommandBuffer commandBuffer,
     uint32_t currentFrame,
@@ -41,6 +43,8 @@ void HeatSystemSimStage::recordSim(
     const std::vector<std::unique_ptr<HeatContactRuntime>>& contactRuntimes,
     uint32_t numSubsteps) const {
     const uint32_t workGroupSize = 256;
+
+
 
     for (uint32_t substepIndex = 0; substepIndex < numSubsteps; ++substepIndex) {
         const bool isEven = (substepIndex % 2 == 0);

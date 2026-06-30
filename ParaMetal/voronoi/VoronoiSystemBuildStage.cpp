@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cstring>
 #include <fstream>
+#include <iostream>
 #include <limits>
 #include <sstream>
 #include <unordered_set>
@@ -26,11 +27,11 @@ VoronoiSystemBuildStage::VoronoiSystemBuildStage(
     VulkanDevice& vulkanDevice,
     MemoryAllocator& memoryAllocator,
     VoronoiResources& resources,
-    CommandPool& renderCommandPool)
+    CommandPool& commandPool)
     : vulkanDevice(vulkanDevice),
       memoryAllocator(memoryAllocator),
       resources(resources),
-      renderCommandPool(renderCommandPool) {
+      commandPool(commandPool) {
     initializeVoronoiGeoCompute();
 }
 
@@ -38,7 +39,7 @@ VoronoiSystemBuildStage::~VoronoiSystemBuildStage() {
 }
 
 void VoronoiSystemBuildStage::initializeVoronoiGeoCompute() {
-    voronoiGeoCompute = std::make_unique<VoronoiGeoCompute>(vulkanDevice, renderCommandPool);
+    voronoiGeoCompute = std::make_unique<VoronoiGeoCompute>(vulkanDevice, commandPool);
 }
 
 bool VoronoiSystemBuildStage::buildVoronoiDiagram(
@@ -120,7 +121,7 @@ void VoronoiSystemBuildStage::setGhostFromVolumes(VoronoiSystemRuntime& runtime)
     }
 
     std::vector<voronoi::Node> nodes(resources.voronoiNodeCount);
-    if (downloadDeviceBuffer(memoryAllocator, renderCommandPool,
+    if (downloadDeviceBuffer(memoryAllocator, commandPool,
         resources.voronoiNodeBuffer, resources.voronoiNodeBufferOffset,
         nodes.size() * sizeof(voronoi::Node), nodes.data()) != VK_SUCCESS) {
         return;
@@ -182,10 +183,10 @@ bool VoronoiSystemBuildStage::createGeometryBuffers(
 
     if (uploadDeviceBuffer(
             memoryAllocator,
-            renderCommandPool,
+            commandPool,
             initialNodes.data(),
             sizeof(voronoi::Node) * resources.voronoiNodeCount,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             storageAlignment,
             resources.voronoiNodeBuffer,
             resources.voronoiNodeBufferOffset) != VK_SUCCESS) {
@@ -201,7 +202,7 @@ bool VoronoiSystemBuildStage::createGeometryBuffers(
 
     if (uploadDeviceBuffer(
             memoryAllocator,
-            renderCommandPool,
+            commandPool,
             flattenedNeighbors.data(),
             sizeof(uint32_t) * flattenedNeighbors.size(),
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -216,10 +217,10 @@ bool VoronoiSystemBuildStage::createGeometryBuffers(
     std::vector<float> emptyAreas(interfaceDataSize, 0.0f);
     if (uploadDeviceBuffer(
             memoryAllocator,
-            renderCommandPool,
+            commandPool,
             emptyAreas.data(),
             sizeof(float) * interfaceDataSize,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             storageAlignment,
             resources.voronoiInterfaceAreasBuffer,
             resources.voronoiInterfaceAreasBufferOffset) != VK_SUCCESS) {
@@ -229,10 +230,10 @@ bool VoronoiSystemBuildStage::createGeometryBuffers(
     std::vector<uint32_t> emptyIds(interfaceDataSize, UINT32_MAX);
     if (uploadDeviceBuffer(
             memoryAllocator,
-            renderCommandPool,
+            commandPool,
             emptyIds.data(),
             sizeof(uint32_t) * interfaceDataSize,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             storageAlignment,
             resources.voronoiInterfaceNeighborIdsBuffer,
             resources.voronoiInterfaceNeighborIdsBufferOffset) != VK_SUCCESS) {
@@ -250,10 +251,10 @@ bool VoronoiSystemBuildStage::createGeometryBuffers(
 
     if (uploadDeviceBuffer(
             memoryAllocator,
-            renderCommandPool,
+            commandPool,
             debugCells.data(),
             sizeof(voronoi::DebugCellGeometry) * numDebugCells,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             storageAlignment,
             resources.debugCellGeometryBuffer,
             resources.debugCellGeometryBufferOffset) != VK_SUCCESS) {
@@ -266,10 +267,10 @@ bool VoronoiSystemBuildStage::createGeometryBuffers(
 
     if (uploadDeviceBuffer(
             memoryAllocator,
-            renderCommandPool,
+            commandPool,
             dumpInfos.data(),
             sizeof(voronoi::DumpInfo) * dumpCount,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             storageAlignment,
             resources.voronoiDumpBuffer,
             resources.voronoiDumpBufferOffset) != VK_SUCCESS) {
@@ -278,10 +279,10 @@ bool VoronoiSystemBuildStage::createGeometryBuffers(
 
     if (uploadDeviceBuffer(
             memoryAllocator,
-            renderCommandPool,
+            commandPool,
             seedPositions.data(),
             sizeof(glm::vec4) * seedPositions.size(),
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             storageAlignment,
             resources.seedPositionBuffer,
             resources.seedPositionBufferOffset) != VK_SUCCESS) {
@@ -290,7 +291,7 @@ bool VoronoiSystemBuildStage::createGeometryBuffers(
 
     if (uploadDeviceBuffer(
             memoryAllocator,
-            renderCommandPool,
+            commandPool,
             seedFlags.data(),
             sizeof(uint32_t) * seedFlags.size(),
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -309,25 +310,25 @@ bool VoronoiSystemBuildStage::buildGMLSInterfaceBuffer(VoronoiSystemRuntime& run
     }
 
     std::vector<float> areas(static_cast<size_t>(resources.voronoiNodeCount) * maxNeighbors);
-    if (downloadDeviceBuffer(memoryAllocator, renderCommandPool, resources.voronoiInterfaceAreasBuffer, resources.voronoiInterfaceAreasBufferOffset, 
+    if (downloadDeviceBuffer(memoryAllocator, commandPool, resources.voronoiInterfaceAreasBuffer, resources.voronoiInterfaceAreasBufferOffset, 
         areas.size() * sizeof(float), areas.data()) != VK_SUCCESS) {
         return false;
     }
 
     std::vector<uint32_t> neighborIds(static_cast<size_t>(resources.voronoiNodeCount) * maxNeighbors);
-    if (downloadDeviceBuffer(memoryAllocator, renderCommandPool, resources.voronoiInterfaceNeighborIdsBuffer, resources.voronoiInterfaceNeighborIdsBufferOffset, 
+    if (downloadDeviceBuffer(memoryAllocator, commandPool, resources.voronoiInterfaceNeighborIdsBuffer, resources.voronoiInterfaceNeighborIdsBufferOffset, 
         neighborIds.size() * sizeof(uint32_t), neighborIds.data()) != VK_SUCCESS) {
         return false;
     }
 
     std::vector<voronoi::Node> nodes(resources.voronoiNodeCount);
-    if (downloadDeviceBuffer(memoryAllocator, renderCommandPool, resources.voronoiNodeBuffer, resources.voronoiNodeBufferOffset, 
+    if (downloadDeviceBuffer(memoryAllocator, commandPool, resources.voronoiNodeBuffer, resources.voronoiNodeBufferOffset, 
         nodes.size() * sizeof(voronoi::Node), nodes.data()) != VK_SUCCESS) {
         return false;
     }
 
     std::vector<glm::vec4> seedPositions(resources.voronoiNodeCount);
-    if (downloadDeviceBuffer(memoryAllocator, renderCommandPool, resources.seedPositionBuffer, resources.seedPositionBufferOffset, 
+    if (downloadDeviceBuffer(memoryAllocator, commandPool, resources.seedPositionBuffer, resources.seedPositionBufferOffset, 
         seedPositions.size() * sizeof(glm::vec4), seedPositions.data()) != VK_SUCCESS) {
         return false;
     }
@@ -406,35 +407,36 @@ bool VoronoiSystemBuildStage::buildGMLSInterfaceBuffer(VoronoiSystemRuntime& run
         return false;
     }
 
-    // Upload interface buffer
-    freeBuffer(memoryAllocator, resources.voronoiGMLSInterfaceBuffer, resources.voronoiGMLSInterfaceBufferOffset);
+    resources.voronoiGMLSInterfaceBuffer = VK_NULL_HANDLE;
+    resources.voronoiGMLSInterfaceBufferOffset = 0;
     VkDeviceSize storageAlignment = vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
     
-    if (uploadDeviceBuffer(memoryAllocator, renderCommandPool, interfaces.data(), 
+    if (uploadDeviceBuffer(memoryAllocator, commandPool, interfaces.data(), 
         sizeof(voronoi::GMLSInterface) * interfaces.size(), 
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, storageAlignment, 
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, storageAlignment, 
         resources.voronoiGMLSInterfaceBuffer, resources.voronoiGMLSInterfaceBufferOffset) != VK_SUCCESS) {
         return false;
     }
 
-    // Write back modified nodes 
-    freeBuffer(memoryAllocator, resources.voronoiNodeBuffer, resources.voronoiNodeBufferOffset);
-    if (uploadDeviceBuffer(memoryAllocator, renderCommandPool, nodes.data(),
+    resources.voronoiNodeBuffer = VK_NULL_HANDLE;
+    resources.voronoiNodeBufferOffset = 0;
+    if (uploadDeviceBuffer(memoryAllocator, commandPool, nodes.data(),
         sizeof(voronoi::Node) * nodes.size(),
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, storageAlignment,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, storageAlignment,
         resources.voronoiNodeBuffer, resources.voronoiNodeBufferOffset) != VK_SUCCESS) {
         return false;
     }
 
-    freeBuffer(memoryAllocator, resources.voronoiInterfaceAreasBuffer, resources.voronoiInterfaceAreasBufferOffset);
-    freeBuffer(memoryAllocator, resources.voronoiInterfaceNeighborIdsBuffer, resources.voronoiInterfaceNeighborIdsBufferOffset);
+    resources.voronoiInterfaceAreasBuffer = VK_NULL_HANDLE;
+    resources.voronoiInterfaceAreasBufferOffset = 0;
+    resources.voronoiInterfaceNeighborIdsBuffer = VK_NULL_HANDLE;
+    resources.voronoiInterfaceNeighborIdsBufferOffset = 0;
 
     return true;
 }
 
 bool VoronoiSystemBuildStage::rebuildOccupancyPointBuffer(VoronoiSystemRuntime& runtime) const {
     if (resources.occupancyPointBuffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(resources.occupancyPointBuffer, resources.occupancyPointBufferOffset);
         resources.occupancyPointBuffer = VK_NULL_HANDLE;
         resources.occupancyPointBufferOffset = 0;
     }
@@ -642,31 +644,33 @@ bool VoronoiSystemBuildStage::dispatchVoronoiCompute(VoronoiSystemRuntime& runti
             return false;
         }
 
-        // Upload interface buffer
-        freeBuffer(memoryAllocator, resources.voronoiGMLSInterfaceBuffer, resources.voronoiGMLSInterfaceBufferOffset);
+        resources.voronoiGMLSInterfaceBuffer = VK_NULL_HANDLE;
+        resources.voronoiGMLSInterfaceBufferOffset = 0;
         VkDeviceSize storageAlignment = vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
 
-        if (uploadDeviceBuffer(memoryAllocator, renderCommandPool, interfaces.data(),
+        if (uploadDeviceBuffer(memoryAllocator, commandPool, interfaces.data(),
             sizeof(voronoi::GMLSInterface) * interfaces.size(),
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, storageAlignment,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, storageAlignment,
             resources.voronoiGMLSInterfaceBuffer, resources.voronoiGMLSInterfaceBufferOffset) != VK_SUCCESS) {
             return false;
         }
 
-        // Write back modified nodes
-        freeBuffer(memoryAllocator, resources.voronoiNodeBuffer, resources.voronoiNodeBufferOffset);
-        if (uploadDeviceBuffer(memoryAllocator, renderCommandPool, initialNodes.data(),
+        resources.voronoiNodeBuffer = VK_NULL_HANDLE;
+        resources.voronoiNodeBufferOffset = 0;
+        if (uploadDeviceBuffer(memoryAllocator, commandPool, initialNodes.data(),
             sizeof(voronoi::Node) * initialNodes.size(),
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, storageAlignment,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, storageAlignment,
             resources.voronoiNodeBuffer, resources.voronoiNodeBufferOffset) != VK_SUCCESS) {
             return false;
         }
 
-        freeBuffer(memoryAllocator, resources.voronoiInterfaceAreasBuffer, resources.voronoiInterfaceAreasBufferOffset);
-        freeBuffer(memoryAllocator, resources.voronoiInterfaceNeighborIdsBuffer, resources.voronoiInterfaceNeighborIdsBufferOffset);
+        resources.voronoiInterfaceAreasBuffer = VK_NULL_HANDLE;
+        resources.voronoiInterfaceAreasBufferOffset = 0;
+        resources.voronoiInterfaceNeighborIdsBuffer = VK_NULL_HANDLE;
+        resources.voronoiInterfaceNeighborIdsBufferOffset = 0;
 
         runtime.buildSimSpaceMapping();
-        if (!runtime.buildSimBuffers(memoryAllocator, renderCommandPool)) {
+        if (!runtime.buildSimBuffers(memoryAllocator, commandPool)) {
             return false;
         }
 
@@ -696,7 +700,7 @@ bool VoronoiSystemBuildStage::dispatchVoronoiCompute(VoronoiSystemRuntime& runti
 
     if (uploadDeviceBuffer(
             memoryAllocator,
-            renderCommandPool,
+            commandPool,
             meshTris.data(),
             sizeof(glm::vec4) * 3 * meshTris.size(),
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -753,7 +757,7 @@ bool VoronoiSystemBuildStage::dispatchVoronoiCompute(VoronoiSystemRuntime& runti
 
     if (uploadDeviceBuffer(
             memoryAllocator,
-            renderCommandPool,
+            commandPool,
             occupancy32.data(),
             sizeof(uint32_t) * occupancy32.size(),
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -765,7 +769,7 @@ bool VoronoiSystemBuildStage::dispatchVoronoiCompute(VoronoiSystemRuntime& runti
 
     if (uploadDeviceBuffer(
             memoryAllocator,
-            renderCommandPool,
+            commandPool,
             trianglesList.data(),
             sizeof(int32_t) * trianglesList.size(),
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -777,7 +781,7 @@ bool VoronoiSystemBuildStage::dispatchVoronoiCompute(VoronoiSystemRuntime& runti
 
     if (uploadDeviceBuffer(
             memoryAllocator,
-            renderCommandPool,
+            commandPool,
             offsets.data(),
             sizeof(int32_t) * offsets.size(),
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -841,7 +845,7 @@ bool VoronoiSystemBuildStage::dispatchVoronoiCompute(VoronoiSystemRuntime& runti
     }
 
     runtime.buildSimSpaceMapping();
-    if (!runtime.buildSimBuffers(memoryAllocator, renderCommandPool)) {
+    if (!runtime.buildSimBuffers(memoryAllocator, commandPool)) {
         return false;
     }
 

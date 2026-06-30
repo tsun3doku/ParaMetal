@@ -1,30 +1,31 @@
 #include "ContactSystemComputeController.hpp"
 
 #include "ContactSystem.hpp"
+#include "hash/HashProduct.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/VulkanDevice.hpp"
 
 ContactSystemComputeController::ContactSystemComputeController(
     VulkanDevice& device,
     MemoryAllocator& allocator,
-    CommandPool& renderCommandPoolRef)
+    CommandPool& commandPoolRef)
     : vulkanDevice(device),
       memoryAllocator(allocator),
-      renderCommandPool(renderCommandPoolRef) {
+      commandPool(commandPoolRef) {
 }
 
 ContactSystemComputeController::~ContactSystemComputeController() {
     disableAll();
 }
 
-void ContactSystemComputeController::configure(uint64_t socketKey, const Config& config) {
+void ContactSystemComputeController::apply(uint64_t socketKey, const Config& config) {
     if (socketKey == 0) {
         return;
     }
 
-    auto& system = activeSystems[socketKey];
+    auto& system = systemsBySocket[socketKey];
     if (!system) {
-        system = std::make_unique<ContactSystem>(vulkanDevice, memoryAllocator, renderCommandPool);
+        system = std::make_unique<ContactSystem>(vulkanDevice, memoryAllocator, commandPool);
     }
 
     const auto configIt = configuredConfigs.find(socketKey);
@@ -41,30 +42,57 @@ void ContactSystemComputeController::configure(uint64_t socketKey, const Config&
     system->ensureConfigured();
 }
 
-void ContactSystemComputeController::disable(uint64_t socketKey) {
+void ContactSystemComputeController::remove(uint64_t socketKey) {
     configuredConfigs.erase(socketKey);
-    auto it = activeSystems.find(socketKey);
-    if (it != activeSystems.end()) {
+    auto it = systemsBySocket.find(socketKey);
+    if (it != systemsBySocket.end()) {
         if (it->second) {
             it->second->disable();
         }
-        activeSystems.erase(it);
+        systemsBySocket.erase(it);
     }
+}
+
+void ContactSystemComputeController::retain(uint64_t socketKey) {
+    (void)socketKey;
 }
 
 void ContactSystemComputeController::disableAll() {
     configuredConfigs.clear();
-    for (auto& [key, system] : activeSystems) {
+    for (auto& [key, system] : systemsBySocket) {
         if (system) {
             system->disable();
         }
     }
-    activeSystems.clear();
+    systemsBySocket.clear();
+}
+
+bool ContactSystemComputeController::buildProduct(uint64_t socketKey, ContactProduct& outProduct) const {
+    outProduct = {};
+    ContactSystem* system = getSystem(socketKey);
+    if (!system || !getConfig(socketKey)) {
+        return false;
+    }
+
+    const ContactCoupling* coupling = system->getContactCoupling();
+    if (!coupling) {
+        return false;
+    }
+
+    outProduct.coupling = *coupling;
+    outProduct.contactPairBuffer = system->getContactPairBuffer();
+    outProduct.contactPairBufferOffset = system->getContactPairBufferOffset();
+    outProduct.modelARuntimeModelId = coupling->modelARuntimeModelId;
+    outProduct.modelBRuntimeModelId = coupling->modelBRuntimeModelId;
+    outProduct.outlineVertices = system->getOutlineVertices();
+    outProduct.correspondenceVertices = system->getCorrespondenceVertices();
+    HashProduct::seal(outProduct);
+    return outProduct.isValid();
 }
 
 ContactSystem* ContactSystemComputeController::getSystem(uint64_t socketKey) const {
-    const auto it = activeSystems.find(socketKey);
-    if (it == activeSystems.end() || !it->second) {
+    const auto it = systemsBySocket.find(socketKey);
+    if (it == systemsBySocket.end() || !it->second) {
         return nullptr;
     }
     return it->second.get();

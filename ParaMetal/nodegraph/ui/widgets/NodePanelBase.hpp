@@ -6,13 +6,13 @@
 
 #include <functional>
 
-class NodeGraphBridge;
+class NodeGraph;
 
 class NodePanelBase : public QWidget {
 public:
     explicit NodePanelBase(QWidget* parent = nullptr);
 
-    void bind(NodeGraphBridge* bridge);
+    void bind(NodeGraph* bridge);
     void setNode(NodeGraphNodeId nodeId);
     void setStatusSink(std::function<void(const QString&)> sink);
 
@@ -22,12 +22,12 @@ protected:
     bool canEdit() const;
     bool loadCurrentNode(NodeGraphNode& outNode);
     void setStatus(const QString& text) const;
-    NodeGraphBridge* bridge() const;
+    NodeGraph* bridge() const;
     NodeGraphNodeId currentNodeId() const;
     void setSyncing(bool value);
     bool isSyncing() const;
 
-    NodeGraphBridge* bridgePtr = nullptr;
+    NodeGraph* bridgePtr = nullptr;
     NodeGraphNodeId nodeId{};
     bool syncing = false;
 

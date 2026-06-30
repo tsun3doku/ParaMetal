@@ -859,8 +859,6 @@ bool HalfEdgeMesh::isDelaunayEdge(uint32_t heIdx) const {
 		return true;
 	}
 
-	// Intrinsic Delaunay test: the sum of angles opposite the edge should be <= pi.
-	// This matches the GC edge cotan/angle-sum test and avoids unstable incircle determinants on thin diamonds.
 	const double angleSum = halfEdges[oppA].cornerAngle + halfEdges[oppB].cornerAngle;
 	const double EPS = 1e-10;
 	return angleSum <= glm::pi<double>() + EPS;

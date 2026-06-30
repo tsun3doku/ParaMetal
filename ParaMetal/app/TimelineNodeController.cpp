@@ -2,7 +2,7 @@
 
 #include "App.h"
 #include "TimelineWidget.hpp"
-#include "nodegraph/NodeGraphBridge.hpp"
+#include "nodegraph/NodeGraph.hpp"
 #include "nodegraph/NodeGraphRegistry.hpp"
 #include "nodegraph/NodeGraphUtils.hpp"
 #include "nodegraph/NodeHeatSolveParams.hpp"
@@ -64,7 +64,7 @@ void TimelineNodeController::syncAuthoredTimelineRange() {
         return;
     }
 
-    NodeGraphBridge* b = bridge();
+    NodeGraph* b = bridge();
     TimelineController* timeline = app ? app->timelineController() : nullptr;
     if (!b || !timeline) {
         return;
@@ -98,12 +98,12 @@ void TimelineNodeController::syncAuthoredTimelineRange() {
     timelineFrameCount = frameCount;
 }
 
-NodeGraphBridge* TimelineNodeController::bridge() const {
-    return app ? app->getNodeGraphBridge() : nullptr;
+NodeGraph* TimelineNodeController::bridge() const {
+    return app ? app->getNodeGraph() : nullptr;
 }
 
 NodeGraphNodeId TimelineNodeController::findTimelineHeatSolveNode() const {
-    NodeGraphBridge* b = bridge();
+    NodeGraph* b = bridge();
     if (!b) {
         return {};
     }
@@ -146,7 +146,7 @@ void TimelineNodeController::onPlayToggled(bool playing) {
         timeline->setPlaying(playing);
     }
 
-    NodeGraphBridge* b = bridge();
+    NodeGraph* b = bridge();
     NodeGraphNodeId nodeId = findTimelineHeatSolveNode();
     if (!b || !nodeId.isValid()) {
         return;
@@ -184,7 +184,7 @@ void TimelineNodeController::onReset() {
         timeline->reset();
     }
 
-    NodeGraphBridge* b = bridge();
+    NodeGraph* b = bridge();
     NodeGraphNodeId nodeId = findTimelineHeatSolveNode();
     if (!b || !nodeId.isValid()) {
         return;
@@ -209,7 +209,7 @@ void TimelineNodeController::onScrub(uint32_t frame) {
         timeline->scrubToFrame(frame);
     }
 
-    NodeGraphBridge* b = bridge();
+    NodeGraph* b = bridge();
     NodeGraphNodeId nodeId = findTimelineHeatSolveNode();
     if (!b || !nodeId.isValid()) {
         return;

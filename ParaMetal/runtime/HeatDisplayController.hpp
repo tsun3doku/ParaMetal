@@ -77,7 +77,6 @@ inline uint64_t buildDisplayHash(const HeatDisplayController::Config& config, ui
     HashBuilder::combinePod(hash, config.heatPaletteMaxTemp);
     HashBuilder::combinePod(hash, static_cast<uint64_t>(config.authoredActive ? 1u : 0u));
     HashBuilder::combinePod(hash, static_cast<uint64_t>(config.active ? 1u : 0u));
-    HashBuilder::combinePod(hash, static_cast<uint64_t>(config.paused ? 1u : 0u));
     HashBuilder::combine(hash, productDisplayHash);
     return hash;
 }

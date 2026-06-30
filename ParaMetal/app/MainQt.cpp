@@ -1,6 +1,6 @@
 #include "MainQt.h"
 #include "App.h"
-#include "nodegraph/NodeGraphBridge.hpp"
+#include "nodegraph/NodeGraph.hpp"
 #include "nodegraph/NodeGraphRegistry.hpp"
 #include "nodegraph/NodeGraphSave.hpp"
 #include "nodegraph/NodeGraphUtils.hpp"
@@ -128,7 +128,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     QTimer* uiSyncTimer = new QTimer(this);
     uiSyncTimer->setInterval(100);
-    connect(uiSyncTimer, &QTimer::timeout, this, &MainWindow::syncNodeGraphBridge);
+    connect(uiSyncTimer, &QTimer::timeout, this, &MainWindow::syncNodeGraph);
     uiSyncTimer->start();
     
     QTimer::singleShot(0, this, [this]() {
@@ -153,8 +153,8 @@ void MainWindow::setApp(App* application) {
     if (timelineNodeController) {
         timelineNodeController->setApp(app);
     }
-    syncNodeGraphBridge();
-    if (NodeGraphBridge* bridge = app ? app->getNodeGraphBridge() : nullptr) {
+    syncNodeGraph();
+    if (NodeGraph* bridge = app ? app->getNodeGraph() : nullptr) {
         lastSavedRevision = bridge->getRevision();
         setProjectModified(false);
     }
@@ -268,10 +268,10 @@ void MainWindow::createNodeGraphEditorWidget() {
     nodeGraphEditor->setObjectName("NodeGraphEditorWidget");
     nodeGraphEditor->setRuntimeQuery(app ? app->runtimeQuery() : nullptr);
 
-    syncNodeGraphBridge();
+    syncNodeGraph();
 }
 
-void MainWindow::syncNodeGraphBridge() {
+void MainWindow::syncNodeGraph() {
     if (app) {
         const auto errors = app->consumeSimulationErrors();
         for (const auto& error : errors) {
@@ -309,8 +309,8 @@ void MainWindow::syncNodeGraphBridge() {
         return;
     }
 
-    NodeGraphBridge* bridge = app->getNodeGraphBridge();
-    if (bridge == boundNodeGraphBridge) {
+    NodeGraph* bridge = app->getNodeGraph();
+    if (bridge == boundNodeGraph) {
         if (bridge && bridge->getRevision() != lastSavedRevision) {
             setProjectModified(true);
         }
@@ -318,13 +318,13 @@ void MainWindow::syncNodeGraphBridge() {
         return;
     }
 
-    nodeGraphEditor->setBridge(bridge);
-    boundNodeGraphBridge = bridge;
+    nodeGraphEditor->setGraph(bridge);
+    boundNodeGraph = bridge;
     if (bridge) {
         lastSavedRevision = bridge->getRevision();
         setProjectModified(false);
     }
-    pybridge::setBridge(bridge);
+    pybridge::setGraph(bridge);
     if (bridge && pyTerminal) {
         pyTerminal->initializeInterpreter();
     }
@@ -360,7 +360,7 @@ bool MainWindow::newProject() {
         return false;
     }
 
-    if (NodeGraphBridge* bridge = app ? app->getNodeGraphBridge() : nullptr) {
+    if (NodeGraph* bridge = app ? app->getNodeGraph() : nullptr) {
         bridge->clear();
     }
     if (nodeGraphEditor) {
@@ -368,7 +368,7 @@ bool MainWindow::newProject() {
     }
 
     currentProjectPath.clear();
-    if (NodeGraphBridge* bridge = app ? app->getNodeGraphBridge() : nullptr) {
+    if (NodeGraph* bridge = app ? app->getNodeGraph() : nullptr) {
         lastSavedRevision = bridge->getRevision();
     }
     setProjectModified(false);
@@ -393,7 +393,7 @@ bool MainWindow::openProject() {
 }
 
 bool MainWindow::openProjectPath(const QString& path) {
-    NodeGraphBridge* bridge = app ? app->getNodeGraphBridge() : nullptr;
+    NodeGraph* bridge = app ? app->getNodeGraph() : nullptr;
     if (!bridge) {
         QMessageBox::critical(this, "Open Project", "Node graph is not available.");
         return false;
@@ -407,7 +407,7 @@ bool MainWindow::openProjectPath(const QString& path) {
     }
 
     std::string graphError;
-    if (!bridge->loadState(data.graph, data.nextNodeId, data.nextSocketId, data.nextEdgeId, graphError)) {
+    if (!bridge->loadSerializedState(data.graph, data.nextNodeId, data.nextSocketId, data.nextEdgeId, graphError)) {
         QMessageBox::critical(this, "Open Project", QString::fromStdString(graphError));
         return false;
     }
@@ -455,7 +455,7 @@ bool MainWindow::saveProjectAs() {
 }
 
 bool MainWindow::saveProjectToPath(const QString& path) {
-    NodeGraphBridge* bridge = app ? app->getNodeGraphBridge() : nullptr;
+    NodeGraph* bridge = app ? app->getNodeGraph() : nullptr;
     if (!bridge) {
         QMessageBox::critical(this, "Save Project", "Node graph is not available.");
         return false;

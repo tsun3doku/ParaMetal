@@ -22,13 +22,15 @@ public:
         VkCommandBuffer commandBuffer,
         const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
         bool replayFromHistory,
-        bool finalWritesBufferB) const;
+        bool finalWritesBufferB,
+        uint32_t currentFrame) const;
 
     void dispatchSurfaceGradientUpdates(
         VkCommandBuffer commandBuffer,
         const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
         bool replayFromHistory,
-        bool finalWritesBufferB) const;
+        bool finalWritesBufferB,
+        uint32_t currentFrame) const;
 
     VkDescriptorPool getDescriptorPool() const { return descriptorPool; }
     VkDescriptorSetLayout getDescriptorSetLayout() const { return descriptorSetLayout; }
@@ -42,7 +44,8 @@ private:
         const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
         bool replayFromHistory,
         bool finalWritesBufferB,
-        bool isGradientPass) const;
+        bool isGradientPass,
+        uint32_t currentFrame) const;
 
     VulkanDevice& vulkanDevice;
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;

@@ -17,18 +17,15 @@ void NodeGraphDebugCache::setState(const NodeGraphState& graphState, NodePayload
     std::lock_guard<std::mutex> lock(mutex);
     state = graphState;
     revision = graphState.revision;
-    srcByInput.clear();
     outBySocket.clear();
     payloadRegistry = registry;
 }
 
 void NodeGraphDebugCache::update(
     uint64_t runtimeRevision,
-    const std::unordered_map<uint64_t, uint64_t>& upstream,
     const std::unordered_map<uint64_t, EvaluatedSocketValue>& outputs) {
     std::lock_guard<std::mutex> lock(mutex);
     revision = runtimeRevision;
-    srcByInput = upstream;
     outBySocket = outputs;
 }
 
@@ -51,10 +48,9 @@ bool NodeGraphDebugCache::tryGetNode(NodeGraphNodeId nodeId, NodeGraphRuntimeNod
     outInfo.inputs.reserve(nodeIt->second.inputs.size());
     for (const NodeGraphSocket& socket : nodeIt->second.inputs) {
         const EvaluatedSocketValue* value = nullptr;
-        const uint64_t inputKey = NodeSocketKey(nodeIt->second.id, socket.id);
-        const auto srcIt = srcByInput.find(inputKey);
-        if (srcIt != srcByInput.end()) {
-            const auto dataIt = outBySocket.find(srcIt->second);
+        const NodeSocketKey sourceKey = state.edges.upstream(nodeIt->second.id, socket.id);
+        if (sourceKey.value != 0) {
+            const auto dataIt = outBySocket.find(sourceKey.value);
             if (dataIt != outBySocket.end()) {
                 value = &dataIt->second;
             }

@@ -5,7 +5,7 @@
 
 #include <QWidget>
 
-class NodeGraphBridge;
+class NodeGraph;
 class RuntimeQuery;
 class QFrame;
 class QLabel;
@@ -30,7 +30,7 @@ class NodePanel : public QWidget {
 public:
     explicit NodePanel(QWidget* parent = nullptr);
 
-    void bind(NodeGraphBridge* nodeGraphBridge, const RuntimeQuery* runtimeQuery);
+    void bind(NodeGraph* graph, const RuntimeQuery* runtimeQuery);
     bool setNode(NodeGraphNodeId nodeId);
 
 protected:
@@ -44,7 +44,7 @@ private:
     void updateSpreadsheetView();
     void clearSpreadsheetView(const QString& message);
 
-    NodeGraphBridge* nodeGraphBridge = nullptr;
+    NodeGraph* graph = nullptr;
     const RuntimeQuery* runtimeQuery = nullptr;
     NodeGraphNodeId currentNodeId{};
     NodeTypeId currentNodeTypeId = nodegraphtypes::Custom;

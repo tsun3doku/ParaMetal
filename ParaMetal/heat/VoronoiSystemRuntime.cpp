@@ -1,6 +1,7 @@
 #include "VoronoiSystemRuntime.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include "vulkan/CommandBufferManager.hpp"
 #include "vulkan/MemoryAllocator.hpp"
@@ -26,6 +27,7 @@ void VoronoiSystemRuntime::invalidateMaterialization() {
     meshTriangles.clear();
     voronoiToSim.clear();
     simToVoronoi.clear();
+    simNodeVolumes.clear();
     simNodeCount = 0;
 }
 
@@ -141,6 +143,7 @@ bool VoronoiSystemRuntime::buildSimBuffers(MemoryAllocator& memoryAllocator, Com
     }
 
     std::vector<voronoi::Node> simNodes(simNodeCount);
+    simNodeVolumes.assign(simNodeCount, 0.0f);
     std::vector<voronoi::GMLSInterface> simInterfaces;
     simInterfaces.reserve(voronoiInterfaces.size());
 
@@ -150,6 +153,7 @@ bool VoronoiSystemRuntime::buildSimBuffers(MemoryAllocator& memoryAllocator, Com
 
         voronoi::Node simNode{};
         simNode.volume = voronoiNode.volume;
+        simNodeVolumes[simNodeId] = std::abs(voronoiNode.volume);
         simNode.interfaceNeighborCount = 0;
         simNode.neighborOffset = static_cast<uint32_t>(simInterfaces.size());
 
@@ -178,22 +182,28 @@ bool VoronoiSystemRuntime::buildSimBuffers(MemoryAllocator& memoryAllocator, Com
         return false;
     }
 
-    freeBuffer(memoryAllocator, simNodeBuffer, simNodeBufferOffset);
-    freeBuffer(memoryAllocator, simGMLSInterfaceBuffer, simGMLSInterfaceBufferOffset);
+    simNodeBuffer = VK_NULL_HANDLE;
+    simNodeBufferOffset = 0;
+    simNodeBufferSize = 0;
+    simGMLSInterfaceBuffer = VK_NULL_HANDLE;
+    simGMLSInterfaceBufferOffset = 0;
+    simGMLSInterfaceCount = 0;
+
+    const VkDeviceSize simNodeUploadSize = simNodes.size() * sizeof(voronoi::Node);
 
     constexpr VkDeviceSize storageAlignment = 16;
     if (uploadDeviceBuffer(
             memoryAllocator,
             renderCommandPool,
             simNodes.data(),
-            simNodes.size() * sizeof(voronoi::Node),
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            simNodeUploadSize,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             storageAlignment,
             simNodeBuffer,
             simNodeBufferOffset) != VK_SUCCESS) {
         return false;
     }
-
+    simNodeBufferSize = simNodeUploadSize;
     if (uploadDeviceBuffer(
             memoryAllocator,
             renderCommandPool,
@@ -362,26 +372,33 @@ void VoronoiSystemRuntime::cleanup(MemoryAllocator& memoryAllocator) {
         }
     };
 
-    freeBuffer(resources.voronoiNodeBuffer, resources.voronoiNodeBufferOffset);
-    freeBuffer(resources.voronoiNeighborBuffer, resources.voronoiNeighborBufferOffset);
-    freeBuffer(resources.voronoiNeighborIndicesBuffer, resources.voronoiNeighborIndicesBufferOffset);
-    freeBuffer(resources.voronoiInterfaceAreasBuffer, resources.voronoiInterfaceAreasBufferOffset);
-    freeBuffer(resources.voronoiInterfaceNeighborIdsBuffer, resources.voronoiInterfaceNeighborIdsBufferOffset);
-    freeBuffer(resources.voronoiGMLSInterfaceBuffer, resources.voronoiGMLSInterfaceBufferOffset);
-    freeBuffer(resources.meshTriangleBuffer, resources.meshTriangleBufferOffset);
-    freeBuffer(resources.seedPositionBuffer, resources.seedPositionBufferOffset);
-    freeBuffer(resources.voronoiSeedFlagsBuffer, resources.voronoiSeedFlagsBufferOffset);
-    freeBuffer(simNodeBuffer, simNodeBufferOffset);
-    freeBuffer(simGMLSInterfaceBuffer, simGMLSInterfaceBufferOffset);
-    freeBuffer(resources.occupancyPointBuffer, resources.occupancyPointBufferOffset);
+    auto dropHandle = [](VkBuffer& buffer, VkDeviceSize& offset) {
+        buffer = VK_NULL_HANDLE;
+        offset = 0;
+    };
+
+    dropHandle(resources.voronoiNodeBuffer, resources.voronoiNodeBufferOffset);
+    dropHandle(resources.voronoiNeighborBuffer, resources.voronoiNeighborBufferOffset);
+    dropHandle(resources.voronoiNeighborIndicesBuffer, resources.voronoiNeighborIndicesBufferOffset);
+    dropHandle(resources.voronoiInterfaceAreasBuffer, resources.voronoiInterfaceAreasBufferOffset);
+    dropHandle(resources.voronoiInterfaceNeighborIdsBuffer, resources.voronoiInterfaceNeighborIdsBufferOffset);
+    dropHandle(resources.voronoiGMLSInterfaceBuffer, resources.voronoiGMLSInterfaceBufferOffset);
+    dropHandle(resources.seedPositionBuffer, resources.seedPositionBufferOffset);
+    dropHandle(resources.voronoiSeedFlagsBuffer, resources.voronoiSeedFlagsBufferOffset);
+    dropHandle(resources.occupancyPointBuffer, resources.occupancyPointBufferOffset);
     resources.occupancyPointCount = 0;
+    dropHandle(simNodeBuffer, simNodeBufferOffset);
+    simNodeBufferSize = 0;
+    dropHandle(simGMLSInterfaceBuffer, simGMLSInterfaceBufferOffset);
+    resources.voronoiNodeCount = 0;
+
+    freeBuffer(resources.meshTriangleBuffer, resources.meshTriangleBufferOffset);
     freeBuffer(resources.debugCellGeometryBuffer, resources.debugCellGeometryBufferOffset);
     freeBuffer(resources.voronoiDumpBuffer, resources.voronoiDumpBufferOffset);
     freeBuffer(resources.voxelGridParamsBuffer, resources.voxelGridParamsBufferOffset);
     freeBuffer(resources.voxelOccupancyBuffer, resources.voxelOccupancyBufferOffset);
     freeBuffer(resources.voxelTrianglesListBuffer, resources.voxelTrianglesListBufferOffset);
     freeBuffer(resources.voxelOffsetsBuffer, resources.voxelOffsetsBufferOffset);
-    resources.voronoiNodeCount = 0;
 
     if (domainRuntime) {
         domainRuntime->cleanup();

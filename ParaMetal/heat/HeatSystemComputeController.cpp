@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include "HeatSystem.hpp"
+#include "hash/HashProduct.hpp"
 #include "heat/HeatModelRuntime.hpp"
 #include "runtime/RuntimeProducts.hpp"
 #include "vulkan/MemoryAllocator.hpp"
@@ -10,11 +11,13 @@
 
 HeatSystemComputeController::HeatSystemComputeController(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, ModelRegistry& resourceManager,
     CommandPool& renderCommandPool,
+    CommandPool& transferCommandPool,
     uint32_t maxFramesInFlight)
     : vulkanDevice(vulkanDevice),
       memoryAllocator(memoryAllocator),
       resourceManager(resourceManager),
       renderCommandPool(renderCommandPool),
+      transferCommandPool(transferCommandPool),
       maxFramesInFlight(maxFramesInFlight) {
 }
 
@@ -28,6 +31,7 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
             const auto voronoiNodeBufferOffsetIt = config.modelVoronoiNodeBufferOffsetByModelId.find(runtimeModelId);
             const auto simNodeBufferIt = config.modelSimNodeBufferByModelId.find(runtimeModelId);
             const auto simNodeBufferOffsetIt = config.modelSimNodeBufferOffsetByModelId.find(runtimeModelId);
+            const auto simNodeBufferSizeIt = config.modelSimNodeBufferSizeByModelId.find(runtimeModelId);
             const auto simGmlsInterfaceIt = config.modelSimGMLSInterfaceBufferByModelId.find(runtimeModelId);
             const auto simGmlsInterfaceOffsetIt = config.modelSimGMLSInterfaceBufferOffsetByModelId.find(runtimeModelId);
             const auto simGmlsInterfaceCountIt = config.simGMLSInterfaceCounts.find(runtimeModelId);
@@ -43,6 +47,7 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
             const auto gmlsGradientCountIt = config.modelGMLSSurfaceGradientWeightCountByModelId.find(runtimeModelId);
             const auto seedFlagsIt = config.modelVoronoiSeedFlagsByModelId.find(runtimeModelId);
             const auto seedPositionsIt = config.modelVoronoiSeedPositionsByModelId.find(runtimeModelId);
+            const auto simVolumesIt = config.modelSimNodeVolumesByModelId.find(runtimeModelId);
             const auto voronoiToSimIt = config.modelVoronoiToSimByModelId.find(runtimeModelId);
             
             if (voronoiCountIt == config.voronoiNodeCounts.end() ||
@@ -51,11 +56,13 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
                 voronoiNodeBufferOffsetIt == config.modelVoronoiNodeBufferOffsetByModelId.end() ||
                 simNodeBufferIt == config.modelSimNodeBufferByModelId.end() ||
                 simNodeBufferOffsetIt == config.modelSimNodeBufferOffsetByModelId.end() ||
+                simNodeBufferSizeIt == config.modelSimNodeBufferSizeByModelId.end() ||
                 simGmlsInterfaceIt == config.modelSimGMLSInterfaceBufferByModelId.end() ||
                 simGmlsInterfaceOffsetIt == config.modelSimGMLSInterfaceBufferOffsetByModelId.end() ||
                 simGmlsInterfaceCountIt == config.simGMLSInterfaceCounts.end() ||
                 seedFlagsIt == config.modelVoronoiSeedFlagsByModelId.end() ||
                 seedPositionsIt == config.modelVoronoiSeedPositionsByModelId.end() ||
+                simVolumesIt == config.modelSimNodeVolumesByModelId.end() ||
                 voronoiToSimIt == config.modelVoronoiToSimByModelId.end()) {
                 continue;
             }
@@ -69,6 +76,7 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
                 simCountIt->second,
                 simNodeBufferIt->second,
                 simNodeBufferOffsetIt->second,
+                simNodeBufferSizeIt->second,
                 simGmlsInterfaceIt->second,
                 simGmlsInterfaceOffsetIt->second,
                 simGmlsInterfaceCountIt->second,
@@ -82,6 +90,7 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
                 (gmlsGradientCountIt != config.modelGMLSSurfaceGradientWeightCountByModelId.end()) ? gmlsGradientCountIt->second : 0,
                 seedFlagsIt->second,
                 seedPositionsIt->second,
+                simVolumesIt->second,
                 voronoiToSimIt->second);
         }
     }
@@ -104,15 +113,15 @@ void HeatSystemComputeController::applyRuntimeState(HeatSystem& system, const Co
     system.setRewindFrame(config.rewindFrame);
 }
 
-void HeatSystemComputeController::configure(uint64_t socketKey, const Config& config) {
+void HeatSystemComputeController::apply(uint64_t socketKey, const Config& config) {
     if (socketKey == 0) {
         return;
     }
 
-    auto it = activeSystems.find(socketKey);
-    if (it == activeSystems.end()) {
+    auto it = systemsBySocket.find(socketKey);
+    if (it == systemsBySocket.end()) {
         auto system = buildHeatSystem();
-        it = activeSystems.emplace(socketKey, std::move(system)).first;
+        it = systemsBySocket.emplace(socketKey, std::move(system)).first;
     }
 
     auto& system = it->second;
@@ -134,45 +143,46 @@ void HeatSystemComputeController::configure(uint64_t socketKey, const Config& co
         configuredConfigs.erase(socketKey);
     }
 
-    // Runtime state: pushed after structural path so playback instances exist
     applyRuntimeState(*system, config);
 }
 
-void HeatSystemComputeController::disable(uint64_t socketKey) {
+void HeatSystemComputeController::remove(uint64_t socketKey) {
     if (socketKey == 0) {
         return;
     }
 
     configuredConfigs.erase(socketKey);
-    auto it = activeSystems.find(socketKey);
-    if (it != activeSystems.end()) {
+    auto it = systemsBySocket.find(socketKey);
+    if (it != systemsBySocket.end()) {
         if (it->second) {
             it->second->setPlaybackState(false, 0);
             it->second->setActive(false);
-            it->second->cleanupResources();
+            vkDeviceWaitIdle(vulkanDevice.getDevice());
             it->second->cleanup();
         }
-        activeSystems.erase(it);
+        systemsBySocket.erase(it);
     }
 }
 
 void HeatSystemComputeController::disableAll() {
     configuredConfigs.clear();
-    for (auto& [key, system] : activeSystems) {
+    if (!systemsBySocket.empty()) {
+        vkDeviceWaitIdle(vulkanDevice.getDevice());
+    }
+    for (auto& [key, system] : systemsBySocket) {
         if (system) {
             system->setPlaybackState(false, 0);
             system->setActive(false);
-            system->cleanupResources();
             system->cleanup();
         }
     }
-    activeSystems.clear();
+    systemsBySocket.clear();
 }
 
 bool HeatSystemComputeController::isAnyHeatSystemActive() const {
     for (const auto& [key, config] : configuredConfigs) {
-        auto systemIt = activeSystems.find(key);
-        if (config.active && systemIt != activeSystems.end() && systemIt->second) {
+        auto systemIt = systemsBySocket.find(key);
+        if (config.active && systemIt != systemsBySocket.end() && systemIt->second) {
             return true;
         }
     }
@@ -180,31 +190,12 @@ bool HeatSystemComputeController::isAnyHeatSystemActive() const {
 }
 
 bool HeatSystemComputeController::isAnyHeatSystemPaused() const {
-    for (const auto& [key, system] : activeSystems) {
+    for (const auto& [key, system] : systemsBySocket) {
         if (system && system->getIsActive() && system->getIsPaused()) {
             return true;
         }
     }
     return false;
-}
-
-bool HeatSystemComputeController::isHeatSystemActive(uint64_t socketKey) const {
-    auto configIt = configuredConfigs.find(socketKey);
-    auto systemIt = activeSystems.find(socketKey);
-    return configIt != configuredConfigs.end() &&
-           systemIt != activeSystems.end() &&
-           systemIt->second &&
-           configIt->second.active;
-}
-
-bool HeatSystemComputeController::isHeatSystemPaused(uint64_t socketKey) const {
-    auto configIt = configuredConfigs.find(socketKey);
-    auto systemIt = activeSystems.find(socketKey);
-    return configIt != configuredConfigs.end() &&
-           systemIt != activeSystems.end() &&
-           systemIt->second &&
-           configIt->second.active &&
-           systemIt->second->getIsPaused();
 }
 
 std::unique_ptr<HeatSystem> HeatSystemComputeController::buildHeatSystem() {
@@ -213,7 +204,8 @@ std::unique_ptr<HeatSystem> HeatSystemComputeController::buildHeatSystem() {
         memoryAllocator,
         resourceManager,
         maxFramesInFlight,
-        renderCommandPool);
+        renderCommandPool,
+        transferCommandPool);
     if (!system || !system->isInitialized()) {
         std::cerr << "[HeatSystemComputeController] HeatSystem initialization failed" << std::endl;
         return nullptr;
@@ -223,18 +215,79 @@ std::unique_ptr<HeatSystem> HeatSystemComputeController::buildHeatSystem() {
 
 std::vector<ComputePass*> HeatSystemComputeController::getActiveSystems() const {
     std::vector<ComputePass*> systems;
-    systems.reserve(activeSystems.size());
-    for (const auto& [key, system] : activeSystems) {
-        if (system) {
+    systems.reserve(systemsBySocket.size());
+    for (const auto& [key, system] : systemsBySocket) {
+        if (system && system->hasDispatchableComputeWork()) {
             systems.push_back(system.get());
         }
     }
     return systems;
 }
 
+bool HeatSystemComputeController::buildProduct(uint64_t socketKey, HeatProduct& outProduct) {
+    outProduct = {};
+    if (socketKey == 0) return false;
+
+    auto sysIt = systemsBySocket.find(socketKey);
+    if (sysIt == systemsBySocket.end() || !sysIt->second) return false;
+    HeatSystem& system = *sysIt->second;
+
+    const Config* config = getConfig(socketKey);
+    if (!config) return false;
+
+    const auto freeProduct = [&]() {
+        for (size_t j = 0; j < outProduct.modelSurfaceBuffers.size(); ++j) {
+            if (outProduct.modelSurfaceBuffers[j] != VK_NULL_HANDLE)
+                memoryAllocator.free(outProduct.modelSurfaceBuffers[j],
+                    j < outProduct.modelSurfaceBufferOffsets.size() ? outProduct.modelSurfaceBufferOffsets[j] : 0);
+        }
+        for (size_t j = 0; j < outProduct.modelSurfaceGradientBuffers.size(); ++j) {
+            if (outProduct.modelSurfaceGradientBuffers[j] != VK_NULL_HANDLE)
+                memoryAllocator.free(outProduct.modelSurfaceGradientBuffers[j],
+                    j < outProduct.modelSurfaceGradientBufferOffsets.size() ? outProduct.modelSurfaceGradientBufferOffsets[j] : 0);
+        }
+        outProduct = {};
+    };
+
+    outProduct.modelRuntimeModelIds.reserve(config->modelRuntimeModelIds.size());
+    outProduct.modelSurfaceBuffers.reserve(config->modelRuntimeModelIds.size());
+    outProduct.modelSurfaceBufferOffsets.reserve(config->modelRuntimeModelIds.size());
+    outProduct.modelSurfacePointCounts.reserve(config->modelRuntimeModelIds.size());
+    outProduct.modelSurfaceGradientBuffers.reserve(config->modelRuntimeModelIds.size());
+    outProduct.modelSurfaceGradientBufferOffsets.reserve(config->modelRuntimeModelIds.size());
+
+    for (uint32_t runtimeModelId : config->modelRuntimeModelIds) {
+        HeatModelRuntime* model = system.getModelByRuntimeId(runtimeModelId);
+        if (!model || runtimeModelId == 0) continue;
+
+        if (!model->appendProduct(outProduct)) {
+            freeProduct();
+            return false;
+        }
+        outProduct.modelRuntimeModelIds.push_back(runtimeModelId);
+    }
+
+    if (!outProduct.isValid()) {
+        freeProduct();
+        return false;
+    }
+
+    if (!system.setupDescriptors(
+            outProduct.modelSurfaceBuffers,
+            outProduct.modelSurfaceBufferOffsets,
+            outProduct.modelSurfaceGradientBuffers,
+            outProduct.modelSurfaceGradientBufferOffsets)) {
+        freeProduct();
+        return false;
+    }
+
+    HashProduct::seal(outProduct);
+    return true;
+}
+
 const HeatSystem* HeatSystemComputeController::getSystem(uint64_t socketKey) const {
-    const auto systemIt = activeSystems.find(socketKey);
-    if (systemIt == activeSystems.end() || !systemIt->second) {
+    const auto systemIt = systemsBySocket.find(socketKey);
+    if (systemIt == systemsBySocket.end() || !systemIt->second) {
         return nullptr;
     }
     return systemIt->second.get();
@@ -245,14 +298,4 @@ const HeatSystemComputeController::Config* HeatSystemComputeController::getConfi
     return configIt != configuredConfigs.end() ? &configIt->second : nullptr;
 }
 
-void HeatSystemComputeController::destroyHeatSystem(uint64_t socketKey) {
-    auto it = activeSystems.find(socketKey);
-    if (it != activeSystems.end()) {
-        if (it->second) {
-            it->second->cleanupResources();
-            it->second->cleanup();
-        }
-        activeSystems.erase(it);
-    }
-}
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../hash/HashValues.hpp"
 #include "NodeGraphCoreTypes.hpp"
 #include "NodeGraphTypes.hpp"
 
@@ -14,30 +15,13 @@ class NodePayloadRegistry;
 struct NodeDataBlock {
     uint8_t dataType = 0;
     NodeDataHandle payloadHandle{};
+    HashValues hashes{};
     double scalarFloatValue = 0.0;
     int64_t scalarIntValue = 0;
     bool scalarBoolValue = false;
+    bool isFrozen = false;
     std::unordered_map<std::string, std::string> metadata;
     std::vector<NodeGraphNodeId> lineageNodeIds;
-};
-
-enum class EvaluatedSocketStatus : uint8_t {
-    Missing,
-    Value,
-    Error,
-};
-
-struct EvaluatedSocketValue {
-    EvaluatedSocketStatus status = EvaluatedSocketStatus::Missing;
-    NodeDataBlock data{};
-    std::string error;
-};
-
-struct NodeGraphEvaluationState {
-    std::unordered_map<uint64_t, uint64_t> upstreamSocket;
-    std::unordered_map<uint64_t, std::vector<uint64_t>> upstreamSockets;
-    std::unordered_map<uint64_t, EvaluatedSocketValue> outputBySocket;
-    std::vector<NodeGraphNodeId> executionOrder;
 };
 
 void populateMetadata(NodeDataBlock& dataBlock, const NodeGraphTypeRegistry* typeRegistry = nullptr, const NodePayloadRegistry* payloadRegistry = nullptr);

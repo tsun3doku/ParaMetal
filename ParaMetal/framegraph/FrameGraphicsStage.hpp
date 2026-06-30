@@ -11,6 +11,13 @@ class ModelSelection;
 class GizmoController;
 class WireframeRenderer;
 
+// Collected graphics work for a frame. VK_NULL_HANDLE commandBuffer means
+// recording failed; FrameController treats that as a skip/recreate.
+struct FrameGraphicsCollection {
+    VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+    FrameStageResult result = FrameStageResult::Continue;
+};
+
 class FrameGraphicsStage {
 public:
     FrameGraphicsStage(
@@ -21,7 +28,9 @@ public:
         GizmoController& gizmoController,
         WireframeRenderer& wireframeRenderer);
 
-    FrameStageResult execute(const FrameState& frameState, const FrameSyncState& syncState);
+    // Records the scene command buffer. Does NOT submit. Returns the collected
+    // work; result indicates whether to proceed, recreate, etc.
+    FrameGraphicsCollection collect(const FrameState& frameState, const FrameSyncState& syncState);
 
 private:
     VulkanDevice& vulkanDevice;

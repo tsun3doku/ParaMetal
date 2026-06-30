@@ -1,6 +1,5 @@
 #pragma once
 
-#include "hash/HashValues.hpp"
 #include "domain/GeometryData.hpp"
 
 #include <cstdint>
@@ -9,12 +8,11 @@
 //                                                      [ Invariant:
 //                                                        - Payloads are node graph authored data
 //                                                        - They may contain authored values and NodeDataHandle values
-//                                                        - They must not contain runtime objects/ids, scene objects, 
-//                                                          backend/controller objects or GPU resources 
+//                                                        - They must not contain runtime objects/ids, scene objects,
+//                                                          backend/controller objects or GPU resources
 //                                                        - They must not be used directly by any backends ]
 
 struct RemeshData {
-    HashValues hashes{};
     NodeDataHandle sourceMeshHandle{};
     int iterations = 1;
     float minAngleDegrees = 20.0f;

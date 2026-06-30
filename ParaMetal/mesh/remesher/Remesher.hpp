@@ -7,11 +7,6 @@
 class VulkanDevice;
 class MemoryAllocator;
 
-struct RemeshResult {
-    SupportingHalfedge::IntrinsicMesh intrinsicMesh;
-    SupportingHalfedge::GPUResources intrinsicGpuResources;
-};
-
 class Remesher {
 public:
     Remesher(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator);
@@ -23,7 +18,8 @@ public:
         double minAngleDegrees,
         double maxEdgeLength,
         double stepSize,
-        RemeshResult& outResult) const;
+        SupportingHalfedge::IntrinsicMesh& outMesh,
+        SupportingHalfedge::GPUResources& outGpuResources) const;
     void cleanupGpuResources(SupportingHalfedge::GPUResources& resources) const;
 
 private:

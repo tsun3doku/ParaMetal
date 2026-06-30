@@ -14,12 +14,10 @@ public:
     QPainterPath shape() const override;
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget = nullptr) override;
 
-    void setDisplayEnabled(bool enabled);
-    void setFrozen(bool frozen);
+    void setNodeState(const NodeGraphNodeState& state);
     void setHoveredState(bool hovered);
 
-    bool displayEnabled() const;
-    bool frozen() const;
+    const NodeGraphNodeState& nodeState() const;
     NodeGraphNodeId nodeId() const;
     nodegraphscene::NodeHitRegion hitRegionAt(const QPointF& localPos) const;
     QPointF inputSocketPosition(std::size_t index, std::size_t total) const;
@@ -38,10 +36,9 @@ private:
         bool active,
         bool hovered) const;
 
-    NodeGraphNodeId m_nodeId{};
-    NodeTypeId m_typeId;
-    bool m_displayEnabled = false;
-    bool m_frozen = false;
-    bool m_hovered = false;
-    nodegraphscene::NodeHitRegion m_hoverRegion = nodegraphscene::NodeHitRegion::None;
+    NodeGraphNodeId nodeIdValue{};
+    NodeTypeId typeId;
+    NodeGraphNodeState stateValue{};
+    bool hoveredValue = false;
+    nodegraphscene::NodeHitRegion hoverRegion = nodegraphscene::NodeHitRegion::None;
 };

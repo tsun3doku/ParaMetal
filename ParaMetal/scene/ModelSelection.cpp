@@ -241,24 +241,29 @@ PickedResult ModelSelection::pickAtPosition(int x, int y, uint32_t currentFrame)
         return PickedResult();
     }
     
+    auto freeCmd = [&](const char* context) {
+        (void)context;
+        vkFreeCommandBuffers(vulkanDevice.getDevice(), pickingCommandPool, 1, &commandBuffer);
+    };
+    
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     
     if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
-        vkFreeCommandBuffers(vulkanDevice.getDevice(), pickingCommandPool, 1, &commandBuffer);
+        freeCmd("beginFail");
         return PickedResult();
     }
     
     // Get the stencil image from frameGraph
     const auto& depthResolveImages = frameGraphRuntime.getResourceImages(depthResolveResourceId);
     if (currentFrame >= depthResolveImages.size()) {
-        vkFreeCommandBuffers(vulkanDevice.getDevice(), pickingCommandPool, 1, &commandBuffer);
+        freeCmd("invalidFrame");
         return PickedResult();
     }
     VkImage stencilImage = depthResolveImages[currentFrame];
     if (stencilImage == VK_NULL_HANDLE) {
-        vkFreeCommandBuffers(vulkanDevice.getDevice(), pickingCommandPool, 1, &commandBuffer);
+        freeCmd("nullStencilImage");
         return PickedResult();
     }
     
@@ -310,7 +315,7 @@ PickedResult ModelSelection::pickAtPosition(int x, int y, uint32_t currentFrame)
         0, 0, nullptr, 0, nullptr, 1, &barrier);
     
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
-        vkFreeCommandBuffers(vulkanDevice.getDevice(), pickingCommandPool, 1, &commandBuffer);
+        freeCmd("endFail");
         return PickedResult();
     }
     
@@ -318,7 +323,7 @@ PickedResult ModelSelection::pickAtPosition(int x, int y, uint32_t currentFrame)
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     VkFence copyFence;
     if (vkCreateFence(vulkanDevice.getDevice(), &fenceInfo, nullptr, &copyFence) != VK_SUCCESS || copyFence == VK_NULL_HANDLE) {
-        vkFreeCommandBuffers(vulkanDevice.getDevice(), pickingCommandPool, 1, &commandBuffer);
+        freeCmd("createFenceFail");
         return PickedResult();
     }
 
@@ -330,16 +335,16 @@ PickedResult ModelSelection::pickAtPosition(int x, int y, uint32_t currentFrame)
     const VkResult submitResult = vkQueueSubmit(vulkanDevice.getGraphicsQueue(), 1, &submitInfo, copyFence);
     if (submitResult != VK_SUCCESS) {
         vkDestroyFence(vulkanDevice.getDevice(), copyFence, nullptr);
-        vkFreeCommandBuffers(vulkanDevice.getDevice(), pickingCommandPool, 1, &commandBuffer);
+        freeCmd("submitFail");
         return PickedResult();
     }
     if (vkWaitForFences(vulkanDevice.getDevice(), 1, &copyFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
         vkDestroyFence(vulkanDevice.getDevice(), copyFence, nullptr);
-        vkFreeCommandBuffers(vulkanDevice.getDevice(), pickingCommandPool, 1, &commandBuffer);
+        freeCmd("fenceWaitFail");
         return PickedResult();
     }
     vkDestroyFence(vulkanDevice.getDevice(), copyFence, nullptr);
-    vkFreeCommandBuffers(vulkanDevice.getDevice(), pickingCommandPool, 1, &commandBuffer);
+    freeCmd("success");
     
     uint8_t stencilValue = *static_cast<uint8_t*>(stagingBufferMapped);
      

@@ -13,7 +13,7 @@ class NodeHeatSolverPanel final : public NodePanelBase {
 public:
     explicit NodeHeatSolverPanel(QWidget* parent = nullptr);
 
-    void bind(NodeGraphBridge* nodeGraphBridge, const RuntimeQuery* runtimeQuery);
+    void bind(NodeGraph* graph, const RuntimeQuery* runtimeQuery);
 
     void updateHeatStatus();
 

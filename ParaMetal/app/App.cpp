@@ -81,16 +81,16 @@ const RenderSettingsController* App::getSettingsController() const {
     return nullptr;
 }
 
-NodeGraphBridge* App::getNodeGraphBridge() {
+NodeGraph* App::getNodeGraph() {
     if (systems) {
-        return systems->getNodeGraphBridge();
+        return systems->getNodeGraph();
     }
     return nullptr;
 }
 
-const NodeGraphBridge* App::getNodeGraphBridge() const {
+const NodeGraph* App::getNodeGraph() const {
     if (systems) {
-        return systems->getNodeGraphBridge();
+        return systems->getNodeGraph();
     }
     return nullptr;
 }
@@ -137,9 +137,9 @@ const ModelSelection* App::getModelSelection() const {
     return nullptr;
 }
 
-void App::setRenderPaused(bool paused) {
+void App::setSimPaused(bool paused) {
     if (systems) {
-        systems->setRenderPaused(paused);
+        systems->setSimPaused(paused);
     }
 }
 

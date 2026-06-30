@@ -10,9 +10,10 @@
 #include "heat/HeatSystem.hpp"
 #include "heat/HeatSystemComputeController.hpp"
 #include "heat/VoronoiSystemComputeController.hpp"
-#include "nodegraph/NodeGraphBridge.hpp"
+#include "nodegraph/NodeGraph.hpp"
 #include "nodegraph/NodeGraphController.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
+#include "runtime/RuntimeProductManager.hpp"
 #include "runtime/ModelComputeRuntime.hpp"
 #include "runtime/ContactDisplayController.hpp"
 #include "runtime/PointComputeRuntime.hpp"
@@ -42,11 +43,12 @@ bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, Win
     }
 
     auto* allocator = core.allocator();
-    auto* commandPool = core.commandPool();
+    auto* commandPool = core.getRenderCommandPool();
+    auto* transferCommandPool = core.getTransferCommandPool();
     auto* resourceManager = scene.resourceManager();
     auto* modelUploader = scene.modelUploader();
     auto* uniformBufferManager = scene.uniformBufferManager();
-    if (!allocator || !commandPool || !resourceManager || !modelUploader || !uniformBufferManager) {
+    if (!allocator || !commandPool || !transferCommandPool || !resourceManager || !modelUploader || !uniformBufferManager) {
         return false;
     }
 
@@ -119,7 +121,7 @@ bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, Win
     contactSystemComputeControllerState = std::make_unique<ContactSystemComputeController>(
         core.device(),
         *allocator,
-        *core.commandPool());
+        *transferCommandPool);
     runtimeContactComputeTransportState->setController(contactSystemComputeControllerState.get());
     contactDisplayControllerState->setOverlayRenderer(renderRuntime->getSceneRenderer().getContactOverlayRenderer());
     runtimeContactDisplayTransportState->setController(contactDisplayControllerState.get());
@@ -131,7 +133,7 @@ bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, Win
         core.device(),
         *allocator,
         *resourceManager,
-        *commandPool,
+        *transferCommandPool,
         renderconfig::MaxFramesInFlight);
     runtimeVoronoiComputeTransportState->setController(voronoiSystemComputeControllerState.get());
     voronoiDisplayControllerState->setOverlayRenderer(renderRuntime->getSceneRenderer().getVoronoiOverlayRenderer());
@@ -145,6 +147,7 @@ bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, Win
         *allocator,
         *resourceManager,
         *commandPool,
+        *transferCommandPool,
         renderconfig::MaxFramesInFlight);
     heatDisplayControllerState->setOverlayRenderer(renderRuntime->getSceneRenderer().getHeatOverlayRenderer());
     runtimeHeatComputeTransportState->setController(heatSystemComputeControllerState.get());
@@ -179,17 +182,18 @@ bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, Win
     nodeRuntimeServices.renderSettingsController = renderSettingsController;
     nodeRuntimeServices.payloadRegistry = payloadRegistryState.get();
     nodeRuntimeServices.resourceManager = resourceManager;
-    nodeRuntimeServices.remesher = &remeshControllerState->getRemesher();
+    nodeRuntimeServices.vulkanDevice = &core.device();
+    nodeRuntimeServices.memoryAllocator = allocator;
 
-    nodeGraphBridgeState = std::make_unique<NodeGraphBridge>();
-    nodeGraphControllerState = std::make_unique<NodeGraphController>(nodeGraphBridgeState.get(), nodeRuntimeServices);
+    nodeGraphState = std::make_unique<NodeGraph>();
+    nodeGraphControllerState = std::make_unique<NodeGraphController>(nodeGraphState.get(), nodeRuntimeServices);
 
     initialized = true;
     return true;
 }
 
 bool RenderContext::initializeInputPipeline(SceneContext& scene, InputActionHandler& inputActions) {
-    if (!initialized || !renderRuntime || !sceneControllerState || !nodeGraphControllerState || !nodeGraphBridgeState) {
+    if (!initialized || !renderRuntime || !sceneControllerState || !nodeGraphControllerState || !nodeGraphState) {
         return false;
     }
     if (inputPipelineInitialized) {
@@ -210,7 +214,7 @@ bool RenderContext::initializeInputPipeline(SceneContext& scene, InputActionHand
         renderRuntime->getModelSelection(),
         *resourceManager,
         *sceneControllerState,
-        *nodeGraphBridgeState,
+        *nodeGraphState,
         swapchainManager,
         inputActions);
 
@@ -241,9 +245,18 @@ bool RenderContext::initializeSyncObjects() {
 }
 
 void RenderContext::shutdown() {
+    if (renderRuntime) {
+        renderRuntime->cleanupSwapChain();
+        renderRuntime->shutdownSyncObjects();
+    }
+
+    // Now safe to destroy controllers and backends
+    if (nodeGraphControllerState && nodeGraphControllerState->getProductManager()) {
+        nodeGraphControllerState->getProductManager()->destroyAll();
+    }
     inputControllerState.reset();
     nodeGraphControllerState.reset();
-    nodeGraphBridgeState.reset();
+    nodeGraphState.reset();
     sceneControllerState.reset();
     runtimeModelDisplayTransportState.reset();
     runtimeRemeshDisplayTransportState.reset();
@@ -266,13 +279,10 @@ void RenderContext::shutdown() {
     heatDisplayControllerState.reset();
 
     if (renderRuntime) {
-        renderRuntime->cleanupSwapChain();
-        renderRuntime->shutdownSyncObjects();
         renderRuntime->cleanup();
-    } else {
-        frameSync.shutdown();
     }
     renderRuntime.reset();
+    frameSync.shutdown();
     swapchainManager.cleanup();
     inputPipelineInitialized = false;
     initialized = false;
@@ -330,12 +340,12 @@ const SceneController* RenderContext::sceneController() const {
     return sceneControllerState.get();
 }
 
-NodeGraphBridge* RenderContext::nodeGraphBridge() {
-    return nodeGraphBridgeState.get();
+NodeGraph* RenderContext::nodeGraph() {
+    return nodeGraphState.get();
 }
 
-const NodeGraphBridge* RenderContext::nodeGraphBridge() const {
-    return nodeGraphBridgeState.get();
+const NodeGraph* RenderContext::nodeGraph() const {
+    return nodeGraphState.get();
 }
 
 NodeGraphController* RenderContext::nodeGraphController() {

@@ -14,7 +14,7 @@ class VulkanDevice;
 
 class ContactSystem {
 public:
-    ContactSystem(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, CommandPool& renderCommandPool);
+    ContactSystem(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, CommandPool& commandPool);
     ~ContactSystem();
 
     void setParams(float minNormalDot, float contactRadius);
@@ -40,6 +40,6 @@ public:
 private:
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
-    CommandPool& renderCommandPool;
+    CommandPool& commandPool;
     std::unique_ptr<ContactSystemRuntime> runtime;
 };

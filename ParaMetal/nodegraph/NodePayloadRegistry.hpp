@@ -22,10 +22,8 @@ public:
         if (key == 0) {
             return {};
         }
-        T stored = payload;
-        stored.hashes = hashes;
         Entry entry{};
-        entry.payload = std::make_shared<T>(stored);
+        entry.payload = std::make_shared<T>(payload);
         entry.type = std::type_index(typeid(T));
         entry.hashes = hashes;
         entries[key] = entry;

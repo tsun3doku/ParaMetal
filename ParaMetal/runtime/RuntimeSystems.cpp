@@ -16,7 +16,7 @@ bool RuntimeSystems::initialize(WindowRuntimeState& runtimeState, const AppVulka
     windowRuntimeState = &runtimeState;
     isShuttingDown.store(false, std::memory_order_release);
     runtimeBusy.store(false, std::memory_order_release);
-    renderPaused.store(false, std::memory_order_release);
+    simPaused.store(false, std::memory_order_release);
     frameCounter = 0;
     timelineRuntime.reset();
 
@@ -36,7 +36,7 @@ bool RuntimeSystems::initialize(WindowRuntimeState& runtimeState, const AppVulka
         cleanup();
         return false;
     }
-    if (!runtimeController.initialize(render, scene, core, runtimeState, settingsManager, renderPaused)) {
+    if (!runtimeController.initialize(render, scene, core, runtimeState, settingsManager, simPaused)) {
         cleanup();
         return false;
     }
@@ -128,8 +128,8 @@ void RuntimeSystems::setPanSensitivity(float sensitivity) {
     scene.cameraController().setPanSensitivity(sensitivity);
 }
 
-void RuntimeSystems::setRenderPaused(bool paused) {
-    renderPaused.store(paused, std::memory_order_release);
+void RuntimeSystems::setSimPaused(bool paused) {
+    simPaused.store(paused, std::memory_order_release);
     if (paused && core.isInitialized() && core.device().getDevice() != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(core.device().getDevice());
     }
@@ -143,12 +143,12 @@ const RenderSettingsController* RuntimeSystems::getSettingsController() const {
     return &settingsController;
 }
 
-NodeGraphBridge* RuntimeSystems::getNodeGraphBridge() {
-    return render.nodeGraphBridge();
+NodeGraph* RuntimeSystems::getNodeGraph() {
+    return render.nodeGraph();
 }
 
-const NodeGraphBridge* RuntimeSystems::getNodeGraphBridge() const {
-    return render.nodeGraphBridge();
+const NodeGraph* RuntimeSystems::getNodeGraph() const {
+    return render.nodeGraph();
 }
 
 CameraController* RuntimeSystems::getCameraController() {

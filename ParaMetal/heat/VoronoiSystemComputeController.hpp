@@ -46,18 +46,19 @@ public:
     };
 
     VoronoiSystemComputeController(
-        VulkanDevice& vulkanDevice, 
+        VulkanDevice& vulkanDevice,
         MemoryAllocator& memoryAllocator,
         ModelRegistry& resourceManager,
-        CommandPool& renderCommandPool,
+        CommandPool& commandPool,
         uint32_t maxFramesInFlight);
 
-    void configure(uint64_t socketKey, const Config& config);
-    void disable(uint64_t socketKey);
+    void apply(uint64_t socketKey, const Config& config);
+    bool buildProduct(uint64_t socketKey, VoronoiProduct& product) const;
+    void remove(uint64_t socketKey);
     void disableAll();
+    std::vector<VoronoiSystem*> getActiveSystems() const;
     const VoronoiSystem* getSystem(uint64_t socketKey) const;
     const Config* getConfig(uint64_t socketKey) const;
-    std::vector<VoronoiSystem*> getActiveSystems() const;
 
 private:
     std::unique_ptr<VoronoiSystem> buildVoronoiSystem();
@@ -65,8 +66,8 @@ private:
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
     ModelRegistry& resourceManager;
-    CommandPool& renderCommandPool;
-    std::unordered_map<uint64_t, std::unique_ptr<VoronoiSystem>> activeSystems;
+    CommandPool& commandPool;
+    std::unordered_map<uint64_t, std::unique_ptr<VoronoiSystem>> systemsBySocket;
     std::unordered_map<uint64_t, Config> configuredConfigs;
     uint32_t maxFramesInFlight = 0;
 };

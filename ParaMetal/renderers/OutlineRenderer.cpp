@@ -10,19 +10,25 @@
 #include <algorithm>
 #include <iostream>
 
-OutlineRenderer::OutlineRenderer(VulkanDevice& device, VkRenderPass renderPass, uint32_t subpassIndex, uint32_t maxFramesInFlight)
+OutlineRenderer::OutlineRenderer(VulkanDevice& device)
     : vulkanDevice(device) {
+}
+
+OutlineRenderer::~OutlineRenderer() {
+    cleanup();
+}
+
+bool OutlineRenderer::initialize(VkRenderPass renderPass, uint32_t subpassIndex, uint32_t maxFramesInFlight) {
     if (!createDepthSampler() ||
         !createDescriptorPool(maxFramesInFlight) ||
         !createDescriptorSetLayout() ||
         !createDescriptorSets(maxFramesInFlight) ||
         !createPipeline(renderPass, subpassIndex)) {
         std::cerr << "[OutlineRenderer] Failed to create render resources" << std::endl;
+        cleanup();
+        return false;
     }
-}
-
-OutlineRenderer::~OutlineRenderer() {
-    cleanup();
+    return true;
 }
 
 bool OutlineRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
@@ -89,7 +95,15 @@ bool OutlineRenderer::createDescriptorSets(uint32_t maxFramesInFlight) {
 void OutlineRenderer::updateDescriptors(const std::vector<VkImageView>& depthViews, const std::vector<VkImageView>& stencilViews) {
     const size_t frameCount = std::min(depthViews.size(), stencilViews.size());
     const size_t setCount = std::min(frameCount, descriptorSets.size());
+    if (setCount != descriptorSets.size()) {
+        return;
+    }
+
     for (size_t i = 0; i < setCount; i++) {
+        if (depthViews[i] == VK_NULL_HANDLE || stencilViews[i] == VK_NULL_HANDLE) {
+            return;
+        }
+
         std::array<VkDescriptorImageInfo, 2> imageInfos{};
 
         imageInfos[0].imageLayout = VK_IMAGE_LAYOUT_GENERAL;

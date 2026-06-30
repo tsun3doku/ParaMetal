@@ -1,6 +1,6 @@
 #include "PyBridge.hpp"
 
-#include "nodegraph/NodeGraphBridge.hpp"
+#include "nodegraph/NodeGraph.hpp"
 #include "nodegraph/NodeGraphEditor.hpp"
 
 #include <pybind11/embed.h>
@@ -24,20 +24,20 @@ PYBIND11_EMBEDDED_MODULE(parametal, m) {
     bindGraph(m);
 
     m.def("get_graph", []() {
-        NodeGraphBridge* bridge = pybridge::getBridge();
-        if (!bridge) {
-            throw std::runtime_error("No graph bridge available");
+        NodeGraph* graph = pybridge::getGraph();
+        if (!graph) {
+            throw std::runtime_error("No graph available");
         }
-        return bridge;
+        return graph;
     }, py::return_value_policy::reference);
 
     m.def("default_graph", []() {
-        NodeGraphBridge* bridge = pybridge::getBridge();
-        if (!bridge) {
-            throw std::runtime_error("No graph bridge available");
+        NodeGraph* graph = pybridge::getGraph();
+        if (!graph) {
+            throw std::runtime_error("No graph available");
         }
 
-        NodeGraphEditor editor(*bridge);
+        NodeGraphEditor editor(*graph);
         editor.resetToDefaultGraph();
     });
 }

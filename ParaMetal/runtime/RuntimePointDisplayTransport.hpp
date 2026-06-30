@@ -1,8 +1,8 @@
 #pragma once
 
 #include "runtime/PointDisplayController.hpp"
-#include "runtime/RuntimeECS.hpp"
-#include "runtime/RuntimePackages.hpp"
+#include "runtime/RuntimePackageManager.hpp"
+#include "runtime/RuntimeProductManager.hpp"
 #include "runtime/RuntimeProducts.hpp"
 
 #include <unordered_set>
@@ -13,37 +13,30 @@ public:
         controller = updatedController;
     }
 
-    void setECSRegistry(ECSRegistry* updatedRegistry) {
-        ecsRegistry = updatedRegistry;
+    void setManagers(RuntimePackageManager*, RuntimeProductManager* updatedProducts) {
+        products = updatedProducts;
     }
 
-    void setVisibleKeys(const std::unordered_set<uint64_t>* keys) {
-        visibleKeys = keys;
-    }
-
-    void sync(const ECSRegistry& registry) {
+    void sync(const RuntimePackageManager& registry, const std::unordered_set<uint64_t>& visibleKeys) {
         if (!controller) {
             return;
         }
 
         std::unordered_set<uint64_t> nextSocketKeys;
-        auto view = registry.view<PointPackage>(entt::exclude<Stale>);
-        for (auto entity : view) {
-            uint64_t socketKey = static_cast<uint64_t>(entity);
-            if (visibleKeys && visibleKeys->find(socketKey) == visibleKeys->end()) {
-                continue;
+        registry.forEach<PointPackage>([&](uint64_t socketKey, const PointPackage& package) {
+            if (visibleKeys.find(socketKey) == visibleKeys.end()) {
+                return;
             }
 
-            const auto& package = registry.get<PointPackage>(entity);
             PointDisplayController::Config config{};
             if (!tryBuildConfig(socketKey, package, config)) {
                 controller->remove(socketKey);
-                continue;
+                return;
             }
 
             controller->apply(socketKey, config);
             nextSocketKeys.insert(socketKey);
-        }
+        });
 
         for (uint64_t socketKey : activeSocketKeys) {
             if (nextSocketKeys.find(socketKey) == nextSocketKeys.end()) {
@@ -61,12 +54,15 @@ public:
     }
 
 private:
-    bool tryBuildConfig(uint64_t socketKey, const PointPackage& package, PointDisplayController::Config& outConfig) const {
-        if (!controller || !ecsRegistry || socketKey == 0) {
+    bool tryBuildConfig(
+        uint64_t socketKey,
+        const PointPackage& package,
+        PointDisplayController::Config& outConfig) const {
+        if (!controller || !products || socketKey == 0) {
             return false;
         }
 
-        const PointProduct* product = tryGetProduct<PointProduct>(*ecsRegistry, socketKey);
+        const PointProduct* product = products->resolve<PointProduct>(package.productHandle);
         if (!product || !product->isValid()) {
             return false;
         }
@@ -81,7 +77,6 @@ private:
     }
 
     PointDisplayController* controller = nullptr;
-    ECSRegistry* ecsRegistry = nullptr;
-    const std::unordered_set<uint64_t>* visibleKeys = nullptr;
+    RuntimeProductManager* products = nullptr;
     std::unordered_set<uint64_t> activeSocketKeys;
 };

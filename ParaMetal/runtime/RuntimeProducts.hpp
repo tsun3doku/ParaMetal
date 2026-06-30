@@ -1,18 +1,14 @@
 #pragma once
 
-#include <array>
 #include <cstdint>
-#include <type_traits>
 #include <vector>
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 #include <vulkan/vulkan.h>
 
-#include "domain/GeometryData.hpp"
 #include "heat/HeatGpuStructs.hpp"
 #include "mesh/remesher/SupportingHalfedge.hpp"
-#include "nodegraph/NodeGraphCoreTypes.hpp"
 #include "hash/HashValues.hpp"
 #include "contact/ContactTypes.hpp"
 #include "voronoi/VoronoiGpuStructs.hpp"
@@ -56,16 +52,47 @@ struct RemeshProduct {
     size_t intrinsicTriangleCount = 0;
     size_t intrinsicVertexCount = 0;
     float averageTriangleArea = 0.0f;
+
+    VkBuffer supportingHalfedgeBuffer = VK_NULL_HANDLE;
+    VkDeviceSize supportingHalfedgeOffset = 0;
     VkBufferView supportingHalfedgeView = VK_NULL_HANDLE;
+
+    VkBuffer supportingAngleBuffer = VK_NULL_HANDLE;
+    VkDeviceSize supportingAngleOffset = 0;
     VkBufferView supportingAngleView = VK_NULL_HANDLE;
+
+    VkBuffer halfedgeBuffer = VK_NULL_HANDLE;
+    VkDeviceSize halfedgeOffset = 0;
     VkBufferView halfedgeView = VK_NULL_HANDLE;
+
+    VkBuffer edgeBuffer = VK_NULL_HANDLE;
+    VkDeviceSize edgeOffset = 0;
     VkBufferView edgeView = VK_NULL_HANDLE;
+
+    VkBuffer triangleBuffer = VK_NULL_HANDLE;
+    VkDeviceSize triangleOffset = 0;
     VkBufferView triangleView = VK_NULL_HANDLE;
+
+    VkBuffer lengthBuffer = VK_NULL_HANDLE;
+    VkDeviceSize lengthOffset = 0;
     VkBufferView lengthView = VK_NULL_HANDLE;
+
+    VkBuffer inputHalfedgeBuffer = VK_NULL_HANDLE;
+    VkDeviceSize inputHalfedgeOffset = 0;
     VkBufferView inputHalfedgeView = VK_NULL_HANDLE;
+
+    VkBuffer inputEdgeBuffer = VK_NULL_HANDLE;
+    VkDeviceSize inputEdgeOffset = 0;
     VkBufferView inputEdgeView = VK_NULL_HANDLE;
+
+    VkBuffer inputTriangleBuffer = VK_NULL_HANDLE;
+    VkDeviceSize inputTriangleOffset = 0;
     VkBufferView inputTriangleView = VK_NULL_HANDLE;
+
+    VkBuffer inputLengthBuffer = VK_NULL_HANDLE;
+    VkDeviceSize inputLengthOffset = 0;
     VkBufferView inputLengthView = VK_NULL_HANDLE;
+
     HashValues hashes{};
 
     bool isValid() const {
@@ -75,6 +102,16 @@ struct RemeshProduct {
             !intrinsicMesh.indices.empty() &&
             intrinsicTriangleBuffer != VK_NULL_HANDLE &&
             intrinsicVertexBuffer != VK_NULL_HANDLE &&
+            supportingHalfedgeBuffer != VK_NULL_HANDLE &&
+            supportingAngleBuffer != VK_NULL_HANDLE &&
+            halfedgeBuffer != VK_NULL_HANDLE &&
+            edgeBuffer != VK_NULL_HANDLE &&
+            triangleBuffer != VK_NULL_HANDLE &&
+            lengthBuffer != VK_NULL_HANDLE &&
+            inputHalfedgeBuffer != VK_NULL_HANDLE &&
+            inputEdgeBuffer != VK_NULL_HANDLE &&
+            inputTriangleBuffer != VK_NULL_HANDLE &&
+            inputLengthBuffer != VK_NULL_HANDLE &&
             supportingHalfedgeView != VK_NULL_HANDLE &&
             supportingAngleView != VK_NULL_HANDLE &&
             halfedgeView != VK_NULL_HANDLE &&
@@ -112,6 +149,7 @@ struct VoronoiProduct {
     VkDeviceSize voronoiGMLSInterfaceBufferOffset = 0;
     VkBuffer simNodeBuffer = VK_NULL_HANDLE;
     VkDeviceSize simNodeBufferOffset = 0;
+    VkDeviceSize simNodeBufferSize = 0;
     VkBuffer simGMLSInterfaceBuffer = VK_NULL_HANDLE;
     VkDeviceSize simGMLSInterfaceBufferOffset = 0;
     uint32_t simGMLSInterfaceCount = 0;
@@ -140,6 +178,7 @@ struct VoronoiProduct {
     std::vector<glm::vec3> seedPositions;
     std::vector<uint32_t> voronoiToSim;
     std::vector<uint32_t> simToVoronoi;
+    std::vector<float> simNodeVolumes;
 
     HashValues hashes{};
 
@@ -148,6 +187,8 @@ struct VoronoiProduct {
             simNodeCount != 0 &&
             nodeBuffer != VK_NULL_HANDLE &&
             simNodeBuffer != VK_NULL_HANDLE &&
+            simNodeBufferSize != 0 &&
+            simNodeVolumes.size() == simNodeCount &&
             simGMLSInterfaceBuffer != VK_NULL_HANDLE &&
             simGMLSInterfaceCount != 0 &&
             voronoiNeighborIndicesBuffer != VK_NULL_HANDLE &&
@@ -190,10 +231,6 @@ struct PointProduct {
 };
 
 struct HeatProduct {
-    bool active = false;
-    bool paused = false;
-    uint32_t resetCounter = 0;
-    uint32_t rewindFrame = heat::NoRewindFrame;
     std::vector<uint32_t> modelRuntimeModelIds;
     std::vector<VkBuffer> modelSurfaceBuffers;
     std::vector<VkDeviceSize> modelSurfaceBufferOffsets;

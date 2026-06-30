@@ -2,14 +2,14 @@
 
 namespace pybridge {
 
-static NodeGraphBridge* g_bridge = nullptr;
+static NodeGraph* g_graph = nullptr;
 
-void setBridge(NodeGraphBridge* bridge) {
-    g_bridge = bridge;
+void setGraph(NodeGraph* graph) {
+    g_graph = graph;
 }
 
-NodeGraphBridge* getBridge() {
-    return g_bridge;
+NodeGraph* getGraph() {
+    return g_graph;
 }
 
 } // namespace pybridge

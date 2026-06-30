@@ -14,12 +14,16 @@ bool HeatSystemPlayback::initialize(VulkanDevice& device, MemoryAllocator& alloc
         return false;
     }
 
-    VkDeviceSize totalSize = static_cast<VkDeviceSize>(frameCapacity_) * static_cast<VkDeviceSize>(nodeCount_) * sizeof(float);
+    VkDeviceSize alignment = device.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
+    VkDeviceSize rawStride = static_cast<VkDeviceSize>(nodeCount_) * sizeof(float);
+    VkDeviceSize alignedStride = (rawStride + alignment - 1) & ~(alignment - 1);
+
+    VkDeviceSize totalSize = static_cast<VkDeviceSize>(frameCapacity_) * alignedStride;
     auto [buffer, offset] = alloc.allocate(
         totalSize,
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        device.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment);
+        alignment);
 
     if (buffer == VK_NULL_HANDLE) {
         cleanup();
@@ -32,7 +36,7 @@ bool HeatSystemPlayback::initialize(VulkanDevice& device, MemoryAllocator& alloc
     nodeCount = nodeCount_;
     frameCapacity = frameCapacity_;
     recordedFrames = 0;
-    frameStride = static_cast<VkDeviceSize>(nodeCount_) * sizeof(float);
+    frameStride = alignedStride;
     return true;
 }
 
@@ -55,7 +59,8 @@ void HeatSystemPlayback::recordFrame(VkCommandBuffer cmd, VkBuffer srcTempBuffer
     }
 
     VkDeviceSize dstOffset = historyBufferOffset + (static_cast<VkDeviceSize>(recordedFrames) * frameStride);
-    VkBufferCopy region{srcOffset, dstOffset, frameStride};
+    VkDeviceSize copySize = static_cast<VkDeviceSize>(nodeCount) * sizeof(float);
+    VkBufferCopy region{srcOffset, dstOffset, copySize};
     vkCmdCopyBuffer(cmd, srcTempBuffer, historyBuffer, 1, &region);
 
     VkBufferMemoryBarrier barrier{};
@@ -64,7 +69,7 @@ void HeatSystemPlayback::recordFrame(VkCommandBuffer cmd, VkBuffer srcTempBuffer
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     barrier.buffer = historyBuffer;
     barrier.offset = dstOffset;
-    barrier.size = frameStride;
+    barrier.size = copySize;
     vkCmdPipelineBarrier(
         cmd,
         VK_PIPELINE_STAGE_TRANSFER_BIT,

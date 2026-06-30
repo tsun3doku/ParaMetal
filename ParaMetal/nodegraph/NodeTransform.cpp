@@ -18,17 +18,17 @@ const char* NodeTransform::typeId() const {
     return nodegraphtypes::Transform;
 }
 
-void NodeTransform::execute(NodeGraphKernelContext& context) const {
-    const NodeGraphSocket* inSocket = context.node.input("Geometry");
-    const EvaluatedSocketValue* inputEval =
-        inSocket ? readEvaluatedInput(context.node, inSocket->id, context.executionState) : nullptr;
-    const NodeDataBlock* inputData = readInputValue(inputEval);
+void NodeTransform::execute(NodeKernelEval& eval) const {
+    const std::size_t geometrySocketIndex = inputIndexOf(eval.node, "Geometry");
+    const NodeDataBlock* inputData =
+        (geometrySocketIndex < eval.inputs.size() && !eval.inputs[geometrySocketIndex].empty())
+            ? eval.inputs[geometrySocketIndex].front() : nullptr;
 
-    NodePayloadRegistry* const payloadRegistry = context.executionState.services.payloadRegistry;
-    const std::array<float, 16> localTransform = buildLocalTransformArray(context.node);
+    NodePayloadRegistry* const payloadRegistry = eval.runtime.payloadRegistry;
+    const std::array<float, 16> localTransform = buildLocalTransformArray(eval.node);
     const glm::mat4 transformMat = toMat4(localTransform);
 
-    NodeDataBlock& outputValue = context.outputs[0];
+    NodeDataBlock& outputValue = eval.outputs[0];
     outputValue = {};
 
     if (payloadRegistry && inputData && inputData->payloadHandle.key != 0) {
@@ -36,17 +36,17 @@ void NodeTransform::execute(NodeGraphKernelContext& context) const {
             GeometryData forwardedGeometry = *inputGeometry;
             forwardedGeometry.localToWorld = toMatrixArray(
                 toMat4(forwardedGeometry.localToWorld) * transformMat);
-            const uint64_t payloadKey = NodeSocketKey(context.node.id, context.node.outputs[0].id);
+            const uint64_t payloadKey = NodeSocketKey(eval.node.id, eval.node.outputs[0].id);
             outputValue.dataType = payloadtypes::Geometry;
-            outputValue.payloadHandle = payloadRegistry->store(payloadKey, forwardedGeometry, context.outputHashes);
+            outputValue.payloadHandle = payloadRegistry->store(payloadKey, forwardedGeometry, eval.outputHashes);
         } else if (const PointData* inputPointData = payloadRegistry->resolvePoints(inputData->payloadHandle)) {
             if (!inputPointData->positions.empty()) {
                 PointData forwardedPoints = *inputPointData;
                 forwardedPoints.localToWorld = toMatrixArray(
                     toMat4(forwardedPoints.localToWorld) * transformMat);
-                const uint64_t payloadKey = NodeSocketKey(context.node.id, context.node.outputs[0].id);
+                const uint64_t payloadKey = NodeSocketKey(eval.node.id, eval.node.outputs[0].id);
                 outputValue.dataType = payloadtypes::Points;
-                outputValue.payloadHandle = payloadRegistry->store(payloadKey, forwardedPoints, context.outputHashes);
+                outputValue.payloadHandle = payloadRegistry->store(payloadKey, forwardedPoints, eval.outputHashes);
             }
         }
     }
@@ -54,16 +54,16 @@ void NodeTransform::execute(NodeGraphKernelContext& context) const {
     populateMetadata(outputValue, nullptr, payloadRegistry);
 }
 
-HashValues NodeTransform::computeOutputHashes(const NodeGraphKernelHashContext& context) const {
-    uint64_t hash = HashBuilder::start();
-    HashBuilder::combineString(hash, nodegraphtypes::Transform);
-    HashNodeCache::combineOptionalSocket(hash, context, "Geometry", HashDomain::Geometry);
-    combineTransformParams(context.node, hash);
+HashValues NodeTransform::computeOutputHashes(const NodeKernelHash& hash) const {
+    uint64_t hashValue = HashBuilder::start();
+    HashBuilder::combineString(hashValue, nodegraphtypes::Transform);
+    HashNodeCache::combineOptionalSocket(hashValue, hash, "Geometry", HashDomain::Geometry);
+    combineTransformParams(hash.node, hashValue);
 
     HashValues values{};
-    values.full = hash;
-    values.geometry = hash;
-    values.simulation = hash;
+    values.full = hashValue;
+    values.geometry = hashValue;
+    values.simulation = hashValue;
     return values;
 }
 

@@ -23,10 +23,9 @@ static QColor blendColors(const QColor& a, const QColor& b, qreal t) {
 
 NodeGraphNodeItem::NodeGraphNodeItem(const NodeGraphNode& node, QGraphicsItem* parent)
     : QGraphicsObject(parent),
-      m_nodeId(node.id),
-      m_typeId(node.typeId),
-      m_displayEnabled(node.displayEnabled),
-      m_frozen(node.frozen) {
+      nodeIdValue(node.id),
+      typeId(node.typeId),
+      stateValue(node.state) {
     setAcceptHoverEvents(true);
     setAcceptedMouseButtons(Qt::LeftButton);
     setCacheMode(QGraphicsItem::DeviceCoordinateCache);
@@ -84,15 +83,15 @@ void NodeGraphNodeItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*
         nodegraphscene::leftCapPath(),
         nodegraphscene::frozenCapActiveColor(),
         nodegraphscene::frozenCapInactiveColor(),
-        m_frozen,
-        m_hoverRegion == nodegraphscene::NodeHitRegion::LeftCap);
+        stateValue.isFrozen(),
+        hoverRegion == nodegraphscene::NodeHitRegion::LeftCap);
     drawCap(
         painter,
         nodegraphscene::rightCapPath(),
         nodegraphscene::displayCapActiveColor(),
         nodegraphscene::displayCapInactiveColor(),
-        m_displayEnabled,
-        m_hoverRegion == nodegraphscene::NodeHitRegion::RightCap);
+        stateValue.isPrimaryDisplay(),
+        hoverRegion == nodegraphscene::NodeHitRegion::RightCap);
 
     QLinearGradient centerGradient(centerRect.topLeft(), centerRect.bottomLeft());
     centerGradient.setColorAt(0.0, nodegraphscene::nodeCenterFillColor());
@@ -114,7 +113,7 @@ void NodeGraphNodeItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*
     const qreal devicePixelRatio = painter->device() ? painter->device()->devicePixelRatioF() : 1.0;
     const qreal zoomLevel = option->levelOfDetailFromTransform(painter->worldTransform());
     const qreal targetPixelWidth = iconBounds.width() * zoomLevel * devicePixelRatio;
-    const QPixmap icon = NodeGraphIconRegistry::iconForType(m_typeId, targetPixelWidth);
+    const QPixmap icon = NodeGraphIconRegistry::iconForType(typeId, targetPixelWidth);
     if (!icon.isNull()) {
         const QSizeF iconSize = icon.deviceIndependentSize();
         const qreal scale = std::min(iconBounds.width() / iconSize.width(), iconBounds.height() / iconSize.height());
@@ -131,43 +130,30 @@ void NodeGraphNodeItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*
     painter->restore();
 }
 
-void NodeGraphNodeItem::setDisplayEnabled(bool enabled) {
-    if (m_displayEnabled == enabled) {
+void NodeGraphNodeItem::setNodeState(const NodeGraphNodeState& state) {
+    if (stateValue == state) {
         return;
     }
 
-    m_displayEnabled = enabled;
-    update();
-}
-
-void NodeGraphNodeItem::setFrozen(bool frozenValue) {
-    if (m_frozen == frozenValue) {
-        return;
-    }
-
-    m_frozen = frozenValue;
+    stateValue = state;
     update();
 }
 
 void NodeGraphNodeItem::setHoveredState(bool hovered) {
-    if (m_hovered == hovered) {
+    if (hoveredValue == hovered) {
         return;
     }
 
-    m_hovered = hovered;
+    hoveredValue = hovered;
     update();
 }
 
-bool NodeGraphNodeItem::displayEnabled() const {
-    return m_displayEnabled;
-}
-
-bool NodeGraphNodeItem::frozen() const {
-    return m_frozen;
+const NodeGraphNodeState& NodeGraphNodeItem::nodeState() const {
+    return stateValue;
 }
 
 NodeGraphNodeId NodeGraphNodeItem::nodeId() const {
-    return m_nodeId;
+    return nodeIdValue;
 }
 
 nodegraphscene::NodeHitRegion NodeGraphNodeItem::hitRegionAt(const QPointF& localPos) const {
@@ -188,8 +174,8 @@ void NodeGraphNodeItem::hoverMoveEvent(QGraphicsSceneHoverEvent* event) {
     }
 
     const nodegraphscene::NodeHitRegion region = hitRegionAt(event->pos());
-    if (m_hoverRegion != region) {
-        m_hoverRegion = region;
+    if (hoverRegion != region) {
+        hoverRegion = region;
         update();
     }
     setCursor((region == nodegraphscene::NodeHitRegion::LeftCap || region == nodegraphscene::NodeHitRegion::RightCap)
@@ -199,8 +185,8 @@ void NodeGraphNodeItem::hoverMoveEvent(QGraphicsSceneHoverEvent* event) {
 }
 
 void NodeGraphNodeItem::hoverLeaveEvent(QGraphicsSceneHoverEvent* event) {
-    if (m_hoverRegion != nodegraphscene::NodeHitRegion::None) {
-        m_hoverRegion = nodegraphscene::NodeHitRegion::None;
+    if (hoverRegion != nodegraphscene::NodeHitRegion::None) {
+        hoverRegion = nodegraphscene::NodeHitRegion::None;
         update();
     }
     unsetCursor();

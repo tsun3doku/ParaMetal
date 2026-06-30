@@ -28,7 +28,7 @@
 #include "runtime/VoronoiDisplayController.hpp"
 #include "heat/HeatSystemComputeController.hpp"
 #include "heat/VoronoiSystemComputeController.hpp"
-#include "nodegraph/NodeGraphBridge.hpp"
+#include "nodegraph/NodeGraph.hpp"
 #include "nodegraph/NodeGraphController.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
 #include "app/SwapchainManager.hpp"
@@ -63,8 +63,8 @@ public:
     const ModelComputeRuntime* modelComputeRuntime() const;
     SceneController* sceneController();
     const SceneController* sceneController() const;
-    NodeGraphBridge* nodeGraphBridge();
-    const NodeGraphBridge* nodeGraphBridge() const;
+    NodeGraph* nodeGraph();
+    const NodeGraph* nodeGraph() const;
     NodeGraphController* nodeGraphController();
     InputController* inputController();
 
@@ -98,7 +98,7 @@ private:
     std::unique_ptr<ContactSystemComputeController> contactSystemComputeControllerState;
     std::unique_ptr<SceneController> sceneControllerState;
     std::unique_ptr<InputController> inputControllerState;
-    std::unique_ptr<NodeGraphBridge> nodeGraphBridgeState;
+    std::unique_ptr<NodeGraph> nodeGraphState;
     std::unique_ptr<NodeGraphController> nodeGraphControllerState;
     std::unique_ptr<NodePayloadRegistry> payloadRegistryState;
     bool initialized = false;

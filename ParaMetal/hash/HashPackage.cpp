@@ -3,9 +3,15 @@
 
 #include "runtime/RuntimePackages.hpp"
 
-void HashPackage::seal(ModelPackage& pkg) {
+static void combineHandleHash(uint64_t& hash, const ProductHandle& handle, HashDomain domain) {
+    HashBuilder::combine(hash, static_cast<uint64_t>(handle.type));
+    HashBuilder::combine(hash, handle.outputSocketKey);
+    HashBuilder::combine(hash, handle.hashes.get(domain));
+}
+
+void HashPackage::seal(ModelPackage& pkg, const HashValues& geometryHashes) {
     uint64_t geometryHash = HashBuilder::start();
-    HashBuilder::combine(geometryHash, pkg.geometry.hashes.full);
+    HashBuilder::combine(geometryHash, geometryHashes.full);
     HashBuilder::combinePod(geometryHash, pkg.localToWorld);
 
     pkg.hashes.geometry = geometryHash;
@@ -15,10 +21,11 @@ void HashPackage::seal(ModelPackage& pkg) {
     pkg.hashes.thermal = 0;
 }
 
-void HashPackage::seal(RemeshPackage& pkg) {
+void HashPackage::seal(RemeshPackage& pkg, const HashValues& sourceGeometryHashes) {
     uint64_t geometryHash = HashBuilder::start();
-    HashBuilder::combine(geometryHash, pkg.sourceGeometry.hashes.full);
+    HashBuilder::combine(geometryHash, sourceGeometryHashes.full);
     HashBuilder::combine(geometryHash, pkg.sourceMeshHandle.key);
+    combineHandleHash(geometryHash, pkg.sourceModelProduct, HashDomain::Geometry);
     HashBuilder::combine(geometryHash, static_cast<uint64_t>(pkg.iterations));
     HashBuilder::combineFloat(geometryHash, pkg.minAngleDegrees);
     HashBuilder::combineFloat(geometryHash, pkg.maxEdgeLength);
@@ -41,15 +48,18 @@ void HashPackage::seal(RemeshPackage& pkg) {
     pkg.hashes.thermal = 0;
 }
 
-void HashPackage::seal(VoronoiPackage& pkg) {
+void HashPackage::seal(VoronoiPackage& pkg, const HashValues& authoredHashes) {
     uint64_t geometryHash = HashBuilder::start();
-    HashBuilder::combine(geometryHash, pkg.authored.hashes.full);
+    HashBuilder::combine(geometryHash, authoredHashes.full);
 
     HashBuilder::combine(geometryHash, static_cast<uint64_t>(pkg.domainType));
     HashBuilder::combinePod(geometryHash, pkg.modelLocalToWorld);
     HashBuilder::combine(geometryHash, pkg.pointsPayloadHandle.key);
     HashBuilder::combine(geometryHash, pkg.modelMeshHandle.key);
     HashBuilder::combine(geometryHash, pkg.modelRemeshHandle.key);
+    combineHandleHash(geometryHash, pkg.modelProduct, HashDomain::Geometry);
+    combineHandleHash(geometryHash, pkg.remeshProduct, HashDomain::Geometry);
+    HashBuilder::combinePodVector(geometryHash, pkg.pointPositions);
 
     uint64_t displayHash = HashBuilder::start();
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showVoronoi ? 1u : 0u));
@@ -82,20 +92,29 @@ void HashPackage::seal(PointPackage& pkg) {
     pkg.hashes.thermal = 0;
 }
 
-void HashPackage::seal(HeatPackage& pkg) {
+void HashPackage::seal(HeatPackage& pkg, const HashValues& authoredHashes) {
     uint64_t simulationHash = HashBuilder::start();
-    HashBuilder::combine(simulationHash, pkg.authored.hashes.simulation);
+    HashBuilder::combine(simulationHash, authoredHashes.simulation);
 
-    HashBuilder::combine(simulationHash, static_cast<uint64_t>(pkg.resolvedRemeshHandles.size()));
-    for (size_t i = 0; i < pkg.resolvedRemeshHandles.size(); ++i) {
-        HashBuilder::combine(simulationHash, pkg.resolvedRemeshHandles[i].key);
-        HashBuilder::combine(simulationHash, pkg.resolvedModelHandles[i].key);
+    HashBuilder::combine(simulationHash, static_cast<uint64_t>(pkg.remeshProducts.size()));
+    HashBuilder::combine(simulationHash, static_cast<uint64_t>(pkg.modelProducts.size()));
+    for (size_t i = 0; i < pkg.remeshProducts.size(); ++i) {
+        combineHandleHash(simulationHash, pkg.remeshProducts[i], HashDomain::Geometry);
+        combineHandleHash(simulationHash, pkg.modelProducts[i], HashDomain::Geometry);
         HashBuilder::combineFloat(simulationHash, pkg.resolvedDensity[i]);
         HashBuilder::combineFloat(simulationHash, pkg.resolvedSpecificHeat[i]);
         HashBuilder::combineFloat(simulationHash, pkg.resolvedConductivity[i]);
         HashBuilder::combineFloat(simulationHash, pkg.resolvedInitialTemperature[i]);
         HashBuilder::combine(simulationHash, static_cast<uint64_t>(pkg.resolvedBoundaryConditions[i]));
         HashBuilder::combineFloat(simulationHash, pkg.resolvedFixedTemperatureValues[i]);
+    }
+    HashBuilder::combine(simulationHash, static_cast<uint64_t>(pkg.voronoiProducts.size()));
+    for (const ProductHandle& handle : pkg.voronoiProducts) {
+        combineHandleHash(simulationHash, handle, HashDomain::Simulation);
+    }
+    HashBuilder::combine(simulationHash, static_cast<uint64_t>(pkg.contactProducts.size()));
+    for (const ProductHandle& handle : pkg.contactProducts) {
+        combineHandleHash(simulationHash, handle, HashDomain::Simulation);
     }
 
     uint64_t displayHash = HashBuilder::start();
@@ -109,7 +128,7 @@ void HashPackage::seal(HeatPackage& pkg) {
     uint64_t fullHash = HashBuilder::start();
     HashBuilder::combine(fullHash, simulationHash);
     HashBuilder::combine(fullHash, displayHash);
-    HashBuilder::combine(fullHash, pkg.authored.hashes.full);
+    HashBuilder::combine(fullHash, authoredHashes.full);
 
     pkg.hashes.simulation = simulationHash;
     pkg.hashes.geometry = simulationHash;
@@ -118,14 +137,14 @@ void HashPackage::seal(HeatPackage& pkg) {
     pkg.hashes.thermal = 0;
 }
 
-void HashPackage::seal(ContactPackage& pkg) {
+void HashPackage::seal(ContactPackage& pkg, const HashValues& authoredHashes) {
     uint64_t geometryHash = HashBuilder::start();
-    HashBuilder::combine(geometryHash, pkg.authored.hashes.full);
+    HashBuilder::combine(geometryHash, authoredHashes.full);
 
     HashBuilder::combinePod(geometryHash, pkg.modelALocalToWorld);
     HashBuilder::combinePod(geometryHash, pkg.modelBLocalToWorld);
-    HashBuilder::combine(geometryHash, pkg.modelAMeshHandle.key);
-    HashBuilder::combine(geometryHash, pkg.modelBMeshHandle.key);
+    combineHandleHash(geometryHash, pkg.modelARemeshProduct, HashDomain::Geometry);
+    combineHandleHash(geometryHash, pkg.modelBRemeshProduct, HashDomain::Geometry);
 
     uint64_t displayHash = HashBuilder::start();
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showContactLines ? 1u : 0u));

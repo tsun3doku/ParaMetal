@@ -19,12 +19,15 @@ public:
     const VulkanDevice& device() const;
     MemoryAllocator* allocator();
     const MemoryAllocator* allocator() const;
-    CommandPool* commandPool();
-    const CommandPool* commandPool() const;
+    CommandPool* getRenderCommandPool();
+    const CommandPool* getRenderCommandPool() const;
+    CommandPool* getTransferCommandPool();
+    const CommandPool* getTransferCommandPool() const;
 
 private:
     VulkanDevice vulkanDevice;
     std::unique_ptr<MemoryAllocator> memoryAllocator;
     std::unique_ptr<CommandPool> renderCommandPool;
+    std::unique_ptr<CommandPool> transferCommandPool;
     bool initialized = false;
 };

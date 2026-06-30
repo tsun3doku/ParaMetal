@@ -9,8 +9,10 @@ class ModelSelection;
 
 class OutlineRenderer {
 public:
-    OutlineRenderer(VulkanDevice& device, VkRenderPass renderPass, uint32_t subpassIndex, uint32_t maxFramesInFlight);
+    explicit OutlineRenderer(VulkanDevice& device);
     ~OutlineRenderer();
+
+    bool initialize(VkRenderPass renderPass, uint32_t subpassIndex, uint32_t maxFramesInFlight);
 
     void updateDescriptors(const std::vector<VkImageView>& depthViews, const std::vector<VkImageView>& stencilViews);
     void render(VkCommandBuffer commandBuffer, uint32_t currentFrame, const ModelSelection& modelSelection);

@@ -29,11 +29,12 @@ class HeatContactRuntime;
 class HeatSystem : public ComputePass {
 public:
     HeatSystem(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, ModelRegistry& resourceManager,
-        uint32_t maxFramesInFlight, CommandPool& renderCommandPool);
+        uint32_t maxFramesInFlight, CommandPool& renderCommandPool, CommandPool& transferCommandPool);
     ~HeatSystem() override;
 
     void update() override;
     bool ensureConfigured();
+    bool setupDescriptors(const std::vector<VkBuffer>& surfaceBuffers, const std::vector<VkDeviceSize>& surfaceOffsets, const std::vector<VkBuffer>& gradientBuffers, const std::vector<VkDeviceSize>& gradientOffsets);
     void recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t currentFrame) override;
     bool createComputeCommandBuffers(uint32_t maxFramesInFlight);
     void cleanupResources();
@@ -64,6 +65,7 @@ public:
         uint32_t simNodeCount,
         VkBuffer simNodeBuffer,
         VkDeviceSize simNodeBufferOffset,
+        VkDeviceSize simNodeBufferSize,
         VkBuffer simGMLSInterfaceBuffer,
         VkDeviceSize simGMLSInterfaceBufferOffset,
         uint32_t simGMLSInterfaceCount,
@@ -77,6 +79,7 @@ public:
         size_t gmlsSurfaceGradientWeightCount,
         const std::vector<uint32_t>& seedFlags,
         const std::vector<glm::vec3>& seedPositions,
+        const std::vector<float>& simNodeVolumes,
         const std::vector<uint32_t>& voronoiToSim);
 
     void resetSimulationState();
@@ -105,7 +108,6 @@ private:
     uint32_t computeTimelineFrameCount() const;
     uint32_t computeHistoryFrameCapacity() const { return computeTimelineFrameCount() + 1; }
     void failInitialization(const char* stage);
-    bool rebuildRuntimeResources(bool forceDescriptorReallocate);
     bool rebuildVoronoiRuntime();
     bool initializeVoronoiMaterialNodes();
     void resetVoronoiTemperatures();
@@ -116,17 +118,15 @@ private:
     void configureGMLSSurfaceWeights(bool heatVoronoiReady);
     bool recreateDescriptorPools();
     void configureModelSimResources();
-    void rebuildContactRuntimes(bool forceDescriptorReallocate);
-    void updateModelDescriptors();
+    void rebuildContactRuntimes();
 
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
     ModelRegistry& resourceManager;
     CommandPool& renderCommandPool;
+    CommandPool& transferCommandPool;
     std::vector<VkCommandBuffer> computeCommandBuffers;
     uint32_t maxFramesInFlight;
-
-    bool hasContact = false;
 
     std::unique_ptr<HeatSystemSimStage> simStage;
     std::unique_ptr<HeatSystemSurfaceStage> surfaceStage;
@@ -159,11 +159,13 @@ private:
     std::unordered_map<uint32_t, VkDeviceSize> modelVoronoiNodeBufferOffsetByModelId;
     std::unordered_map<uint32_t, VkBuffer> modelSimNodeBufferByModelId;
     std::unordered_map<uint32_t, VkDeviceSize> modelSimNodeBufferOffsetByModelId;
+    std::unordered_map<uint32_t, VkDeviceSize> modelSimNodeBufferSizeByModelId;
     std::unordered_map<uint32_t, VkBuffer> modelSimGMLSInterfaceBufferByModelId;
     std::unordered_map<uint32_t, VkDeviceSize> modelSimGMLSInterfaceBufferOffsetByModelId;
     std::unordered_map<uint32_t, uint32_t> voronoiNodeCounts;
     std::unordered_map<uint32_t, uint32_t> simNodeCounts;
     std::unordered_map<uint32_t, uint32_t> simGMLSInterfaceCounts;
+    std::unordered_map<uint32_t, std::vector<float>> modelSimNodeVolumesByModelId;
     std::unordered_map<uint32_t, std::vector<uint32_t>> modelVoronoiToSimByModelId;
     std::unordered_map<uint32_t, VkBuffer> modelGMLSSurfaceStencilBufferByModelId;
     std::unordered_map<uint32_t, VkDeviceSize> modelGMLSSurfaceStencilBufferOffsetByModelId;

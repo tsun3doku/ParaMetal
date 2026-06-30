@@ -15,7 +15,7 @@ class VoronoiSystemRuntime;
 
 class VoronoiSystemBuildStage {
 public:
-    VoronoiSystemBuildStage(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, VoronoiResources& resources, CommandPool& renderCommandPool);
+    VoronoiSystemBuildStage(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, VoronoiResources& resources, CommandPool& commandPool);
     ~VoronoiSystemBuildStage();
 
     bool buildVoronoiDiagram(VoronoiSystemRuntime& runtime, float cellSize, int voxelResolution, uint32_t maxNeighbors) const;
@@ -43,7 +43,7 @@ private:
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
     VoronoiResources& resources;
-    CommandPool& renderCommandPool;
+    CommandPool& commandPool;
 
     std::unique_ptr<VoronoiGeoCompute> voronoiGeoCompute;
 };

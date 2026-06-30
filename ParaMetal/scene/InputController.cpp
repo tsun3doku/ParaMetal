@@ -4,7 +4,7 @@
 #include "GizmoController.hpp"
 #include "ModelSelection.hpp"
 #include "app/SwapchainManager.hpp"
-#include "nodegraph/NodeGraphBridge.hpp"
+#include "nodegraph/NodeGraph.hpp"
 #include "nodegraph/NodeTransformParams.hpp"
 #include "scene/SceneController.hpp"
 #include "vulkan/ModelRegistry.hpp"
@@ -24,18 +24,18 @@ bool InputController::resolveSelectedTransformNode(NodeGraphNodeId& outTransform
         return false;
     }
 
-    return nodeGraphBridge.resolveGizmoTransformNode(outputSocketKey, outTransformNodeId);
+    return graph.resolveGizmoTransformNode(outputSocketKey, outTransformNodeId);
 }
 
 InputController::InputController(Camera& camera, GizmoController& gizmoController, ModelSelection& modelSelection, ModelRegistry& resourceManager,
-    SceneController& sceneController, NodeGraphBridge& nodeGraphBridge,
+    SceneController& sceneController, NodeGraph& graph,
     const SwapchainManager& swapchainManager, InputActionHandler& actionHandler)
     : camera(camera),
       gizmoController(gizmoController),
       modelSelection(modelSelection),
       resourceManager(resourceManager),
       sceneController(sceneController),
-      nodeGraphBridge(nodeGraphBridge),
+      graph(graph),
       swapchainManager(swapchainManager),
       actionHandler(actionHandler) {
 }
@@ -151,7 +151,7 @@ void InputController::updateGizmo() {
                 }
 
                 NodeGraphNode transformNode{};
-                if (!nodeGraphBridge.getNode(transformNodeId, transformNode)) {
+                if (!graph.getNode(transformNodeId, transformNode)) {
                     modelSelection.clearLastPickedResult();
                     return;
                 }
@@ -208,14 +208,14 @@ void InputController::updateGizmo() {
 
         const glm::vec3 authoredTranslation = transformDragStartTranslation + currentTranslation;
         NodeGraphNode transformNode{};
-        if (!nodeGraphBridge.getNode(activeTransformNodeId, transformNode)) {
+        if (!graph.getNode(activeTransformNodeId, transformNode)) {
             return;
         }
         TransformNodeParams params = readTransformNodeParams(transformNode);
         params.translateX = authoredTranslation.x;
         params.translateY = authoredTranslation.y;
         params.translateZ = authoredTranslation.z;
-        if (!writeTransformNodeParams(nodeGraphBridge, activeTransformNodeId, params)) {
+        if (!writeTransformNodeParams(graph, activeTransformNodeId, params)) {
             return;
         }
 
@@ -248,14 +248,14 @@ void InputController::updateGizmo() {
         }
 
         NodeGraphNode transformNode{};
-        if (!nodeGraphBridge.getNode(activeTransformNodeId, transformNode)) {
+        if (!graph.getNode(activeTransformNodeId, transformNode)) {
             return;
         }
         TransformNodeParams params = readTransformNodeParams(transformNode);
         params.rotateXDegrees = authoredRotation.x;
         params.rotateYDegrees = authoredRotation.y;
         params.rotateZDegrees = authoredRotation.z;
-        if (!writeTransformNodeParams(nodeGraphBridge, activeTransformNodeId, params)) {
+        if (!writeTransformNodeParams(graph, activeTransformNodeId, params)) {
             return;
         }
 

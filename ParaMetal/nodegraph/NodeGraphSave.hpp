@@ -1,5 +1,6 @@
 #pragma once
 
+#include "NodeGraphState.hpp"
 #include "NodeGraphTypes.hpp"
 
 #include <glm/glm.hpp>

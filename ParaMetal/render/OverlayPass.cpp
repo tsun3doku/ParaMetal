@@ -56,12 +56,11 @@ const char* OverlayPass::name() const {
 void OverlayPass::create() {
     ready = false;
     destroy();
-    outlineRenderer = std::make_unique<OutlineRenderer>(
-        vulkanDevice,
-        frameGraphRuntime.getRenderPass(),
-        framegraph::toIndex(passId),
-        maxFramesInFlight);
-    if (!outlineRenderer) {
+    outlineRenderer = std::make_unique<OutlineRenderer>(vulkanDevice);
+    if (!outlineRenderer || !outlineRenderer->initialize(
+            frameGraphRuntime.getRenderPass(),
+            framegraph::toIndex(passId),
+            maxFramesInFlight)) {
         std::cerr << "[OverlayPass] Failed to create outline renderer" << std::endl;
         destroy();
         return;

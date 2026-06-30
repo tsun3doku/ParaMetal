@@ -41,7 +41,7 @@ void HeatSystemDebugStage::exportDebugCellsToOBJ(bool debugEnable, uint32_t voro
     VkBuffer stagingBuf = VK_NULL_HANDLE;
     VkDeviceSize stagingOff = 0;
     void* stagingMapped = nullptr;
-    if (createStagingBuffer(memoryAllocator, bufferSize, stagingBuf, stagingOff, &stagingMapped) != VK_SUCCESS || !stagingMapped) {
+    if (createDownloadStagingBuffer(memoryAllocator, bufferSize, stagingBuf, stagingOff, &stagingMapped) != VK_SUCCESS || !stagingMapped) {
         return;
     }
 
@@ -103,7 +103,7 @@ void HeatSystemDebugStage::exportCellVolumes(bool debugEnable, uint32_t voronoiN
     VkBuffer stagingBuf = VK_NULL_HANDLE;
     VkDeviceSize stagingOff = 0;
     void* stagingMapped = nullptr;
-    if (createStagingBuffer(memoryAllocator, bufferSize, stagingBuf, stagingOff, &stagingMapped) != VK_SUCCESS || !stagingMapped) {
+    if (createDownloadStagingBuffer(memoryAllocator, bufferSize, stagingBuf, stagingOff, &stagingMapped) != VK_SUCCESS || !stagingMapped) {
         return;
     }
 
@@ -142,7 +142,7 @@ void HeatSystemDebugStage::exportVoronoiDumpInfo(bool debugEnable, uint32_t voro
     VkBuffer dumpStagingBuf = VK_NULL_HANDLE;
     VkDeviceSize dumpStagingOff = 0;
     void* dumpStagingMapped = nullptr;
-    if (createStagingBuffer(memoryAllocator, dumpBufferSize, dumpStagingBuf, dumpStagingOff, &dumpStagingMapped) != VK_SUCCESS || !dumpStagingMapped) {
+    if (createDownloadStagingBuffer(memoryAllocator, dumpBufferSize, dumpStagingBuf, dumpStagingOff, &dumpStagingMapped) != VK_SUCCESS || !dumpStagingMapped) {
         return;
     }
 
@@ -150,7 +150,7 @@ void HeatSystemDebugStage::exportVoronoiDumpInfo(bool debugEnable, uint32_t voro
     VkBuffer nodeStagingBuf = VK_NULL_HANDLE;
     VkDeviceSize nodeStagingOff = 0;
     void* nodeStagingMapped = nullptr;
-    if (voronoiNodeBuffer && createStagingBuffer(memoryAllocator, nodeBufferSize, nodeStagingBuf, nodeStagingOff, &nodeStagingMapped) != VK_SUCCESS) {
+    if (voronoiNodeBuffer && createDownloadStagingBuffer(memoryAllocator, nodeBufferSize, nodeStagingBuf, nodeStagingOff, &nodeStagingMapped) != VK_SUCCESS) {
         memoryAllocator.free(dumpStagingBuf, dumpStagingOff);
         return;
     }

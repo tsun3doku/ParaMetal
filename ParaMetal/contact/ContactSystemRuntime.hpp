@@ -1,8 +1,9 @@
 #pragma once
 
 #include "contact/ContactTypes.hpp"
-#include "runtime/RuntimeProducts.hpp"
+#include "mesh/remesher/SupportingHalfedge.hpp"
 
+#include <array>
 #include <vector>
 
 class MemoryAllocator;

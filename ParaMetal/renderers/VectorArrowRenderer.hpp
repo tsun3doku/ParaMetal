@@ -28,8 +28,7 @@ public:
     ~VectorArrowRenderer();
 
     void initialize(VkRenderPass renderPass, uint32_t maxFramesInFlight);
-    void updateDescriptors(const std::vector<VectorRenderBinding>& vectors, uint32_t maxFramesInFlight, bool forceReallocate);
-    void render(VkCommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<VectorRenderBinding>& vectors) const;
+    void render(VkCommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<VectorRenderBinding>& vectors);
     void cleanup();
 
 private:
@@ -45,7 +44,9 @@ private:
     bool createDescriptorSetLayout();
     bool createDescriptorPool(uint32_t maxFramesInFlight);
     bool createPipeline(VkRenderPass renderPass);
-    bool updateDescriptorSetVector(const VectorRenderBinding& vector, uint32_t maxFramesInFlight, std::vector<VkDescriptorSet>& targetSets);
+    
+    VkDescriptorSet allocateDescriptorSet(VkDescriptorPool pool);
+    void updateDescriptorSet(VkDescriptorSet set, uint32_t frameIndex, const VectorRenderBinding& binding);
 
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
@@ -57,8 +58,7 @@ private:
     uint32_t vertexCount = 0;
 
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
-    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
-    std::unordered_map<uint64_t, std::vector<VkDescriptorSet>> vectorDescriptorSets;
+    std::vector<VkDescriptorPool> descriptorPools;
 
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;

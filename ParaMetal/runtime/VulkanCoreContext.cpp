@@ -25,11 +25,13 @@ bool VulkanCoreContext::initialize(const AppVulkanContext& vulkanContext) {
 
     memoryAllocator = std::make_unique<MemoryAllocator>(vulkanDevice);
     renderCommandPool = std::make_unique<CommandPool>(vulkanDevice, "Render Command Pool");
+    transferCommandPool = std::make_unique<CommandPool>(vulkanDevice, "Transfer Command Pool");
     initialized = true;
     return true;
 }
 
 void VulkanCoreContext::shutdown() {
+    transferCommandPool.reset();
     renderCommandPool.reset();
     memoryAllocator.reset();
     vulkanDevice.cleanup();
@@ -56,10 +58,18 @@ const MemoryAllocator* VulkanCoreContext::allocator() const {
     return memoryAllocator.get();
 }
 
-CommandPool* VulkanCoreContext::commandPool() {
+CommandPool* VulkanCoreContext::getRenderCommandPool() {
     return renderCommandPool.get();
 }
 
-const CommandPool* VulkanCoreContext::commandPool() const {
+const CommandPool* VulkanCoreContext::getRenderCommandPool() const {
     return renderCommandPool.get();
+}
+
+CommandPool* VulkanCoreContext::getTransferCommandPool() {
+    return transferCommandPool.get();
+}
+
+const CommandPool* VulkanCoreContext::getTransferCommandPool() const {
+    return transferCommandPool.get();
 }

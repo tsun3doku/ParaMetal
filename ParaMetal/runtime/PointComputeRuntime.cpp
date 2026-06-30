@@ -19,20 +19,11 @@ PointComputeRuntime::~PointComputeRuntime() {
     disableAll();
 }
 
-void PointComputeRuntime::configure(const Config& config) {
-    if (config.socketKey == 0) {
-        return;
-    }
+bool PointComputeRuntime::buildProduct(const Config& config, PointProduct& product) {
+    product = {};
 
-    auto it = activeSystems.find(config.socketKey);
-    if (it != activeSystems.end() && it->second.computeHash == config.computeHash) {
-        return;
-    }
-
-    disable(config.socketKey);
-
-    if (config.positions.empty()) {
-        return;
+    if (config.socketKey == 0 || config.positions.empty()) {
+        return false;
     }
 
     std::vector<PointRenderer::PointVertex> vertices;
@@ -48,61 +39,35 @@ void PointComputeRuntime::configure(const Config& config) {
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         alignof(PointRenderer::PointVertex));
     if (buffer == VK_NULL_HANDLE) {
-        return;
+        return false;
     }
 
     void* mappedPtr = memoryAllocator.getMappedPointer(buffer, offset);
     if (!mappedPtr) {
         memoryAllocator.free(buffer, offset);
-        return;
+        return false;
     }
 
     std::memcpy(mappedPtr, vertices.data(), static_cast<size_t>(bufferSize));
 
-    SystemInstance instance{};
-    instance.buffer = buffer;
-    instance.offset = offset;
-    instance.pointCount = static_cast<uint32_t>(vertices.size());
-    instance.modelMatrix = config.modelMatrix;
-    instance.computeHash = config.computeHash;
-    activeSystems[config.socketKey] = instance;
+    // Ownership transfers to product
+    product.positionBuffer = buffer;
+    product.positionBufferOffset = offset;
+    product.pointCount = static_cast<uint32_t>(vertices.size());
+    product.modelMatrix = config.modelMatrix;
+    HashProduct::seal(product);
+
+    activeHashes[config.socketKey] = config.computeHash;
+    return product.isValid();
 }
 
 void PointComputeRuntime::disable(uint64_t socketKey) {
     if (socketKey == 0) {
         return;
     }
-    auto it = activeSystems.find(socketKey);
-    if (it == activeSystems.end()) {
-        return;
-    }
-    if (it->second.buffer != VK_NULL_HANDLE) {
-        memoryAllocator.free(it->second.buffer, it->second.offset);
-    }
-    activeSystems.erase(it);
+    activeHashes.erase(socketKey);
 }
 
 void PointComputeRuntime::disableAll() {
-    for (auto& [key, inst] : activeSystems) {
-        (void)key;
-        if (inst.buffer != VK_NULL_HANDLE) {
-            memoryAllocator.free(inst.buffer, inst.offset);
-        }
-    }
-    activeSystems.clear();
-}
-
-bool PointComputeRuntime::exportProduct(uint64_t socketKey, PointProduct& outProduct) const {
-    outProduct = {};
-    auto it = activeSystems.find(socketKey);
-    if (it == activeSystems.end()) {
-        return false;
-    }
-    const SystemInstance& inst = it->second;
-    outProduct.positionBuffer = inst.buffer;
-    outProduct.positionBufferOffset = inst.offset;
-    outProduct.pointCount = inst.pointCount;
-    outProduct.modelMatrix = inst.modelMatrix;
-    HashProduct::seal(outProduct);
-    return outProduct.isValid();
+    activeHashes.clear();
 }

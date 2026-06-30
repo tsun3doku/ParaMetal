@@ -24,7 +24,7 @@ public:
         MemoryAllocator& memoryAllocator,
         ModelRegistry& resourceManager,
         uint32_t maxFramesInFlight,
-        CommandPool& renderCommandPool);
+        CommandPool& commandPool);
     ~VoronoiSystem();
 
     bool isInitialized() const { return initialized; }
@@ -66,7 +66,7 @@ private:
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
     ModelRegistry& resourceManager;
-    CommandPool& renderCommandPool;
+    CommandPool& commandPool;
     VoronoiSystemRuntime runtime;
 
     std::unique_ptr<VoronoiSystemBuildStage> voronoiSystemBuildStage;

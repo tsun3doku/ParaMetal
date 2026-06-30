@@ -48,7 +48,11 @@ void ContactSystemRuntime::setModelBTriangleIndices(const std::vector<uint32_t>&
 }
 
 void ContactSystemRuntime::clearPairBuffer(MemoryAllocator& memoryAllocator) {
-    freeBuffer(memoryAllocator, contactPairBuffer, contactPairBufferOffset);
+    (void)memoryAllocator;
+    // Buffer ownership transferred to published ContactProduct.
+    // RuntimeProducts frees it; backend just drops its non-owning handle.
+    contactPairBuffer = VK_NULL_HANDLE;
+    contactPairBufferOffset = 0;
     coupling.contactPairCount = 0;
     coupling.contactPairs.clear();
 }
@@ -62,7 +66,10 @@ bool ContactSystemRuntime::recreateContactPairBuffer(
     void** mappedData,
     const void* data,
     VkDeviceSize size) {
-    freeBuffer(memoryAllocator, buffer, offset);
+    // Old buffer is owned by the published ContactProduct / RuntimeProducts.
+    // Drop our non-owning handle without freeing.
+    buffer = VK_NULL_HANDLE;
+    offset = 0;
 
     if (data == nullptr || size == 0) {
         if (mappedData) {

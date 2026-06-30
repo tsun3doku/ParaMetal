@@ -6,7 +6,7 @@
 #include "nodegraph/ui/scene/NodeGraphCanvas.hpp"
 #include "nodegraph/ui/scene/NodeGraphScene.hpp"
 #include "nodegraph/ui/widgets/NodePanel.hpp"
-#include "nodegraph/NodeGraphBridge.hpp"
+#include "nodegraph/NodeGraph.hpp"
 #include "runtime/RuntimeInterfaces.hpp"
 #include "scene/SceneController.hpp"
 #include "scene/ModelSelection.hpp"
@@ -54,11 +54,11 @@ void NodeGraphEditorWidget::setRuntimeQuery(const RuntimeQuery* runtimeQueryPtr)
     }
 }
 
-void NodeGraphEditorWidget::setBridge(NodeGraphBridge* bridgePtr) {
-    bridge = bridgePtr;
-    editor.setBridge(bridgePtr);
+void NodeGraphEditorWidget::setGraph(NodeGraph* graphPtr) {
+    bridge = graphPtr;
+    editor.setGraph(graphPtr);
     if (graphScene) {
-        graphScene->setBridge(bridge);
+        graphScene->setGraph(bridge);
     }
     if (nodePanel) {
         nodePanel->bind(bridge, runtimeQuery);

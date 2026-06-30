@@ -9,8 +9,8 @@
 class NodeTransform final : public NodeKernel {
 public:
     const char* typeId() const override;
-    void execute(NodeGraphKernelContext& context) const override;
-    HashValues computeOutputHashes(const NodeGraphKernelHashContext& context) const override;
+    void execute(NodeKernelEval& eval) const override;
+    HashValues computeOutputHashes(const NodeKernelHash& hash) const override;
 
     static glm::mat4 buildLocalTransform(const NodeGraphNode& node);
     static std::array<float, 16> buildLocalTransformArray(const NodeGraphNode& node);

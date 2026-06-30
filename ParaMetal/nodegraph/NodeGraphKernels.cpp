@@ -26,22 +26,22 @@ bool NodeGraphKernels::hasKernel(const NodeTypeId& typeId) const {
 
 HashValues NodeGraphKernels::computeOutputHashes(
     const NodeGraphNode& node,
-    const NodeGraphKernelExecutionState& executionState,
-    const std::vector<const EvaluatedSocketValue*>& inputs) const {
+    const NodeKernelRuntime& runtime,
+    const std::vector<std::vector<const NodeDataBlock*>>& inputs) const {
     const NodeTypeId canonicalTypeId = getNodeTypeId(node.typeId);
     const auto kernelIt = kernelByTypeId.find(canonicalTypeId);
     if (kernelIt == kernelByTypeId.end() || !kernelIt->second) {
         return {};
     }
 
-    NodeGraphKernelHashContext context{node, inputs, executionState};
-    return kernelIt->second->computeOutputHashes(context);
+    NodeKernelHash hash{node, inputs, runtime};
+    return kernelIt->second->computeOutputHashes(hash);
 }
 
 void NodeGraphKernels::executeNode(
     const NodeGraphNode& node,
-    const NodeGraphKernelExecutionState& executionState,
-    const std::vector<const EvaluatedSocketValue*>& inputs,
+    const NodeKernelRuntime& runtime,
+    const std::vector<std::vector<const NodeDataBlock*>>& inputs,
     std::vector<NodeDataBlock>& outputs,
     HashValues outputHashes) const {
     const NodeTypeId canonicalTypeId = getNodeTypeId(node.typeId);
@@ -50,9 +50,9 @@ void NodeGraphKernels::executeNode(
         return;
     }
 
-    NodeGraphKernelContext context{node, inputs, outputs, executionState, outputHashes};
+    NodeKernelEval eval{node, inputs, outputs, runtime, outputHashes};
 
-    kernelIt->second->execute(context);
+    kernelIt->second->execute(eval);
 }
 
 void NodeGraphKernels::registerDefaultKernels() {

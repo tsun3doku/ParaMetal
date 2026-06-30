@@ -21,7 +21,7 @@ public:
 
     bool initialize(RenderContext& render, SceneContext& scene, VulkanCoreContext& core,
                     WindowRuntimeState& windowRuntimeState, RenderSettingsManager& settingsManager,
-                    std::atomic<bool>& renderPaused);
+                    std::atomic<bool>& simPaused);
     void shutdown();
     bool isInitialized() const;
     void tick(float deltaTime, uint32_t& frameCounter);
@@ -38,7 +38,7 @@ private:
     std::unique_ptr<RuntimeRenderController> runtimeRenderController;
     RenderContext* render = nullptr;
     SceneContext* scene = nullptr;
-    std::atomic<bool>* renderPaused = nullptr;
+    std::atomic<bool>* simPaused = nullptr;
     bool hasFrameSlot = false;
     uint32_t frameSlot = 0;
     bool initialized = false;

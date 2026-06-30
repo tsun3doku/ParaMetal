@@ -1,6 +1,8 @@
 #pragma once
 
+#include "NodeGraphEvaluatedTypes.hpp"
 #include "NodeGraphKernels.hpp"
+#include "NodeGraphState.hpp"
 
 #include <cstdint>
 #include <mutex>
@@ -36,7 +38,6 @@ public:
     void setState(const NodeGraphState& state, NodePayloadRegistry* registry);
     void update(
         uint64_t revision,
-        const std::unordered_map<uint64_t, uint64_t>& upstream,
         const std::unordered_map<uint64_t, EvaluatedSocketValue>& outBySocket);
     bool tryGetNode(NodeGraphNodeId nodeId, NodeGraphRuntimeNodeDebugInfo& outInfo) const;
 
@@ -47,7 +48,6 @@ private:
     mutable std::mutex mutex;
     NodeGraphState state{};
     uint64_t revision = 0;
-    std::unordered_map<uint64_t, uint64_t> srcByInput;
     std::unordered_map<uint64_t, EvaluatedSocketValue> outBySocket;
     NodePayloadRegistry* payloadRegistry = nullptr;
 };

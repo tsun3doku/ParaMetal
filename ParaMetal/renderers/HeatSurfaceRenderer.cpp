@@ -38,25 +38,27 @@ void HeatSurfaceRenderer::initialize(VkRenderPass renderPass, uint32_t maxFrames
 
 bool HeatSurfaceRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
     const uint32_t maxRenderableHeatModels = 64;
-    const uint32_t totalSets = maxFramesInFlight * maxRenderableHeatModels;
 
     std::array<VkDescriptorPoolSize, 3> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = totalSets;
+    poolSizes[0].descriptorCount = maxRenderableHeatModels;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
-    poolSizes[1].descriptorCount = totalSets * 10;
+    poolSizes[1].descriptorCount = maxRenderableHeatModels * 10;
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[2].descriptorCount = totalSets;
+    poolSizes[2].descriptorCount = maxRenderableHeatModels;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = totalSets;
+    poolInfo.maxSets = maxRenderableHeatModels;
 
-    if (vkCreateDescriptorPool(vulkanDevice.getDevice(), &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
-        std::cerr << "HeatSurfaceRenderer: Failed to create descriptor pool" << std::endl;
-        return false;
+    descriptorPools.resize(maxFramesInFlight, VK_NULL_HANDLE);
+    for (uint32_t i = 0; i < maxFramesInFlight; ++i) {
+        if (vkCreateDescriptorPool(vulkanDevice.getDevice(), &poolInfo, nullptr, &descriptorPools[i]) != VK_SUCCESS) {
+            std::cerr << "HeatSurfaceRenderer: Failed to create descriptor pool " << i << std::endl;
+            return false;
+        }
     }
 
     return true;
@@ -301,122 +303,73 @@ void HeatSurfaceRenderer::drawModel(VkCommandBuffer commandBuffer, VkDescriptorS
     vkCmdDrawIndexed(commandBuffer, binding.indexCount, 1, 0, 0, 0);
 }
 
-bool HeatSurfaceRenderer::updateDescriptorSetVector(
-    const std::array<VkBufferView, 11>& bufferViews,
-    VkBuffer surfaceBuffer,
-    VkDeviceSize surfaceBufferOffset,
-    uint32_t maxFramesInFlight,
-    std::vector<VkDescriptorSet>& targetSets,
-    bool forceReallocate) {
-    if (forceReallocate || targetSets.empty() || targetSets.size() != maxFramesInFlight) {
-        targetSets.clear();
-        targetSets.resize(maxFramesInFlight);
+VkDescriptorSet HeatSurfaceRenderer::allocateDescriptorSet(VkDescriptorPool pool) {
+    VkDescriptorSetLayout layouts[] = { descriptorSetLayout };
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = pool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = layouts;
 
-        std::vector<VkDescriptorSetLayout> layouts(maxFramesInFlight, descriptorSetLayout);
-
-        VkDescriptorSetAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        allocInfo.descriptorPool = descriptorPool;
-        allocInfo.descriptorSetCount = maxFramesInFlight;
-        allocInfo.pSetLayouts = layouts.data();
-
-        if (vkAllocateDescriptorSets(vulkanDevice.getDevice(), &allocInfo, targetSets.data()) != VK_SUCCESS) {
-            return false;
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    if (vkAllocateDescriptorSets(vulkanDevice.getDevice(), &allocInfo, &set) != VK_SUCCESS) {
+        static bool loggedOnce = false;
+        if (!loggedOnce) {
+            std::cerr << "HeatSurfaceRenderer: Descriptor pool exhaustion / failed to allocate descriptor set." << std::endl;
+            loggedOnce = true;
         }
     }
-
-    for (size_t i = 0; i < maxFramesInFlight; i++) {
-        std::array<VkWriteDescriptorSet, 12> descriptorWrites{};
-
-        VkDescriptorBufferInfo uboBufferInfo{};
-        uboBufferInfo.buffer = uniformBufferManager.getUniformBuffers()[i];
-        uboBufferInfo.offset = uniformBufferManager.getUniformBufferOffsets()[i];
-        uboBufferInfo.range = sizeof(UniformBufferObject);
-
-        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[0].dstSet = targetSets[i];
-        descriptorWrites[0].dstBinding = 0;
-        descriptorWrites[0].dstArrayElement = 0;
-        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrites[0].descriptorCount = 1;
-        descriptorWrites[0].pBufferInfo = &uboBufferInfo;
-
-        for (int j = 0; j < 10; j++) {
-            descriptorWrites[j + 1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrites[j + 1].dstSet = targetSets[i];
-            descriptorWrites[j + 1].dstBinding = 1 + j;
-            descriptorWrites[j + 1].dstArrayElement = 0;
-            descriptorWrites[j + 1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
-            descriptorWrites[j + 1].descriptorCount = 1;
-            descriptorWrites[j + 1].pTexelBufferView = &bufferViews[j];
-        }
-
-        VkDescriptorBufferInfo surfaceInfo{};
-        surfaceInfo.buffer = surfaceBuffer;
-        surfaceInfo.offset = surfaceBufferOffset;
-        surfaceInfo.range = VK_WHOLE_SIZE; 
-
-        descriptorWrites[11].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[11].dstSet = targetSets[i];
-        descriptorWrites[11].dstBinding = 11;
-        descriptorWrites[11].dstArrayElement = 0;
-        descriptorWrites[11].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        descriptorWrites[11].descriptorCount = 1;
-        descriptorWrites[11].pBufferInfo = &surfaceInfo;
-
-        vkUpdateDescriptorSets(vulkanDevice.getDevice(), 12, descriptorWrites.data(), 0, nullptr);
-    }
-
-    return true;
+    return set;
 }
 
-void HeatSurfaceRenderer::updateDescriptors(
-    const std::vector<SurfaceRenderBinding>& surfaces,
-    uint32_t maxFramesInFlight,
-    bool forceReallocate) {
-    if (!initialized) {
+void HeatSurfaceRenderer::updateDescriptorSet(VkDescriptorSet set, uint32_t frameIndex, const SurfaceRenderBinding& binding) {
+    std::array<VkWriteDescriptorSet, 12> descriptorWrites{};
+
+    VkDescriptorBufferInfo uboBufferInfo{};
+    uboBufferInfo.buffer = uniformBufferManager.getUniformBuffers()[frameIndex];
+    uboBufferInfo.offset = uniformBufferManager.getUniformBufferOffsets()[frameIndex];
+    uboBufferInfo.range = sizeof(UniformBufferObject);
+
+    descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[0].dstSet = set;
+    descriptorWrites[0].dstBinding = 0;
+    descriptorWrites[0].dstArrayElement = 0;
+    descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrites[0].descriptorCount = 1;
+    descriptorWrites[0].pBufferInfo = &uboBufferInfo;
+
+    for (int j = 0; j < 10; j++) {
+        descriptorWrites[j + 1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[j + 1].dstSet = set;
+        descriptorWrites[j + 1].dstBinding = 1 + j;
+        descriptorWrites[j + 1].dstArrayElement = 0;
+        descriptorWrites[j + 1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
+        descriptorWrites[j + 1].descriptorCount = 1;
+        descriptorWrites[j + 1].pTexelBufferView = &binding.bufferViews[j];
+    }
+
+    VkDescriptorBufferInfo surfaceInfo{};
+    surfaceInfo.buffer = binding.surfaceBuffer;
+    surfaceInfo.offset = binding.surfaceBufferOffset;
+    surfaceInfo.range = VK_WHOLE_SIZE;
+
+    descriptorWrites[11].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[11].dstSet = set;
+    descriptorWrites[11].dstBinding = 11;
+    descriptorWrites[11].dstArrayElement = 0;
+    descriptorWrites[11].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    descriptorWrites[11].descriptorCount = 1;
+    descriptorWrites[11].pBufferInfo = &surfaceInfo;
+
+    vkUpdateDescriptorSets(vulkanDevice.getDevice(), 12, descriptorWrites.data(), 0, nullptr);
+}
+
+void HeatSurfaceRenderer::render(VkCommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<SurfaceRenderBinding>& surfaces) {
+    if (!initialized || pipeline == VK_NULL_HANDLE || pipelineLayout == VK_NULL_HANDLE || frameIndex >= descriptorPools.size()) {
         return;
     }
 
-    if (forceReallocate && descriptorPool != VK_NULL_HANDLE) {
-        vkResetDescriptorPool(vulkanDevice.getDevice(), descriptorPool, 0);
-        surfaceDescriptorSets.clear();
-    }
-
-    std::unordered_set<uint32_t> liveSurfaces;
-    liveSurfaces.reserve(surfaces.size());
-
-    for (const SurfaceRenderBinding& surface : surfaces) {
-        if (surface.runtimeModelId == 0) {
-            continue;
-        }
-
-        const uint32_t runtimeModelId = surface.runtimeModelId;
-        liveSurfaces.insert(runtimeModelId);
-        
-        auto& surfaceSets = surfaceDescriptorSets[runtimeModelId];
-        if (!updateDescriptorSetVector(surface.bufferViews, surface.surfaceBuffer, surface.surfaceBufferOffset, maxFramesInFlight, surfaceSets, forceReallocate)) {
-            surfaceDescriptorSets.erase(runtimeModelId);
-            std::cerr << "HeatSurfaceRenderer: Failed to allocate/update surface descriptor sets"
-                      << " runtimeModelId=" << runtimeModelId
-                      << std::endl;
-            continue;
-        }
-    }
-
-    for (auto it = surfaceDescriptorSets.begin(); it != surfaceDescriptorSets.end();) {
-        if (liveSurfaces.find(it->first) == liveSurfaces.end()) {
-            it = surfaceDescriptorSets.erase(it);
-        } else {
-            ++it;
-        }
-    }
-}
-
-void HeatSurfaceRenderer::render(VkCommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<SurfaceRenderBinding>& surfaces) const {
-    if (!initialized || pipeline == VK_NULL_HANDLE || pipelineLayout == VK_NULL_HANDLE) {
-        return;
-    }
+    vkResetDescriptorPool(vulkanDevice.getDevice(), descriptorPools[frameIndex], 0);
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
@@ -425,16 +378,13 @@ void HeatSurfaceRenderer::render(VkCommandBuffer commandBuffer, uint32_t frameIn
             continue;
         }
 
-        auto it = surfaceDescriptorSets.find(surfaceBinding.runtimeModelId);
-        if (it == surfaceDescriptorSets.end()) {
-            continue;
-        }
-        const auto& surfaceHeatSets = it->second;
-        if (frameIndex >= surfaceHeatSets.size()) {
+        VkDescriptorSet set = allocateDescriptorSet(descriptorPools[frameIndex]);
+        if (set == VK_NULL_HANDLE) {
             continue;
         }
 
-        drawModel(commandBuffer, surfaceHeatSets[frameIndex], surfaceBinding);
+        updateDescriptorSet(set, frameIndex, surfaceBinding);
+        drawModel(commandBuffer, set, surfaceBinding);
     }
 }
 
@@ -449,16 +399,17 @@ void HeatSurfaceRenderer::cleanup() {
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
         pipelineLayout = VK_NULL_HANDLE;
     }
-    if (descriptorPool != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-        descriptorPool = VK_NULL_HANDLE;
+    for (auto pool : descriptorPools) {
+        if (pool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(device, pool, nullptr);
+        }
     }
+    descriptorPools.clear();
     if (descriptorSetLayout != VK_NULL_HANDLE) {
         vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
         descriptorSetLayout = VK_NULL_HANDLE;
     }
 
-    surfaceDescriptorSets.clear();
     initialized = false;
 }
 

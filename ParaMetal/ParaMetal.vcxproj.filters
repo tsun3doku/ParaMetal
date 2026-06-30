@@ -84,6 +84,9 @@
     <ClCompile Include="runtime\RemeshSystem.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="runtime\RuntimeProductManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="runtime\RuntimePackageCompiler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -408,7 +411,7 @@
     <ClCompile Include="util\GlyphText.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="nodegraph\NodeGraphBridge.cpp">
+    <ClCompile Include="nodegraph\NodeGraphNodeState.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="nodegraph\NodeGraphSave.cpp">
@@ -444,6 +447,9 @@
     <ClCompile Include="hash\HashProduct.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="nodegraph\NodeGraphEdges.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="nodegraph\NodeGraphRuntime.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -457,9 +463,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="nodegraph\NodeModel.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="nodegraph\NodeModelTransform.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="nodegraph\ui\widgets\NodeModelPanel.cpp">
@@ -639,6 +642,48 @@
     <ClCompile Include="py\PyGraphTypes.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="runtime\RuntimePointComputeTransport.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime\PointComputeRuntime.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime\PointDisplayController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime\RuntimeRemeshComputeTransport.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime\RuntimeContactComputeTransport.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime\RuntimeHeatComputeTransport.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="render\PointOverlayRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="renderers\HeatPointRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="renderers\HeatPaletteRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="voronoi\VoronoiPointRuntime.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="nodegraph\NodePoints.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="nodegraph\NodeMeshPoints.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="nodegraph\NodePointsParams.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="nodegraph\ui\widgets\NodePointsPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\grid.vert">
@@ -789,6 +834,9 @@
     <None Include="shaders\heat_surface_temp.slang">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="shaders\heat_palette.glsl" />
+    <None Include="shaders\heat_palette_bar.vert" />
+    <None Include="shaders\heat_palette_bar.frag" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="util\file_utils.h">
@@ -860,6 +908,12 @@
     <ClInclude Include="runtime\RuntimePackages.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="runtime\RuntimePackageManager.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\RuntimeProductManager.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="runtime\RuntimeController.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -885,9 +939,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="runtime\RuntimeInterfaces.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="runtime\RuntimeECS.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="scene\SceneController.hpp">
@@ -1166,9 +1217,6 @@
     <ClInclude Include="util\GlyphText.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="nodegraph\NodeGraphBridge.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="nodegraph\NodeGraphSave.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1182,6 +1230,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\NodeGraphDataTypes.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nodegraph\NodeGraphEdges.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nodegraph\NodeGraphEvaluatedTypes.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="hash\HashBuilder.hpp">
@@ -1202,6 +1256,9 @@
     <ClInclude Include="nodegraph\NodeGraphRuntime.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="nodegraph\NodeGraphState.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="nodegraph\NodeGraphDebugCache.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1209,9 +1266,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\NodeModel.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="nodegraph\NodeModelTransform.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\ui\widgets\NodeModelPanel.hpp">
@@ -1293,6 +1347,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\NodeGraphTypes.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nodegraph\NodeGraphNodeState.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\NodeGraphValidator.hpp">
@@ -1440,6 +1497,51 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="py\PyGraphTypes.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="domain\PointData.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="render\PointOverlayRenderer.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\RuntimePointComputeTransport.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\RuntimePointDisplayTransport.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\PointComputeRuntime.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\PointDisplayController.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="util\FileAssociation.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="renderers\HeatPointRenderer.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="renderers\HeatPaletteRenderer.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="voronoi\VoronoiDomainRuntime.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="voronoi\VoronoiPointRuntime.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nodegraph\NodePoints.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nodegraph\NodeMeshPoints.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nodegraph\NodePointsParams.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nodegraph\ui\widgets\NodePointsPanel.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "hash/HashValues.hpp"
 #include "nodegraph/NodeGraphCoreTypes.hpp"
 
 #include <cstdint>
@@ -27,7 +26,6 @@ struct ContactPairData {
 };
 
 struct ContactData {
-    HashValues hashes{};
     ContactPairData pair{};
     bool active = false;
 

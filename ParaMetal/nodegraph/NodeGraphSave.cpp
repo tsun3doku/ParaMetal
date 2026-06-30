@@ -133,11 +133,11 @@ bool NodeGraphSave::load(Data& outData, const QString& filePath, QString* outErr
         if (!edgeFromJson(edgeValue, edge, outError)) {
             return false;
         }
-        if (!edge.id.isValid() || loaded.graph.edges.find(edge.id.value) != loaded.graph.edges.end()) {
+        if (!edge.id.isValid() || loaded.graph.edges.find(edge.id)) {
             setError(outError, "Project graph contains duplicate or invalid edge ids.");
             return false;
         }
-        loaded.graph.edges[edge.id.value] = edge;
+        loaded.graph.edges.upsert(edge);
     }
 
     if (root.contains("viewport") && !viewportFromJson(root["viewport"], loaded.viewport, outError)) {
@@ -371,8 +371,12 @@ QJsonObject NodeGraphSave::nodeToJson(const NodeGraphNode& node, const QDir& pro
     obj["title"] = QString::fromStdString(node.title);
     obj["x"] = node.x;
     obj["y"] = node.y;
-    obj["displayEnabled"] = node.displayEnabled;
-    obj["frozen"] = node.frozen;
+
+    QJsonObject flags;
+    const NodeGraphNodeState::Flags& stateFlags = node.state.flags();
+    flags["displayEnabled"] = stateFlags.displayEnabled;
+    flags["frozen"] = stateFlags.frozenEnabled;
+    obj["flags"] = flags;
 
     QJsonArray inputs;
     for (const NodeGraphSocket& socket : node.inputs) {
@@ -582,10 +586,11 @@ bool NodeGraphSave::nodeFromJson(const QJsonValue& value, NodeGraphNode& outNode
         return false;
     }
     const QJsonObject obj = value.toObject();
+    const QJsonObject flags = obj["flags"].toObject();
     if (!obj["id"].isDouble() || !obj["typeId"].isString() || !obj["title"].isString() ||
-        !obj["x"].isDouble() || !obj["y"].isDouble() || !obj["displayEnabled"].isBool() ||
-        !obj["frozen"].isBool() || !obj["inputs"].isArray() || !obj["outputs"].isArray() ||
-        !obj["parameters"].isArray()) {
+        !obj["x"].isDouble() || !obj["y"].isDouble() || !obj["flags"].isObject() ||
+        !flags["displayEnabled"].isBool() || !flags["frozen"].isBool() ||
+        !obj["inputs"].isArray() || !obj["outputs"].isArray() || !obj["parameters"].isArray()) {
         setError(outError, "Node entry has invalid fields.");
         return false;
     }
@@ -596,8 +601,11 @@ bool NodeGraphSave::nodeFromJson(const QJsonValue& value, NodeGraphNode& outNode
     outNode.title = obj["title"].toString().toStdString();
     outNode.x = static_cast<float>(obj["x"].toDouble());
     outNode.y = static_cast<float>(obj["y"].toDouble());
-    outNode.displayEnabled = obj["displayEnabled"].toBool();
-    outNode.frozen = obj["frozen"].toBool();
+
+    NodeGraphNodeState::Flags stateFlags{};
+    stateFlags.displayEnabled = flags["displayEnabled"].toBool();
+    stateFlags.frozenEnabled = flags["frozen"].toBool();
+    outNode.state.restore(stateFlags);
 
     for (const QJsonValue& socketValue : obj["inputs"].toArray()) {
         NodeGraphSocket socket;

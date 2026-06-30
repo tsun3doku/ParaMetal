@@ -11,6 +11,7 @@
 #include <QResizeEvent>
 #include <QVersionNumber>
 #include <QVulkanInstance>
+#include <QVulkanInfoVector>
 #include <QWheelEvent>
 
 #include <algorithm>
@@ -251,6 +252,8 @@ bool VulkanWindow::initializeVulkan() {
     if (!qtVulkanInstance) {
         qtVulkanInstance = new QVulkanInstance();
         qtVulkanInstance->setApiVersion(QVersionNumber(1, 3));
+        qtVulkanInstance->setFlags(QVulkanInstance::NoDebugOutputRedirect);
+
         if (!qtVulkanInstance->create()) {
             delete qtVulkanInstance;
             qtVulkanInstance = nullptr;
@@ -265,12 +268,17 @@ bool VulkanWindow::initializeVulkan() {
     }
 
     try {
+        std::vector<const char*> validationLayers;
+        for (const QByteArray& layer : qtVulkanInstance->layers()) {
+            validationLayers.push_back(layer.constData());
+        }
+
         vulkanDevice.init(
             qtVulkanInstance->vkInstance(),
             surface,
             std::vector<const char*>(kDeviceExtensions.begin(), kDeviceExtensions.end()),
-            {},
-            false);
+            validationLayers,
+            !validationLayers.empty());
     } catch (const std::exception& ex) {
         std::cerr << "[VulkanWindow] Failed to initialize VulkanDevice: " << ex.what() << std::endl;
         vulkanDevice.cleanup();

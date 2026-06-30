@@ -5,7 +5,7 @@
 
 #include <QWidget>
 
-class NodeGraphBridge;
+class NodeGraph;
 class NodeGraphCanvas;
 class NodeGraphScene;
 class NodePanel;
@@ -20,7 +20,7 @@ public:
     explicit NodeGraphEditorWidget(QWidget* parent = nullptr);
 
     void setRuntimeQuery(const RuntimeQuery* runtimeQuery);
-    void setBridge(NodeGraphBridge* bridge);
+    void setGraph(NodeGraph* bridge);
     void setSceneController(const SceneController* sceneController);
     void setModelSelection(ModelSelection* modelSelection);
     void refreshGraph();
@@ -42,7 +42,7 @@ private:
     void addNodeAt(const NodeTypeId& typeId, const QPointF& scenePos);
 
     const RuntimeQuery* runtimeQuery = nullptr;
-    NodeGraphBridge* bridge = nullptr;
+    NodeGraph* bridge = nullptr;
     NodeGraphEditor editor;
     const SceneController* sceneController = nullptr;
     ModelSelection* modelSelection = nullptr;

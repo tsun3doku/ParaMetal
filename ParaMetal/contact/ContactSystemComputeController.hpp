@@ -52,11 +52,13 @@ public:
     ContactSystemComputeController(
         VulkanDevice& vulkanDevice,
         MemoryAllocator& memoryAllocator,
-        CommandPool& renderCommandPool);
+        CommandPool& commandPool);
     ~ContactSystemComputeController();
 
-    void configure(uint64_t socketKey, const Config& config);
-    void disable(uint64_t socketKey);
+    void apply(uint64_t socketKey, const Config& config);
+    void retain(uint64_t socketKey);
+    bool buildProduct(uint64_t socketKey, ContactProduct& product) const;
+    void remove(uint64_t socketKey);
     void disableAll();
     ContactSystem* getSystem(uint64_t socketKey) const;
     const Config* getConfig(uint64_t socketKey) const;
@@ -64,7 +66,7 @@ public:
 private:
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
-    CommandPool& renderCommandPool;
-    std::unordered_map<uint64_t, std::unique_ptr<ContactSystem>> activeSystems;
+    CommandPool& commandPool;
+    std::unordered_map<uint64_t, std::unique_ptr<ContactSystem>> systemsBySocket;
     std::unordered_map<uint64_t, Config> configuredConfigs;
 };

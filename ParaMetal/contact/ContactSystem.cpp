@@ -7,10 +7,10 @@
 ContactSystem::ContactSystem(
     VulkanDevice& vulkanDeviceRef,
     MemoryAllocator& memoryAllocatorRef,
-    CommandPool& renderCommandPoolRef)
+    CommandPool& commandPoolRef)
     : vulkanDevice(vulkanDeviceRef),
       memoryAllocator(memoryAllocatorRef),
-      renderCommandPool(renderCommandPoolRef),
+      commandPool(commandPoolRef),
       runtime(std::make_unique<ContactSystemRuntime>()) {
 }
 
@@ -61,7 +61,7 @@ void ContactSystem::ensureConfigured() {
         return;
     }
 
-    runtime->buildCoupling(vulkanDevice, memoryAllocator, renderCommandPool);
+    runtime->buildCoupling(vulkanDevice, memoryAllocator, commandPool);
 }
 
 void ContactSystem::disable() {

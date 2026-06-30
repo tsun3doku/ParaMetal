@@ -333,7 +333,7 @@ bool IntrinsicRenderer::createSupportingHalfedgeDescriptorSetLayout() {
     return true;
 }
 
-void IntrinsicRenderer::allocateDescriptorSetsForSocket(uint64_t socketKey, uint32_t maxFramesInFlight) {
+void IntrinsicRenderer::allocateSupportingHalfedgeDescriptorSets(uint64_t socketKey, uint32_t maxFramesInFlight) {
     if (socketKey == 0) {
         return;
     }
@@ -407,7 +407,7 @@ bool IntrinsicRenderer::createIntrinsicNormalsDescriptorSetLayout() {
     return true;
 }
 
-void IntrinsicRenderer::allocateNormalsDescriptorSetsForSocket(uint64_t socketKey, uint32_t maxFramesInFlight) {
+void IntrinsicRenderer::allocateFaceNormalDescriptorSets(uint64_t socketKey, uint32_t maxFramesInFlight) {
     if (socketKey == 0) {
         return;
     }
@@ -481,7 +481,7 @@ bool IntrinsicRenderer::createIntrinsicVertexNormalsDescriptorSetLayout() {
     return true;
 }
 
-void IntrinsicRenderer::allocateVertexNormalsDescriptorSetsForSocket(uint64_t socketKey, uint32_t maxFramesInFlight) {
+void IntrinsicRenderer::allocateVertexNormalDescriptorSets(uint64_t socketKey, uint32_t maxFramesInFlight) {
     if (socketKey == 0) {
         return;
     }
@@ -507,13 +507,13 @@ void IntrinsicRenderer::allocateVertexNormalsDescriptorSetsForSocket(uint64_t so
     intrinsicVertexNormalsDescriptorSetsBySocket[socketKey] = descriptorSets;
 }
 
-void IntrinsicRenderer::updatePayloadDescriptorSetsForSocket(uint64_t socketKey, const RemeshDisplayController::Config& config) {
-    if (socketKey == 0 || !config.isValid()) {
+void IntrinsicRenderer::updateSupportingHalfedgeDescriptorSet(uint64_t socketKey, const RemeshDisplayController::Config& config, uint32_t currentFrame) {
+    if (socketKey == 0 || !config.isValid() || currentFrame >= maxFramesInFlight) {
         return;
     }
 
     if (supportingHalfedgeDescriptorSetsBySocket.find(socketKey) == supportingHalfedgeDescriptorSetsBySocket.end()) {
-        allocateDescriptorSetsForSocket(socketKey, maxFramesInFlight);
+        allocateSupportingHalfedgeDescriptorSets(socketKey, maxFramesInFlight);
     }
     auto descriptorSetIt = supportingHalfedgeDescriptorSetsBySocket.find(socketKey);
     if (descriptorSetIt == supportingHalfedgeDescriptorSetsBySocket.end()) {
@@ -521,66 +521,68 @@ void IntrinsicRenderer::updatePayloadDescriptorSetsForSocket(uint64_t socketKey,
     }
 
     const auto& descriptorSets = descriptorSetIt->second;
-    for (size_t i = 0; i < maxFramesInFlight; ++i) {
-        std::array<VkWriteDescriptorSet, 12> descriptorWrites{};
-
-        VkDescriptorBufferInfo uboBufferInfo{};
-        uboBufferInfo.buffer = uniformBufferManager.getUniformBuffers()[i];
-        uboBufferInfo.offset = uniformBufferManager.getUniformBufferOffsets()[i];
-        uboBufferInfo.range = sizeof(UniformBufferObject);
-
-        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[0].dstSet = descriptorSets[i];
-        descriptorWrites[0].dstBinding = 0;
-        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrites[0].descriptorCount = 1;
-        descriptorWrites[0].pBufferInfo = &uboBufferInfo;
-
-        VkBufferView bufferViews[10] = {
-            config.supportingHalfedgeView,
-            config.supportingAngleView,
-            config.halfedgeView,
-            config.edgeView,
-            config.triangleView,
-            config.lengthView,
-            config.inputHalfedgeView,
-            config.inputEdgeView,
-            config.inputTriangleView,
-            config.inputLengthView
-        };
-
-        for (int j = 0; j < 10; ++j) {
-            descriptorWrites[j + 1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrites[j + 1].dstSet = descriptorSets[i];
-            descriptorWrites[j + 1].dstBinding = 1 + j;
-            descriptorWrites[j + 1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
-            descriptorWrites[j + 1].descriptorCount = 1;
-            descriptorWrites[j + 1].pTexelBufferView = &bufferViews[j];
-        }
-
-        VkDescriptorImageInfo wireframeInfo{};
-        wireframeInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        wireframeInfo.imageView = wireframeTextureView;
-        wireframeInfo.sampler = wireframeTextureSampler;
-
-        descriptorWrites[11].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[11].dstSet = descriptorSets[i];
-        descriptorWrites[11].dstBinding = 11;
-        descriptorWrites[11].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[11].descriptorCount = 1;
-        descriptorWrites[11].pImageInfo = &wireframeInfo;
-
-        vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+    if (currentFrame >= descriptorSets.size()) {
+        return;
     }
+
+    std::array<VkWriteDescriptorSet, 12> descriptorWrites{};
+
+    VkDescriptorBufferInfo uboBufferInfo{};
+    uboBufferInfo.buffer = uniformBufferManager.getUniformBuffers()[currentFrame];
+    uboBufferInfo.offset = uniformBufferManager.getUniformBufferOffsets()[currentFrame];
+    uboBufferInfo.range = sizeof(UniformBufferObject);
+
+    descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[0].dstSet = descriptorSets[currentFrame];
+    descriptorWrites[0].dstBinding = 0;
+    descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrites[0].descriptorCount = 1;
+    descriptorWrites[0].pBufferInfo = &uboBufferInfo;
+
+    VkBufferView bufferViews[10] = {
+        config.supportingHalfedgeView,
+        config.supportingAngleView,
+        config.halfedgeView,
+        config.edgeView,
+        config.triangleView,
+        config.lengthView,
+        config.inputHalfedgeView,
+        config.inputEdgeView,
+        config.inputTriangleView,
+        config.inputLengthView
+    };
+
+    for (int j = 0; j < 10; ++j) {
+        descriptorWrites[j + 1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[j + 1].dstSet = descriptorSets[currentFrame];
+        descriptorWrites[j + 1].dstBinding = 1 + j;
+        descriptorWrites[j + 1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
+        descriptorWrites[j + 1].descriptorCount = 1;
+        descriptorWrites[j + 1].pTexelBufferView = &bufferViews[j];
+    }
+
+    VkDescriptorImageInfo wireframeInfo{};
+    wireframeInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    wireframeInfo.imageView = wireframeTextureView;
+    wireframeInfo.sampler = wireframeTextureSampler;
+
+    descriptorWrites[11].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[11].dstSet = descriptorSets[currentFrame];
+    descriptorWrites[11].dstBinding = 11;
+    descriptorWrites[11].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrites[11].descriptorCount = 1;
+    descriptorWrites[11].pImageInfo = &wireframeInfo;
+
+    vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 }
 
-void IntrinsicRenderer::updatePayloadNormalsDescriptorSetsForSocket(uint64_t socketKey, const RemeshDisplayController::Config& config) {
-    if (socketKey == 0 || !config.isValid() || config.intrinsicTriangleBuffer == VK_NULL_HANDLE) {
+void IntrinsicRenderer::updateFaceNormalDescriptorSet(uint64_t socketKey, const RemeshDisplayController::Config& config, uint32_t currentFrame) {
+    if (socketKey == 0 || !config.isValid() || config.intrinsicTriangleBuffer == VK_NULL_HANDLE || currentFrame >= maxFramesInFlight) {
         return;
     }
 
     if (intrinsicNormalsDescriptorSetsBySocket.find(socketKey) == intrinsicNormalsDescriptorSetsBySocket.end()) {
-        allocateNormalsDescriptorSetsForSocket(socketKey, maxFramesInFlight);
+        allocateFaceNormalDescriptorSets(socketKey, maxFramesInFlight);
     }
     auto descriptorSetIt = intrinsicNormalsDescriptorSetsBySocket.find(socketKey);
     if (descriptorSetIt == intrinsicNormalsDescriptorSetsBySocket.end()) {
@@ -588,44 +590,46 @@ void IntrinsicRenderer::updatePayloadNormalsDescriptorSetsForSocket(uint64_t soc
     }
 
     const auto& descriptorSets = descriptorSetIt->second;
-    for (size_t i = 0; i < maxFramesInFlight; ++i) {
-        std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
-
-        VkDescriptorBufferInfo uboBufferInfo{};
-        uboBufferInfo.buffer = uniformBufferManager.getUniformBuffers()[i];
-        uboBufferInfo.offset = uniformBufferManager.getUniformBufferOffsets()[i];
-        uboBufferInfo.range = sizeof(UniformBufferObject);
-
-        VkDescriptorBufferInfo triangleBufferInfo{};
-        triangleBufferInfo.buffer = config.intrinsicTriangleBuffer;
-        triangleBufferInfo.offset = config.intrinsicTriangleBufferOffset;
-        triangleBufferInfo.range = config.intrinsicTriangleCount * sizeof(IntrinsicTriangleData);
-
-        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[0].dstSet = descriptorSets[i];
-        descriptorWrites[0].dstBinding = 0;
-        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        descriptorWrites[0].descriptorCount = 1;
-        descriptorWrites[0].pBufferInfo = &triangleBufferInfo;
-
-        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[1].dstSet = descriptorSets[i];
-        descriptorWrites[1].dstBinding = 1;
-        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrites[1].descriptorCount = 1;
-        descriptorWrites[1].pBufferInfo = &uboBufferInfo;
-
-        vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+    if (currentFrame >= descriptorSets.size()) {
+        return;
     }
+
+    std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+
+    VkDescriptorBufferInfo uboBufferInfo{};
+    uboBufferInfo.buffer = uniformBufferManager.getUniformBuffers()[currentFrame];
+    uboBufferInfo.offset = uniformBufferManager.getUniformBufferOffsets()[currentFrame];
+    uboBufferInfo.range = sizeof(UniformBufferObject);
+
+    VkDescriptorBufferInfo triangleBufferInfo{};
+    triangleBufferInfo.buffer = config.intrinsicTriangleBuffer;
+    triangleBufferInfo.offset = config.intrinsicTriangleBufferOffset;
+    triangleBufferInfo.range = config.intrinsicTriangleCount * sizeof(IntrinsicTriangleData);
+
+    descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[0].dstSet = descriptorSets[currentFrame];
+    descriptorWrites[0].dstBinding = 0;
+    descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    descriptorWrites[0].descriptorCount = 1;
+    descriptorWrites[0].pBufferInfo = &triangleBufferInfo;
+
+    descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[1].dstSet = descriptorSets[currentFrame];
+    descriptorWrites[1].dstBinding = 1;
+    descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrites[1].descriptorCount = 1;
+    descriptorWrites[1].pBufferInfo = &uboBufferInfo;
+
+    vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 }
 
-void IntrinsicRenderer::updatePayloadVertexNormalsDescriptorSetsForSocket(uint64_t socketKey, const RemeshDisplayController::Config& config) {
-    if (socketKey == 0 || !config.isValid() || config.intrinsicVertexBuffer == VK_NULL_HANDLE) {
+void IntrinsicRenderer::updateVertexNormalDescriptorSet(uint64_t socketKey, const RemeshDisplayController::Config& config, uint32_t currentFrame) {
+    if (socketKey == 0 || !config.isValid() || config.intrinsicVertexBuffer == VK_NULL_HANDLE || currentFrame >= maxFramesInFlight) {
         return;
     }
 
     if (intrinsicVertexNormalsDescriptorSetsBySocket.find(socketKey) == intrinsicVertexNormalsDescriptorSetsBySocket.end()) {
-        allocateVertexNormalsDescriptorSetsForSocket(socketKey, maxFramesInFlight);
+        allocateVertexNormalDescriptorSets(socketKey, maxFramesInFlight);
     }
     auto descriptorSetIt = intrinsicVertexNormalsDescriptorSetsBySocket.find(socketKey);
     if (descriptorSetIt == intrinsicVertexNormalsDescriptorSetsBySocket.end()) {
@@ -633,35 +637,37 @@ void IntrinsicRenderer::updatePayloadVertexNormalsDescriptorSetsForSocket(uint64
     }
 
     const auto& descriptorSets = descriptorSetIt->second;
-    for (size_t i = 0; i < maxFramesInFlight; ++i) {
-        std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
-
-        VkDescriptorBufferInfo uboBufferInfo{};
-        uboBufferInfo.buffer = uniformBufferManager.getUniformBuffers()[i];
-        uboBufferInfo.offset = uniformBufferManager.getUniformBufferOffsets()[i];
-        uboBufferInfo.range = sizeof(UniformBufferObject);
-
-        VkDescriptorBufferInfo vertexBufferInfo{};
-        vertexBufferInfo.buffer = config.intrinsicVertexBuffer;
-        vertexBufferInfo.offset = config.intrinsicVertexBufferOffset;
-        vertexBufferInfo.range = config.intrinsicVertexCount * sizeof(IntrinsicVertexData);
-
-        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[0].dstSet = descriptorSets[i];
-        descriptorWrites[0].dstBinding = 0;
-        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        descriptorWrites[0].descriptorCount = 1;
-        descriptorWrites[0].pBufferInfo = &vertexBufferInfo;
-
-        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[1].dstSet = descriptorSets[i];
-        descriptorWrites[1].dstBinding = 1;
-        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrites[1].descriptorCount = 1;
-        descriptorWrites[1].pBufferInfo = &uboBufferInfo;
-
-        vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+    if (currentFrame >= descriptorSets.size()) {
+        return;
     }
+
+    std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+
+    VkDescriptorBufferInfo uboBufferInfo{};
+    uboBufferInfo.buffer = uniformBufferManager.getUniformBuffers()[currentFrame];
+    uboBufferInfo.offset = uniformBufferManager.getUniformBufferOffsets()[currentFrame];
+    uboBufferInfo.range = sizeof(UniformBufferObject);
+
+    VkDescriptorBufferInfo vertexBufferInfo{};
+    vertexBufferInfo.buffer = config.intrinsicVertexBuffer;
+    vertexBufferInfo.offset = config.intrinsicVertexBufferOffset;
+    vertexBufferInfo.range = config.intrinsicVertexCount * sizeof(IntrinsicVertexData);
+
+    descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[0].dstSet = descriptorSets[currentFrame];
+    descriptorWrites[0].dstBinding = 0;
+    descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    descriptorWrites[0].descriptorCount = 1;
+    descriptorWrites[0].pBufferInfo = &vertexBufferInfo;
+
+    descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[1].dstSet = descriptorSets[currentFrame];
+    descriptorWrites[1].dstBinding = 1;
+    descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrites[1].descriptorCount = 1;
+    descriptorWrites[1].pBufferInfo = &uboBufferInfo;
+
+    vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 }
 
 void IntrinsicRenderer::apply(uint64_t socketKey, const RemeshDisplayController::Config& config) {
@@ -671,9 +677,6 @@ void IntrinsicRenderer::apply(uint64_t socketKey, const RemeshDisplayController:
     }
 
     remeshConfigsBySocketKey[socketKey] = config;
-    updatePayloadDescriptorSetsForSocket(socketKey, config);
-    updatePayloadNormalsDescriptorSetsForSocket(socketKey, config);
-    updatePayloadVertexNormalsDescriptorSetsForSocket(socketKey, config);
 }
 
 void IntrinsicRenderer::remove(uint64_t socketKey) {
@@ -685,25 +688,8 @@ void IntrinsicRenderer::releaseDescriptorSetsForSocket(uint64_t socketKey) {
         return;
     }
 
-    auto freeSets = [this, socketKey](VkDescriptorPool pool, auto& setMap) {
-        auto it = setMap.find(socketKey);
-        if (it == setMap.end()) {
-            return;
-        }
-        if (pool != VK_NULL_HANDLE && !it->second.empty()) {
-            vkFreeDescriptorSets(
-                vulkanDevice.getDevice(),
-                pool,
-                static_cast<uint32_t>(it->second.size()),
-                it->second.data());
-        }
-        setMap.erase(it);
-    };
-
-    freeSets(supportingHalfedgeDescriptorPool, supportingHalfedgeDescriptorSetsBySocket);
-    freeSets(intrinsicNormalsDescriptorPool, intrinsicNormalsDescriptorSetsBySocket);
-    freeSets(intrinsicVertexNormalsDescriptorPool, intrinsicVertexNormalsDescriptorSetsBySocket);
-
+    // Descriptor sets may still be referenced by in-flight command buffers.
+    // Keep cached sets alive until renderer cleanup/pool destruction.
     remeshConfigsBySocketKey.erase(socketKey);
 }
 
@@ -847,7 +833,7 @@ bool IntrinsicRenderer::createSupportingHalfedgePipeline(VkRenderPass renderPass
     VkPushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(glm::mat4);
+    pushConstantRange.size = sizeof(glm::mat4) + sizeof(glm::vec4);
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -1242,6 +1228,7 @@ void IntrinsicRenderer::renderSupportingHalfedges(VkCommandBuffer commandBuffer,
             continue;
         }
 
+        updateSupportingHalfedgeDescriptorSet(socketKey, product, currentFrame);
         auto it = supportingHalfedgeDescriptorSetsBySocket.find(socketKey);
         if (it == supportingHalfedgeDescriptorSetsBySocket.end()) {
             continue;
@@ -1279,6 +1266,7 @@ void IntrinsicRenderer::renderIntrinsicNormals(VkCommandBuffer commandBuffer, ui
             continue;
         }
 
+        updateFaceNormalDescriptorSet(socketKey, product, currentFrame);
         auto it = intrinsicNormalsDescriptorSetsBySocket.find(socketKey);
         if (it == intrinsicNormalsDescriptorSetsBySocket.end()) {
             continue;
@@ -1318,6 +1306,7 @@ void IntrinsicRenderer::renderIntrinsicVertexNormals(VkCommandBuffer commandBuff
             continue;
         }
 
+        updateVertexNormalDescriptorSet(socketKey, product, currentFrame);
         auto it = intrinsicVertexNormalsDescriptorSetsBySocket.find(socketKey);
         if (it == intrinsicVertexNormalsDescriptorSetsBySocket.end()) {
             continue;

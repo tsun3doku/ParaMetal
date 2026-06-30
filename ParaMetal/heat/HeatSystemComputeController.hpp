@@ -19,6 +19,7 @@ class VulkanDevice;
 class MemoryAllocator;
 class ModelRegistry;
 class CommandPool;
+struct HeatProduct;
 
 class HeatSystemComputeController {
 public:
@@ -52,11 +53,13 @@ public:
         std::unordered_map<uint32_t, VkDeviceSize> modelVoronoiNodeBufferOffsetByModelId;
         std::unordered_map<uint32_t, VkBuffer> modelSimNodeBufferByModelId;
         std::unordered_map<uint32_t, VkDeviceSize> modelSimNodeBufferOffsetByModelId;
+        std::unordered_map<uint32_t, VkDeviceSize> modelSimNodeBufferSizeByModelId;
         std::unordered_map<uint32_t, VkBuffer> modelSimGMLSInterfaceBufferByModelId;
         std::unordered_map<uint32_t, VkDeviceSize> modelSimGMLSInterfaceBufferOffsetByModelId;
         std::unordered_map<uint32_t, uint32_t> voronoiNodeCounts;
         std::unordered_map<uint32_t, uint32_t> simNodeCounts;
         std::unordered_map<uint32_t, uint32_t> simGMLSInterfaceCounts;
+        std::unordered_map<uint32_t, std::vector<float>> modelSimNodeVolumesByModelId;
         std::unordered_map<uint32_t, std::vector<uint32_t>> modelVoronoiToSimByModelId;
         std::unordered_map<uint32_t, VkBuffer> modelGMLSSurfaceStencilBufferByModelId;
         std::unordered_map<uint32_t, VkDeviceSize> modelGMLSSurfaceStencilBufferOffsetByModelId;
@@ -77,21 +80,19 @@ public:
         MemoryAllocator& memoryAllocator,
         ModelRegistry& resourceManager,
         CommandPool& renderCommandPool,
+        CommandPool& transferCommandPool,
         uint32_t maxFramesInFlight);
 
     bool isAnyHeatSystemActive() const;
     bool isAnyHeatSystemPaused() const;
-    bool isHeatSystemActive(uint64_t socketKey) const;
-    bool isHeatSystemPaused(uint64_t socketKey) const;
 
-    void configure(uint64_t socketKey, const Config& config);
-    void disable(uint64_t socketKey);
+    void apply(uint64_t socketKey, const Config& config);
+    bool buildProduct(uint64_t socketKey, HeatProduct& product);
+    void remove(uint64_t socketKey);
     void disableAll();
     std::vector<ComputePass*> getActiveSystems() const;
     const HeatSystem* getSystem(uint64_t socketKey) const;
     const Config* getConfig(uint64_t socketKey) const;
-
-    void destroyHeatSystem(uint64_t socketKey);
 
 private:
     std::unique_ptr<HeatSystem> buildHeatSystem();
@@ -102,8 +103,9 @@ private:
     MemoryAllocator& memoryAllocator;
     ModelRegistry& resourceManager;
     CommandPool& renderCommandPool;
+    CommandPool& transferCommandPool;
 
-    std::unordered_map<uint64_t, std::unique_ptr<HeatSystem>> activeSystems;
+    std::unordered_map<uint64_t, std::unique_ptr<HeatSystem>> systemsBySocket;
     std::unordered_map<uint64_t, Config> configuredConfigs;
     const uint32_t maxFramesInFlight;
 };

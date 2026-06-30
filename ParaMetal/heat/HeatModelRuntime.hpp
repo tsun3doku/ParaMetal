@@ -17,6 +17,7 @@ class HeatSystemPlayback;
 class VulkanDevice;
 class MemoryAllocator;
 class CommandPool;
+struct HeatProduct;
 
 class HeatModelRuntime {
 public:
@@ -32,7 +33,7 @@ public:
     void setFixedTemperatureValue(float temperature);
     void setMaterialProperties(float density, float specificHeat, float conductivity);
 
-    bool createSurfaceBuffer();
+    bool appendProduct(struct HeatProduct& product);
     void cleanup();
     bool isInitialized() const { return initialized; }
 
@@ -45,11 +46,7 @@ public:
 
     size_t getIntrinsicVertexCount() const { return intrinsicVertexCount; }
 
-    VkBuffer getSurfaceBuffer() const { return surfaceBuffer; }
-    VkDeviceSize getSurfaceBufferOffset() const { return surfaceBufferOffset; }
 
-    VkBuffer getSurfaceGradientBuffer() const { return surfaceGradientBuffer; }
-    VkDeviceSize getSurfaceGradientBufferOffset() const { return surfaceGradientBufferOffset; }
 
     void setGMLSSurfaceWeights(
         VkBuffer stencilBuffer,
@@ -61,7 +58,11 @@ public:
         VkDeviceSize gradientWeightBufferOffset,
         size_t gradientWeightCount);
 
-    void updateAllDescriptors(
+    bool updateAllDescriptors(
+        VkBuffer surfaceBuffer,
+        VkDeviceSize surfaceBufferOffset,
+        VkBuffer surfaceGradientBuffer,
+        VkDeviceSize surfaceGradientBufferOffset,
         VkDescriptorSetLayout surfaceLayout,
         VkDescriptorSetLayout gradientLayout,
         VkDescriptorPool surfacePool,
@@ -77,8 +78,10 @@ public:
     VkDescriptorSet getSurfaceComputeSetB() const { return surfaceComputeSetB; }
     VkDescriptorSet getSurfaceGradientComputeSetA() const { return surfaceGradientComputeSetA; }
     VkDescriptorSet getSurfaceGradientComputeSetB() const { return surfaceGradientComputeSetB; }
-    VkDescriptorSet getSurfaceHistoryComputeSet() const { return surfaceHistoryComputeSet; }
-    VkDescriptorSet getSurfaceGradientHistorySet() const { return surfaceGradientHistorySet; }
+    VkDescriptorSet getSurfaceHistoryComputeSetA() const { return surfaceHistoryComputeSetA; }
+    VkDescriptorSet getSurfaceHistoryComputeSetB() const { return surfaceHistoryComputeSetB; }
+    VkDescriptorSet getSurfaceGradientHistorySetA() const { return surfaceGradientHistorySetA; }
+    VkDescriptorSet getSurfaceGradientHistorySetB() const { return surfaceGradientHistorySetB; }
 
     const SupportingHalfedge::IntrinsicMesh& getIntrinsicMesh() const { return intrinsicMesh; }
 
@@ -119,7 +122,7 @@ public:
     void setStencilKDTree(std::unique_ptr<StencilKDTree> kdTree);
     StencilKDTree* getStencilKDTree() const { return stencilKDTree.get(); }
 
-    void updateHistoryDescriptorOffset(uint32_t displayFrame, VkDeviceSize frameStride);
+    void updateHistoryDescriptorOffset(uint32_t displayFrame, VkDeviceSize frameStride, uint32_t currentFrame);
 
 private:
     VulkanDevice& vulkanDevice;
@@ -134,8 +137,7 @@ private:
 
     uint32_t boundaryCondition = 0;
     float fixedTemperatureValue = HeatSimDefaults::ambientTemperature;
-    VkBuffer surfaceBuffer = VK_NULL_HANDLE;
-    VkDeviceSize surfaceBufferOffset = 0;
+
 
     VkBuffer gmlsSurfaceStencilBuffer = VK_NULL_HANDLE;
     VkDeviceSize gmlsSurfaceStencilBufferOffset = 0;
@@ -146,15 +148,22 @@ private:
     VkDeviceSize gmlsSurfaceGradientWeightBufferOffset = 0;
     size_t gmlsSurfaceGradientWeightCount = 0;
 
-    VkBuffer surfaceGradientBuffer = VK_NULL_HANDLE;
-    VkDeviceSize surfaceGradientBufferOffset = 0;
+
 
     VkDescriptorSet surfaceComputeSetA = VK_NULL_HANDLE;
     VkDescriptorSet surfaceComputeSetB = VK_NULL_HANDLE;
     VkDescriptorSet surfaceGradientComputeSetA = VK_NULL_HANDLE;
     VkDescriptorSet surfaceGradientComputeSetB = VK_NULL_HANDLE;
-    VkDescriptorSet surfaceHistoryComputeSet = VK_NULL_HANDLE;
-    VkDescriptorSet surfaceGradientHistorySet = VK_NULL_HANDLE;
+    // History sets are double-buffered (A/B) because updateHistoryDescriptorOffset
+    // rewrites them every frame for the current display frame. A singleton set would
+    // be mutated while the prior frame's command buffer (which bound it) is still
+    // pending on the GPU - a descriptor-aliasing violation (VUID-vkUpdateDescriptorSets-
+    // None-03047) and the source of device-lost on heavy churn. The A/B split matches
+    // the existing pattern for surfaceComputeSetA/B and voronoiDescriptorSetA/B.
+    VkDescriptorSet surfaceHistoryComputeSetA = VK_NULL_HANDLE;
+    VkDescriptorSet surfaceHistoryComputeSetB = VK_NULL_HANDLE;
+    VkDescriptorSet surfaceGradientHistorySetA = VK_NULL_HANDLE;
+    VkDescriptorSet surfaceGradientHistorySetB = VK_NULL_HANDLE;
 
     VkBuffer materialBuffer = VK_NULL_HANDLE;
     VkDeviceSize materialBufferOffset = 0;

@@ -3,28 +3,43 @@
 #include "NodeGraphDisplay.hpp"
 #include "NodeGraphCompiler.hpp"
 #include "NodeGraphRuntime.hpp"
-#include "runtime/RuntimeECS.hpp"
+#include "runtime/RuntimePackageManager.hpp"
+#include "runtime/RuntimeProductManager.hpp"
 
 #include <cstdint>
+#include <memory>
 
-class NodeGraphBridge;
+class NodeGraph;
+class VulkanDevice;
+class MemoryAllocator;
 
 class NodeGraphController {
 public:
     NodeGraphController(
-        NodeGraphBridge* bridge = nullptr,
+        NodeGraph* bridge = nullptr,
         const NodeRuntimeServices& services = {});
 
-    void applyPendingChanges();
     void tick();
+    void updateDisplayTransports();
     const NodeGraphCompiled& compiledState() const;
 
+    RuntimeProductManager* getProductManager() { return productManager.get(); }
+    RuntimePackageManager* getPackageManager() { return &packageManager; }
+
 private:
-    NodeGraphBridge* bridge = nullptr;
+    void consumePendingGraphDelta();
+    void compileRuntimePackages();
+    void updateComputeTransport(uint64_t socketKey);
+    void updateComputeTransports(const NodeGraphNode& node);
+
+    NodeGraph* bridge = nullptr;
     NodeRuntimeServices runtimeServices{};
     NodeGraphRuntime runtime;
     uint64_t revisionSeen = 0;
+    uint64_t pendingPackageRevision = 0;  
+    uint64_t completedPackageRevision = 0; 
     NodeGraphCompiled plan{};
     NodeGraphDisplay nodeGraphDisplay{};
-    ECSRegistry ecsRegistry{};
+    RuntimePackageManager packageManager{};
+    std::unique_ptr<RuntimeProductManager> productManager;
 };

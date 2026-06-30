@@ -247,11 +247,18 @@ void VoronoiModelRuntime::stageGMLSSurfaceData(
 }
 
 void VoronoiModelRuntime::cleanup() {
+    // Product buffers: owned by published VoronoiProduct / RuntimeProducts.
+    voronoiCandidateBuffer = VK_NULL_HANDLE;
+    voronoiCandidateBufferOffset = 0;
+    gmlsSurfaceStencilBuffer = VK_NULL_HANDLE;
+    gmlsSurfaceStencilBufferOffset = 0;
+    gmlsSurfaceWeightBuffer = VK_NULL_HANDLE;
+    gmlsSurfaceWeightBufferOffset = 0;
+    gmlsSurfaceGradientWeightBuffer = VK_NULL_HANDLE;
+    gmlsSurfaceGradientWeightBufferOffset = 0;
+
+    // Internal buffers: not part of any product, free normally.
     freeBuffer(memoryAllocator, triangleIndicesBuffer, triangleIndicesBufferOffset);
-    freeBuffer(memoryAllocator, voronoiCandidateBuffer, voronoiCandidateBufferOffset);
-    freeBuffer(memoryAllocator, gmlsSurfaceStencilBuffer, gmlsSurfaceStencilBufferOffset);
-    freeBuffer(memoryAllocator, gmlsSurfaceWeightBuffer, gmlsSurfaceWeightBufferOffset);
-    freeBuffer(memoryAllocator, gmlsSurfaceGradientWeightBuffer, gmlsSurfaceGradientWeightBufferOffset);
     freeBuffer(memoryAllocator, surfaceBuffer, surfaceBufferOffset);
 }
 

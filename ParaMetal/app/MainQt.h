@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <QMainWindow>
 #include <QString>
@@ -9,7 +9,7 @@ class App;
 class QAction;
 class ModelSelection;
 class NodeGraphEditorWidget;
-class NodeGraphBridge;
+class NodeGraph;
 class PyTerminalWidget;
 class RuntimeQuery;
 class SceneController;
@@ -37,7 +37,7 @@ private:
     void createMenuBar();
     void createFileMenu(QMenuBar* menuBar);
     void createNodeGraphEditorWidget();
-    void syncNodeGraphBridge();
+    void syncNodeGraph();
     void setNodeGraphVisible(bool visible);
     void setPyTerminalVisible(bool visible);
     void raiseNativeSplitterHandles();
@@ -68,7 +68,7 @@ private:
     QWidget* viewportContainer = nullptr;
     NodeGraphEditorWidget* nodeGraphEditor = nullptr;
     PyTerminalWidget* pyTerminal = nullptr;
-    NodeGraphBridge* boundNodeGraphBridge = nullptr;
+    NodeGraph* boundNodeGraph = nullptr;
     const SceneController* boundSceneController = nullptr;
     ModelSelection* boundModelSelection = nullptr;
     const RuntimeQuery* boundRuntimeQuery = nullptr;

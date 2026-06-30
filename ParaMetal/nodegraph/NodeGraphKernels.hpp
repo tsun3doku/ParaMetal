@@ -1,6 +1,7 @@
 #pragma once
 
 #include "NodeGraphDataTypes.hpp"
+#include "NodeGraphState.hpp"
 #include "NodeGraphPayloadTypes.hpp"
 
 #include <cstdint>
@@ -9,10 +10,8 @@
 #include <unordered_map>
 #include <vector>
 
-class NodeGraphBridge;
 class HeatSystemComputeController;
 class NodePayloadRegistry;
-class Remesher;
 class ModelRegistry;
 class RuntimeModelComputeTransport;
 class RuntimeRemeshComputeTransport;
@@ -28,6 +27,8 @@ class RuntimeContactDisplayTransport;
 class RuntimeHeatDisplayTransport;
 class SceneController;
 class RenderSettingsController;
+class VulkanDevice;
+class MemoryAllocator;
 
 struct NodeRuntimeServices {
     SceneController* sceneController = nullptr;
@@ -47,38 +48,36 @@ struct NodeRuntimeServices {
     RenderSettingsController* renderSettingsController = nullptr;
     NodePayloadRegistry* payloadRegistry = nullptr;
     ModelRegistry* resourceManager = nullptr;
-    Remesher* remesher = nullptr;
+    VulkanDevice* vulkanDevice = nullptr;
+    MemoryAllocator* memoryAllocator = nullptr;
 };
 
-struct NodeGraphKernelExecutionState {
-    const NodeGraphState& state;
-    NodeGraphBridge& bridge;
+struct NodeKernelRuntime {
+    const NodeGraphState& graph;
+    NodePayloadRegistry* const payloadRegistry;
     const NodeRuntimeServices& services;
-    const std::unordered_map<uint64_t, const NodeGraphEdge*>& incomingEdgeByInputSocket;
-    const std::unordered_map<uint64_t, std::vector<const NodeGraphEdge*>>& incomingEdgesByInputSocket;
-    const std::unordered_map<uint64_t, EvaluatedSocketValue>& outputBySocket;
 };
 
-struct NodeGraphKernelContext {
+struct NodeKernelHash {
     const NodeGraphNode& node;
-    const std::vector<const EvaluatedSocketValue*>& inputs;
+    const std::vector<std::vector<const NodeDataBlock*>>& inputs;
+    const NodeKernelRuntime& runtime;
+};
+
+struct NodeKernelEval {
+    const NodeGraphNode& node;
+    const std::vector<std::vector<const NodeDataBlock*>>& inputs;
     std::vector<NodeDataBlock>& outputs;
-    const NodeGraphKernelExecutionState& executionState;
+    const NodeKernelRuntime& runtime;
     HashValues outputHashes{};
-};
-
-struct NodeGraphKernelHashContext {
-    const NodeGraphNode& node;
-    const std::vector<const EvaluatedSocketValue*>& inputs;
-    const NodeGraphKernelExecutionState& executionState;
 };
 
 class NodeKernel {
 public:
     virtual ~NodeKernel() = default;
     virtual const char* typeId() const = 0;
-    virtual void execute(NodeGraphKernelContext& context) const = 0;
-    virtual HashValues computeOutputHashes(const NodeGraphKernelHashContext& context) const = 0;
+    virtual void execute(NodeKernelEval& eval) const = 0;
+    virtual HashValues computeOutputHashes(const NodeKernelHash& hash) const = 0;
 };
 
 class NodeGraphKernels {
@@ -88,12 +87,12 @@ public:
     bool hasKernel(const NodeTypeId& typeId) const;
     HashValues computeOutputHashes(
         const NodeGraphNode& node,
-        const NodeGraphKernelExecutionState& executionState,
-        const std::vector<const EvaluatedSocketValue*>& inputs) const;
+        const NodeKernelRuntime& runtime,
+        const std::vector<std::vector<const NodeDataBlock*>>& inputs) const;
     void executeNode(
         const NodeGraphNode& node,
-        const NodeGraphKernelExecutionState& executionState,
-        const std::vector<const EvaluatedSocketValue*>& inputs,
+        const NodeKernelRuntime& runtime,
+        const std::vector<std::vector<const NodeDataBlock*>>& inputs,
         std::vector<NodeDataBlock>& outputs,
         HashValues outputHashes) const;
 

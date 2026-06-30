@@ -20,15 +20,16 @@ bool SceneContext::initialize(VulkanCoreContext& core) {
     }
 
     auto* allocator = core.allocator();
-    auto* commandPool = core.commandPool();
-    if (!allocator || !commandPool) {
+    auto* commandPool = core.getRenderCommandPool();
+    auto* transferCommandPool = core.getTransferCommandPool();
+    if (!allocator || !commandPool || !transferCommandPool) {
         return false;
     }
 
     uniformBufferManagerState = std::make_unique<UniformBufferManager>(core.device(), *allocator, renderconfig::MaxFramesInFlight);
     materialSystemState = std::make_unique<MaterialSystem>(*uniformBufferManagerState);
     lightingSystemState = std::make_unique<LightingSystem>(cameraControllerState.getCamera(), *uniformBufferManagerState);
-    modelUploaderState = std::make_unique<ModelUploader>(core.device(), *allocator, cameraControllerState.getCamera(), *commandPool);
+    modelUploaderState = std::make_unique<ModelUploader>(core.device(), *allocator, cameraControllerState.getCamera(), *transferCommandPool);
     resourceManagerState = std::make_unique<ModelRegistry>(*allocator);
 
     modelUploaderState->uploadInitialModels(*resourceManagerState);

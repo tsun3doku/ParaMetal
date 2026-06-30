@@ -18,22 +18,37 @@
 #include "domain/VoronoiData.hpp"
 #include "../util/GeometryUtils.hpp"
 
+#include <iostream>
 #include <unordered_map>
 #include <unordered_set>
 
-ModelPackage RuntimePackageCompiler::buildModelPackage(const GeometryData& geometry) const {
+HashValues RuntimePackageCompiler::resolveHandleHashes(const NodePayloadRegistry* payloadRegistry, const NodeDataHandle& handle) const {
+    if (!payloadRegistry || handle.key == 0) return {};
+    HashValues values{};
+    values.full = payloadRegistry->resolveHash(handle, HashDomain::Full);
+    values.geometry = payloadRegistry->resolveHash(handle, HashDomain::Geometry);
+    values.thermal = payloadRegistry->resolveHash(handle, HashDomain::Thermal);
+    values.simulation = payloadRegistry->resolveHash(handle, HashDomain::Simulation);
+    values.display = payloadRegistry->resolveHash(handle, HashDomain::Display);
+    return values;
+}
+
+ModelPackage RuntimePackageCompiler::buildModelPackage(
+    const GeometryData& geometry,
+    const HashValues& geometryHashes) const {
     ModelPackage package{};
     package.geometry = geometry;
     package.localToWorld = geometry.localToWorld;
-    HashPackage::seal(package);
+    HashPackage::seal(package, geometryHashes);
     return package;
 }
 
 RemeshPackage RuntimePackageCompiler::buildRemeshPackage(
     const NodeGraphNode& node,
     const RemeshData& remesh,
+    const HashValues& sourceGeometryHashes,
     const NodePayloadRegistry* payloadRegistry,
-    const ECSRegistry& registry,
+    const ProductHandle& sourceModelProduct,
     const NodeDataHandle& remeshHandle) const {
     RemeshPackage package{};
     if (!payloadRegistry || !remesh.active || remesh.sourceMeshHandle.key == 0) {
@@ -42,6 +57,9 @@ RemeshPackage RuntimePackageCompiler::buildRemeshPackage(
 
     const GeometryData* sourceGeometry = payloadRegistry->resolveGeometry(remesh.sourceMeshHandle);
     if (!sourceGeometry) {
+        return package;
+    }
+    if (sourceGeometry->pointPositions.empty() || sourceGeometry->triangleIndices.empty()) {
         return package;
     }
 
@@ -57,15 +75,21 @@ RemeshPackage RuntimePackageCompiler::buildRemeshPackage(
     package.display.normalLength = static_cast<float>(nodeParams.normalLength);
     package.remeshHandle = remeshHandle;
     package.sourceMeshHandle = remesh.sourceMeshHandle;
-    HashPackage::seal(package);
+    package.sourceModelProduct = sourceModelProduct;
+    if (!package.sourceModelProduct.isValid()) {
+        return {};
+    }
+    HashPackage::seal(package, sourceGeometryHashes);
     return package;
 }
 
 VoronoiPackage RuntimePackageCompiler::buildVoronoiPackage(
     const NodeGraphNode& node,
     const NodePayloadRegistry* payloadRegistry,
-    const ECSRegistry& registry,
     const VoronoiData& voronoi,
+    const ProductHandle& modelProduct,
+    const ProductHandle& remeshProduct,
+    const HashValues& authoredHashes,
     const NodeDataHandle& voronoiHandle) const {
     VoronoiPackage package{};
     package.authored = voronoi;
@@ -90,6 +114,11 @@ VoronoiPackage RuntimePackageCompiler::buildVoronoiPackage(
         package.modelMeshHandle = modelHandle;
         package.modelRemeshHandle = voronoi.modelMeshHandle;
         package.pointsPayloadHandle = voronoi.pointsPayloadHandle;
+        package.modelProduct = modelProduct;
+        package.remeshProduct = remeshProduct;
+        if (!package.modelProduct.isValid() || !package.remeshProduct.isValid()) {
+            return package;
+        }
     } else if (voronoi.domainType == DomainType::Points) {
         if (voronoi.pointsPayloadHandle.key == 0) {
             return package;
@@ -100,15 +129,17 @@ VoronoiPackage RuntimePackageCompiler::buildVoronoiPackage(
     const VoronoiNodeParams nodeParams = readVoronoiNodeParams(node);
     package.display.showVoronoi = nodeParams.preview.showVoronoi;
     package.display.showPoints = nodeParams.preview.showPoints;
-    HashPackage::seal(package);
+    HashPackage::seal(package, authoredHashes);
     return package;
 }
 
 HeatPackage RuntimePackageCompiler::buildHeatPackage(
     const NodeGraphNode& node,
     const NodePayloadRegistry* payloadRegistry,
-    const ECSRegistry& registry,
+    const RuntimePackageManager& packages,
+    const NodeGraphEvaluationState& execState,
     const HeatData& heat,
+    const HashValues& authoredHashes,
     const NodeDataHandle& heatHandle) const {
     HeatPackage package{};
     package.authored = heat;
@@ -120,9 +151,9 @@ HeatPackage RuntimePackageCompiler::buildHeatPackage(
     package.display.showHeatPalette = nodeParams.preview.showHeatPalette;
     package.display.fluxVectorScale = static_cast<float>(nodeParams.preview.fluxVectorScale);
 
-    const auto invalidatePackage = [&package]() {
+    const auto invalidatePackage = [&package, &authoredHashes]() {
         package.authored.active = false;
-        HashPackage::seal(package);
+        HashPackage::seal(package, authoredHashes);
         return package;
     };
 
@@ -146,12 +177,12 @@ HeatPackage RuntimePackageCompiler::buildHeatPackage(
     for (const NodeDataHandle& voronoiHandle : heat.voronoiHandles) {
         const VoronoiData* voronoi = payloadRegistry->get<VoronoiData>(voronoiHandle);
         if (!voronoi || !voronoi->active || voronoi->modelMeshHandle.key == 0) {
-            return invalidatePackage();
+            return {};
         }
 
         auto it = heatModelByRemeshKey.find(voronoi->modelMeshHandle.key);
         if (it == heatModelByRemeshKey.end()) {
-            return invalidatePackage();
+            return {};
         }
         usedHeatModelRemeshKeys.insert(voronoi->modelMeshHandle.key);
 
@@ -159,11 +190,23 @@ HeatPackage RuntimePackageCompiler::buildHeatPackage(
         NodeDataHandle modelHandle;
         const GeometryData* geometry = payloadRegistry->resolveGeometry(heatModel->meshHandle, &modelHandle);
         if (!geometry || modelHandle.key == 0) {
-            return invalidatePackage();
+            return {};
         }
 
-        package.resolvedRemeshHandles.push_back(heatModel->meshHandle);
-        package.resolvedModelHandles.push_back(modelHandle);
+        ProductHandle remeshProduct = execState.productFor(heatModel->meshHandle.key, NodeProductType::Remesh);
+        ProductHandle modelProduct = execState.productFor(modelHandle.key, NodeProductType::Model);
+        if (!remeshProduct.isValid() || !modelProduct.isValid()) {
+            return {};
+        }
+
+        const VoronoiPackage* voronoiPackage = packages.findAny<VoronoiPackage>(voronoiHandle.key);
+        if (voronoiPackage && voronoiPackage->remeshProduct.isValid() &&
+            !(voronoiPackage->remeshProduct == remeshProduct)) {
+            return {};
+        }
+
+        package.remeshProducts.push_back(remeshProduct);
+        package.modelProducts.push_back(modelProduct);
         package.resolvedDensity.push_back(heatModel->density);
         package.resolvedSpecificHeat.push_back(heatModel->specificHeat);
         package.resolvedConductivity.push_back(heatModel->conductivity);
@@ -176,16 +219,46 @@ HeatPackage RuntimePackageCompiler::buildHeatPackage(
         return invalidatePackage();
     }
 
-    HashPackage::seal(package);
+    for (const NodeDataHandle& voronoiHandle : heat.voronoiHandles) {
+        ProductHandle voronoiProduct = execState.productFor(voronoiHandle.key, NodeProductType::Voronoi);
+        if (!voronoiProduct.isValid()) {
+            return {};
+        }
+        package.voronoiProducts.push_back(voronoiProduct);
+    }
+    for (const NodeDataHandle& contactHandle : heat.contactHandles) {
+        ProductHandle contactProduct = execState.productFor(contactHandle.key, NodeProductType::Contact);
+        if (!contactProduct.isValid()) {
+            return {};
+        }
+
+        const ContactPackage* contactPackage = packages.findAny<ContactPackage>(contactHandle.key);
+        if (contactPackage) {
+            bool hasA = false;
+            bool hasB = false;
+            for (const ProductHandle& remeshProductHandle : package.remeshProducts) {
+                if (remeshProductHandle == contactPackage->modelARemeshProduct) {
+                    hasA = true;
+                }
+                if (remeshProductHandle == contactPackage->modelBRemeshProduct) {
+                    hasB = true;
+                }
+            }
+            if (!hasA || !hasB) {
+                return {};
+            }
+        }
+        package.contactProducts.push_back(contactProduct);
+    }
+
+    HashPackage::seal(package, authoredHashes);
     return package;
 }
 
 PointPackage RuntimePackageCompiler::buildPointPackage(
     const NodePayloadRegistry* payloadRegistry,
     const PointData& pointData,
-    const NodeDataHandle& pointHandle,
-    const ECSRegistry& registry) const {
-    (void)registry;
+    const NodeDataHandle& pointHandle) const {
     PointPackage package{};
     package.pointsPayloadHandle = pointHandle;
     if (!payloadRegistry || !pointData.active) {
@@ -201,8 +274,10 @@ PointPackage RuntimePackageCompiler::buildPointPackage(
 ContactPackage RuntimePackageCompiler::buildContactPackage(
     const NodeGraphNode& node,
     const NodePayloadRegistry* payloadRegistry,
-    const ECSRegistry& registry,
     const ContactData& contact,
+    const ProductHandle& modelARemeshProduct,
+    const ProductHandle& modelBRemeshProduct,
+    const HashValues& authoredHashes,
     const NodeDataHandle& contactHandle) const {
     ContactPackage package{};
     package.authored = contact;
@@ -231,38 +306,23 @@ ContactPackage RuntimePackageCompiler::buildContactPackage(
 
     package.modelALocalToWorld = geometryA->localToWorld;
     package.modelBLocalToWorld = geometryB->localToWorld;
-    package.modelAMeshHandle = endpointA.meshHandle;
-    package.modelBMeshHandle = endpointB.meshHandle;
+    package.modelARemeshProduct = modelARemeshProduct;
+    package.modelBRemeshProduct = modelBRemeshProduct;
+    if (!package.modelARemeshProduct.isValid() || !package.modelBRemeshProduct.isValid()) {
+        return package;
+    }
 
-    HashPackage::seal(package);
+    HashPackage::seal(package, authoredHashes);
     return package;
 }
 
-template <typename PackageT>
-void RuntimePackageCompiler::applyPackage(ECSRegistry& registry, uint64_t socketKey, const PackageT& pkg, std::unordered_set<ECSEntity>& staleEntities) {
-    auto entity = static_cast<ECSEntity>(socketKey);
-    if (!registry.valid(entity)) {
-        static_cast<void>(registry.create(entity));
-    }
-    if (registry.all_of<PackageT>(entity)) {
-        if (!registry.get<PackageT>(entity).matches(pkg)) {
-            registry.replace<PackageT>(entity, pkg);
-        }
-    } else {
-        registry.emplace<PackageT>(entity, pkg);
-    }
-    if (registry.all_of<Stale>(entity)) {
-        registry.remove<Stale>(entity);
-    }
-    staleEntities.erase(entity);
-}
-
 void RuntimePackageCompiler::compileMeshPoints(
+    const NodeGraphState& graphState,
     const NodeGraphNode& node,
     const NodeGraphEvaluationState& execState,
     const NodePayloadRegistry* payloadRegistry,
-    ECSRegistry& registry,
-    std::unordered_set<ECSEntity>& staleEntities) const {
+    RuntimeProductManager& products,
+    RuntimePackageManager& packages) const {
 
     if (!payloadRegistry || node.outputs.empty() || node.inputs.empty()) {
         return;
@@ -271,52 +331,48 @@ void RuntimePackageCompiler::compileMeshPoints(
     for (const NodeGraphSocket& output : node.outputs) {
         const uint64_t outSocketKey = NodeSocketKey(node.id, output.id).value;
 
-        if (node.frozen) {
-            auto entity = static_cast<ECSEntity>(outSocketKey);
-            if (registry.valid(entity) && registry.all_of<PointPackage>(entity)) {
-                staleEntities.erase(entity);
-            }
+        const EvaluatedSocketValue* value = execState.valueFor(outSocketKey);
+        if (!value ||
+            value->status != EvaluatedSocketStatus::Value ||
+            value->data.payloadHandle.key == 0) {
             continue;
         }
 
-        const auto valueIt = execState.outputBySocket.find(outSocketKey);
-        if (valueIt == execState.outputBySocket.end() ||
-            valueIt->second.status != EvaluatedSocketStatus::Value ||
-            valueIt->second.data.payloadHandle.key == 0) {
+        if (value->data.isFrozen) {
+            packages.retain(outSocketKey);
             continue;
         }
 
-        const PointData* pointData = payloadRegistry->get<PointData>(valueIt->second.data.payloadHandle);
+        const NodeDataBlock& data = value->data;
+        const PointData* pointData = payloadRegistry->get<PointData>(data.payloadHandle);
         if (!pointData || !pointData->active) {
             continue;
         }
 
         PointPackage package{};
-        package.pointsPayloadHandle = valueIt->second.data.payloadHandle;
+        package.productHandle = execState.productFor(outSocketKey, NodeProductType::Point);
+        package.pointsPayloadHandle = data.payloadHandle;
         package.positions = pointData->positions;
         package.pointCount = static_cast<uint32_t>(pointData->positions.size());
         package.localToWorld = pointData->localToWorld;
 
         // Look up upstream remesh from Geometry input socket
-        const uint64_t inSocketKey = NodeSocketKey(node.id, node.inputs[0].id).value;
-        const auto upstreamIt = execState.upstreamSocket.find(inSocketKey);
-        if (upstreamIt != execState.upstreamSocket.end() && upstreamIt->second != 0) {
-            auto upstreamEntity = static_cast<ECSEntity>(upstreamIt->second);
-            if (registry.valid(upstreamEntity) && registry.all_of<RemeshProduct>(upstreamEntity)) {
-                const auto& product = registry.get<RemeshProduct>(upstreamEntity);
-                if (product.isValid()) {
-                    package.positions.clear();
-                    package.positions.reserve(product.intrinsicMesh.vertices.size());
-                    for (const auto& vertex : product.intrinsicMesh.vertices) {
-                        package.positions.push_back(glm::vec4(vertex.position, 1.0f));
-                    }
-                    package.pointCount = static_cast<uint32_t>(package.positions.size());
+        const NodeSocketKey upstreamKey = graphState.edges.upstream(node.id, node.inputs[0].id);
+        if (upstreamKey.value != 0) {
+            const ProductHandle remeshProductHandle = execState.productFor(upstreamKey.value, NodeProductType::Remesh);
+            const RemeshProduct* product = products.resolve<RemeshProduct>(remeshProductHandle);
+            if (product && product->isValid()) {
+                package.positions.clear();
+                package.positions.reserve(product->intrinsicMesh.vertices.size());
+                for (const auto& vertex : product->intrinsicMesh.vertices) {
+                    package.positions.push_back(glm::vec4(vertex.position, 1.0f));
                 }
+                package.pointCount = static_cast<uint32_t>(package.positions.size());
             }
         }
 
         HashPackage::seal(package);
-        applyPackage<PointPackage>(registry, outSocketKey, package, staleEntities);
+        packages.apply<PointPackage>(outSocketKey, package);
     }
 }
 
@@ -324,8 +380,9 @@ void RuntimePackageCompiler::compilePoints(
     const NodeGraphNode& node,
     const NodeGraphEvaluationState& execState,
     const NodePayloadRegistry* payloadRegistry,
-    ECSRegistry& registry,
-    std::unordered_set<ECSEntity>& staleEntities) const {
+    RuntimeProductManager& products,
+    RuntimePackageManager& packages) const {
+    (void)products;
 
     if (!payloadRegistry || node.outputs.empty()) {
         return;
@@ -334,37 +391,38 @@ void RuntimePackageCompiler::compilePoints(
     for (const NodeGraphSocket& output : node.outputs) {
         const uint64_t outSocketKey = NodeSocketKey(node.id, output.id).value;
 
-        if (node.frozen) {
-            auto entity = static_cast<ECSEntity>(outSocketKey);
-            if (registry.valid(entity) && registry.all_of<PointPackage>(entity)) {
-                staleEntities.erase(entity);
-            }
+        const EvaluatedSocketValue* value = execState.valueFor(outSocketKey);
+        if (!value ||
+            value->status != EvaluatedSocketStatus::Value ||
+            value->data.payloadHandle.key == 0) {
             continue;
         }
 
-        const auto valueIt = execState.outputBySocket.find(outSocketKey);
-        if (valueIt == execState.outputBySocket.end() ||
-            valueIt->second.status != EvaluatedSocketStatus::Value ||
-            valueIt->second.data.payloadHandle.key == 0) {
+        if (value->data.isFrozen) {
+            packages.retain(outSocketKey);
             continue;
         }
 
-        const PointData* pointData = payloadRegistry->get<PointData>(valueIt->second.data.payloadHandle);
+        const NodeDataBlock& data = value->data;
+        const PointData* pointData = payloadRegistry->get<PointData>(data.payloadHandle);
         if (!pointData) {
             continue;
         }
 
-        PointPackage package = buildPointPackage(payloadRegistry, *pointData, valueIt->second.data.payloadHandle, registry);
-        applyPackage<PointPackage>(registry, outSocketKey, package, staleEntities);
+        PointPackage package = buildPointPackage(payloadRegistry, *pointData, data.payloadHandle);
+        package.productHandle = execState.productFor(outSocketKey, NodeProductType::Point);
+        packages.apply<PointPackage>(outSocketKey, package);
     }
 }
 
 void RuntimePackageCompiler::compileMerge(
+    const NodeGraphState& graphState,
     const NodeGraphNode& node,
     const NodeGraphEvaluationState& execState,
     const NodePayloadRegistry* payloadRegistry,
-    ECSRegistry& registry,
-    std::unordered_set<ECSEntity>& staleEntities) const {
+    RuntimeProductManager& products,
+    RuntimePackageManager& packages) const {
+    (void)products;
 
     if (node.outputs.empty() || node.inputs.empty()) {
         return;
@@ -373,32 +431,29 @@ void RuntimePackageCompiler::compileMerge(
     for (const NodeGraphSocket& output : node.outputs) {
         const uint64_t outSocketKey = NodeSocketKey(node.id, output.id).value;
 
-        if (node.frozen) {
-            auto entity = static_cast<ECSEntity>(outSocketKey);
-            if (registry.valid(entity)) {
-                if (registry.all_of<ModelPackage>(entity) || registry.all_of<PointPackage>(entity)) {
-                    staleEntities.erase(entity);
-                }
-            }
+        const EvaluatedSocketValue* value = execState.valueFor(outSocketKey);
+        if (!value ||
+            value->status != EvaluatedSocketStatus::Value ||
+            value->data.payloadHandle.key == 0) {
             continue;
         }
 
-        const auto valueIt = execState.outputBySocket.find(outSocketKey);
-        if (valueIt == execState.outputBySocket.end() ||
-            valueIt->second.status != EvaluatedSocketStatus::Value ||
-            valueIt->second.data.payloadHandle.key == 0) {
+        if (value->data.isFrozen) {
+            packages.retain(outSocketKey);
             continue;
         }
 
-        const uint8_t payloadType = valueIt->second.data.dataType;
+        const NodeDataBlock& data = value->data;
+        const uint8_t payloadType = data.dataType;
 
         if (payloadType == payloadtypes::Geometry) {
-            const GeometryData* geometry = payloadRegistry->get<GeometryData>(valueIt->second.data.payloadHandle);
+            const GeometryData* geometry = payloadRegistry->get<GeometryData>(data.payloadHandle);
             if (!geometry) {
                 continue;
             }
-            ModelPackage package = buildModelPackage(*geometry);
-            applyPackage<ModelPackage>(registry, outSocketKey, package, staleEntities);
+            ModelPackage package = buildModelPackage(*geometry, data.hashes);
+            package.productHandle = execState.productFor(outSocketKey, NodeProductType::Model);
+            packages.apply<ModelPackage>(outSocketKey, package);
         } else if (payloadType == payloadtypes::Points) {
             const NodeGraphSocket* inSocket = nullptr;
             for (const auto& s : node.inputs) {
@@ -411,25 +466,23 @@ void RuntimePackageCompiler::compileMerge(
                 continue;
             }
 
-            const uint64_t inSocketKey = NodeSocketKey(node.id, inSocket->id).value;
-            const auto socketsIt = execState.upstreamSockets.find(inSocketKey);
-            if (socketsIt == execState.upstreamSockets.end() || socketsIt->second.empty()) {
+            const std::vector<NodeSocketKey> upstreamKeys = graphState.edges.upstreams(node.id, inSocket->id);
+            if (upstreamKeys.empty()) {
                 continue;
             }
 
             std::vector<const PointPackage*> upstreamPackages;
             std::vector<glm::mat4> upstreamL2W;
-            for (uint64_t upKey : socketsIt->second) {
-                auto upEntity = static_cast<ECSEntity>(upKey);
-                if (!registry.valid(upEntity) || !registry.all_of<PointPackage>(upEntity)) {
+            for (NodeSocketKey upKey : upstreamKeys) {
+                const PointPackage* upPkg = packages.findAny<PointPackage>(upKey.value);
+                if (!upPkg) {
                     continue;
                 }
-                const auto& upPkg = registry.get<PointPackage>(upEntity);
-                if (upPkg.positions.empty()) {
+                if (upPkg->positions.empty()) {
                     continue;
                 }
-                upstreamPackages.push_back(&upPkg);
-                upstreamL2W.push_back(toMat4(upPkg.localToWorld));
+                upstreamPackages.push_back(upPkg);
+                upstreamL2W.push_back(toMat4(upPkg->localToWorld));
             }
 
             if (upstreamPackages.empty()) {
@@ -440,7 +493,8 @@ void RuntimePackageCompiler::compileMerge(
             const glm::mat4 invRefL2W = glm::inverse(refL2W);
 
             PointPackage package{};
-            package.pointsPayloadHandle = valueIt->second.data.payloadHandle;
+            package.productHandle = execState.productFor(outSocketKey, NodeProductType::Point);
+            package.pointsPayloadHandle = data.payloadHandle;
             package.localToWorld = upstreamPackages[0]->localToWorld;
             for (size_t i = 0; i < upstreamPackages.size(); ++i) {
                 const glm::mat4 upToRef = invRefL2W * upstreamL2W[i];
@@ -450,17 +504,19 @@ void RuntimePackageCompiler::compileMerge(
             }
             package.pointCount = static_cast<uint32_t>(package.positions.size());
             HashPackage::seal(package);
-            applyPackage<PointPackage>(registry, outSocketKey, package, staleEntities);
+            packages.apply<PointPackage>(outSocketKey, package);
         }
     }
 }
 
 void RuntimePackageCompiler::compileTransform(
+    const NodeGraphState& graphState,
     const NodeGraphNode& node,
     const NodeGraphEvaluationState& execState,
     const NodePayloadRegistry* payloadRegistry,
-    ECSRegistry& registry,
-    std::unordered_set<ECSEntity>& staleEntities) const {
+    RuntimeProductManager& products,
+    RuntimePackageManager& packages) const {
+    (void)products;
 
     if (node.outputs.empty() || node.inputs.empty()) {
         return;
@@ -469,57 +525,53 @@ void RuntimePackageCompiler::compileTransform(
     for (const NodeGraphSocket& output : node.outputs) {
         const uint64_t outSocketKey = NodeSocketKey(node.id, output.id).value;
 
-        if (node.frozen) {
-            auto entity = static_cast<ECSEntity>(outSocketKey);
-            if (registry.valid(entity)) {
-                if (registry.all_of<ModelPackage>(entity) || registry.all_of<PointPackage>(entity)) {
-                    staleEntities.erase(entity);
-                }
-            }
+        const EvaluatedSocketValue* value = execState.valueFor(outSocketKey);
+        if (!value ||
+            value->status != EvaluatedSocketStatus::Value ||
+            value->data.payloadHandle.key == 0) {
             continue;
         }
 
-        const auto valueIt = execState.outputBySocket.find(outSocketKey);
-        if (valueIt == execState.outputBySocket.end() ||
-            valueIt->second.status != EvaluatedSocketStatus::Value ||
-            valueIt->second.data.payloadHandle.key == 0) {
+        if (value->data.isFrozen) {
+            packages.retain(outSocketKey);
             continue;
         }
 
-        const uint8_t payloadType = valueIt->second.data.dataType;
+        const NodeDataBlock& data = value->data;
+        const uint8_t payloadType = data.dataType;
 
         if (payloadType == payloadtypes::Geometry) {
-            const GeometryData* geometry = payloadRegistry->get<GeometryData>(valueIt->second.data.payloadHandle);
+            const GeometryData* geometry = payloadRegistry->get<GeometryData>(data.payloadHandle);
             if (!geometry) {
                 continue;
             }
-            ModelPackage package = buildModelPackage(*geometry);
-            applyPackage<ModelPackage>(registry, outSocketKey, package, staleEntities);
+
+            ModelPackage package = buildModelPackage(*geometry, data.hashes);
+            package.productHandle = execState.productFor(outSocketKey, NodeProductType::Model);
+            packages.apply<ModelPackage>(outSocketKey, package);
         } else if (payloadType == payloadtypes::Points) {
-            const uint64_t inSocketKey = NodeSocketKey(node.id, node.inputs[0].id).value;
-            const auto upstreamIt = execState.upstreamSocket.find(inSocketKey);
-            if (upstreamIt == execState.upstreamSocket.end() || upstreamIt->second == 0) {
+            const NodeSocketKey upstreamKey = graphState.edges.upstream(node.id, node.inputs[0].id);
+            if (upstreamKey.value == 0) {
                 continue;
             }
 
-            auto upEntity = static_cast<ECSEntity>(upstreamIt->second);
-            if (!registry.valid(upEntity) || !registry.all_of<PointPackage>(upEntity)) {
+            const PointPackage* upPkg = packages.findAny<PointPackage>(upstreamKey.value);
+            if (!upPkg) {
                 continue;
             }
-
-            const auto& upPkg = registry.get<PointPackage>(upEntity);
-            if (upPkg.positions.empty()) {
+            if (upPkg->positions.empty()) {
                 continue;
             }
 
             PointPackage package{};
-            package.pointsPayloadHandle = valueIt->second.data.payloadHandle;
-            package.positions = upPkg.positions;
-            package.pointCount = upPkg.pointCount;
+            package.productHandle = execState.productFor(outSocketKey, NodeProductType::Point);
+            package.pointsPayloadHandle = data.payloadHandle;
+            package.positions = upPkg->positions;
+            package.pointCount = upPkg->pointCount;
             const std::array<float, 16> localTransform = NodeTransform::buildLocalTransformArray(node);
-            package.localToWorld = toMatrixArray(toMat4(upPkg.localToWorld) * toMat4(localTransform));
+            package.localToWorld = toMatrixArray(toMat4(upPkg->localToWorld) * toMat4(localTransform));
             HashPackage::seal(package);
-            applyPackage<PointPackage>(registry, outSocketKey, package, staleEntities);
+            packages.apply<PointPackage>(outSocketKey, package);
         }
     }
 }
@@ -528,8 +580,9 @@ void RuntimePackageCompiler::compileModel(
     const NodeGraphNode& node,
     const NodeGraphEvaluationState& execState,
     const NodePayloadRegistry* payloadRegistry,
-    ECSRegistry& registry,
-    std::unordered_set<ECSEntity>& staleEntities) const {
+    RuntimeProductManager& products,
+    RuntimePackageManager& packages) const {
+    (void)products;
 
     if (!payloadRegistry) {
         return;
@@ -538,28 +591,27 @@ void RuntimePackageCompiler::compileModel(
     for (const NodeGraphSocket& output : node.outputs) {
         const uint64_t outSocketKey = NodeSocketKey(node.id, output.id).value;
 
-        if (node.frozen) {
-            auto entity = static_cast<ECSEntity>(outSocketKey);
-            if (registry.valid(entity) && registry.all_of<ModelPackage>(entity)) {
-                staleEntities.erase(entity);
-            }
+        const EvaluatedSocketValue* value = execState.valueFor(outSocketKey);
+        if (!value ||
+            value->status != EvaluatedSocketStatus::Value ||
+            value->data.payloadHandle.key == 0) {
             continue;
         }
 
-        const auto valueIt = execState.outputBySocket.find(outSocketKey);
-        if (valueIt == execState.outputBySocket.end() ||
-            valueIt->second.status != EvaluatedSocketStatus::Value ||
-            valueIt->second.data.payloadHandle.key == 0) {
+        if (value->data.isFrozen) {
+            packages.retain(outSocketKey);
             continue;
         }
 
-        const GeometryData* geometry = payloadRegistry->get<GeometryData>(valueIt->second.data.payloadHandle);
+        const NodeDataBlock& data = value->data;
+        const GeometryData* geometry = payloadRegistry->get<GeometryData>(data.payloadHandle);
         if (!geometry) {
             continue;
         }
 
-        ModelPackage package = buildModelPackage(*geometry);
-        applyPackage<ModelPackage>(registry, outSocketKey, package, staleEntities);
+        ModelPackage package = buildModelPackage(*geometry, data.hashes);
+        package.productHandle = execState.productFor(outSocketKey, NodeProductType::Model);
+        packages.apply<ModelPackage>(outSocketKey, package);
     }
 }
 
@@ -567,33 +619,33 @@ void RuntimePackageCompiler::compileGroup(
     const NodeGraphNode& node,
     const NodeGraphEvaluationState& execState,
     const NodePayloadRegistry* payloadRegistry,
-    ECSRegistry& registry,
-    std::unordered_set<ECSEntity>& staleEntities) const {
+    RuntimeProductManager& products,
+    RuntimePackageManager& packages) const {
+    (void)products;
     for (const NodeGraphSocket& output : node.outputs) {
         const uint64_t outSocketKey = NodeSocketKey(node.id, output.id).value;
 
-        if (node.frozen) {
-            auto entity = static_cast<ECSEntity>(outSocketKey);
-            if (registry.valid(entity) && registry.all_of<ModelPackage>(entity)) {
-                staleEntities.erase(entity);
-            }
+        const EvaluatedSocketValue* value = execState.valueFor(outSocketKey);
+        if (!value ||
+            value->status != EvaluatedSocketStatus::Value ||
+            value->data.payloadHandle.key == 0) {
             continue;
         }
 
-        const auto valueIt = execState.outputBySocket.find(outSocketKey);
-        if (valueIt == execState.outputBySocket.end() ||
-            valueIt->second.status != EvaluatedSocketStatus::Value ||
-            valueIt->second.data.payloadHandle.key == 0) {
+        if (value->data.isFrozen) {
+            packages.retain(outSocketKey);
             continue;
         }
 
-        const GeometryData* geometry = payloadRegistry->get<GeometryData>(valueIt->second.data.payloadHandle);
+        const NodeDataBlock& data = value->data;
+        const GeometryData* geometry = payloadRegistry->get<GeometryData>(data.payloadHandle);
         if (!geometry) {
             continue;
         }
 
-        ModelPackage package = buildModelPackage(*geometry);
-        applyPackage<ModelPackage>(registry, outSocketKey, package, staleEntities);
+        ModelPackage package = buildModelPackage(*geometry, data.hashes);
+        package.productHandle = execState.productFor(outSocketKey, NodeProductType::Model);
+        packages.apply<ModelPackage>(outSocketKey, package);
     }
 }
 
@@ -601,8 +653,8 @@ void RuntimePackageCompiler::compileRemesh(
     const NodeGraphNode& node,
     const NodeGraphEvaluationState& execState,
     const NodePayloadRegistry* payloadRegistry,
-    ECSRegistry& registry,
-    std::unordered_set<ECSEntity>& staleEntities) const {
+    RuntimeProductManager& products,
+    RuntimePackageManager& packages) const {
 
     if (!payloadRegistry) {
         return;
@@ -611,28 +663,35 @@ void RuntimePackageCompiler::compileRemesh(
     for (const NodeGraphSocket& output : node.outputs) {
         const uint64_t outSocketKey = NodeSocketKey(node.id, output.id).value;
 
-        if (node.frozen) {
-            auto entity = static_cast<ECSEntity>(outSocketKey);
-            if (registry.valid(entity) && registry.all_of<RemeshPackage>(entity)) {
-                staleEntities.erase(entity);
-            }
+        const EvaluatedSocketValue* value = execState.valueFor(outSocketKey);
+        if (!value ||
+            value->status != EvaluatedSocketStatus::Value ||
+            value->data.payloadHandle.key == 0) {
             continue;
         }
 
-        const auto valueIt = execState.outputBySocket.find(outSocketKey);
-        if (valueIt == execState.outputBySocket.end() ||
-            valueIt->second.status != EvaluatedSocketStatus::Value ||
-            valueIt->second.data.payloadHandle.key == 0) {
+        if (value->data.isFrozen) {
+            packages.retain(outSocketKey);
             continue;
         }
 
-        const RemeshData* remesh = payloadRegistry->get<RemeshData>(valueIt->second.data.payloadHandle);
+        const NodeDataBlock& data = value->data;
+        const RemeshData* remesh = payloadRegistry->get<RemeshData>(data.payloadHandle);
         if (!remesh || !remesh->active || remesh->sourceMeshHandle.key == 0) {
             continue;
         }
 
-        RemeshPackage package = buildRemeshPackage(node, *remesh, payloadRegistry, registry, valueIt->second.data.payloadHandle);
-        applyPackage<RemeshPackage>(registry, outSocketKey, package, staleEntities);
+        ProductHandle sourceModelProduct = execState.productFor(remesh->sourceMeshHandle.key, NodeProductType::Model);
+        if (!sourceModelProduct.isValid()) {
+            packages.retain(outSocketKey);
+            continue;
+        }
+
+        const HashValues sourceGeometryHashes = resolveHandleHashes(payloadRegistry, remesh->sourceMeshHandle);
+
+        RemeshPackage package = buildRemeshPackage(node, *remesh, sourceGeometryHashes, payloadRegistry, sourceModelProduct, data.payloadHandle);
+        package.productHandle = execState.productFor(outSocketKey, NodeProductType::Remesh);
+        packages.apply<RemeshPackage>(outSocketKey, package);
     }
 }
 
@@ -640,8 +699,8 @@ void RuntimePackageCompiler::compileVoronoi(
     const NodeGraphNode& node,
     const NodeGraphEvaluationState& execState,
     const NodePayloadRegistry* payloadRegistry,
-    ECSRegistry& registry,
-    std::unordered_set<ECSEntity>& staleEntities) const {
+    RuntimeProductManager& products,
+    RuntimePackageManager& packages) const {
 
     if (!payloadRegistry) {
         return;
@@ -650,28 +709,56 @@ void RuntimePackageCompiler::compileVoronoi(
     for (const NodeGraphSocket& output : node.outputs) {
         const uint64_t outSocketKey = NodeSocketKey(node.id, output.id).value;
 
-        if (node.frozen) {
-            auto entity = static_cast<ECSEntity>(outSocketKey);
-            if (registry.valid(entity) && registry.all_of<VoronoiPackage>(entity)) {
-                staleEntities.erase(entity);
-            }
+        const EvaluatedSocketValue* value = execState.valueFor(outSocketKey);
+        if (!value ||
+            value->status != EvaluatedSocketStatus::Value ||
+            value->data.payloadHandle.key == 0) {
             continue;
         }
 
-        const auto valueIt = execState.outputBySocket.find(outSocketKey);
-        if (valueIt == execState.outputBySocket.end() ||
-            valueIt->second.status != EvaluatedSocketStatus::Value ||
-            valueIt->second.data.payloadHandle.key == 0) {
+        if (value->data.isFrozen) {
+            packages.retain(outSocketKey);
             continue;
         }
 
-        const VoronoiData* voronoi = payloadRegistry->get<VoronoiData>(valueIt->second.data.payloadHandle);
+        const NodeDataBlock& data = value->data;
+        const VoronoiData* voronoi = payloadRegistry->get<VoronoiData>(data.payloadHandle);
         if (!voronoi) {
             continue;
         }
 
-        VoronoiPackage package = buildVoronoiPackage(node, payloadRegistry, registry, *voronoi, valueIt->second.data.payloadHandle);
-        applyPackage<VoronoiPackage>(registry, outSocketKey, package, staleEntities);
+        ProductHandle modelProduct{};
+        ProductHandle remeshProduct{};
+        if (voronoi->domainType == DomainType::Mesh) {
+            NodeDataHandle modelHandle;
+            (void)payloadRegistry->resolveGeometry(voronoi->modelMeshHandle, &modelHandle);
+            modelProduct = execState.productFor(modelHandle.key, NodeProductType::Model);
+            remeshProduct = execState.productFor(voronoi->modelMeshHandle.key, NodeProductType::Remesh);
+            if (!modelProduct.isValid() || !remeshProduct.isValid()) {
+                packages.retain(outSocketKey);
+                continue;
+            }
+        }
+
+        VoronoiPackage package = buildVoronoiPackage(node, payloadRegistry, *voronoi, modelProduct, remeshProduct, data.hashes, data.payloadHandle);
+        package.productHandle = execState.productFor(outSocketKey, NodeProductType::Voronoi);
+
+        // Resolve point positions from PointPackage
+        if (package.pointsPayloadHandle.key != 0) {
+            const PointPackage* pointPackage = packages.findAny<PointPackage>(package.pointsPayloadHandle.key);
+            if (pointPackage && !pointPackage->positions.empty()) {
+                package.pointPositions = pointPackage->positions;
+                if (package.domainType == DomainType::Mesh) {
+                    const glm::mat4 pointsToMeshLocal = glm::inverse(toMat4(package.modelLocalToWorld)) * toMat4(pointPackage->localToWorld);
+                    for (glm::vec4& pos : package.pointPositions) {
+                        pos = pointsToMeshLocal * pos;
+                    }
+                }
+            }
+        }
+
+        HashPackage::seal(package, data.hashes);
+        packages.apply<VoronoiPackage>(outSocketKey, package);
     }
 }
 
@@ -679,8 +766,8 @@ void RuntimePackageCompiler::compileContact(
     const NodeGraphNode& node,
     const NodeGraphEvaluationState& execState,
     const NodePayloadRegistry* payloadRegistry,
-    ECSRegistry& registry,
-    std::unordered_set<ECSEntity>& staleEntities) const {
+    RuntimeProductManager& products,
+    RuntimePackageManager& packages) const {
 
     if (!payloadRegistry) {
         return;
@@ -689,28 +776,41 @@ void RuntimePackageCompiler::compileContact(
     for (const NodeGraphSocket& output : node.outputs) {
         const uint64_t outSocketKey = NodeSocketKey(node.id, output.id).value;
 
-        if (node.frozen) {
-            auto entity = static_cast<ECSEntity>(outSocketKey);
-            if (registry.valid(entity) && registry.all_of<ContactPackage>(entity)) {
-                staleEntities.erase(entity);
-            }
+        const EvaluatedSocketValue* value = execState.valueFor(outSocketKey);
+        if (!value ||
+            value->status != EvaluatedSocketStatus::Value ||
+            value->data.payloadHandle.key == 0) {
             continue;
         }
 
-        const auto valueIt = execState.outputBySocket.find(outSocketKey);
-        if (valueIt == execState.outputBySocket.end() ||
-            valueIt->second.status != EvaluatedSocketStatus::Value ||
-            valueIt->second.data.payloadHandle.key == 0) {
+        if (value->data.isFrozen) {
+            packages.retain(outSocketKey);
             continue;
         }
 
-        const ContactData* contact = payloadRegistry->get<ContactData>(valueIt->second.data.payloadHandle);
+        const NodeDataBlock& data = value->data;
+        const ContactData* contact = payloadRegistry->get<ContactData>(data.payloadHandle);
         if (!contact) {
             continue;
         }
 
-        ContactPackage package = buildContactPackage(node, payloadRegistry, registry, *contact, valueIt->second.data.payloadHandle);
-        applyPackage<ContactPackage>(registry, outSocketKey, package, staleEntities);
+        ProductHandle modelARemeshProduct = execState.productFor(contact->pair.endpointA.meshHandle.key, NodeProductType::Remesh);
+        ProductHandle modelBRemeshProduct = execState.productFor(contact->pair.endpointB.meshHandle.key, NodeProductType::Remesh);
+        if (!modelARemeshProduct.isValid() || !modelBRemeshProduct.isValid()) {
+            packages.retain(outSocketKey);
+            continue;
+        }
+
+        ContactPackage package = buildContactPackage(
+            node,
+            payloadRegistry,
+            *contact,
+            modelARemeshProduct,
+            modelBRemeshProduct,
+            data.hashes,
+            data.payloadHandle);
+        package.productHandle = execState.productFor(outSocketKey, NodeProductType::Contact);
+        packages.apply<ContactPackage>(outSocketKey, package);
     }
 }
 
@@ -718,8 +818,8 @@ void RuntimePackageCompiler::compileHeatSolve(
     const NodeGraphNode& node,
     const NodeGraphEvaluationState& execState,
     const NodePayloadRegistry* payloadRegistry,
-    ECSRegistry& registry,
-    std::unordered_set<ECSEntity>& staleEntities) const {
+    RuntimeProductManager& products,
+    RuntimePackageManager& packages) const {
 
     if (!payloadRegistry) {
         return;
@@ -728,67 +828,70 @@ void RuntimePackageCompiler::compileHeatSolve(
     for (const NodeGraphSocket& output : node.outputs) {
         const uint64_t outSocketKey = NodeSocketKey(node.id, output.id).value;
 
-        if (node.frozen) {
-            auto entity = static_cast<ECSEntity>(outSocketKey);
-            if (registry.valid(entity) && registry.all_of<HeatPackage>(entity)) {
-                staleEntities.erase(entity);
-            }
+        const EvaluatedSocketValue* value = execState.valueFor(outSocketKey);
+        if (!value ||
+            value->status != EvaluatedSocketStatus::Value ||
+            value->data.payloadHandle.key == 0) {
             continue;
         }
 
-        const auto valueIt = execState.outputBySocket.find(outSocketKey);
-        if (valueIt == execState.outputBySocket.end() ||
-            valueIt->second.status != EvaluatedSocketStatus::Value ||
-            valueIt->second.data.payloadHandle.key == 0) {
+        if (value->data.isFrozen) {
+            packages.retain(outSocketKey);
             continue;
         }
 
-        const HeatData* heat = payloadRegistry->get<HeatData>(valueIt->second.data.payloadHandle);
+        const NodeDataBlock& data = value->data;
+        const HeatData* heat = payloadRegistry->get<HeatData>(data.payloadHandle);
         if (!heat) {
             continue;
         }
 
-        HeatPackage package = buildHeatPackage(node, payloadRegistry, registry, *heat, valueIt->second.data.payloadHandle);
-        applyPackage<HeatPackage>(registry, outSocketKey, package, staleEntities);
+        HeatPackage package = buildHeatPackage(
+            node,
+            payloadRegistry,
+            packages,
+            execState,
+            *heat,
+            data.hashes,
+            data.payloadHandle);
+        if (package.hashes.full == 0) {
+            packages.retain(outSocketKey);
+            continue;
+        }
+        package.productHandle = execState.productFor(outSocketKey, NodeProductType::Heat);
+        packages.apply<HeatPackage>(outSocketKey, package);
     }
 }
 
-void RuntimePackageCompiler::compileAndApply(
+void RuntimePackageCompiler::compileNode(
     const NodeGraphState& graphState,
+    const NodeGraphNode& node,
     const NodeGraphEvaluationState& execState,
     const NodePayloadRegistry* payloadRegistry,
-    ECSRegistry& registry,
-    std::unordered_set<ECSEntity>& staleEntities) const {
+    RuntimeProductManager& products,
+    RuntimePackageManager& packages) const {
 
-    for (NodeGraphNodeId nodeId : execState.executionOrder) {
-        const auto it = graphState.nodes.find(nodeId.value);
-        if (it == graphState.nodes.end()) {
-            continue;
-        }
+    const NodeTypeId typeId = getNodeTypeId(node.typeId);
 
-        const NodeGraphNode& node = it->second;
-        const NodeTypeId typeId = getNodeTypeId(node.typeId);
-
-        if (typeId == nodegraphtypes::Model) {
-            compileModel(node, execState, payloadRegistry, registry, staleEntities);
-        } else if (typeId == nodegraphtypes::Group) {
-            compileGroup(node, execState, payloadRegistry, registry, staleEntities);
-        } else if (typeId == nodegraphtypes::Transform) {
-            compileTransform(node, execState, payloadRegistry, registry, staleEntities);
-        } else if (typeId == nodegraphtypes::Remesh) {
-            compileRemesh(node, execState, payloadRegistry, registry, staleEntities);
-        } else if (typeId == nodegraphtypes::MeshPoints) {
-            compileMeshPoints(node, execState, payloadRegistry, registry, staleEntities);
-        } else if (typeId == nodegraphtypes::Points) {
-            compilePoints(node, execState, payloadRegistry, registry, staleEntities);
-        } else if (typeId == nodegraphtypes::Merge) {
-            compileMerge(node, execState, payloadRegistry, registry, staleEntities);
-        } else if (typeId == nodegraphtypes::Voronoi) {
-            compileVoronoi(node, execState, payloadRegistry, registry, staleEntities);
-        } else if (typeId == nodegraphtypes::Contact) {
-            compileContact(node, execState, payloadRegistry, registry, staleEntities);
-        } else if (typeId == nodegraphtypes::HeatSolve) {
-            compileHeatSolve(node, execState, payloadRegistry, registry, staleEntities);
-        }
+    if (typeId == nodegraphtypes::Model) {
+        compileModel(node, execState, payloadRegistry, products, packages);
+    } else if (typeId == nodegraphtypes::Group) {
+        compileGroup(node, execState, payloadRegistry, products, packages);
+    } else if (typeId == nodegraphtypes::Transform) {
+        compileTransform(graphState, node, execState, payloadRegistry, products, packages);
+    } else if (typeId == nodegraphtypes::Remesh) {
+        compileRemesh(node, execState, payloadRegistry, products, packages);
+    } else if (typeId == nodegraphtypes::MeshPoints) {
+        compileMeshPoints(graphState, node, execState, payloadRegistry, products, packages);
+    } else if (typeId == nodegraphtypes::Points) {
+        compilePoints(node, execState, payloadRegistry, products, packages);
+    } else if (typeId == nodegraphtypes::Merge) {
+        compileMerge(graphState, node, execState, payloadRegistry, products, packages);
+    } else if (typeId == nodegraphtypes::Voronoi) {
+        compileVoronoi(node, execState, payloadRegistry, products, packages);
+    } else if (typeId == nodegraphtypes::Contact) {
+        compileContact(node, execState, payloadRegistry, products, packages);
+    } else if (typeId == nodegraphtypes::HeatSolve) {
+        compileHeatSolve(node, execState, payloadRegistry, products, packages);
     }
 }

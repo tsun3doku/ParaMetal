@@ -2,7 +2,7 @@
 #include "nodegraph/NodeGraphRegistry.hpp"
 #include "nodegraph/NodeGraphUtils.hpp"
 
-#include "nodegraph/NodeGraphBridge.hpp"
+#include "nodegraph/NodeGraph.hpp"
 #include "nodegraph/NodeGraphEditor.hpp"
 #include "nodegraph/NodeHeatSolveParams.hpp"
 #include "NodePanelUtils.hpp"
@@ -150,9 +150,9 @@ NodeHeatSolverPanel::NodeHeatSolverPanel(QWidget* parent)
     });
 }
 
-void NodeHeatSolverPanel::bind(NodeGraphBridge* nodeGraphBridgePtr, const RuntimeQuery* runtimeQueryPtr) {
+void NodeHeatSolverPanel::bind(NodeGraph* graphPtr, const RuntimeQuery* runtimeQueryPtr) {
     runtimeQuery = runtimeQueryPtr;
-    NodePanelBase::bind(nodeGraphBridgePtr);
+    NodePanelBase::bind(graphPtr);
 }
 
 void NodeHeatSolverPanel::refreshFromNode() {

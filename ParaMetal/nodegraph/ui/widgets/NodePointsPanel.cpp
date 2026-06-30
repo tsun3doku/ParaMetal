@@ -1,6 +1,6 @@
 #include "NodePointsPanel.hpp"
 
-#include "nodegraph/NodeGraphBridge.hpp"
+#include "nodegraph/NodeGraph.hpp"
 #include "nodegraph/NodeGraphEditor.hpp"
 #include "nodegraph/NodePointsParams.hpp"
 #include "NodeGraphWidgetStyle.hpp"

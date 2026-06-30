@@ -138,8 +138,10 @@ bool Remesher::remesh(
     double minAngleDegrees,
     double maxEdgeLength,
     double stepSize,
-    RemeshResult& outResult) const {
-    outResult = {};
+    SupportingHalfedge::IntrinsicMesh& outMesh,
+    SupportingHalfedge::GPUResources& outGpuResources) const {
+    outMesh = {};
+    outGpuResources = {};
     if (pointPositions.empty() || triangleIndices.empty()) {
         std::cerr << "[Remesher] Cannot remesh empty geometry input" << std::endl;
         return false;
@@ -168,8 +170,8 @@ bool Remesher::remesh(
         return false;
     }
 
-    outResult.intrinsicMesh = intrinsicMesh;
-    outResult.intrinsicGpuResources = buildIntrinsicGPUResources(*supportingHalfedge, outResult.intrinsicMesh);
+    outMesh = intrinsicMesh;
+    outGpuResources = buildIntrinsicGPUResources(*supportingHalfedge, outMesh);
     remesher.cleanup();
     return true;
 }

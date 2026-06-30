@@ -27,7 +27,6 @@ void HeatPointRenderer::initialize(VkRenderPass renderPass, uint32_t maxFramesIn
 
     if (!createDescriptorSetLayout() ||
         !createDescriptorPool(maxFramesInFlight) ||
-        !createDescriptorSets(maxFramesInFlight) ||
         !createPipeline(renderPass)) {
         cleanup();
         return;
@@ -64,31 +63,27 @@ bool HeatPointRenderer::createDescriptorSetLayout() {
 
 bool HeatPointRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
     const uint32_t maxRenderablePointDomains = 64;
-    const uint32_t totalSets = maxFramesInFlight * maxRenderablePointDomains;
 
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = totalSets;
+    poolSizes[0].descriptorCount = maxRenderablePointDomains;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[1].descriptorCount = totalSets;
+    poolSizes[1].descriptorCount = maxRenderablePointDomains;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = totalSets;
+    poolInfo.maxSets = maxRenderablePointDomains;
 
-    if (vkCreateDescriptorPool(vulkanDevice.getDevice(), &poolInfo, nullptr,
-        &descriptorPool) != VK_SUCCESS) {
-        std::cerr << "HeatPointRenderer: Failed to create descriptor pool" << std::endl;
-        return false;
+    descriptorPools.resize(maxFramesInFlight, VK_NULL_HANDLE);
+    for (uint32_t i = 0; i < maxFramesInFlight; ++i) {
+        if (vkCreateDescriptorPool(vulkanDevice.getDevice(), &poolInfo, nullptr, &descriptorPools[i]) != VK_SUCCESS) {
+            std::cerr << "HeatPointRenderer: Failed to create descriptor pool " << i << std::endl;
+            return false;
+        }
     }
 
-    return true;
-}
-
-bool HeatPointRenderer::createDescriptorSets(uint32_t maxFramesInFlight) {
-    (void)maxFramesInFlight;
     return true;
 }
 
@@ -273,101 +268,78 @@ bool HeatPointRenderer::createPipeline(VkRenderPass renderPass) {
     return true;
 }
 
-void HeatPointRenderer::updateDescriptors(const std::vector<PointRenderBinding>& bindings, uint32_t maxFramesInFlight, bool forceReallocate) {
-    if (!initialized)
-        return;
+VkDescriptorSet HeatPointRenderer::allocateDescriptorSet(VkDescriptorPool pool) {
+    VkDescriptorSetLayout layouts[] = { descriptorSetLayout };
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = pool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = layouts;
 
-    if (forceReallocate && descriptorPool != VK_NULL_HANDLE) {
-        vkResetDescriptorPool(vulkanDevice.getDevice(), descriptorPool, 0);
-        pointDescriptorSets.clear();
-    }
-
-    std::unordered_set<uint64_t> liveDomains;
-    liveDomains.reserve(bindings.size());
-
-    for (const auto& binding : bindings) {
-        if (binding.domainKey == 0 || binding.tempBuffer == VK_NULL_HANDLE) {
-            continue;
-        }
-        liveDomains.insert(binding.domainKey);
-
-        auto& domainSets = pointDescriptorSets[binding.domainKey];
-        if (forceReallocate || domainSets.empty() || domainSets.size() != maxFramesInFlight) {
-            domainSets.clear();
-            domainSets.resize(maxFramesInFlight);
-
-            std::vector<VkDescriptorSetLayout> layouts(maxFramesInFlight, descriptorSetLayout);
-            VkDescriptorSetAllocateInfo allocInfo{};
-            allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-            allocInfo.descriptorPool = descriptorPool;
-            allocInfo.descriptorSetCount = maxFramesInFlight;
-            allocInfo.pSetLayouts = layouts.data();
-
-            if (vkAllocateDescriptorSets(vulkanDevice.getDevice(), &allocInfo, domainSets.data()) != VK_SUCCESS) {
-                pointDescriptorSets.erase(binding.domainKey);
-                continue;
-            }
-        }
-
-        for (size_t i = 0; i < maxFramesInFlight; ++i) {
-            VkDescriptorBufferInfo uboInfo{};
-            uboInfo.buffer = uniformBufferManager.getUniformBuffers()[i];
-            uboInfo.offset = uniformBufferManager.getUniformBufferOffsets()[i];
-            uboInfo.range = sizeof(UniformBufferObject);
-
-            VkDescriptorBufferInfo tempInfo{};
-            tempInfo.buffer = binding.tempBuffer;
-            tempInfo.offset = binding.tempBufferOffset;
-            tempInfo.range = VK_WHOLE_SIZE;
-
-            std::array<VkWriteDescriptorSet, 2> writes{};
-            writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[0].dstSet = domainSets[i];
-            writes[0].dstBinding = 0;
-            writes[0].dstArrayElement = 0;
-            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            writes[0].descriptorCount = 1;
-            writes[0].pBufferInfo = &uboInfo;
-
-            writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[1].dstSet = domainSets[i];
-            writes[1].dstBinding = 1;
-            writes[1].dstArrayElement = 0;
-            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            writes[1].descriptorCount = 1;
-            writes[1].pBufferInfo = &tempInfo;
-
-            vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    if (vkAllocateDescriptorSets(vulkanDevice.getDevice(), &allocInfo, &set) != VK_SUCCESS) {
+        static bool loggedOnce = false;
+        if (!loggedOnce) {
+            std::cerr << "HeatPointRenderer: Descriptor pool exhaustion / failed to allocate descriptor set." << std::endl;
+            loggedOnce = true;
         }
     }
+    return set;
+}
 
-    for (auto it = pointDescriptorSets.begin(); it != pointDescriptorSets.end();) {
-        if (liveDomains.find(it->first) == liveDomains.end()) {
-            it = pointDescriptorSets.erase(it);
-        } else {
-            ++it;
-        }
-    }
+void HeatPointRenderer::updateDescriptorSet(VkDescriptorSet set, uint32_t frameIndex, const PointRenderBinding& binding) {
+    VkDescriptorBufferInfo uboInfo{};
+    uboInfo.buffer = uniformBufferManager.getUniformBuffers()[frameIndex];
+    uboInfo.offset = uniformBufferManager.getUniformBufferOffsets()[frameIndex];
+    uboInfo.range = sizeof(UniformBufferObject);
+
+    VkDescriptorBufferInfo tempInfo{};
+    tempInfo.buffer = binding.tempBuffer;
+    tempInfo.offset = binding.tempBufferOffset;
+    tempInfo.range = VK_WHOLE_SIZE;
+
+    std::array<VkWriteDescriptorSet, 2> writes{};
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = set;
+    writes[0].dstBinding = 0;
+    writes[0].dstArrayElement = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[0].descriptorCount = 1;
+    writes[0].pBufferInfo = &uboInfo;
+
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = set;
+    writes[1].dstBinding = 1;
+    writes[1].dstArrayElement = 0;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[1].descriptorCount = 1;
+    writes[1].pBufferInfo = &tempInfo;
+
+    vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
 void HeatPointRenderer::render(VkCommandBuffer commandBuffer, uint32_t frameIndex,
-    const std::vector<PointRenderBinding>& bindings, VkExtent2D extent) const {
-    if (!initialized || pipeline == VK_NULL_HANDLE || pipelineLayout == VK_NULL_HANDLE)
+    const std::vector<PointRenderBinding>& bindings, VkExtent2D extent) {
+    if (!initialized || pipeline == VK_NULL_HANDLE || pipelineLayout == VK_NULL_HANDLE || frameIndex >= descriptorPools.size())
         return;
+
+    vkResetDescriptorPool(vulkanDevice.getDevice(), descriptorPools[frameIndex], 0);
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
     for (const auto& binding : bindings) {
-        if (binding.pointCount == 0 || binding.vertexBuffer == VK_NULL_HANDLE)
+        if (binding.pointCount == 0)
             continue;
 
-        auto it = pointDescriptorSets.find(binding.domainKey);
-        if (it == pointDescriptorSets.end() || frameIndex >= it->second.size()) {
+        VkDescriptorSet set = allocateDescriptorSet(descriptorPools[frameIndex]);
+        if (set == VK_NULL_HANDLE) {
             continue;
         }
 
+        updateDescriptorSet(set, frameIndex, binding);
+
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                               pipelineLayout, 0, 1, &it->second[frameIndex], 0, nullptr);
+                               pipelineLayout, 0, 1, &set, 0, nullptr);
 
         struct {
             glm::mat4 model;
@@ -396,16 +368,17 @@ void HeatPointRenderer::cleanup() {
         pipelineLayout = VK_NULL_HANDLE;
     }
 
-    if (descriptorPool != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-        descriptorPool = VK_NULL_HANDLE;
+    for (auto pool : descriptorPools) {
+        if (pool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(device, pool, nullptr);
+        }
     }
+    descriptorPools.clear();
 
     if (descriptorSetLayout != VK_NULL_HANDLE) {
         vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
         descriptorSetLayout = VK_NULL_HANDLE;
     }
 
-    pointDescriptorSets.clear();
     initialized = false;
 }

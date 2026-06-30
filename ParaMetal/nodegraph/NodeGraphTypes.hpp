@@ -1,6 +1,7 @@
 #pragma once
 
 #include "NodeGraphCoreTypes.hpp"
+#include "NodeGraphNodeState.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -124,8 +125,7 @@ struct NodeGraphNode {
     std::string title;
     float x = 0.0f;
     float y = 0.0f;
-    bool displayEnabled = false;
-    bool frozen = false;
+    NodeGraphNodeState state{};
     std::vector<NodeGraphSocket> inputs;
     std::vector<NodeGraphSocket> outputs;
     std::vector<NodeGraphParamValue> parameters;
@@ -175,23 +175,6 @@ struct NodeGraphEdge {
     NodeGraphSocketId fromSocket{};
     NodeGraphNodeId toNode{};
     NodeGraphSocketId toSocket{};
-};
-
-struct NodeGraphState {
-    uint64_t revision = 0;
-    std::unordered_map<uint32_t, NodeGraphNode> nodes;
-    std::unordered_map<uint32_t, NodeGraphEdge> edges;
-
-    const NodeGraphNode* node(NodeGraphNodeId id) const {
-        auto it = nodes.find(id.value);
-        return (it != nodes.end()) ? &it->second : nullptr;
-    }
-    const NodeGraphEdge* incomingEdge(NodeGraphNodeId toNode, NodeGraphSocketId toSocket) const {
-        for (const auto& [id, e] : edges) {
-            if (e.toNode == toNode && e.toSocket == toSocket) return &e;
-        }
-        return nullptr;
-    }
 };
 
 enum class NodeGraphChangeType : uint8_t {

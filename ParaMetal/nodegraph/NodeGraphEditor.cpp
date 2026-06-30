@@ -4,7 +4,7 @@
 #include "NodePointsParams.hpp"
 #include "NodeTransformParams.hpp"
 
-#include "NodeGraphBridge.hpp"
+#include "NodeGraph.hpp"
 #include "nodegraph/ui/scene/NodeGraphSceneUtils.hpp"
 #include "nodegraph/ui/widgets/NodePanelUtils.hpp"
 
@@ -14,16 +14,16 @@
 #include <utility>
 #include <vector>
 
-NodeGraphEditor::NodeGraphEditor(NodeGraphBridge* bridgePtr)
-    : bridge(bridgePtr) {
+NodeGraphEditor::NodeGraphEditor(NodeGraph* graphPtr)
+    : bridge(graphPtr) {
 }
 
-NodeGraphEditor::NodeGraphEditor(NodeGraphBridge& bridgeRef)
-    : bridge(&bridgeRef) {
+NodeGraphEditor::NodeGraphEditor(NodeGraph& graphRef)
+    : bridge(&graphRef) {
 }
 
-void NodeGraphEditor::setBridge(NodeGraphBridge* bridgePtr) {
-    bridge = bridgePtr;
+void NodeGraphEditor::setGraph(NodeGraph* graphPtr) {
+    bridge = graphPtr;
 }
 
 void NodeGraphEditor::resetToDefaultGraph() {
@@ -204,14 +204,14 @@ void NodeGraphEditor::resetToDefaultGraph() {
     sourceModelPath.stringValue = "models/heatsource_torus.obj";
     setNodeParameter(sourceModel.id, sourceModelPath);
 
-    // Set receiver heat model to None BC (receiver)
+    // Set receiver heat model to None BC 
     NodeGraphParamValue receiverHeatModelBC{};
     receiverHeatModelBC.id = nodegraphparams::heatmodel::BoundaryCondition;
     receiverHeatModelBC.type = NodeGraphParamType::Enum;
     receiverHeatModelBC.enumValue = "None";
     setNodeParameter(receiverHeatModel.id, receiverHeatModelBC);
 
-    // Set source heat model to Fixed Temperature BC (source)
+    // Set source heat model to Fixed Temperature BC
     NodeGraphParamValue sourceHeatModelBC{};
     sourceHeatModelBC.id = nodegraphparams::heatmodel::BoundaryCondition;
     sourceHeatModelBC.type = NodeGraphParamType::Enum;
@@ -308,12 +308,12 @@ bool NodeGraphEditor::moveNode(NodeGraphNodeId nodeId, float x, float y) {
     return bridge && bridge->moveNode(nodeId, x, y);
 }
 
-bool NodeGraphEditor::setNodeDisplayEnabled(NodeGraphNodeId nodeId, bool enabled) {
-    return bridge && bridge->setNodeDisplayEnabled(nodeId, enabled);
+bool NodeGraphEditor::toggleNodeFrozen(NodeGraphNodeId nodeId) {
+    return bridge && bridge->toggleNodeFrozen(nodeId);
 }
 
-bool NodeGraphEditor::setNodeFrozen(NodeGraphNodeId nodeId, bool frozen) {
-    return bridge && bridge->setNodeFrozen(nodeId, frozen);
+bool NodeGraphEditor::toggleNodeDisplay(NodeGraphNodeId nodeId) {
+    return bridge && bridge->toggleNodeDisplay(nodeId);
 }
 
 bool NodeGraphEditor::setNodeParameter(NodeGraphNodeId nodeId, const NodeGraphParamValue& parameter) {
@@ -371,7 +371,7 @@ bool NodeGraphEditor::disconnectIncomingInput(NodeGraphNodeId nodeId, NodeGraphS
     }
 
     const NodeGraphState state = bridge->state();
-    const NodeGraphEdge* existingIncomingEdge = state.incomingEdge(nodeId, socketId);
+    const NodeGraphEdge* existingIncomingEdge = state.edges.incomingEdge(nodeId, socketId);
     if (!existingIncomingEdge || !existingIncomingEdge->id.isValid()) {
         return false;
     }

@@ -53,15 +53,36 @@ void HashProduct::seal(RemeshProduct& p) {
     HashBuilder::combine(hash, p.intrinsicTriangleCount);
     HashBuilder::combine(hash, p.intrinsicVertexCount);
     HashBuilder::combinePod(hash, p.averageTriangleArea);
+
+    combineVkBuffer(hash, p.supportingHalfedgeBuffer);
+    HashBuilder::combine(hash, p.supportingHalfedgeOffset);
     combineVkBufferView(hash, p.supportingHalfedgeView);
+    combineVkBuffer(hash, p.supportingAngleBuffer);
+    HashBuilder::combine(hash, p.supportingAngleOffset);
     combineVkBufferView(hash, p.supportingAngleView);
+    combineVkBuffer(hash, p.halfedgeBuffer);
+    HashBuilder::combine(hash, p.halfedgeOffset);
     combineVkBufferView(hash, p.halfedgeView);
+    combineVkBuffer(hash, p.edgeBuffer);
+    HashBuilder::combine(hash, p.edgeOffset);
     combineVkBufferView(hash, p.edgeView);
+    combineVkBuffer(hash, p.triangleBuffer);
+    HashBuilder::combine(hash, p.triangleOffset);
     combineVkBufferView(hash, p.triangleView);
+    combineVkBuffer(hash, p.lengthBuffer);
+    HashBuilder::combine(hash, p.lengthOffset);
     combineVkBufferView(hash, p.lengthView);
+    combineVkBuffer(hash, p.inputHalfedgeBuffer);
+    HashBuilder::combine(hash, p.inputHalfedgeOffset);
     combineVkBufferView(hash, p.inputHalfedgeView);
+    combineVkBuffer(hash, p.inputEdgeBuffer);
+    HashBuilder::combine(hash, p.inputEdgeOffset);
     combineVkBufferView(hash, p.inputEdgeView);
+    combineVkBuffer(hash, p.inputTriangleBuffer);
+    HashBuilder::combine(hash, p.inputTriangleOffset);
     combineVkBufferView(hash, p.inputTriangleView);
+    combineVkBuffer(hash, p.inputLengthBuffer);
+    HashBuilder::combine(hash, p.inputLengthOffset);
     combineVkBufferView(hash, p.inputLengthView);
 
     p.hashes.full = hash;
@@ -82,6 +103,7 @@ void HashProduct::seal(VoronoiProduct& p) {
     HashBuilder::combine(hash, p.occupancyPointCount);
     HashBuilder::combinePodVector(hash, p.voronoiToSim);
     HashBuilder::combinePodVector(hash, p.simToVoronoi);
+    HashBuilder::combinePodVector(hash, p.simNodeVolumes);
     combineVkBuffer(hash, p.nodeBuffer);
     HashBuilder::combine(hash, p.nodeBufferOffset);
     combineVkBuffer(hash, p.voronoiNeighborBuffer);
@@ -160,10 +182,6 @@ void HashProduct::seal(ContactProduct& p) {
 
 void HashProduct::seal(HeatProduct& p) {
     uint64_t hash = HashBuilder::start();
-    HashBuilder::combine(hash, static_cast<uint64_t>(p.active ? 1u : 0u));
-    HashBuilder::combine(hash, static_cast<uint64_t>(p.paused ? 1u : 0u));
-    HashBuilder::combine(hash, static_cast<uint64_t>(p.resetCounter));
-    HashBuilder::combine(hash, static_cast<uint64_t>(p.rewindFrame));
     HashBuilder::combinePodVector(hash, p.modelRuntimeModelIds);
     HashBuilder::combine(hash, static_cast<uint64_t>(p.modelSurfaceBuffers.size()));
     for (size_t i = 0; i < p.modelSurfaceBuffers.size(); ++i) {

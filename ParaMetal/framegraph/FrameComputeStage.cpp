@@ -12,16 +12,15 @@ FrameComputeStage::FrameComputeStage(VulkanDevice& vulkanDevice, VkFrameGraphRun
       frameSync(frameSync) {
 }
 
-FrameStageResult FrameComputeStage::execute(uint32_t frameIndex, const std::vector<ComputePass*>& computePasses, FrameSyncState& syncState) {
-    syncState = {};
+FrameComputeCollection FrameComputeStage::collect(uint32_t frameIndex, const std::vector<ComputePass*>& computePasses) {
+    FrameComputeCollection collection{};
+
     if (computePasses.empty()) {
-        return FrameStageResult::Continue;
+        return collection;
     }
 
     bool hasAnyComputeWrites = false;
     std::vector<VkCommandBuffer> submitCommandBuffers;
-
-    HeatSystem* heatSystemToDebug = nullptr;
 
     for (ComputePass* computePass : computePasses) {
         if (!computePass) {
@@ -32,13 +31,10 @@ FrameStageResult FrameComputeStage::execute(uint32_t frameIndex, const std::vect
 
         if (computePass->hasDispatchableComputeWork()) {
             hasAnyComputeWrites = true;
-            if (auto* hs = dynamic_cast<HeatSystem*>(computePass)) {
-                heatSystemToDebug = hs;
-            }
             const auto& computeCommandBuffers = computePass->getComputeCommandBuffers();
             if (frameIndex >= computeCommandBuffers.size()) {
-                syncState = {};
-                return FrameStageResult::Fatal;
+                collection.result = FrameStageResult::Fatal;
+                return collection;
             }
 
             VkCommandBuffer computeCommandBuffer = computeCommandBuffers[frameIndex];
@@ -48,38 +44,25 @@ FrameStageResult FrameComputeStage::execute(uint32_t frameIndex, const std::vect
         }
     }
 
-    const bool queuesAreShared = vulkanDevice.getComputeQueue() == vulkanDevice.getGraphicsQueue();
-    bool computeSubmittedThisFrame = false;
-
+    // Multiple compute passes would need their command buffers joined. Today
+    // there is at most one (HeatSystem) per frame, so we take the first. If the
+    // set ever grows, this is the place to allocate a single primary buffer and
+    // execute the secondaries.
     if (!submitCommandBuffers.empty()) {
-        frameSync.prepareComputeSubmit();
-
-        for (VkCommandBuffer commandBuffer : submitCommandBuffers) {
-            const VkResult computeSubmitResult = frameSync.submitCompute(vulkanDevice.getComputeQueue(), commandBuffer, !queuesAreShared);
-
-            if (computeSubmitResult != VK_SUCCESS) {
-                if (computeSubmitResult == VK_ERROR_DEVICE_LOST) {
-                    syncState = {};
-                    return FrameStageResult::Fatal;
-                }
-                syncState = {};
-                return FrameStageResult::RecreateSwapchain;
-            }
-        }
-
-        computeSubmittedThisFrame = true;
+        collection.commandBuffer = submitCommandBuffers.front();
     }
 
-
+    const bool queuesAreShared = vulkanDevice.getComputeQueue() == vulkanDevice.getGraphicsQueue();
+    const bool computePresent = (collection.commandBuffer != VK_NULL_HANDLE);
 
     if (hasAnyComputeWrites) {
-        syncState.waitDstStageMask = frameGraphRuntime.getComputeToGraphicsWaitDstStageMask();
-        syncState.insertComputeToGraphicsBarrier = queuesAreShared && computeSubmittedThisFrame;
-        syncState.waitForComputeSemaphore = !queuesAreShared && computeSubmittedThisFrame;
-        if (syncState.waitForComputeSemaphore && syncState.waitDstStageMask == 0) {
-            syncState.waitDstStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        collection.waitDstStageMask = frameGraphRuntime.getComputeToGraphicsWaitDstStageMask();
+        collection.insertComputeToGraphicsBarrier = queuesAreShared && computePresent;
+        collection.waitForComputeSemaphore = !queuesAreShared && computePresent;
+        if (collection.waitForComputeSemaphore && collection.waitDstStageMask == 0) {
+            collection.waitDstStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         }
     }
 
-    return FrameStageResult::Continue;
+    return collection;
 }

@@ -17,7 +17,7 @@
 #include "TimelineRuntime.hpp"
 #include "VulkanCoreContext.hpp"
 
-class NodeGraphBridge;
+class NodeGraph;
 class CameraController;
 class ModelSelection;
 class RuntimeQuery;
@@ -40,11 +40,11 @@ public:
     std::vector<SimulationError> consumeSimulationErrors();
     uint32_t loadModel(const std::string& modelPath, uint32_t preferredModelId = 0);
     void setPanSensitivity(float sensitivity);
-    void setRenderPaused(bool paused);
+    void setSimPaused(bool paused);
     RenderSettingsController* getSettingsController();
     const RenderSettingsController* getSettingsController() const;
-    NodeGraphBridge* getNodeGraphBridge();
-    const NodeGraphBridge* getNodeGraphBridge() const;
+    NodeGraph* getNodeGraph();
+    const NodeGraph* getNodeGraph() const;
     CameraController* getCameraController();
     const CameraController* getCameraController() const;
     SceneController* getSceneController();
@@ -72,7 +72,7 @@ private:
 
     WindowRuntimeState* windowRuntimeState = nullptr;
     bool initialized = false;
-    std::atomic<bool> renderPaused{false};
+    std::atomic<bool> simPaused{false};
     std::atomic<bool> runtimeBusy{false};
     std::atomic<bool> isShuttingDown{false};
     uint32_t frameCounter = 0;

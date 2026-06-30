@@ -2,11 +2,9 @@
 
 #include <cstdint>
 #include <string>
-#include <unordered_set>
-#include <unordered_map>
 
-#include "runtime/RuntimeECS.hpp"
 #include "runtime/RuntimePackages.hpp"
+#include "runtime/RuntimeProductManager.hpp"
 
 class ModelComputeRuntime;
 
@@ -16,21 +14,15 @@ public:
         modelRuntime = updatedRuntime;
     }
 
-    void setECSRegistry(ECSRegistry* updatedRegistry) {
-        ecsRegistry = updatedRegistry;
+    void setProducts(RuntimeProductManager* updatedProducts) {
+        products = updatedProducts;
     }
 
-    void sync(const ECSRegistry& registry);
-    void finalizeSync();
+    ProductHandle apply(uint64_t socketKey, const ModelPackage& package);
+    void remove(uint64_t socketKey);
+    void flush();
 
 private:
-    bool tryBuildRuntimeModelPath(uint64_t socketKey, const ModelPackage& package, const std::string*& outModelPath) const;
-    void removePublishedProduct(uint64_t socketKey);
-    void publishProduct(uint64_t socketKey, uint32_t runtimeModelId);
-    uint64_t buildConfigInputHash(uint64_t socketKey, const ModelPackage& package) const;
-
     ModelComputeRuntime* modelRuntime = nullptr;
-    ECSRegistry* ecsRegistry = nullptr;
-    std::unordered_set<uint64_t> activeSocketKeys;
-    std::unordered_map<uint64_t, uint64_t> appliedConfigInputHash;
+    RuntimeProductManager* products = nullptr;
 };

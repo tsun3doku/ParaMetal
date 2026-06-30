@@ -1,120 +1,39 @@
 #include "RuntimePointComputeTransport.hpp"
 
 #include "runtime/PointComputeRuntime.hpp"
-#include "hash/HashBuilder.hpp"
 #include "util/GeometryUtils.hpp"
 
-#include <iostream>
-
-void RuntimePointComputeTransport::sync(const ECSRegistry& registry) {
-    if (!runtime) {
-        return;
+ProductHandle RuntimePointComputeTransport::apply(uint64_t socketKey, const PointPackage& package) {
+    if (!runtime || !products || socketKey == 0) {
+        return {};
     }
 
-    std::unordered_set<uint64_t> nextSocketKeys;
-
-    auto view = registry.view<PointPackage>(entt::exclude<Stale>);
-    for (auto entity : view) {
-        uint64_t socketKey = static_cast<uint64_t>(entity);
-        const auto& package = registry.get<PointPackage>(entity);
-
-        const uint64_t inputHash = buildConfigInputHash(socketKey, package);
-        auto hashIt = appliedConfigInputHash.find(socketKey);
-        if (inputHash != 0 && hashIt != appliedConfigInputHash.end() && hashIt->second == inputHash) {
-            nextSocketKeys.insert(socketKey);
-            continue;
-        }
-
-        if (package.pointCount == 0 || package.positions.empty()) {
-            runtime->disable(socketKey);
-            removePublishedProduct(socketKey);
-            appliedConfigInputHash.erase(socketKey);
-            continue;
-        }
-
-        PointComputeRuntime::Config config{};
-        if (!tryBuildConfig(socketKey, package, config)) {
-            continue;
-        }
-        runtime->configure(config);
-        nextSocketKeys.insert(socketKey);
+    if (package.pointCount == 0 || package.positions.empty()) {
+        runtime->disable(socketKey);
+        return {};
     }
 
-    for (uint64_t socketKey : activeSocketKeys) {
-        if (nextSocketKeys.find(socketKey) == nextSocketKeys.end()) {
-            runtime->disable(socketKey);
-            removePublishedProduct(socketKey);
-            appliedConfigInputHash.erase(socketKey);
-        }
-    }
+    const uint64_t inputHash = package.hashes.geometry;
 
-    activeSocketKeys = std::move(nextSocketKeys);
-}
-
-void RuntimePointComputeTransport::finalizeSync() {
-    if (!runtime || !ecsRegistry) {
-        return;
-    }
-
-    for (uint64_t socketKey : activeSocketKeys) {
-        auto entity = static_cast<ECSEntity>(socketKey);
-        const auto& package = ecsRegistry->get<PointPackage>(entity);
-        const uint64_t inputHash = buildConfigInputHash(socketKey, package);
-        auto hashIt = appliedConfigInputHash.find(socketKey);
-        const PointProduct* product = tryGetProduct<PointProduct>(*ecsRegistry, socketKey);
-        if (!product || hashIt == appliedConfigInputHash.end() || hashIt->second != inputHash) {
-            publishProduct(socketKey);
-        }
-    }
-}
-
-bool RuntimePointComputeTransport::tryBuildConfig(
-    uint64_t socketKey,
-    const PointPackage& package,
-    PointComputeRuntime::Config& outConfig) const {
-    outConfig = {};
-    if (socketKey == 0 || package.pointCount == 0 || package.positions.empty()) {
-        return false;
-    }
-    outConfig.socketKey = socketKey;
-    outConfig.positions = package.positions;
-    outConfig.modelMatrix = toMat4(package.localToWorld);
-    outConfig.computeHash = buildConfigInputHash(socketKey, package);
-    return true;
-}
-
-uint64_t RuntimePointComputeTransport::buildConfigInputHash(uint64_t socketKey, const PointPackage& package) const {
-    (void)socketKey;
-    uint64_t hash = package.hashes.geometry;
-    const PointProduct* product = tryGetProduct<PointProduct>(*ecsRegistry, socketKey);
-    if (product) {
-        HashBuilder::combine(hash, product->hashes.geometry);
-    }
-    return hash;
-}
-
-void RuntimePointComputeTransport::removePublishedProduct(uint64_t socketKey) {
-    if (socketKey == 0 || !ecsRegistry) {
-        return;
-    }
-    auto entity = static_cast<ECSEntity>(socketKey);
-    ecsRegistry->remove<PointProduct>(entity);
-}
-
-void RuntimePointComputeTransport::publishProduct(uint64_t socketKey) {
-    if (!runtime || socketKey == 0 || !ecsRegistry) {
-        return;
-    }
+    PointComputeRuntime::Config config{};
+    config.socketKey = socketKey;
+    config.positions = package.positions;
+    config.modelMatrix = toMat4(package.localToWorld);
+    config.computeHash = inputHash;
 
     PointProduct product{};
-    if (!runtime->exportProduct(socketKey, product)) {
-        auto entity = static_cast<ECSEntity>(socketKey);
-        ecsRegistry->remove<PointProduct>(entity);
-        return;
+    if (!runtime->buildProduct(config, product)) {
+        return {};
     }
 
-    auto entity = static_cast<ECSEntity>(socketKey);
-    const auto& package = ecsRegistry->get<PointPackage>(entity);
-    ecsRegistry->emplace_or_replace<PointProduct>(entity, product);
-    appliedConfigInputHash[socketKey] = buildConfigInputHash(socketKey, package);
+    ProductHandle handle = products->publish<PointProduct>(socketKey, product);
+    return handle;
+}
+
+
+void RuntimePointComputeTransport::remove(uint64_t socketKey) {
+    if (!runtime || socketKey == 0) {
+        return;
+    }
+    runtime->disable(socketKey);
 }

@@ -49,7 +49,7 @@ bool HeatSystemSurfaceStage::createDescriptorPool(uint32_t numModels) {
     }
 
     const uint32_t effectiveModels = (numModels > 0) ? numModels : 1;
-    const uint32_t totalSets = effectiveModels * 6;
+    const uint32_t totalSets = effectiveModels * 8;
 
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -59,7 +59,7 @@ bool HeatSystemSurfaceStage::createDescriptorPool(uint32_t numModels) {
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.flags = 0;
+    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
     poolInfo.maxSets = totalSets;
@@ -117,15 +117,15 @@ bool HeatSystemSurfaceStage::createDescriptorSetLayout() {
         VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
         VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT);
 
-    gradientBindingFlags.bindingCount = static_cast<uint32_t>(gradientFlags.size());
-    gradientBindingFlags.pBindingFlags = gradientFlags.data();
+    gradientBindingFlags.bindingCount = 0;
+    gradientBindingFlags.pBindingFlags = nullptr;
 
     VkDescriptorSetLayoutCreateInfo gradientLayoutInfo{};
     gradientLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    gradientLayoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+    gradientLayoutInfo.flags = 0;
     gradientLayoutInfo.bindingCount = static_cast<uint32_t>(gradientBindings.size());
     gradientLayoutInfo.pBindings = gradientBindings.data();
-    gradientLayoutInfo.pNext = &gradientBindingFlags;
+    gradientLayoutInfo.pNext = nullptr;
 
     if (vkCreateDescriptorSetLayout(vulkanDevice.getDevice(), &gradientLayoutInfo, nullptr,
         &gradientDescriptorSetLayout) != VK_SUCCESS) {
@@ -236,17 +236,20 @@ void HeatSystemSurfaceStage::dispatchSurfaceTemperatureUpdates(
     VkCommandBuffer commandBuffer,
     const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
     bool replayFromHistory,
-    bool finalWritesBufferB) const {
-    dispatchSurfacePass(commandBuffer, pipeline, pipelineLayout, activeModels, replayFromHistory, finalWritesBufferB, false);
+    bool finalWritesBufferB,
+    uint32_t currentFrame) const {
+    dispatchSurfacePass(commandBuffer, pipeline, pipelineLayout, activeModels, replayFromHistory, finalWritesBufferB, false, currentFrame);
 }
 
 void HeatSystemSurfaceStage::dispatchSurfaceGradientUpdates(
     VkCommandBuffer commandBuffer,
     const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
     bool replayFromHistory,
-    bool finalWritesBufferB) const {
-    dispatchSurfacePass(commandBuffer, gradientPipeline, gradientPipelineLayout, activeModels, replayFromHistory, finalWritesBufferB, true);
+    bool finalWritesBufferB,
+    uint32_t currentFrame) const {
+    dispatchSurfacePass(commandBuffer, gradientPipeline, gradientPipelineLayout, activeModels, replayFromHistory, finalWritesBufferB, true, currentFrame);
 }
+
 
 void HeatSystemSurfaceStage::dispatchSurfacePass(
     VkCommandBuffer commandBuffer,
@@ -255,20 +258,29 @@ void HeatSystemSurfaceStage::dispatchSurfacePass(
     const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
     bool replayFromHistory,
     bool finalWritesBufferB,
-    bool isGradientPass) const {
-    if (pipeline == VK_NULL_HANDLE || layout == VK_NULL_HANDLE) return;
+    bool isGradientPass,
+    uint32_t currentFrame) const {
+    if (pipeline == VK_NULL_HANDLE || layout == VK_NULL_HANDLE) {
+        return;
+    }
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
 
     heat::HeatModelPushConstant surfacePushConstant{};
     surfacePushConstant.elementCount = 0;
 
+    const bool useB = (currentFrame % 2) == 1;
+
     for (const auto& [runtimeModelId, heatModel] : activeModels) {
-        if (!heatModel || heatModel->getIntrinsicVertexCount() == 0) continue;
+        if (!heatModel || heatModel->getIntrinsicVertexCount() == 0) {
+            continue;
+        }
 
         VkDescriptorSet set = VK_NULL_HANDLE;
         if (replayFromHistory) {
-            set = isGradientPass ? heatModel->getSurfaceGradientHistorySet() : heatModel->getSurfaceHistoryComputeSet();
+            set = isGradientPass
+                ? (useB ? heatModel->getSurfaceGradientHistorySetB() : heatModel->getSurfaceGradientHistorySetA())
+                : (useB ? heatModel->getSurfaceHistoryComputeSetB() : heatModel->getSurfaceHistoryComputeSetA());
         } else if (isGradientPass) {
             set = finalWritesBufferB ? heatModel->getSurfaceGradientComputeSetB() : heatModel->getSurfaceGradientComputeSetA();
         } else {

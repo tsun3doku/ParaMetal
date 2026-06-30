@@ -1,6 +1,5 @@
 #pragma once
 
-#include "hash/HashValues.hpp"
 #include "nodegraph/NodeGraphCoreTypes.hpp"
 #include "heat/HeatSystemPresets.hpp"
 
@@ -12,13 +11,12 @@
 //                                                        - This header must not be included in any backend ]
 
 enum class HeatBoundaryCondition {
-    None,              // Normal thermal mass 
-    FixedTemperature,  // Dirichlet BC 
-    FixedPower         // Neumann BC 
+    None,              // Normal thermal mass
+    FixedTemperature,  // Dirichlet BC
+    FixedPower         // Neumann BC
 };
 
 struct HeatModelData {
-    HashValues hashes{};
     NodeDataHandle meshHandle{};
 
     // Material

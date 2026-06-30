@@ -4,8 +4,8 @@
 #include <unordered_set>
 #include <vector>
 
-#include "runtime/RuntimeECS.hpp"
-#include "runtime/RuntimePackages.hpp"
+#include "runtime/RuntimePackageManager.hpp"
+#include "runtime/RuntimeProductManager.hpp"
 
 class ModelDisplayController;
 
@@ -15,20 +15,16 @@ public:
         controller = updatedController;
     }
 
-    void setECSRegistry(ECSRegistry* updatedRegistry) {
-        ecsRegistry = updatedRegistry;
+    void setManagers(RuntimePackageManager* updatedPackages, RuntimeProductManager* updatedProducts) {
+        (void)updatedPackages;
+        products = updatedProducts;
     }
 
-    void setVisibleKeys(const std::unordered_set<uint64_t>* keys) {
-        visibleKeys = keys;
-    }
-
-    void sync(const ECSRegistry& registry);
+    void sync(const RuntimePackageManager& registry, const std::unordered_set<uint64_t>& visibleKeys);
     void finalizeSync();
 
 private:
     ModelDisplayController* controller = nullptr;
-    ECSRegistry* ecsRegistry = nullptr;
-    const std::unordered_set<uint64_t>* visibleKeys = nullptr;
+    RuntimeProductManager* products = nullptr;
     std::unordered_set<uint64_t> activeSocketKeys;
 };

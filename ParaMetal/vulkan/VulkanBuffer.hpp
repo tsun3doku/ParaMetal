@@ -39,6 +39,14 @@ VkResult createStagingBuffer(
     void** outMappedPtr
 );
 
+VkResult createDownloadStagingBuffer(
+    MemoryAllocator& allocator,
+    VkDeviceSize size,
+    VkBuffer& outBuffer,
+    VkDeviceSize& outOffset,
+    void** outMappedPtr
+);
+
 VkResult createUniformBuffer(
     MemoryAllocator& allocator,
     VulkanDevice& device,

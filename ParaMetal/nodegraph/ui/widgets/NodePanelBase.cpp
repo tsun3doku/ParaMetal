@@ -11,7 +11,7 @@ NodePanelBase::NodePanelBase(QWidget* parent)
     layout->setSpacing(nodegraphwidgets::panelCardInnerSpacing);
 }
 
-void NodePanelBase::bind(NodeGraphBridge* bridgePtr) {
+void NodePanelBase::bind(NodeGraph* bridgePtr) {
     this->bridgePtr = bridgePtr;
     if (nodeId.isValid()) {
         refreshFromNode();
@@ -41,7 +41,7 @@ void NodePanelBase::setStatus(const QString& text) const {
     }
 }
 
-NodeGraphBridge* NodePanelBase::bridge() const {
+NodeGraph* NodePanelBase::bridge() const {
     return bridgePtr;
 }
 

@@ -1,7 +1,8 @@
 #pragma once
 
 #include "nodegraph/NodeGraphProductTypes.hpp"
-#include "runtime/RuntimeECS.hpp"
+#include "runtime/RuntimePackageManager.hpp"
+#include "runtime/RuntimeProductManager.hpp"
 #include "runtime/RemeshDisplayController.hpp"
 
 #include <unordered_set>
@@ -13,37 +14,30 @@ public:
         controller = updatedController;
     }
 
-    void setECSRegistry(ECSRegistry* updatedRegistry) {
-        ecsRegistry = updatedRegistry;
+    void setManagers(RuntimePackageManager*, RuntimeProductManager* updatedProducts) {
+        products = updatedProducts;
     }
 
-    void setVisibleKeys(const std::unordered_set<uint64_t>* keys) {
-        visibleKeys = keys;
-    }
-
-    void sync(const ECSRegistry& registry) {
+    void sync(const RuntimePackageManager& registry, const std::unordered_set<uint64_t>& visibleKeys) {
         if (!controller) {
             return;
         }
 
         std::unordered_set<uint64_t> nextSocketKeys;
-        auto view = registry.view<RemeshPackage>(entt::exclude<Stale>);
-        for (auto entity : view) {
-            uint64_t socketKey = static_cast<uint64_t>(entity);
-            if (visibleKeys && visibleKeys->find(socketKey) == visibleKeys->end()) {
-                continue;
+        registry.forEach<RemeshPackage>([&](uint64_t socketKey, const RemeshPackage& package) {
+            if (visibleKeys.find(socketKey) == visibleKeys.end()) {
+                return;
             }
 
-            const auto& package = registry.get<RemeshPackage>(entity);
             RemeshDisplayController::Config config{};
             if (!tryBuildConfig(socketKey, package, config)) {
                 controller->remove(socketKey);
-                continue;
+                return;
             }
 
             controller->apply(socketKey, config);
             nextSocketKeys.insert(socketKey);
-        }
+        });
 
         for (uint64_t socketKey : activeSocketKeys) {
             if (nextSocketKeys.find(socketKey) == nextSocketKeys.end()) {
@@ -62,8 +56,11 @@ public:
     }
 
 private:
-    bool tryBuildConfig(uint64_t socketKey, const RemeshPackage& package, RemeshDisplayController::Config& outConfig) const {
-        if (!controller || !ecsRegistry || socketKey == 0) {
+    bool tryBuildConfig(
+        uint64_t socketKey,
+        const RemeshPackage& package,
+        RemeshDisplayController::Config& outConfig) const {
+        if (!controller || !products || socketKey == 0) {
             return false;
         }
         const bool anyVisible =
@@ -74,7 +71,7 @@ private:
             return false;
         }
 
-        const RemeshProduct* computeProduct = tryGetProduct<RemeshProduct>(*ecsRegistry, socketKey);
+        const RemeshProduct* computeProduct = products->resolve<RemeshProduct>(package.productHandle);
         if (!computeProduct || !computeProduct->isValid()) {
             return false;
         }
@@ -82,7 +79,7 @@ private:
             return false;
         }
 
-        const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, package.sourceMeshHandle.key);
+        const ModelProduct* modelProduct = products->resolve<ModelProduct>(package.sourceModelProduct);
         if (!modelProduct || modelProduct->runtimeModelId == 0) {
             return false;
         }
@@ -121,7 +118,6 @@ private:
     }
 
     RemeshDisplayController* controller = nullptr;
-    ECSRegistry* ecsRegistry = nullptr;
-    const std::unordered_set<uint64_t>* visibleKeys = nullptr;
+    RuntimeProductManager* products = nullptr;
     std::unordered_set<uint64_t> activeSocketKeys;
 };

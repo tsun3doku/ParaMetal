@@ -1,5 +1,7 @@
 #pragma once
 
+#include "hash/HashValues.hpp"
+
 //                                                          [ HashPackage
 //                                                            -Centralized package sealing
 //                                                            -Computes domain specific hash values for each
@@ -15,10 +17,10 @@ struct ContactPackage;
 
 class HashPackage {
 public:
-    static void seal(ModelPackage& pkg);
-    static void seal(RemeshPackage& pkg);
-    static void seal(VoronoiPackage& pkg);
+    static void seal(ModelPackage& pkg, const HashValues& geometryHashes);
+    static void seal(RemeshPackage& pkg, const HashValues& sourceGeometryHashes);
+    static void seal(VoronoiPackage& pkg, const HashValues& authoredHashes);
     static void seal(PointPackage& pkg);
-    static void seal(HeatPackage& pkg);
-    static void seal(ContactPackage& pkg);
+    static void seal(HeatPackage& pkg, const HashValues& authoredHashes);
+    static void seal(ContactPackage& pkg, const HashValues& authoredHashes);
 };

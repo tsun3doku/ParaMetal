@@ -1,5 +1,6 @@
 #pragma once
 
+#include "nodegraph/NodeGraphState.hpp"
 #include "nodegraph/NodeGraphTypes.hpp"
 
 #include <cstdint>
@@ -7,12 +8,12 @@
 #include <unordered_set>
 #include <vector>
 
-class NodeGraphBridge;
+class NodeGraph;
 
 namespace NodePanelUtils {
 
-bool canEditNode(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId);
-bool loadNode(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, NodeGraphNode& outNode);
+bool canEditNode(NodeGraph* graph, NodeGraphNodeId nodeId);
+bool loadNode(NodeGraph* graph, NodeGraphNodeId nodeId, NodeGraphNode& outNode);
 
 bool readBoolParam(const NodeGraphNode& node, uint32_t parameterId, bool defaultValue = false);
 double readFloatParam(const NodeGraphNode& node, uint32_t parameterId, double defaultValue);
@@ -20,12 +21,12 @@ int readIntParam(const NodeGraphNode& node, uint32_t parameterId, int defaultVal
 std::string readStringParam(const NodeGraphNode& node, uint32_t parameterId);
 int readEnumParam(const NodeGraphNode& node, uint32_t parameterId, int defaultValue);
 
-bool writeParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, const NodeGraphParamValue& parameter);
-bool writeBoolParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uint32_t parameterId, bool value);
-bool writeFloatParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uint32_t parameterId, double value);
-bool writeIntParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uint32_t parameterId, int64_t value);
-bool writeStringParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uint32_t parameterId, const std::string& value);
-bool writeEnumParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uint32_t parameterId, int value);
+bool writeParam(NodeGraph* graph, NodeGraphNodeId nodeId, const NodeGraphParamValue& parameter);
+bool writeBoolParam(NodeGraph* graph, NodeGraphNodeId nodeId, uint32_t parameterId, bool value);
+bool writeFloatParam(NodeGraph* graph, NodeGraphNodeId nodeId, uint32_t parameterId, double value);
+bool writeIntParam(NodeGraph* graph, NodeGraphNodeId nodeId, uint32_t parameterId, int64_t value);
+bool writeStringParam(NodeGraph* graph, NodeGraphNodeId nodeId, uint32_t parameterId, const std::string& value);
+bool writeEnumParam(NodeGraph* graph, NodeGraphNodeId nodeId, uint32_t parameterId, int value);
 
 std::string trimCopy(const std::string& value);
 std::string toLowerCopy(std::string value);

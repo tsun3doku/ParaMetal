@@ -31,6 +31,16 @@ public:
     VkDescriptorSet getSetAB() const { return setAB; }
     VkDescriptorSet getSetBA() const { return setBA; }
     VkDescriptorSet getSetBB() const { return setBB; }
+    VkBuffer getEdgesAToB() const { return edgesAToB; }
+    VkDeviceSize getEdgesAToBOffset() const { return edgesAToBOffset; }
+    uint32_t getEdgeCountAToB() const { return edgeCountAToB; }
+    VkBuffer getEdgeIndexAToB() const { return edgeIndexAToB; }
+    VkDeviceSize getEdgeIndexAToBOffset() const { return edgeIndexAToBOffset; }
+    VkBuffer getEdgesBToA() const { return edgesBToA; }
+    VkDeviceSize getEdgesBToAOffset() const { return edgesBToAOffset; }
+    uint32_t getEdgeCountBToA() const { return edgeCountBToA; }
+    VkBuffer getEdgeIndexBToA() const { return edgeIndexBToA; }
+    VkDeviceSize getEdgeIndexBToAOffset() const { return edgeIndexBToAOffset; }
 
     bool build(
         VulkanDevice& vulkanDevice,

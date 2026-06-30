@@ -1,4 +1,4 @@
-﻿#include "VoronoiGeoCompute.hpp"
+#include "VoronoiGeoCompute.hpp"
 
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/CommandBufferManager.hpp"
@@ -169,14 +169,22 @@ void VoronoiGeoCompute::dispatch(const PushConstants& pushConstants) {
     }
 
     VkQueue computeQueue = vulkanDevice.getComputeQueue();
-    if (vkQueueSubmit(computeQueue, 1, &submitInfo, fence) != VK_SUCCESS) {
-        std::cerr << "VoronoiGeoCompute: Failed to submit compute work" << std::endl;
+    const VkResult submitResult = vkQueueSubmit(computeQueue, 1, &submitInfo, fence);
+    if (submitResult != VK_SUCCESS) {
+        std::cerr << "VoronoiGeoCompute: Failed to submit compute work VkResult=" << static_cast<int>(submitResult)
+                  << " nodeCount=" << nodeCount
+                  << " workGroupCount=" << workGroupCount
+                  << " pipeline=" << (pipeline != VK_NULL_HANDLE)
+                  << " descriptorSet=" << (descriptorSet != VK_NULL_HANDLE)
+                  << std::endl;
         vkDestroyFence(vulkanDevice.getDevice(), fence, nullptr);
+        std::cerr << "[FREE-CMD] VoronoiGeoCompute::dispatch(submitFail) cmd=" << cmd << std::endl;
         vkFreeCommandBuffers(vulkanDevice.getDevice(), commandPool.getHandle(), 1, &cmd);
         return;
     }
     if (vkWaitForFences(vulkanDevice.getDevice(), 1, &fence, VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
         std::cerr << "VoronoiGeoCompute: Failed while waiting for fence" << std::endl;
+        return;
     }
 
     vkDestroyFence(vulkanDevice.getDevice(), fence, nullptr);

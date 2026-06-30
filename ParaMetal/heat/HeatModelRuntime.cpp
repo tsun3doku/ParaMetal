@@ -1,6 +1,7 @@
 #include "HeatModelRuntime.hpp"
 
 #include "heat/HeatSystemPlayback.hpp"
+#include "runtime/RuntimeProducts.hpp"
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 #include "voronoi/VoronoiAdapters.hpp"
@@ -27,11 +28,63 @@ HeatModelRuntime::HeatModelRuntime(
       renderCommandPool(cmdPool),
       fixedTemperatureValue(initialTemperatureValue) {
     intrinsicVertexCount = intrinsicMesh.vertices.size();
-    initialized = createSurfaceBuffer();
+    initialized = (intrinsicVertexCount > 0);
 }
 
 HeatModelRuntime::~HeatModelRuntime() {
     cleanup();
+}
+
+bool HeatModelRuntime::appendProduct(HeatProduct& product) {
+    if (intrinsicVertexCount == 0 || intrinsicMesh.indices.size() < 3) {
+        return false;
+    }
+
+    const size_t vertexCount = intrinsicVertexCount;
+    std::vector<glm::vec3> positions(vertexCount);
+    for (size_t i = 0; i < vertexCount; ++i) {
+        positions[i] = intrinsicMesh.vertices[i].position;
+    }
+    const std::vector<float> vertexAreas = computeVertexAreas(positions, intrinsicMesh.indices);
+
+    std::vector<heat::SurfacePoint> surfacePoints(vertexCount);
+    for (size_t i = 0; i < vertexCount; ++i) {
+        surfacePoints[i].position    = positions[i];
+        surfacePoints[i].temperature = fixedTemperatureValue;
+        surfacePoints[i].normal      = intrinsicMesh.vertices[i].normal;
+        surfacePoints[i].area        = (i < vertexAreas.size()) ? vertexAreas[i] : 0.0f;
+        surfacePoints[i].color       = glm::vec4(1.0f);
+    }
+
+    const VkDeviceSize storageAlignment = vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
+
+    VkBuffer surfBuf = VK_NULL_HANDLE;
+    VkDeviceSize surfOffset = 0;
+    if (uploadDeviceBuffer(memoryAllocator, renderCommandPool,
+            surfacePoints.data(), sizeof(heat::SurfacePoint) * vertexCount,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT,
+            storageAlignment, surfBuf, surfOffset) != VK_SUCCESS) {
+        return false;
+    }
+
+    std::vector<glm::vec4> zeroGradients(vertexCount, glm::vec4(0.0f));
+    VkBuffer gradBuf = VK_NULL_HANDLE;
+    VkDeviceSize gradOffset = 0;
+    if (uploadDeviceBuffer(memoryAllocator, renderCommandPool,
+            zeroGradients.data(), sizeof(glm::vec4) * vertexCount,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            storageAlignment, gradBuf, gradOffset) != VK_SUCCESS) {
+        memoryAllocator.free(surfBuf, surfOffset);
+        return false;
+    }
+
+    product.modelSurfaceBuffers.push_back(surfBuf);
+    product.modelSurfaceBufferOffsets.push_back(surfOffset);
+    product.modelSurfacePointCounts.push_back(static_cast<uint32_t>(vertexCount));
+    product.modelSurfaceGradientBuffers.push_back(gradBuf);
+    product.modelSurfaceGradientBufferOffsets.push_back(gradOffset);
+
+    return true;
 }
 
 void HeatModelRuntime::setBoundaryCondition(uint32_t bc) {
@@ -48,85 +101,13 @@ void HeatModelRuntime::setMaterialProperties(float density, float specificHeat, 
     this->conductivity = conductivity;
 }
 
-bool HeatModelRuntime::createSurfaceBuffer() {
-    cleanup();
-    initialized = false;
-
-    intrinsicVertexCount = 0;
-
-    const float initialTemperatureValue = fixedTemperatureValue;
-    constexpr float normalEpsilon = 1e-12f;
-
-    std::vector<heat::SurfacePoint> surfacePoints;
-    std::vector<uint32_t> indices;
-    if (intrinsicMesh.vertices.empty() || intrinsicMesh.indices.size() < 3) {
-        return false;
-    }
-
-    intrinsicVertexCount = intrinsicMesh.vertices.size();
-    indices = intrinsicMesh.indices;
-
-    std::vector<glm::vec3> positions(intrinsicVertexCount);
-    for (size_t i = 0; i < intrinsicVertexCount; ++i) {
-        positions[i] = intrinsicMesh.vertices[i].position;
-    }
-    const std::vector<float> vertexAreas = computeVertexAreas(positions, indices);
-
-    surfacePoints.resize(intrinsicVertexCount);
-    for (size_t i = 0; i < intrinsicVertexCount; ++i) {
-        surfacePoints[i].position = positions[i];
-        surfacePoints[i].temperature = initialTemperatureValue;
-        surfacePoints[i].normal = intrinsicMesh.vertices[i].normal;
-        surfacePoints[i].area = (i < vertexAreas.size()) ? vertexAreas[i] : 0.0f;
-        surfacePoints[i].color = glm::vec4(1.0f);
-    }
-
-    if (surfacePoints.empty()) {
-        return false;
-    }
-
-    const VkDeviceSize storageAlignment = vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
-
-    if (uploadDeviceBuffer(
-            memoryAllocator,
-            renderCommandPool,
-            surfacePoints.data(),
-            sizeof(heat::SurfacePoint) * surfacePoints.size(),
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT,
-            storageAlignment,
-            surfaceBuffer,
-            surfaceBufferOffset) != VK_SUCCESS) {
-        return false;
-    }
-
-    const VkDeviceSize gradientBufferSize = sizeof(glm::vec4) * surfacePoints.size();
-    std::vector<glm::vec4> zeroGradients(surfacePoints.size(), glm::vec4(0.0f));
-
-    if (uploadDeviceBuffer(
-            memoryAllocator,
-            renderCommandPool,
-            zeroGradients.data(),
-            gradientBufferSize,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-            storageAlignment,
-            surfaceGradientBuffer,
-            surfaceGradientBufferOffset) != VK_SUCCESS) {
-        return false;
-    }
-
-    initialized = true;
-    return true;
-}
-
 void HeatModelRuntime::cleanup() {
     if (playback) {
         playback->cleanup();
         playback.reset();
     }
 
-    freeBuffer(memoryAllocator, surfaceBuffer, surfaceBufferOffset);
     freeBuffer(memoryAllocator, materialBuffer, materialBufferOffset);
-    freeBuffer(memoryAllocator, surfaceGradientBuffer, surfaceGradientBufferOffset);
 
     gmlsSurfaceStencilBuffer = VK_NULL_HANDLE;
     gmlsSurfaceStencilBufferOffset = 0;
@@ -139,8 +120,10 @@ void HeatModelRuntime::cleanup() {
     surfaceComputeSetB = VK_NULL_HANDLE;
     surfaceGradientComputeSetA = VK_NULL_HANDLE;
     surfaceGradientComputeSetB = VK_NULL_HANDLE;
-    surfaceHistoryComputeSet = VK_NULL_HANDLE;
-    surfaceGradientHistorySet = VK_NULL_HANDLE;
+    surfaceHistoryComputeSetA = VK_NULL_HANDLE;
+    surfaceHistoryComputeSetB = VK_NULL_HANDLE;
+    surfaceGradientHistorySetA = VK_NULL_HANDLE;
+    surfaceGradientHistorySetB = VK_NULL_HANDLE;
 
     cleanupSimulationBuffers();
     initialized = false;
@@ -185,7 +168,11 @@ void HeatModelRuntime::setGMLSSurfaceWeights(
     gmlsSurfaceGradientWeightCount = gradientWeightCount;
 }
 
-void HeatModelRuntime::updateAllDescriptors(
+bool HeatModelRuntime::updateAllDescriptors(
+    VkBuffer surfaceBuffer,
+    VkDeviceSize surfaceBufferOffset,
+    VkBuffer surfaceGradientBuffer,
+    VkDeviceSize surfaceGradientBufferOffset,
     VkDescriptorSetLayout surfaceLayout,
     VkDescriptorSetLayout gradientLayout,
     VkDescriptorPool surfacePool,
@@ -202,8 +189,19 @@ void HeatModelRuntime::updateAllDescriptors(
         gmlsSurfaceWeightBuffer == VK_NULL_HANDLE ||
         gmlsSurfaceGradientWeightBuffer == VK_NULL_HANDLE ||
         surfaceBuffer == VK_NULL_HANDLE ||
-        surfaceGradientBuffer == VK_NULL_HANDLE) {
-        return;
+        surfaceGradientBuffer == VK_NULL_HANDLE ||
+        playbackBuffer == VK_NULL_HANDLE ||
+        historyBuffer == VK_NULL_HANDLE ||
+        simNodeBuffer == VK_NULL_HANDLE ||
+        simGMLSInterfaceBuffer == VK_NULL_HANDLE ||
+        materialBuffer == VK_NULL_HANDLE ||
+        tempBufferA == VK_NULL_HANDLE ||
+        tempBufferB == VK_NULL_HANDLE ||
+        contactAccumulatorBuffer == VK_NULL_HANDLE ||
+        simNodeCount == 0 ||
+        simGMLSInterfaceCount == 0 ||
+        historyBufferFrameCapacity == 0) {
+        return false;
     }
 
     if (forceReallocate) {
@@ -211,8 +209,10 @@ void HeatModelRuntime::updateAllDescriptors(
         surfaceComputeSetB = VK_NULL_HANDLE;
         surfaceGradientComputeSetA = VK_NULL_HANDLE;
         surfaceGradientComputeSetB = VK_NULL_HANDLE;
-        surfaceHistoryComputeSet = VK_NULL_HANDLE;
-        surfaceGradientHistorySet = VK_NULL_HANDLE;
+        surfaceHistoryComputeSetA = VK_NULL_HANDLE;
+        surfaceHistoryComputeSetB = VK_NULL_HANDLE;
+        surfaceGradientHistorySetA = VK_NULL_HANDLE;
+        surfaceGradientHistorySetB = VK_NULL_HANDLE;
         voronoiDescriptorSetA = VK_NULL_HANDLE;
         voronoiDescriptorSetB = VK_NULL_HANDLE;
     }
@@ -237,13 +237,17 @@ void HeatModelRuntime::updateAllDescriptors(
         }
     }
 
-    if (surfaceHistoryComputeSet == VK_NULL_HANDLE || surfaceGradientHistorySet == VK_NULL_HANDLE) {
-        std::vector<VkDescriptorSetLayout> historyLayouts = { surfaceLayout, gradientLayout };
-        VkDescriptorSetAllocateInfo historyAllocInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, nullptr, surfacePool, 2, historyLayouts.data()};
-        VkDescriptorSet historySets[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+    if (surfaceHistoryComputeSetA == VK_NULL_HANDLE || surfaceHistoryComputeSetB == VK_NULL_HANDLE ||
+        surfaceGradientHistorySetA == VK_NULL_HANDLE || surfaceGradientHistorySetB == VK_NULL_HANDLE) {
+
+        std::vector<VkDescriptorSetLayout> historyLayouts = { surfaceLayout, surfaceLayout, gradientLayout, gradientLayout };
+        VkDescriptorSetAllocateInfo historyAllocInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, nullptr, surfacePool, 4, historyLayouts.data()};
+        VkDescriptorSet historySets[4] = { VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE };
         if (vkAllocateDescriptorSets(vulkanDevice.getDevice(), &historyAllocInfo, historySets) == VK_SUCCESS) {
-            surfaceHistoryComputeSet = historySets[0];
-            surfaceGradientHistorySet = historySets[1];
+            surfaceHistoryComputeSetA = historySets[0];
+            surfaceHistoryComputeSetB = historySets[1];
+            surfaceGradientHistorySetA = historySets[2];
+            surfaceGradientHistorySetB = historySets[3];
         }
     }
 
@@ -259,9 +263,9 @@ void HeatModelRuntime::updateAllDescriptors(
 
     if (surfaceComputeSetA == VK_NULL_HANDLE ||
         surfaceGradientComputeSetA == VK_NULL_HANDLE ||
-        surfaceHistoryComputeSet == VK_NULL_HANDLE ||
-        surfaceGradientHistorySet == VK_NULL_HANDLE ||
-        voronoiDescriptorSetA == VK_NULL_HANDLE) return;
+        surfaceHistoryComputeSetA == VK_NULL_HANDLE ||
+        surfaceGradientHistorySetA == VK_NULL_HANDLE ||
+        voronoiDescriptorSetA == VK_NULL_HANDLE) return false;
 
     // Common info
     VkDescriptorBufferInfo surfaceInfo{ surfaceBuffer, surfaceBufferOffset, sizeof(heat::SurfacePoint) * intrinsicVertexCount };
@@ -315,43 +319,43 @@ void HeatModelRuntime::updateAllDescriptors(
         vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(vWrites.size()), vWrites.data(), 0, nullptr);
     }
 
-    // History display sets: bind the full history buffer; per-frame offset updated
-    // separately via updateHistoryDescriptorOffset().
     {
         VkDescriptorBufferInfo historyFrameInfo{ historyBuffer, historyBufferOffset, static_cast<VkDeviceSize>(historyBufferFrameCapacity) * simNodeCount * sizeof(float) };
 
-        std::array<VkWriteDescriptorSet, 4> hTempWrites{};
-        hTempWrites[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, surfaceHistoryComputeSet, 0, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &historyFrameInfo, nullptr};
-        hTempWrites[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, surfaceHistoryComputeSet, 1, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &surfaceInfo, nullptr};
-        hTempWrites[2] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, surfaceHistoryComputeSet, 10, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsStencilInfo, nullptr};
-        hTempWrites[3] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, surfaceHistoryComputeSet, 11, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsValueWeightInfo, nullptr};
-        vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(hTempWrites.size()), hTempWrites.data(), 0, nullptr);
+        const VkDescriptorSet historySets[2] = { surfaceHistoryComputeSetA, surfaceHistoryComputeSetB };
+        const VkDescriptorSet gradHistorySets[2] = { surfaceGradientHistorySetA, surfaceGradientHistorySetB };
+        for (uint32_t pass = 0; pass < 2; ++pass) {
+            std::array<VkWriteDescriptorSet, 4> hTempWrites{};
+            hTempWrites[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, historySets[pass], 0, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &historyFrameInfo, nullptr};
+            hTempWrites[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, historySets[pass], 1, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &surfaceInfo, nullptr};
+            hTempWrites[2] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, historySets[pass], 10, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsStencilInfo, nullptr};
+            hTempWrites[3] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, historySets[pass], 11, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsValueWeightInfo, nullptr};
+            vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(hTempWrites.size()), hTempWrites.data(), 0, nullptr);
 
-        std::array<VkWriteDescriptorSet, 5> hGradWrites{};
-        hGradWrites[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, surfaceGradientHistorySet, 0, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &historyFrameInfo, nullptr};
-        hGradWrites[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, surfaceGradientHistorySet, 1, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &surfaceInfo, nullptr};
-        hGradWrites[2] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, surfaceGradientHistorySet, 2, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gradientInfo, nullptr};
-        hGradWrites[3] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, surfaceGradientHistorySet, 10, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsStencilInfo, nullptr};
-        hGradWrites[4] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, surfaceGradientHistorySet, 12, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsGradientWeightInfo, nullptr};
-        vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(hGradWrites.size()), hGradWrites.data(), 0, nullptr);
+            std::array<VkWriteDescriptorSet, 5> hGradWrites{};
+            hGradWrites[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, gradHistorySets[pass], 0, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &historyFrameInfo, nullptr};
+            hGradWrites[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, gradHistorySets[pass], 1, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &surfaceInfo, nullptr};
+            hGradWrites[2] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, gradHistorySets[pass], 2, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gradientInfo, nullptr};
+            hGradWrites[3] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, gradHistorySets[pass], 10, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsStencilInfo, nullptr};
+            hGradWrites[4] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, gradHistorySets[pass], 12, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsGradientWeightInfo, nullptr};
+            vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(hGradWrites.size()), hGradWrites.data(), 0, nullptr);
+        }
     }
+
+    return true;
 }
 
 bool HeatModelRuntime::createMaterialBuffer(const std::vector<heat::MaterialNode>& materialNodes) {
     if (materialNodes.empty()) return false;
 
-    freeBuffer(memoryAllocator, materialBuffer, materialBufferOffset);
-
-    const VkDeviceSize storageAlignment = vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
-    return uploadDeviceBuffer(
+    return createStorageBuffer(
         memoryAllocator,
-        renderCommandPool,
+        vulkanDevice,
         materialNodes.data(),
         sizeof(heat::MaterialNode) * materialNodes.size(),
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-        storageAlignment,
         materialBuffer,
-        materialBufferOffset
+        materialBufferOffset,
+        nullptr
     ) == VK_SUCCESS;
 }
 
@@ -384,7 +388,7 @@ bool HeatModelRuntime::ensureSimulationBuffers(uint32_t nodeCount) {
     // Allocate Temp A
     auto [handleA, offsetA] = memoryAllocator.allocate(
         nodeCount * sizeof(float),
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     tempBufferA = handleA;
     tempBufferAOffset = offsetA;
@@ -392,14 +396,12 @@ bool HeatModelRuntime::ensureSimulationBuffers(uint32_t nodeCount) {
     // Allocate Temp B
     auto [handleB, offsetB] = memoryAllocator.allocate(
         nodeCount * sizeof(float),
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     tempBufferB = handleB;
     tempBufferBOffset = offsetB;
 
-    // Allocate coupling accumulator — must be zeroed because the voronoi shader
-    // reads contactK/contactKT before the contact gather pass writes to it on
-    // the first substep. Device-local memory has undefined contents on allocation.
+    // Allocate coupling accumulator 
     auto [handleFlux, offsetFlux] = memoryAllocator.allocate(
         nodeCount * sizeof(float) * 2,
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -408,12 +410,21 @@ bool HeatModelRuntime::ensureSimulationBuffers(uint32_t nodeCount) {
     contactAccumulatorBufferOffset = offsetFlux;
 
     if (contactAccumulatorBuffer != VK_NULL_HANDLE) {
-        std::vector<float> accumZero(nodeCount * 2, 0.0f);
-        uploadDeviceBuffer(memoryAllocator, renderCommandPool, accumZero.data(),
-            nodeCount * sizeof(float) * 2,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment,
-            contactAccumulatorBuffer, contactAccumulatorBufferOffset);
+        const VkDeviceSize accumulatorSize = nodeCount * sizeof(float) * 2;
+        VkCommandBuffer cmd = renderCommandPool.beginCommands();
+        if (cmd == VK_NULL_HANDLE) {
+            return false;
+        }
+        vkCmdFillBuffer(cmd, contactAccumulatorBuffer, contactAccumulatorBufferOffset, accumulatorSize, 0u);
+        if (!renderCommandPool.endCommands(cmd)) {
+            std::cerr << "[HEAT-UPLOAD] contactAccumulatorFill failed"
+                      << " simNodeCount=" << nodeCount
+                      << " dstBuffer=" << contactAccumulatorBuffer
+                      << " dstOffset=" << contactAccumulatorBufferOffset
+                      << " size=" << accumulatorSize
+                      << std::endl;
+            return false;
+        }
     }
 
     return tempBufferA != VK_NULL_HANDLE && tempBufferB != VK_NULL_HANDLE && contactAccumulatorBuffer != VK_NULL_HANDLE;
@@ -429,9 +440,13 @@ void HeatModelRuntime::setStencilKDTree(std::unique_ptr<StencilKDTree> kdTree) {
     stencilKDTree = std::move(kdTree);
 }
 
-void HeatModelRuntime::updateHistoryDescriptorOffset(uint32_t displayFrame, VkDeviceSize frameStride) {
-    if (surfaceHistoryComputeSet == VK_NULL_HANDLE ||
-        surfaceGradientHistorySet == VK_NULL_HANDLE ||
+void HeatModelRuntime::updateHistoryDescriptorOffset(uint32_t displayFrame, VkDeviceSize frameStride, uint32_t currentFrame) {
+    const bool useB = (currentFrame % 2) == 1;
+    const VkDescriptorSet historySet = useB ? surfaceHistoryComputeSetB : surfaceHistoryComputeSetA;
+    const VkDescriptorSet gradientSet = useB ? surfaceGradientHistorySetB : surfaceGradientHistorySetA;
+
+    if (historySet == VK_NULL_HANDLE ||
+        gradientSet == VK_NULL_HANDLE ||
         historyBuffer == VK_NULL_HANDLE ||
         simNodeCount == 0) {
         return;
@@ -447,7 +462,7 @@ void HeatModelRuntime::updateHistoryDescriptorOffset(uint32_t displayFrame, VkDe
 
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = surfaceHistoryComputeSet;
+    write.dstSet = historySet;
     write.dstBinding = 0;
     write.dstArrayElement = 0;
     write.descriptorCount = 1;
@@ -456,6 +471,6 @@ void HeatModelRuntime::updateHistoryDescriptorOffset(uint32_t displayFrame, VkDe
 
     vkUpdateDescriptorSets(vulkanDevice.getDevice(), 1, &write, 0, nullptr);
 
-    write.dstSet = surfaceGradientHistorySet;
+    write.dstSet = gradientSet;
     vkUpdateDescriptorSets(vulkanDevice.getDevice(), 1, &write, 0, nullptr);
 }

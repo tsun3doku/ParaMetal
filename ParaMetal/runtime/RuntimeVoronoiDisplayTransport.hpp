@@ -1,7 +1,8 @@
 #pragma once
 
 #include "nodegraph/NodeGraphProductTypes.hpp"
-#include "runtime/RuntimeECS.hpp"
+#include "runtime/RuntimePackageManager.hpp"
+#include "runtime/RuntimeProductManager.hpp"
 #include "runtime/VoronoiDisplayController.hpp"
 
 #include <iostream>
@@ -14,37 +15,30 @@ public:
         controller = updatedController;
     }
 
-    void setECSRegistry(ECSRegistry* updatedRegistry) {
-        ecsRegistry = updatedRegistry;
+    void setManagers(RuntimePackageManager*, RuntimeProductManager* updatedProducts) {
+        products = updatedProducts;
     }
 
-    void setVisibleKeys(const std::unordered_set<uint64_t>* keys) {
-        visibleKeys = keys;
-    }
-
-    void sync(const ECSRegistry& registry) {
+    void sync(const RuntimePackageManager& registry, const std::unordered_set<uint64_t>& visibleKeys) {
         if (!controller) {
             return;
         }
 
         std::unordered_set<uint64_t> nextSocketKeys;
-        auto view = registry.view<VoronoiPackage>(entt::exclude<Stale>);
-        for (auto entity : view) {
-            uint64_t socketKey = static_cast<uint64_t>(entity);
-            if (visibleKeys && visibleKeys->find(socketKey) == visibleKeys->end()) {
-                continue;
+        registry.forEach<VoronoiPackage>([&](uint64_t socketKey, const VoronoiPackage& package) {
+            if (visibleKeys.find(socketKey) == visibleKeys.end()) {
+                return;
             }
 
-            const auto& package = registry.get<VoronoiPackage>(entity);
             VoronoiDisplayController::Config config{};
             if (!tryBuildConfig(socketKey, package, config)) {
                 controller->remove(socketKey);
-                continue;
+                return;
             }
 
             controller->apply(socketKey, config);
             nextSocketKeys.insert(socketKey);
-        }
+        });
 
         for (uint64_t socketKey : activeSocketKeys) {
             if (nextSocketKeys.find(socketKey) == nextSocketKeys.end()) {
@@ -63,15 +57,18 @@ public:
     }
 
 private:
-    bool tryBuildConfig(uint64_t socketKey, const VoronoiPackage& package, VoronoiDisplayController::Config& outConfig) const {
-        if (!controller || !ecsRegistry || socketKey == 0) {
+    bool tryBuildConfig(
+        uint64_t socketKey,
+        const VoronoiPackage& package,
+        VoronoiDisplayController::Config& outConfig) const {
+        if (!controller || !products || socketKey == 0) {
             return false;
         }
         if (!package.display.showVoronoi && !package.display.showPoints) {
             return false;
         }
 
-        const VoronoiProduct* computeProduct = tryGetProduct<VoronoiProduct>(*ecsRegistry, socketKey);
+        const VoronoiProduct* computeProduct = products->resolve<VoronoiProduct>(package.productHandle);
         if (!computeProduct) {
             std::cerr << "[VoronoiDisplayTransport] no computeProduct for socketKey=" << socketKey << std::endl;
             return false;
@@ -104,8 +101,8 @@ private:
         outConfig.occupancyPointBufferOffset = computeProduct->occupancyPointBufferOffset;
         outConfig.occupancyPointCount = computeProduct->occupancyPointCount;
         if (outConfig.showVoronoi) {
-            const ModelProduct* modelProduct = tryGetProduct<ModelProduct>(*ecsRegistry, package.modelMeshHandle.key);
-            const RemeshProduct* remeshProduct = tryGetProduct<RemeshProduct>(*ecsRegistry, package.modelRemeshHandle.key);
+            const ModelProduct* modelProduct = products->resolve<ModelProduct>(package.modelProduct);
+            const RemeshProduct* remeshProduct = products->resolve<RemeshProduct>(package.remeshProduct);
             if (!modelProduct) {
                 std::cerr << "[VoronoiDisplayTransport] missing ModelProduct for modelMeshHandle=" << package.modelMeshHandle.key << std::endl;
                 return false;
@@ -147,7 +144,6 @@ private:
     }
 
     VoronoiDisplayController* controller = nullptr;
-    ECSRegistry* ecsRegistry = nullptr;
-    const std::unordered_set<uint64_t>* visibleKeys = nullptr;
+    RuntimeProductManager* products = nullptr;
     std::unordered_set<uint64_t> activeSocketKeys;
 };

@@ -12,13 +12,13 @@ const char* NodeHeatModel::typeId() const {
     return nodegraphtypes::HeatModel;
 }
 
-void NodeHeatModel::execute(NodeGraphKernelContext& context) const {
-    const HeatModelNodeParams params = readHeatModelNodeParams(context.node);
-    const NodeGraphSocket* meshSocket = context.node.input(NodeGraphValueType::Remesh);
-    const EvaluatedSocketValue* inputMesh =
-        meshSocket ? readEvaluatedInput(context.node, meshSocket->id, context.executionState) : nullptr;
-    const NodeDataBlock* inputMeshValue = readInputValue(inputMesh);
-    NodePayloadRegistry* const payloadRegistry = context.executionState.services.payloadRegistry;
+void NodeHeatModel::execute(NodeKernelEval& eval) const {
+    const HeatModelNodeParams params = readHeatModelNodeParams(eval.node);
+    const std::size_t meshSocketIndex = inputIndexOf(eval.node, NodeGraphValueType::Remesh);
+    const NodeDataBlock* inputMeshValue =
+        (meshSocketIndex < eval.inputs.size() && !eval.inputs[meshSocketIndex].empty())
+            ? eval.inputs[meshSocketIndex].front() : nullptr;
+    NodePayloadRegistry* const payloadRegistry = eval.runtime.payloadRegistry;
 
     NodeDataHandle meshHandle{};
     const bool hasValidInput = payloadRegistry && inputMeshValue && inputMeshValue->payloadHandle.key != 0;
@@ -27,10 +27,10 @@ void NodeHeatModel::execute(NodeGraphKernelContext& context) const {
     }
 
     for (std::size_t outputIndex = 0;
-         outputIndex < context.outputs.size() && outputIndex < context.node.outputs.size();
+         outputIndex < eval.outputs.size() && outputIndex < eval.node.outputs.size();
          ++outputIndex) {
-        NodeDataBlock& outputValue = context.outputs[outputIndex];
-        const NodeGraphSocket& outputSocket = context.node.outputs[outputIndex];
+        NodeDataBlock& outputValue = eval.outputs[outputIndex];
+        const NodeGraphSocket& outputSocket = eval.node.outputs[outputIndex];
         outputValue = {};
         outputValue.dataType = outputSocket.contract.producedPayloadType;
 
@@ -47,17 +47,17 @@ void NodeHeatModel::execute(NodeGraphKernelContext& context) const {
         payload.initialTemperature = static_cast<float>(params.initialTemperature);
         payload.boundaryCondition = params.boundaryCondition;
         payload.fixedTemperatureValue = static_cast<float>(params.fixedTemperatureValue);
-        const uint64_t payloadKey = NodeSocketKey(context.node.id, outputSocket.id);
-        outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, context.outputHashes);
+        const uint64_t payloadKey = NodeSocketKey(eval.node.id, outputSocket.id);
+        outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, eval.outputHashes);
         populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 
-HashValues NodeHeatModel::computeOutputHashes(const NodeGraphKernelHashContext& context) const {
-    const HeatModelNodeParams params = readHeatModelNodeParams(context.node);
+HashValues NodeHeatModel::computeOutputHashes(const NodeKernelHash& hash) const {
+    const HeatModelNodeParams params = readHeatModelNodeParams(hash.node);
     uint64_t geometryHash = HashBuilder::start();
     HashBuilder::combineString(geometryHash, nodegraphtypes::HeatModel);
-    HashNodeCache::combineSocket(geometryHash, context, NodeGraphValueType::Remesh, HashDomain::Geometry);
+    HashNodeCache::combineSocket(geometryHash, hash, NodeGraphValueType::Remesh, HashDomain::Geometry);
 
     uint64_t thermalHash = HashBuilder::start();
     HashBuilder::combineFloat(thermalHash, static_cast<float>(params.density));

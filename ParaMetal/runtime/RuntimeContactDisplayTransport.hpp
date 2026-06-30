@@ -2,7 +2,8 @@
 
 #include "nodegraph/NodeGraphProductTypes.hpp"
 #include "runtime/ContactDisplayController.hpp"
-#include "runtime/RuntimeECS.hpp"
+#include "runtime/RuntimePackageManager.hpp"
+#include "runtime/RuntimeProductManager.hpp"
 
 #include <unordered_set>
 #include <vector>
@@ -13,37 +14,30 @@ public:
         controller = updatedController;
     }
 
-    void setECSRegistry(ECSRegistry* updatedRegistry) {
-        ecsRegistry = updatedRegistry;
+    void setManagers(RuntimePackageManager*, RuntimeProductManager* updatedProducts) {
+        products = updatedProducts;
     }
 
-    void setVisibleKeys(const std::unordered_set<uint64_t>* keys) {
-        visibleKeys = keys;
-    }
-
-    void sync(const ECSRegistry& registry) {
+    void sync(const RuntimePackageManager& registry, const std::unordered_set<uint64_t>& visibleKeys) {
         if (!controller) {
             return;
         }
 
         std::unordered_set<uint64_t> nextSocketKeys;
-        auto view = registry.view<ContactPackage>(entt::exclude<Stale>);
-        for (auto entity : view) {
-            uint64_t socketKey = static_cast<uint64_t>(entity);
-            if (visibleKeys && visibleKeys->find(socketKey) == visibleKeys->end()) {
-                continue;
+        registry.forEach<ContactPackage>([&](uint64_t socketKey, const ContactPackage& package) {
+            if (visibleKeys.find(socketKey) == visibleKeys.end()) {
+                return;
             }
 
-            const auto& package = registry.get<ContactPackage>(entity);
             ContactDisplayController::Config config{};
             if (!tryBuildConfig(socketKey, package, config)) {
                 controller->remove(socketKey);
-                continue;
+                return;
             }
 
             controller->apply(socketKey, config);
             nextSocketKeys.insert(socketKey);
-        }
+        });
 
         for (uint64_t socketKey : activeSocketKeys) {
             if (nextSocketKeys.find(socketKey) == nextSocketKeys.end()) {
@@ -62,15 +56,18 @@ public:
     }
 
 private:
-    bool tryBuildConfig(uint64_t socketKey, const ContactPackage& package, ContactDisplayController::Config& outConfig) const {
-        if (!controller || !ecsRegistry || socketKey == 0) {
+    bool tryBuildConfig(
+        uint64_t socketKey,
+        const ContactPackage& package,
+        ContactDisplayController::Config& outConfig) const {
+        if (!controller || !products || socketKey == 0) {
             return false;
         }
         if (!package.display.showContactLines) {
             return false;
         }
 
-        const ContactProduct* computeProduct = tryGetProduct<ContactProduct>(*ecsRegistry, socketKey);
+        const ContactProduct* computeProduct = products->resolve<ContactProduct>(package.productHandle);
         if (!computeProduct || !computeProduct->isValid()) {
             return false;
         }
@@ -88,7 +85,6 @@ private:
     }
 
     ContactDisplayController* controller = nullptr;
-    ECSRegistry* ecsRegistry = nullptr;
-    const std::unordered_set<uint64_t>* visibleKeys = nullptr;
+    RuntimeProductManager* products = nullptr;
     std::unordered_set<uint64_t> activeSocketKeys;
 };

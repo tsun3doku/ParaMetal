@@ -1,5 +1,8 @@
 #include "RemeshController.hpp"
 
+#include "hash/HashProduct.hpp"
+#include "runtime/RuntimeProducts.hpp"
+#include "util/GeometryUtils.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 
 RemeshController::OperatingScope::OperatingScope(std::atomic<bool>& isOperating)
@@ -22,39 +25,97 @@ RemeshController::RemeshController(
       remesher(vulkanDevice, memoryAllocator) {
 }
 
-void RemeshController::configure(const Config& config) {
-    if (config.socketKey == 0) {
+void RemeshController::apply(uint64_t socketKey, const Config& config) {
+    if (socketKey == 0) {
         return;
     }
 
-    auto& system = activeSystems[config.socketKey];
+    auto& system = activeSystems[socketKey];
     if (!system) {
         system = std::make_unique<RemeshSystem>(remesher, vulkanDevice, resourceManager);
     }
-
-    const auto configIt = configuredConfigs.find(config.socketKey);
-    if (configIt != configuredConfigs.end() && configIt->second.computeHash == config.computeHash) {
-        return;
-    }
-
-    configuredConfigs[config.socketKey] = config;
 
     system->setSourceGeometry(config.pointPositions, config.triangleIndices);
     system->setParams(config.iterations, config.minAngleDegrees, config.maxEdgeLength, config.stepSize);
     system->setRuntimeModelId(config.runtimeModelId);
 
     OperatingScope operatingScope(isOperating);
-    if (!system->ensureConfigured() && !system->isReady()) {
-        activeSystems.erase(config.socketKey);
+    if (!system->remesh()) {
+        activeSystems.erase(socketKey);
     }
 }
 
-void RemeshController::disable(uint64_t socketKey) {
+bool RemeshController::buildProduct(uint64_t socketKey, RemeshProduct& product) {
+    if (socketKey == 0) {
+        return false;
+    }
+
+    const auto it = activeSystems.find(socketKey);
+    if (it == activeSystems.end() || !it->second) {
+        return false;
+    }
+    RemeshSystem& system = *it->second;
+
+    product = {};
+
+    // CPU data
+    product.runtimeModelId = system.runtimeModelId();
+    product.geometryPositions = toVec3Array(system.sourcePositions());
+    product.geometryTriangleIndices = system.sourceTriangles();
+    product.intrinsicMesh = system.intrinsicMesh();
+
+    // GPU resources
+    const SupportingHalfedge::GPUResources gpu = system.takeIntrinsicGpuResources();
+
+    product.intrinsicTriangleCount = gpu.triangleCount;
+    product.intrinsicVertexCount = gpu.vertexCount;
+    product.averageTriangleArea = gpu.averageTriangleArea;
+
+    product.intrinsicTriangleBuffer = gpu.intrinsicTriangleBuffer;
+    product.intrinsicTriangleBufferOffset = gpu.triangleGeometryOffset;
+    product.intrinsicVertexBuffer = gpu.intrinsicVertexBuffer;
+    product.intrinsicVertexBufferOffset = gpu.vertexGeometryOffset;
+
+    product.supportingHalfedgeBuffer = gpu.bufferS;
+    product.supportingHalfedgeOffset = gpu.offsetS;
+    product.supportingHalfedgeView = gpu.viewS;
+    product.supportingAngleBuffer = gpu.bufferA;
+    product.supportingAngleOffset = gpu.offsetA;
+    product.supportingAngleView = gpu.viewA;
+    product.halfedgeBuffer = gpu.bufferH;
+    product.halfedgeOffset = gpu.offsetH;
+    product.halfedgeView = gpu.viewH;
+    product.edgeBuffer = gpu.bufferE;
+    product.edgeOffset = gpu.offsetE;
+    product.edgeView = gpu.viewE;
+    product.triangleBuffer = gpu.bufferT;
+    product.triangleOffset = gpu.offsetT;
+    product.triangleView = gpu.viewT;
+    product.lengthBuffer = gpu.bufferL;
+    product.lengthOffset = gpu.offsetL;
+    product.lengthView = gpu.viewL;
+    product.inputHalfedgeBuffer = gpu.bufferHInput;
+    product.inputHalfedgeOffset = gpu.offsetHInput;
+    product.inputHalfedgeView = gpu.viewHInput;
+    product.inputEdgeBuffer = gpu.bufferEInput;
+    product.inputEdgeOffset = gpu.offsetEInput;
+    product.inputEdgeView = gpu.viewEInput;
+    product.inputTriangleBuffer = gpu.bufferTInput;
+    product.inputTriangleOffset = gpu.offsetTInput;
+    product.inputTriangleView = gpu.viewTInput;
+    product.inputLengthBuffer = gpu.bufferLInput;
+    product.inputLengthOffset = gpu.offsetLInput;
+    product.inputLengthView = gpu.viewLInput;
+
+    HashProduct::seal(product);
+    return product.isValid();
+}
+
+void RemeshController::remove(uint64_t socketKey) {
     if (socketKey == 0) {
         return;
     }
 
-    configuredConfigs.erase(socketKey);
     auto it = activeSystems.find(socketKey);
     if (it != activeSystems.end()) {
         if (it->second) {
@@ -64,8 +125,7 @@ void RemeshController::disable(uint64_t socketKey) {
     }
 }
 
-void RemeshController::disable() {
-    configuredConfigs.clear();
+void RemeshController::disableAll() {
     for (auto& [socketKey, system] : activeSystems) {
         (void)socketKey;
         if (system) {
@@ -73,14 +133,4 @@ void RemeshController::disable() {
         }
     }
     activeSystems.clear();
-}
-
-
-const RemeshSystem* RemeshController::getSystem(uint64_t socketKey) const {
-    const auto systemIt = activeSystems.find(socketKey);
-    if (systemIt == activeSystems.end() || !systemIt->second) {
-        return nullptr;
-    }
-
-    return systemIt->second.get();
 }

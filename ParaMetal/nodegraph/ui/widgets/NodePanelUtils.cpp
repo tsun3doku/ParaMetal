@@ -2,7 +2,7 @@
 #include "nodegraph/NodeGraphRegistry.hpp"
 #include "nodegraph/NodeGraphUtils.hpp"
 
-#include "nodegraph/NodeGraphBridge.hpp"
+#include "nodegraph/NodeGraph.hpp"
 #include "nodegraph/NodeGraphEditor.hpp"
 #include "nodegraph/NodeModelParams.hpp"
 
@@ -13,15 +13,15 @@
 
 namespace NodePanelUtils {
 
-bool canEditNode(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId) {
-    return nodeGraphBridge && nodeId.isValid();
+bool canEditNode(NodeGraph* graph, NodeGraphNodeId nodeId) {
+    return graph && nodeId.isValid();
 }
 
-bool loadNode(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, NodeGraphNode& outNode) {
-    if (!canEditNode(nodeGraphBridge, nodeId)) {
+bool loadNode(NodeGraph* graph, NodeGraphNodeId nodeId, NodeGraphNode& outNode) {
+    if (!canEditNode(graph, nodeId)) {
         return false;
     }
-    return nodeGraphBridge->getNode(nodeId, outNode);
+    return graph->getNode(nodeId, outNode);
 }
 
 bool readBoolParam(const NodeGraphNode& node, uint32_t parameterId, bool defaultValue) {
@@ -64,17 +64,17 @@ int readEnumParam(const NodeGraphNode& node, uint32_t parameterId, int defaultVa
     return static_cast<int>(param->intValue);
 }
 
-bool writeParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, const NodeGraphParamValue& parameter) {
-    if (!nodeGraphBridge) {
+bool writeParam(NodeGraph* graph, NodeGraphNodeId nodeId, const NodeGraphParamValue& parameter) {
+    if (!graph) {
         return false;
     }
 
-    NodeGraphEditor editor(*nodeGraphBridge);
+    NodeGraphEditor editor(*graph);
     return editor.setNodeParameter(nodeId, parameter);
 }
 
-bool writeBoolParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uint32_t parameterId, bool value) {
-    if (!nodeGraphBridge) {
+bool writeBoolParam(NodeGraph* graph, NodeGraphNodeId nodeId, uint32_t parameterId, bool value) {
+    if (!graph) {
         return false;
     }
 
@@ -82,11 +82,11 @@ bool writeBoolParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, ui
     parameter.id = parameterId;
     parameter.type = NodeGraphParamType::Bool;
     parameter.boolValue = value;
-    return writeParam(nodeGraphBridge, nodeId, parameter);
+    return writeParam(graph, nodeId, parameter);
 }
 
-bool writeFloatParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uint32_t parameterId, double value) {
-    if (!nodeGraphBridge) {
+bool writeFloatParam(NodeGraph* graph, NodeGraphNodeId nodeId, uint32_t parameterId, double value) {
+    if (!graph) {
         return false;
     }
 
@@ -94,11 +94,11 @@ bool writeFloatParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, u
     parameter.id = parameterId;
     parameter.type = NodeGraphParamType::Float;
     parameter.floatValue = value;
-    return writeParam(nodeGraphBridge, nodeId, parameter);
+    return writeParam(graph, nodeId, parameter);
 }
 
-bool writeIntParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uint32_t parameterId, int64_t value) {
-    if (!nodeGraphBridge) {
+bool writeIntParam(NodeGraph* graph, NodeGraphNodeId nodeId, uint32_t parameterId, int64_t value) {
+    if (!graph) {
         return false;
     }
 
@@ -106,11 +106,11 @@ bool writeIntParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uin
     parameter.id = parameterId;
     parameter.type = NodeGraphParamType::Int;
     parameter.intValue = value;
-    return writeParam(nodeGraphBridge, nodeId, parameter);
+    return writeParam(graph, nodeId, parameter);
 }
 
-bool writeStringParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uint32_t parameterId, const std::string& value) {
-    if (!nodeGraphBridge) {
+bool writeStringParam(NodeGraph* graph, NodeGraphNodeId nodeId, uint32_t parameterId, const std::string& value) {
+    if (!graph) {
         return false;
     }
 
@@ -118,11 +118,11 @@ bool writeStringParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, 
     parameter.id = parameterId;
     parameter.type = NodeGraphParamType::String;
     parameter.stringValue = value;
-    return writeParam(nodeGraphBridge, nodeId, parameter);
+    return writeParam(graph, nodeId, parameter);
 }
 
-bool writeEnumParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, uint32_t parameterId, int value) {
-    if (!nodeGraphBridge) {
+bool writeEnumParam(NodeGraph* graph, NodeGraphNodeId nodeId, uint32_t parameterId, int value) {
+    if (!graph) {
         return false;
     }
 
@@ -130,7 +130,7 @@ bool writeEnumParam(NodeGraphBridge* nodeGraphBridge, NodeGraphNodeId nodeId, ui
     parameter.id = parameterId;
     parameter.type = NodeGraphParamType::Enum;
     parameter.intValue = value;
-    return writeParam(nodeGraphBridge, nodeId, parameter);
+    return writeParam(graph, nodeId, parameter);
 }
 
 std::string trimCopy(const std::string& value) {
@@ -241,7 +241,7 @@ void collectUpstreamModelPaths(
     }
 
     for (const NodeGraphSocket& inputSocket : node->inputs) {
-        const NodeGraphEdge* inputEdge = state.incomingEdge(node->id, inputSocket.id);
+        const NodeGraphEdge* inputEdge = state.edges.incomingEdge(node->id, inputSocket.id);
         if (!inputEdge) {
             continue;
         }
@@ -272,7 +272,7 @@ void findUpstreamModelNodeIds(
     }
 
     for (const NodeGraphSocket& inputSocket : node->inputs) {
-        const NodeGraphEdge* inputEdge = state.incomingEdge(node->id, inputSocket.id);
+        const NodeGraphEdge* inputEdge = state.edges.incomingEdge(node->id, inputSocket.id);
         if (!inputEdge) {
             continue;
         }

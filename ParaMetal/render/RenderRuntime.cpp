@@ -84,6 +84,7 @@ bool RenderRuntime::initializeBase(VkFormat swapChainFormat, VkExtent2D extent, 
     if (!sceneRenderer->isReady()) {
         return false;
     }
+    sceneRenderer->updateDescriptorSets();
 
     modelSelection = std::make_unique<ModelSelection>(
         vulkanDevice,
@@ -157,6 +158,7 @@ void RenderRuntime::renderFrame(const render::RenderFlags& flags, const std::vec
         frameController->drawFrame(flags, computePasses);
     }
 }
+
 
 void RenderRuntime::cleanupSwapChain() {
     if (frameController) {

@@ -57,6 +57,26 @@ void VoronoiOverlayRenderer::rebuildBindings() {
             continue;
         }
 
+        if (config.runtimeModelId == 0 ||
+            config.indexCount == 0 ||
+            config.seedPositionBuffer == VK_NULL_HANDLE ||
+            config.neighborIndicesBuffer == VK_NULL_HANDLE ||
+            config.candidateBuffer == VK_NULL_HANDLE ||
+            config.vertexBuffer == VK_NULL_HANDLE ||
+            config.indexBuffer == VK_NULL_HANDLE ||
+            config.supportingHalfedgeView == VK_NULL_HANDLE ||
+            config.supportingAngleView == VK_NULL_HANDLE ||
+            config.halfedgeView == VK_NULL_HANDLE ||
+            config.edgeView == VK_NULL_HANDLE ||
+            config.triangleView == VK_NULL_HANDLE ||
+            config.lengthView == VK_NULL_HANDLE ||
+            config.inputHalfedgeView == VK_NULL_HANDLE ||
+            config.inputEdgeView == VK_NULL_HANDLE ||
+            config.inputTriangleView == VK_NULL_HANDLE ||
+            config.inputLengthView == VK_NULL_HANDLE) {
+            continue;
+        }
+
         VoronoiRenderer::VoronoiRenderBinding binding{};
         binding.bindingKey = config.bindingKey != 0 ? config.bindingKey : socketKey;
         binding.runtimeModelId = config.runtimeModelId;
@@ -84,10 +104,6 @@ void VoronoiOverlayRenderer::rebuildBindings() {
         binding.indexCount = config.indexCount;
         binding.modelMatrix = config.modelMatrix;
         voronoiBindings.push_back(binding);
-    }
-
-    if (voronoiRenderer && initialized) {
-        voronoiRenderer->updateDescriptors(voronoiBindings, maxFramesInFlight, true);
     }
 }
 

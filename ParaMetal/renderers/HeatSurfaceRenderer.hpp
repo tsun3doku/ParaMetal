@@ -29,32 +29,25 @@ public:
 
     void initialize(VkRenderPass renderPass, uint32_t maxFramesInFlight);
     void cleanup();
-    void updateDescriptors(const std::vector<SurfaceRenderBinding>& surfaces, uint32_t maxFramesInFlight, bool forceReallocate);
-    void render(VkCommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<SurfaceRenderBinding>& surfaces) const;
+    void render(VkCommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<SurfaceRenderBinding>& surfaces);
 
 private:
     bool createDescriptorPool(uint32_t maxFramesInFlight);
     bool createDescriptorSetLayout();
     bool createPipeline(VkRenderPass renderPass);
     void drawModel(VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet, const SurfaceRenderBinding& binding) const;
-    bool updateDescriptorSetVector(
-        const std::array<VkBufferView, 11>& bufferViews,
-        VkBuffer surfaceBuffer,
-        VkDeviceSize surfaceBufferOffset,
-        uint32_t maxFramesInFlight,
-        std::vector<VkDescriptorSet>& targetSets,
-        bool forceReallocate);
+    
+    VkDescriptorSet allocateDescriptorSet(VkDescriptorPool pool);
+    void updateDescriptorSet(VkDescriptorSet descriptorSet, uint32_t frameIndex, const SurfaceRenderBinding& binding);
 
     VulkanDevice& vulkanDevice;
     UniformBufferManager& uniformBufferManager;
 
-    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
+    std::vector<VkDescriptorPool> descriptorPools;
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
 
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
-
-    std::unordered_map<uint32_t, std::vector<VkDescriptorSet>> surfaceDescriptorSets;
 
     bool initialized = false;
 };

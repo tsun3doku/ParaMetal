@@ -3,7 +3,7 @@
 #include "nodegraph/NodeGraphRegistry.hpp"
 #include "nodegraph/NodeGraphUtils.hpp"
 
-#include "nodegraph/NodeGraphBridge.hpp"
+#include "nodegraph/NodeGraph.hpp"
 #include "nodegraph/NodeGraphDebugCache.hpp"
 #include "NodeContactPanel.hpp"
 #include "NodeHeatModelPanel.hpp"
@@ -43,18 +43,18 @@ NodePanel::NodePanel(QWidget* parent)
     nodegraphwidgets::applyNodePanelStyle(this);
 }
 
-void NodePanel::bind(NodeGraphBridge* nodeGraphBridgePtr, const RuntimeQuery* runtimeQueryPtr) {
-    nodeGraphBridge = nodeGraphBridgePtr;
+void NodePanel::bind(NodeGraph* graphPtr, const RuntimeQuery* runtimeQueryPtr) {
+    graph = graphPtr;
     runtimeQuery = runtimeQueryPtr;
-    groupPanel->bind(nodeGraphBridgePtr);
-    modelPanel->bind(nodeGraphBridgePtr);
-    transformPanel->bind(nodeGraphBridgePtr);
-    remeshPanel->bind(nodeGraphBridgePtr);
-    voronoiPanel->bind(nodeGraphBridgePtr);
-    contactPanel->bind(nodeGraphBridgePtr);
-    heatModelPanel->bind(nodeGraphBridgePtr);
-    heatSolverPanel->bind(nodeGraphBridgePtr, runtimeQueryPtr);
-    pointsPanel->bind(nodeGraphBridgePtr);
+    groupPanel->bind(graphPtr);
+    modelPanel->bind(graphPtr);
+    transformPanel->bind(graphPtr);
+    remeshPanel->bind(graphPtr);
+    voronoiPanel->bind(graphPtr);
+    contactPanel->bind(graphPtr);
+    heatModelPanel->bind(graphPtr);
+    heatSolverPanel->bind(graphPtr, runtimeQueryPtr);
+    pointsPanel->bind(graphPtr);
 
     if (isVisible() && currentNodeId.isValid()) {
         setNode(currentNodeId);
@@ -152,19 +152,19 @@ static void appendSocketDebugText(std::ostringstream& stream, const NodeGraphRun
 }
 
 bool NodePanel::setNode(NodeGraphNodeId nodeId) {
-    if (!nodeGraphBridge) {
+    if (!graph) {
         return false;
     }
 
     NodeGraphNode node{};
-    if (!nodeGraphBridge->getNode(nodeId, node)) {
+    if (!graph->getNode(nodeId, node)) {
         return false;
     }
 
     currentNodeId = nodeId;
     currentNodeTypeId = getNodeTypeId(node.typeId);
 
-    headerTitleLabel->setText(nodeTypeDisplayName(currentNodeTypeId, nodeGraphBridge ? &nodeGraphBridge->getRegistry() : nullptr));
+    headerTitleLabel->setText(nodeTypeDisplayName(currentNodeTypeId, graph ? &graph->getRegistry() : nullptr));
     subtitleLabel->setText(nodeTypeDescription(currentNodeTypeId));
     statusLabel->clear();
 

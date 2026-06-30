@@ -34,11 +34,13 @@ public:
     uint32_t getSimNodeCount() const { return simNodeCount; }
     VkBuffer getSimNodeBuffer() const { return simNodeBuffer; }
     VkDeviceSize getSimNodeBufferOffset() const { return simNodeBufferOffset; }
+    VkDeviceSize getSimNodeBufferSize() const { return simNodeBufferSize; }
     VkBuffer getSimGMLSInterfaceBuffer() const { return simGMLSInterfaceBuffer; }
     VkDeviceSize getSimGMLSInterfaceBufferOffset() const { return simGMLSInterfaceBufferOffset; }
     uint32_t getSimGMLSInterfaceCount() const { return simGMLSInterfaceCount; }
     const std::vector<uint32_t>& getVoronoiToSim() const { return voronoiToSim; }
     const std::vector<uint32_t>& getSimToVoronoi() const { return simToVoronoi; }
+    const std::vector<float>& getSimNodeVolumes() const { return simNodeVolumes; }
 
     VoronoiResources& resourcesRef() { return resources; }
     const VoronoiResources& resourcesRef() const { return resources; }
@@ -114,9 +116,11 @@ private:
     std::vector<std::array<glm::vec4, 3>> meshTriangles;
     std::vector<uint32_t> voronoiToSim;
     std::vector<uint32_t> simToVoronoi;
+    std::vector<float> simNodeVolumes;
     uint32_t simNodeCount = 0;
     VkBuffer simNodeBuffer = VK_NULL_HANDLE;
     VkDeviceSize simNodeBufferOffset = 0;
+    VkDeviceSize simNodeBufferSize = 0;
     VkBuffer simGMLSInterfaceBuffer = VK_NULL_HANDLE;
     VkDeviceSize simGMLSInterfaceBufferOffset = 0;
     uint32_t simGMLSInterfaceCount = 0;

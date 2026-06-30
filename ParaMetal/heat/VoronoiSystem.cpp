@@ -15,14 +15,14 @@ VoronoiSystem::VoronoiSystem(
     MemoryAllocator& memoryAllocator,
     ModelRegistry& resourceManager,
     uint32_t maxFramesInFlight,
-    CommandPool& renderCommandPool)
+    CommandPool& commandPool)
     : vulkanDevice(vulkanDevice),
       memoryAllocator(memoryAllocator),
       resourceManager(resourceManager),
-      renderCommandPool(renderCommandPool),
+      commandPool(commandPool),
       maxFramesInFlight(maxFramesInFlight) {
 
-    voronoiSystemBuildStage = std::make_unique<VoronoiSystemBuildStage>(vulkanDevice, memoryAllocator, runtime.resourcesRef(), renderCommandPool);
+    voronoiSystemBuildStage = std::make_unique<VoronoiSystemBuildStage>(vulkanDevice, memoryAllocator, runtime.resourcesRef(), commandPool);
     initializeVoronoiCandidateCompute();
 
     initialized = true;
@@ -49,7 +49,7 @@ void VoronoiSystem::setReceiverGeometry(
     runtime.setReceiverGeometry(
         vulkanDevice,
         memoryAllocator,
-        renderCommandPool,
+        commandPool,
         receiverNodeModelId,
         receiverGeometryPositions,
         receiverGeometryTriangleIndices,
@@ -65,8 +65,8 @@ void VoronoiSystem::setPointGeometry(const std::vector<glm::vec4>& positions) {
     runtime.setPointGeometry(
         vulkanDevice,
         memoryAllocator,
-        renderCommandPool,
-        0,  // domainKey will come from socketKey later; 0 is fine for now
+        commandPool,
+        0,  
         positions);
 }
 
@@ -97,7 +97,7 @@ bool VoronoiSystem::ensureConfigured() {
 }
 
 void VoronoiSystem::initializeVoronoiCandidateCompute() {
-    voronoiCandidateCompute = std::make_unique<VoronoiCandidateCompute>(vulkanDevice, renderCommandPool);
+    voronoiCandidateCompute = std::make_unique<VoronoiCandidateCompute>(vulkanDevice, commandPool);
     if (voronoiCandidateCompute) {
         voronoiCandidateCompute->initialize();
     }
@@ -157,7 +157,7 @@ void VoronoiSystem::dispatchVoronoiCandidateUpdates() {
         return;
     }
 
-    // Point domains have no triangle faces → skip candidate projection
+    // Point domains have no triangle faces 
     if (domainRuntime->isPointDomain()) {
         return;
     }

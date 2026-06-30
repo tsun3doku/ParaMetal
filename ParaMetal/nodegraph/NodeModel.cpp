@@ -21,10 +21,10 @@ const char* NodeModel::typeId() const {
     return nodegraphtypes::Model;
 }
 
-void NodeModel::execute(NodeGraphKernelContext& context) const {
-    NodePayloadRegistry* const payloadRegistry = context.executionState.services.payloadRegistry;
+void NodeModel::execute(NodeKernelEval& eval) const {
+    NodePayloadRegistry* const payloadRegistry = eval.runtime.payloadRegistry;
 
-    const ModelNodeParams params = readModelNodeParams(context.node);
+    const ModelNodeParams params = readModelNodeParams(eval.node);
     const std::string& modelPath = params.path;
     GeometryData geometry{};
     bool hasGeometry = false;
@@ -34,10 +34,10 @@ void NodeModel::execute(NodeGraphKernelContext& context) const {
     }
 
     for (std::size_t outputIndex = 0;
-         outputIndex < context.outputs.size() && outputIndex < context.node.outputs.size();
+         outputIndex < eval.outputs.size() && outputIndex < eval.node.outputs.size();
          ++outputIndex) {
-        NodeDataBlock& outputValue = context.outputs[outputIndex];
-        const NodeGraphSocket& outputSocket = context.node.outputs[outputIndex];
+        NodeDataBlock& outputValue = eval.outputs[outputIndex];
+        const NodeGraphSocket& outputSocket = eval.node.outputs[outputIndex];
         outputValue = {};
         outputValue.dataType = outputSocket.contract.producedPayloadType;
 
@@ -48,21 +48,21 @@ void NodeModel::execute(NodeGraphKernelContext& context) const {
             continue;
         }
 
-        const uint64_t payloadKey = NodeSocketKey(context.node.id, outputSocket.id);
-        outputValue.payloadHandle = payloadRegistry->store(payloadKey, geometry, context.outputHashes);
+        const uint64_t payloadKey = NodeSocketKey(eval.node.id, outputSocket.id);
+        outputValue.payloadHandle = payloadRegistry->store(payloadKey, geometry, eval.outputHashes);
         populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 
-HashValues NodeModel::computeOutputHashes(const NodeGraphKernelHashContext& context) const {
-    uint64_t hash = HashBuilder::start();
-    HashBuilder::combineString(hash, nodegraphtypes::Model);
-    HashBuilder::combineString(hash, readModelNodeParams(context.node).path);
+HashValues NodeModel::computeOutputHashes(const NodeKernelHash& hash) const {
+    uint64_t hashValue = HashBuilder::start();
+    HashBuilder::combineString(hashValue, nodegraphtypes::Model);
+    HashBuilder::combineString(hashValue, readModelNodeParams(hash.node).path);
 
     HashValues values{};
-    values.full = hash;
-    values.geometry = hash;
-    values.simulation = hash;
+    values.full = hashValue;
+    values.geometry = hashValue;
+    values.simulation = hashValue;
     return values;
 }
 

@@ -22,16 +22,18 @@ FrameGraphicsStage::FrameGraphicsStage(
       wireframeRenderer(wireframeRenderer) {
 }
 
-FrameStageResult FrameGraphicsStage::execute(const FrameState& frameState, const FrameSyncState& syncState) {
+FrameGraphicsCollection FrameGraphicsStage::collect(const FrameState& frameState, const FrameSyncState& syncState) {
+    FrameGraphicsCollection collection{};
+
     const auto& commandBuffers = sceneRenderer.getCommandBuffers();
     if (frameState.frameIndex >= commandBuffers.size()) {
         std::cerr << "[FrameGraphicsStage] Missing scene renderer command buffer for frame index" << std::endl;
-        return FrameStageResult::Fatal;
+        collection.result = FrameStageResult::Fatal;
+        return collection;
     }
 
     VkCommandBuffer commandBuffer = commandBuffers[frameState.frameIndex];
     vkResetCommandBuffer(commandBuffer, VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT);
-    frameSync.prepareGraphicsSubmit();
 
     render::RenderFrameRequest frameRequest{};
     frameRequest.frameIndex = frameState.frameIndex;
@@ -51,24 +53,11 @@ FrameStageResult FrameGraphicsStage::execute(const FrameState& frameState, const
         syncState.insertComputeToGraphicsBarrier,
         syncState.waitDstStageMask)) {
         std::cerr << "[FrameGraphicsStage] Scene command recording failed. Triggering swapchain recreation." << std::endl;
-        return FrameStageResult::RecreateSwapchain;
+        collection.result = FrameStageResult::RecreateSwapchain;
+        return collection;
     }
 
-    const VkResult submitResult = frameSync.submitGraphics(
-        vulkanDevice.getGraphicsQueue(),
-        commandBuffer,
-        syncState.waitForComputeSemaphore,
-        syncState.waitDstStageMask);
-
-    if (submitResult != VK_SUCCESS) {
-        std::cerr << "[FrameGraphicsStage] vkQueueSubmit FAILED with result=" << submitResult;
-        if (submitResult == VK_ERROR_DEVICE_LOST) {
-            std::cerr << " (VK_ERROR_DEVICE_LOST). Treating as fatal." << std::endl;
-            return FrameStageResult::Fatal;
-        }
-        std::cerr << " Triggering swapchain recreation" << std::endl;
-        return FrameStageResult::RecreateSwapchain;
-    }
-
-    return FrameStageResult::Continue;
+    collection.commandBuffer = commandBuffer;
+    collection.result = FrameStageResult::Continue;
+    return collection;
 }

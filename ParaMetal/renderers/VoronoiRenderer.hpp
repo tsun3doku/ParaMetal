@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
@@ -44,10 +44,7 @@ public:
     ~VoronoiRenderer();
 
     void initialize(VkRenderPass renderPass, uint32_t maxFramesInFlight);
-    
-    void updateDescriptors(const std::vector<VoronoiRenderBinding>& bindings, uint32_t maxFramesInFlight, bool forceReallocate);
-    void render(VkCommandBuffer cmd, uint32_t frameIndex, const std::vector<VoronoiRenderBinding>& bindings) const;
-
+    void render(VkCommandBuffer cmd, uint32_t frameIndex, const std::vector<VoronoiRenderBinding>& bindings);
     void cleanup();
 
 private:
@@ -57,8 +54,11 @@ private:
     bool createDescriptorSetLayout();
     bool createDescriptorPool(uint32_t maxFramesInFlight);
     bool createPipeline(VkRenderPass renderPass);
-    bool updateDescriptorSetForBinding(const VoronoiRenderBinding& binding, uint32_t maxFramesInFlight, std::vector<VkDescriptorSet>& targetSets, bool forceReallocate);
+    
+    VkDescriptorSet allocateDescriptorSet(VkDescriptorPool pool);
+    void updateDescriptorSet(VkDescriptorSet set, uint32_t frameIndex, const VoronoiRenderBinding& binding);
     void drawBinding(VkCommandBuffer cmd, VkDescriptorSet descriptorSet, const VoronoiRenderBinding& binding) const;
+
     VulkanDevice& vulkanDevice;
     MemoryAllocator& allocator;
     UniformBufferManager& uniformBufferManager;
@@ -67,8 +67,7 @@ private:
     VkPipeline pipeline = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
-    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
-    std::unordered_map<uint64_t, std::vector<VkDescriptorSet>> voronoiDescriptorSets;
+    std::vector<VkDescriptorPool> descriptorPools;
 
     VkImage wireframeTextureImage = VK_NULL_HANDLE;
     VkDeviceMemory wireframeTextureMemory = VK_NULL_HANDLE;
@@ -76,5 +75,4 @@ private:
     VkSampler wireframeTextureSampler = VK_NULL_HANDLE;
     
     bool initialized = false;
-    
 };

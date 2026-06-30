@@ -253,6 +253,9 @@ bool SceneRenderer::createCommandBuffers() {
 }
 
 void SceneRenderer::freeCommandBuffers() {
+    if (gbufferCommandBuffers.empty()) {
+        return;
+    }
     vkFreeCommandBuffers(vulkanDevice.getDevice(), renderCommandPool.getHandle(), static_cast<uint32_t>(gbufferCommandBuffers.size()), gbufferCommandBuffers.data());
     gbufferCommandBuffers.clear();
 }

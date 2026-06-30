@@ -4,7 +4,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include "nodegraph/NodeGraphBridge.hpp"
+#include "nodegraph/NodeGraph.hpp"
 #include "nodegraph/NodeGraphTypes.hpp"
 #include "nodegraph/NodeGraphRegistry.hpp"
 
@@ -17,23 +17,23 @@ py::object paramValueToPy(const NodeGraphParamValue& value);
 NodeGraphParamValue pyToParamValue(uint32_t paramId, NodeGraphParamType type, py::object value);
 
 struct PySocket {
-    NodeGraphBridge* bridge = nullptr;
+    NodeGraph* bridge = nullptr;
     NodeGraphNodeId nodeId{};
     NodeGraphSocketId socketId{};
 
     PySocket() = default;
-    PySocket(NodeGraphBridge* b, NodeGraphNodeId n, NodeGraphSocketId s);
+    PySocket(NodeGraph* b, NodeGraphNodeId n, NodeGraphSocketId s);
 
     std::string name() const;
     NodeGraphValueType valueType() const;
 };
 
 struct PyNode {
-    NodeGraphBridge* bridge = nullptr;
+    NodeGraph* bridge = nullptr;
     NodeGraphNodeId nodeId{};
 
     PyNode() = default;
-    PyNode(NodeGraphBridge* b, NodeGraphNodeId id);
+    PyNode(NodeGraph* b, NodeGraphNodeId id);
 
     std::string name() const;
     std::string type_id() const;
@@ -46,11 +46,11 @@ struct PyNode {
 };
 
 struct PyEdge {
-    NodeGraphBridge* bridge = nullptr;
+    NodeGraph* bridge = nullptr;
     NodeGraphEdgeId edgeId{};
 
     PyEdge() = default;
-    PyEdge(NodeGraphBridge* b, NodeGraphEdgeId id);
+    PyEdge(NodeGraph* b, NodeGraphEdgeId id);
 
     NodeGraphEdgeId edge_id() const { return edgeId; }
     PyNode from_node() const;

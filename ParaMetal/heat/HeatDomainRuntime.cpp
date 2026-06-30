@@ -38,14 +38,14 @@ bool HeatDomainRuntime::ensureSimulationBuffers(uint32_t nodeCount) {
 
     auto [handleA, offsetA] = memoryAllocator.allocate(
         nodeCount * sizeof(float),
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     tempBufferA = handleA;
     tempBufferAOffset = offsetA;
 
     auto [handleB, offsetB] = memoryAllocator.allocate(
         nodeCount * sizeof(float),
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     tempBufferB = handleB;
     tempBufferBOffset = offsetB;
@@ -56,6 +56,24 @@ bool HeatDomainRuntime::ensureSimulationBuffers(uint32_t nodeCount) {
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     contactAccumulatorBuffer = handleFlux;
     contactAccumulatorBufferOffset = offsetFlux;
+
+    if (contactAccumulatorBuffer != VK_NULL_HANDLE) {
+        const VkDeviceSize accumulatorSize = nodeCount * sizeof(float) * 2;
+        VkCommandBuffer cmd = renderCommandPool.beginCommands();
+        if (cmd == VK_NULL_HANDLE) {
+            return false;
+        }
+        vkCmdFillBuffer(cmd, contactAccumulatorBuffer, contactAccumulatorBufferOffset, accumulatorSize, 0u);
+        if (!renderCommandPool.endCommands(cmd)) {
+            std::cerr << "[HEAT-UPLOAD] domainContactAccumulatorFill failed"
+                      << " simNodeCount=" << nodeCount
+                      << " dstBuffer=" << contactAccumulatorBuffer
+                      << " dstOffset=" << contactAccumulatorBufferOffset
+                      << " size=" << accumulatorSize
+                      << std::endl;
+            return false;
+        }
+    }
 
     return tempBufferA != VK_NULL_HANDLE && tempBufferB != VK_NULL_HANDLE && contactAccumulatorBuffer != VK_NULL_HANDLE;
 }
@@ -73,18 +91,14 @@ void HeatDomainRuntime::cleanupSimulationBuffers() {
 bool HeatDomainRuntime::createMaterialBuffer(const std::vector<heat::MaterialNode>& materialNodes) {
     if (materialNodes.empty()) return false;
 
-    freeBuffer(memoryAllocator, materialBuffer, materialBufferOffset);
-
-    const VkDeviceSize storageAlignment = vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
-    return uploadDeviceBuffer(
+    return createStorageBuffer(
         memoryAllocator,
-        renderCommandPool,
+        vulkanDevice,
         materialNodes.data(),
         sizeof(heat::MaterialNode) * materialNodes.size(),
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-        storageAlignment,
         materialBuffer,
-        materialBufferOffset
+        materialBufferOffset,
+        nullptr
     ) == VK_SUCCESS;
 }
 

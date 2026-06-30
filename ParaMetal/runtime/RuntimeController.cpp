@@ -8,8 +8,6 @@
 #include "render/WindowRuntimeState.hpp"
 #include "scene/CameraController.hpp"
 
-#include <chrono>
-
 RuntimeController::~RuntimeController() {
     shutdown();
 }
@@ -20,12 +18,12 @@ bool RuntimeController::initialize(
     VulkanCoreContext& core,
     WindowRuntimeState& windowRuntimeState,
     RenderSettingsManager& settingsManager,
-    std::atomic<bool>& renderPaused) {
+    std::atomic<bool>& simPaused) {
     if (initialized) {
         return true;
     }
 
-    if (!render.heatSystemComputeController() || !render.modelComputeRuntime() || !render.sceneController() || !render.nodeGraphBridge() || !render.nodeGraphController()) {
+    if (!render.heatSystemComputeController() || !render.modelComputeRuntime() || !render.sceneController() || !render.nodeGraph() || !render.nodeGraphController()) {
         return false;
     }
 
@@ -43,7 +41,7 @@ bool RuntimeController::initialize(
 
     this->render = &render;
     this->scene = &scene;
-    this->renderPaused = &renderPaused;
+    this->simPaused = &simPaused;
 
     runtimeInputController = std::make_unique<RuntimeInputController>(windowRuntimeState, *render.inputController());
     runtimeRenderController = std::make_unique<RuntimeRenderController>(
@@ -62,7 +60,7 @@ void RuntimeController::shutdown() {
     runtimeInputController.reset();
     render = nullptr;
     scene = nullptr;
-    renderPaused = nullptr;
+    simPaused = nullptr;
     initialized = false;
 }
 
@@ -91,18 +89,12 @@ void RuntimeController::tick(float deltaTime, uint32_t& frameCounter) {
 
     runtimeInputController->tick(deltaTime);
 
-    auto frameStart = std::chrono::high_resolution_clock::now();
-    render->nodeGraphController()->applyPendingChanges();
-    if (renderPaused && renderPaused->load(std::memory_order_acquire)) {
-        return;
-    }
-
-    auto graphTickStart = std::chrono::high_resolution_clock::now();
-    render->nodeGraphController()->tick();
-    auto graphTickEnd = std::chrono::high_resolution_clock::now();
+    NodeGraphController* graphController = render->nodeGraphController();
+    graphController->tick();
 
     scene->cameraController().tick(deltaTime);
-    const bool allowHeatSolve = render->nodeGraphController()->compiledState().isValid;
+    const bool playbackPaused = simPaused && simPaused->load(std::memory_order_acquire);
+    const bool allowHeatSolve = !playbackPaused && graphController->compiledState().isValid;
     const RuntimeRenderFrameResult renderResult = runtimeRenderController->renderFrame(allowHeatSolve, frameCounter);
     hasFrameSlot = renderResult.submitted;
     frameSlot = renderResult.frameSlot;

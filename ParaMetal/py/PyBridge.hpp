@@ -1,8 +1,8 @@
 #pragma once
 
-class NodeGraphBridge;
+class NodeGraph;
 
 namespace pybridge {
-    void setBridge(NodeGraphBridge* bridge);
-    NodeGraphBridge* getBridge();
+    void setGraph(NodeGraph* graph);
+    NodeGraph* getGraph();
 }

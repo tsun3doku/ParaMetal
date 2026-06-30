@@ -1,6 +1,6 @@
 #include "NodeTransformParams.hpp"
 
-#include "NodeGraphBridge.hpp"
+#include "NodeGraph.hpp"
 #include "NodeGraphEditor.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "nodegraph/ui/widgets/NodePanelUtils.hpp"
@@ -19,7 +19,7 @@ TransformNodeParams readTransformNodeParams(const NodeGraphNode& node) {
     return params;
 }
 
-bool writeTransformNodeParams(NodeGraphBridge& bridge, NodeGraphNodeId nodeId, const TransformNodeParams& params) {
+bool writeTransformNodeParams(NodeGraph& bridge, NodeGraphNodeId nodeId, const TransformNodeParams& params) {
     return bridge.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::transform::TranslateX, NodeGraphParamType::Float, params.translateX}) &&
         bridge.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::transform::TranslateY, NodeGraphParamType::Float, params.translateY}) &&
         bridge.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::transform::TranslateZ, NodeGraphParamType::Float, params.translateZ}) &&

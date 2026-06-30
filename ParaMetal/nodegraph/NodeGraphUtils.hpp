@@ -3,7 +3,6 @@
 #include "NodeGraphDataTypes.hpp"
 #include <string>
 
-struct NodeGraphKernelExecutionState;
 class NodeGraphRegistry;
 class NodeGraph;
 struct NodeGraphState;
@@ -14,15 +13,9 @@ bool findFirstUpstreamNodeByType(const NodeGraphState& state, uint64_t outputSoc
 NodeGraphValueType socketType(const NodeGraphState& state, NodeGraphNodeId nodeId, NodeGraphSocketId socketId);
 NodeGraphValueType socketType(const NodeGraph& document, NodeGraphNodeId nodeId, NodeGraphSocketId socketId);
 
-const EvaluatedSocketValue* readEvaluatedInput(
-    const NodeGraphNode& node,
-    NodeGraphSocketId inputSocketId,
-    const NodeGraphKernelExecutionState& executionState);
-std::vector<const EvaluatedSocketValue*> readEvaluatedInputs(
-    const NodeGraphNode& node,
-    NodeGraphSocketId inputSocketId,
-    const NodeGraphKernelExecutionState& executionState);
-const NodeDataBlock* readInputValue(const EvaluatedSocketValue* input);
+std::size_t inputIndexOf(const NodeGraphNode& node, NodeGraphSocketId inputSocketId);
+std::size_t inputIndexOf(const NodeGraphNode& node, const char* socketName);
+std::size_t inputIndexOf(const NodeGraphNode& node, NodeGraphValueType socketType);
 
 NodeGraphParamValue makeNodeGraphParamValue(const NodeGraphParamDefinition& definition);
 const NodeGraphParamValue* findNodeParamValue(const NodeGraphNode& node, uint32_t paramId);

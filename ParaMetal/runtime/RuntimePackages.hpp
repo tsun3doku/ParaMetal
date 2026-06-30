@@ -24,6 +24,7 @@
 
 struct ModelPackage {
     HashValues hashes{};
+    ProductHandle productHandle{};
     GeometryData geometry;
     std::array<float, 16> localToWorld{
         1.0f, 0.0f, 0.0f, 0.0f,
@@ -32,9 +33,9 @@ struct ModelPackage {
         0.0f, 0.0f, 0.0f, 1.0f
     };
 
-    bool matches(const ModelPackage& other) const {
-        return hashes.full == other.hashes.full;
-    }
+    uint64_t computeHash() const { return hashes.geometry; }
+    uint64_t displayHash() const { return hashes.display; }
+    bool hasValidProduct() const { return productHandle.isValid(); }
 };
 
 struct RemeshPackage {
@@ -50,6 +51,7 @@ struct RemeshPackage {
     };
 
     HashValues hashes{};
+    ProductHandle productHandle{};
     GeometryData sourceGeometry;
     int iterations = 1;
     float minAngleDegrees = 20.0f;
@@ -58,10 +60,11 @@ struct RemeshPackage {
     DisplaySettings display{};
     NodeDataHandle remeshHandle{};
     NodeDataHandle sourceMeshHandle{};
+    ProductHandle sourceModelProduct{};
 
-    bool matches(const RemeshPackage& other) const {
-        return hashes.full == other.hashes.full;
-    }
+    uint64_t computeHash() const { return hashes.geometry; }
+    uint64_t displayHash() const { return hashes.display; }
+    bool hasValidProduct() const { return productHandle.isValid(); }
 };
 
 struct VoronoiPackage {
@@ -75,6 +78,7 @@ struct VoronoiPackage {
     };
 
     HashValues hashes{};
+    ProductHandle productHandle{};
     VoronoiData authored;
     NodeDataHandle voronoiHandle{};
     DisplaySettings display{};
@@ -88,14 +92,18 @@ struct VoronoiPackage {
     NodeDataHandle modelMeshHandle{};
     NodeDataHandle modelRemeshHandle{};
     NodeDataHandle pointsPayloadHandle{};
+    std::vector<glm::vec4> pointPositions;
+    ProductHandle modelProduct{};
+    ProductHandle remeshProduct{};
 
-    bool matches(const VoronoiPackage& other) const {
-        return hashes.full == other.hashes.full;
-    }
+    uint64_t computeHash() const { return hashes.simulation; }
+    uint64_t displayHash() const { return hashes.display; }
+    bool hasValidProduct() const { return productHandle.isValid(); }
 };
 
 struct PointPackage {
     HashValues hashes{};
+    ProductHandle productHandle{};
     NodeDataHandle pointsPayloadHandle{};
     std::vector<glm::vec4> positions;
     uint32_t pointCount = 0;
@@ -106,9 +114,9 @@ struct PointPackage {
         0.0f, 0.0f, 0.0f, 1.0f
     };
 
-    bool matches(const PointPackage& other) const {
-        return hashes.full == other.hashes.full;
-    }
+    uint64_t computeHash() const { return hashes.geometry; }
+    uint64_t displayHash() const { return hashes.display; }
+    bool hasValidProduct() const { return productHandle.isValid(); }
 };
 
 struct HeatPackage {
@@ -126,13 +134,15 @@ struct HeatPackage {
     };
 
     HashValues hashes{};
+    ProductHandle productHandle{};
     HeatData authored;
     NodeDataHandle heatHandle{};
     DisplaySettings display{};
 
-    // Pre-resolved by compiler 
-    std::vector<NodeDataHandle> resolvedRemeshHandles;       
-    std::vector<NodeDataHandle> resolvedModelHandles;       
+    std::vector<ProductHandle> remeshProducts;
+    std::vector<ProductHandle> modelProducts;
+    std::vector<ProductHandle> voronoiProducts;
+    std::vector<ProductHandle> contactProducts;
     std::vector<float> resolvedDensity;
     std::vector<float> resolvedSpecificHeat;
     std::vector<float> resolvedConductivity;
@@ -140,9 +150,9 @@ struct HeatPackage {
     std::vector<uint32_t> resolvedBoundaryConditions;
     std::vector<float> resolvedFixedTemperatureValues;
 
-    bool matches(const HeatPackage& other) const {
-        return hashes.full == other.hashes.full;
-    }
+    uint64_t computeHash() const { return hashes.full; }
+    uint64_t displayHash() const { return hashes.display; }
+    bool hasValidProduct() const { return productHandle.isValid(); }
 };
 
 struct ContactPackage {
@@ -154,7 +164,12 @@ struct ContactPackage {
         }
     };
 
+    uint64_t computeHash() const { return hashes.simulation; }
+    uint64_t displayHash() const { return hashes.display; }
+    bool hasValidProduct() const { return productHandle.isValid(); }
+
     HashValues hashes{};
+    ProductHandle productHandle{};
     ContactData authored;
     NodeDataHandle contactHandle{};
     DisplaySettings display{};
@@ -170,10 +185,6 @@ struct ContactPackage {
         0.0f, 0.0f, 1.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f
     };
-    NodeDataHandle modelAMeshHandle{};
-    NodeDataHandle modelBMeshHandle{};
-
-    bool matches(const ContactPackage& other) const {
-        return hashes.full == other.hashes.full;
-    }
+    ProductHandle modelARemeshProduct{};
+    ProductHandle modelBRemeshProduct{};
 };

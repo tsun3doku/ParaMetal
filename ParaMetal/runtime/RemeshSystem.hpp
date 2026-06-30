@@ -6,10 +6,14 @@
 #include <glm/vec3.hpp>
 
 #include "mesh/remesher/Remesher.hpp"
+#include "mesh/remesher/SupportingHalfedge.hpp"
 
 class ModelRegistry;
 class VulkanDevice;
 
+// RemeshSystem is a product-agnostic backend: it runs a remesh and owns the
+// resulting CPU mesh + GPU resources until the controller takes them. It knows
+// nothing about RemeshProduct - the controller assembles the product.
 class RemeshSystem {
 public:
     RemeshSystem(
@@ -21,17 +25,26 @@ public:
     void setSourceGeometry(const std::vector<float>& pointPositions, const std::vector<uint32_t>& triangleIndices);
     void setParams(int iterations, float minAngleDegrees, float maxEdgeLength, float stepSize);
     void setRuntimeModelId(uint32_t runtimeModelId);
-    bool ensureConfigured();
+
+    // Run the remesh into internal state. Frees any previously-owned GPU
+    // resources from a prior remesh that were never taken. Returns false on
+    // failure (internal state is cleared).
+    bool remesh();
+
+    // CPU data: borrowed by const ref (controller copies by value into product).
+    const SupportingHalfedge::IntrinsicMesh& intrinsicMesh() const { return mesh; }
+    const std::vector<float>& sourcePositions() const { return pointPositions; }
+    const std::vector<uint32_t>& sourceTriangles() const { return triangleIndices; }
+    uint32_t runtimeModelId() const { return modelRuntimeId; }
+
+    // GPU resources: ownership transfers OUT to the caller. System's copy is
+    // zeroed, so destructor/disable will not double-free.
+    SupportingHalfedge::GPUResources takeIntrinsicGpuResources();
+
     void disable();
-    bool isReady() const { return ready; }
-    uint32_t getRuntimeModelId() const { return runtimeModelId; }
-    const std::vector<glm::vec3>& getGeometryPositions() const { return geometryPositions; }
-    const std::vector<uint32_t>& getGeometryTriangleIndices() const { return geometryTriangleIndices; }
-    const SupportingHalfedge::IntrinsicMesh& getIntrinsicMesh() const { return intrinsicMesh; }
-    const SupportingHalfedge::GPUResources& getIntrinsicGpuResources() const { return intrinsicGpuResources; }
 
 private:
-    void resetState(bool waitForDevice);
+    void releaseOwnedGpuResources();
 
     VulkanDevice& vulkanDevice;
     ModelRegistry& resourceManager;
@@ -43,10 +56,8 @@ private:
     float minAngleDegrees = 20.0f;
     float maxEdgeLength = 0.1f;
     float stepSize = 0.25f;
-    uint32_t runtimeModelId = 0;
-    std::vector<glm::vec3> geometryPositions;
-    std::vector<uint32_t> geometryTriangleIndices;
-    SupportingHalfedge::IntrinsicMesh intrinsicMesh;
-    SupportingHalfedge::GPUResources intrinsicGpuResources;
-    bool ready = false;
+    uint32_t modelRuntimeId = 0;
+
+    SupportingHalfedge::IntrinsicMesh mesh;
+    SupportingHalfedge::GPUResources gpuResources{};
 };

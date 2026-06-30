@@ -16,16 +16,17 @@ const char* NodeVoronoi::typeId() const {
     return nodegraphtypes::Voronoi;
 }
 
-void NodeVoronoi::execute(NodeGraphKernelContext& context) const {
+void NodeVoronoi::execute(NodeKernelEval& eval) const {
     NodeDataHandle modelMeshHandle;
     NodeDataHandle pointsPayloadHandle;
     DomainType domainType = DomainType::Points;
     bool active = false;
-    NodePayloadRegistry* const payloadRegistry = context.executionState.services.payloadRegistry;
+    NodePayloadRegistry* const payloadRegistry = eval.runtime.payloadRegistry;
 
-    const NodeGraphSocket* pointsSocket = context.node.input(NodeGraphValueType::Points);
-    const EvaluatedSocketValue* pointsEval = pointsSocket ? readEvaluatedInput(context.node, pointsSocket->id, context.executionState) : nullptr;
-    const NodeDataBlock* pointsData = readInputValue(pointsEval);
+    const std::size_t pointsSocketIndex = inputIndexOf(eval.node, NodeGraphValueType::Points);
+    const NodeDataBlock* pointsData =
+        (pointsSocketIndex < eval.inputs.size() && !eval.inputs[pointsSocketIndex].empty())
+            ? eval.inputs[pointsSocketIndex].front() : nullptr;
     if (pointsData && pointsData->dataType == payloadtypes::Points && pointsData->payloadHandle.key != 0) {
         const PointData* pointData = payloadRegistry ? payloadRegistry->get<PointData>(pointsData->payloadHandle) : nullptr;
         if (pointData && !pointData->positions.empty()) {
@@ -34,10 +35,11 @@ void NodeVoronoi::execute(NodeGraphKernelContext& context) const {
         }
     }
 
-    const NodeGraphSocket* meshSocket = context.node.input(NodeGraphValueType::Remesh);
-    if (active && meshSocket) {
-        const EvaluatedSocketValue* meshEval = readEvaluatedInput(context.node, meshSocket->id, context.executionState);
-        const NodeDataBlock* meshData = readInputValue(meshEval);
+    if (active) {
+        const std::size_t meshSocketIndex = inputIndexOf(eval.node, NodeGraphValueType::Remesh);
+        const NodeDataBlock* meshData =
+            (meshSocketIndex < eval.inputs.size() && !eval.inputs[meshSocketIndex].empty())
+                ? eval.inputs[meshSocketIndex].front() : nullptr;
         if (meshData && meshData->payloadHandle.key != 0) {
             const NodeDataHandle meshHandle = payloadRegistry ? payloadRegistry->resolveMeshHandle(meshData->dataType, meshData->payloadHandle) : NodeDataHandle{};
             if (meshHandle.key != 0) {
@@ -47,13 +49,13 @@ void NodeVoronoi::execute(NodeGraphKernelContext& context) const {
         }
     }
 
-    const VoronoiNodeParams nodeParams = readVoronoiNodeParams(context.node);
+    const VoronoiNodeParams nodeParams = readVoronoiNodeParams(eval.node);
 
     for (std::size_t outputIndex = 0;
-         outputIndex < context.outputs.size() && outputIndex < context.node.outputs.size();
+         outputIndex < eval.outputs.size() && outputIndex < eval.node.outputs.size();
          ++outputIndex) {
-        NodeDataBlock& outputValue = context.outputs[outputIndex];
-        const NodeGraphSocket& outputSocket = context.node.outputs[outputIndex];
+        NodeDataBlock& outputValue = eval.outputs[outputIndex];
+        const NodeGraphSocket& outputSocket = eval.node.outputs[outputIndex];
         outputValue = {};
         outputValue.dataType = outputSocket.contract.producedPayloadType;
 
@@ -69,25 +71,25 @@ void NodeVoronoi::execute(NodeGraphKernelContext& context) const {
         voronoiData.modelMeshHandle = modelMeshHandle;
         voronoiData.pointsPayloadHandle = pointsPayloadHandle;
         voronoiData.active = active;
-        const uint64_t payloadKey = NodeSocketKey(context.node.id, context.node.outputs[outputIndex].id);
-        outputValue.payloadHandle = payloadRegistry->store(payloadKey, voronoiData, context.outputHashes);
+        const uint64_t payloadKey = NodeSocketKey(eval.node.id, eval.node.outputs[outputIndex].id);
+        outputValue.payloadHandle = payloadRegistry->store(payloadKey, voronoiData, eval.outputHashes);
         populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 
-HashValues NodeVoronoi::computeOutputHashes(const NodeGraphKernelHashContext& context) const {
-    uint64_t hash = HashBuilder::start();
-    HashBuilder::combineString(hash, nodegraphtypes::Voronoi);
-    HashNodeCache::combineSocket(hash, context, NodeGraphValueType::Points, HashDomain::Geometry);
-    HashNodeCache::combineOptionalSocket(hash, context, NodeGraphValueType::Remesh, HashDomain::Geometry);
+HashValues NodeVoronoi::computeOutputHashes(const NodeKernelHash& hash) const {
+    uint64_t hashValue = HashBuilder::start();
+    HashBuilder::combineString(hashValue, nodegraphtypes::Voronoi);
+    HashNodeCache::combineSocket(hashValue, hash, NodeGraphValueType::Points, HashDomain::Geometry);
+    HashNodeCache::combineOptionalSocket(hashValue, hash, NodeGraphValueType::Remesh, HashDomain::Geometry);
 
-    const VoronoiNodeParams nodeParams = readVoronoiNodeParams(context.node);
-    HashBuilder::combineFloat(hash, static_cast<float>(nodeParams.sdfSize));
-    HashBuilder::combine(hash, static_cast<uint64_t>(nodeParams.voxelResolution));
+    const VoronoiNodeParams nodeParams = readVoronoiNodeParams(hash.node);
+    HashBuilder::combineFloat(hashValue, static_cast<float>(nodeParams.sdfSize));
+    HashBuilder::combine(hashValue, static_cast<uint64_t>(nodeParams.voxelResolution));
 
     HashValues values{};
-    values.full = hash;
-    values.geometry = hash;
-    values.simulation = hash;
+    values.full = hashValue;
+    values.geometry = hashValue;
+    values.simulation = hashValue;
     return values;
 }
