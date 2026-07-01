@@ -7,9 +7,6 @@
 [submodule "ParaMetal/libs/tinyobjloader"]
 	path = ParaMetal/libs/tinyobjloader
 	url = https://github.com/tinyobjloader/tinyobjloader
-[submodule "ParaMetal/libs/entt"]
-	path = ParaMetal/libs/entt
-	url = https://github.com/skypjack/entt.git
 [submodule "ParaMetal/libs/pybind11"]
 	path = ParaMetal/libs/pybind11
 	url = https://github.com/pybind/pybind11.git

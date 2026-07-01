@@ -91,7 +91,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/ParaMetal/libs/nanoflann/include
     ${CMAKE_CURRENT_SOURCE_DIR}/ParaMetal/libs/tinyobjloader
     ${CMAKE_CURRENT_SOURCE_DIR}/ParaMetal/libs/tinyply/source
-    ${CMAKE_CURRENT_SOURCE_DIR}/ParaMetal/libs/entt/src
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
