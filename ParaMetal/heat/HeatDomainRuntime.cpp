@@ -148,7 +148,7 @@ void HeatDomainRuntime::updateVoronoiDescriptors(
     VkDescriptorBufferInfo vNodeInfo{simNodeBuffer, simNodeOffset, simNodeCount * sizeof(voronoi::Node)};
     VkDescriptorBufferInfo vGmlsInfo{simGMLSInterfaceBuffer, simGMLSInterfaceOffset, simGMLSInterfaceCount * sizeof(voronoi::GMLSInterface)};
     VkDescriptorBufferInfo vMatInfo{materialBuffer, materialBufferOffset, simNodeCount * sizeof(heat::MaterialNode)};
-    VkDescriptorBufferInfo timeInfo{timeBuffer, timeBufferOffset, sizeof(heat::TimeUniform)};
+    VkDescriptorBufferInfo timeInfo{timeBuffer, timeBufferOffset, sizeof(heat::SimPlaybackUniform)};
 
     const VkDescriptorSet vSets[2] = { voronoiDescriptorSetA, voronoiDescriptorSetB };
     const VkBuffer tempBuffers[2] = { tempBufferA, tempBufferB };
