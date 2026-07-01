@@ -15,8 +15,7 @@ public:
         controller = updatedController;
     }
 
-    void setManagers(RuntimePackageManager* updatedPackages, RuntimeProductManager* updatedProducts) {
-        (void)updatedPackages;
+    void setProducts(RuntimeProductManager* updatedProducts) {
         products = updatedProducts;
     }
 

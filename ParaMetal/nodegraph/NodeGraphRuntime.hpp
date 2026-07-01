@@ -18,7 +18,7 @@ public:
     ~NodeGraphRuntime();
 
     void applyDelta(const NodeGraphDelta& delta);
-    void tick(const NodeGraphCompiled& compiled);
+    void execute(const NodeGraphCompiled& compiled);
     void setOutputProductHandle(uint64_t socketKey, const ProductHandle& productHandle);
 
     const NodeGraphState& state() const {
@@ -47,7 +47,6 @@ private:
     };
 
     void applyChange(const NodeGraphChange& change);
-    void execute(const NodeGraphCompiled& compiled);
 
     EvaluatedNodeInputs evaluateNodeInputs(
         const NodeGraphNode& node,

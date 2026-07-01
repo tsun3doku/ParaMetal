@@ -5,7 +5,6 @@
 #include "vulkan/VulkanBuffer.hpp"
 
 #include <cassert>
-#include <iostream>
 #include <unordered_set>
 #include <vulkan/vulkan.h>
 

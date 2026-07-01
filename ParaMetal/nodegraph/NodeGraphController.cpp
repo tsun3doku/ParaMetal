@@ -40,12 +40,12 @@ NodeGraphController::NodeGraphController(NodeGraph* bridge, const NodeRuntimeSer
     if (runtimeServices.contactComputeTransport) { runtimeServices.contactComputeTransport->setProducts(pm); }
     if (runtimeServices.heatComputeTransport) { runtimeServices.heatComputeTransport->setProducts(pm); }
     if (runtimeServices.pointComputeTransport) { runtimeServices.pointComputeTransport->setProducts(pm); }
-    if (runtimeServices.modelDisplayTransport) { runtimeServices.modelDisplayTransport->setManagers(&packageManager, pm); }
-    if (runtimeServices.remeshDisplayTransport) { runtimeServices.remeshDisplayTransport->setManagers(&packageManager, pm); }
-    if (runtimeServices.voronoiDisplayTransport) { runtimeServices.voronoiDisplayTransport->setManagers(&packageManager, pm); }
-    if (runtimeServices.contactDisplayTransport) { runtimeServices.contactDisplayTransport->setManagers(&packageManager, pm); }
-    if (runtimeServices.heatDisplayTransport) { runtimeServices.heatDisplayTransport->setManagers(&packageManager, pm); }
-    if (runtimeServices.pointDisplayTransport) { runtimeServices.pointDisplayTransport->setManagers(&packageManager, pm); }
+    if (runtimeServices.modelDisplayTransport) { runtimeServices.modelDisplayTransport->setProducts(pm); }
+    if (runtimeServices.remeshDisplayTransport) { runtimeServices.remeshDisplayTransport->setProducts(pm); }
+    if (runtimeServices.voronoiDisplayTransport) { runtimeServices.voronoiDisplayTransport->setProducts(pm); }
+    if (runtimeServices.contactDisplayTransport) { runtimeServices.contactDisplayTransport->setProducts(pm); }
+    if (runtimeServices.heatDisplayTransport) { runtimeServices.heatDisplayTransport->setProducts(pm); }
+    if (runtimeServices.pointDisplayTransport) { runtimeServices.pointDisplayTransport->setProducts(pm); }
 }
 
 void NodeGraphController::consumePendingGraphDelta() {
@@ -87,7 +87,7 @@ void NodeGraphController::tick() {
 }
 
 void NodeGraphController::compileRuntimePackages() {
-    runtime.tick(plan);
+    runtime.execute(plan);
     const NodeGraphEvaluationState& execState = runtime.evaluationState();
 
     RuntimePackageCompiler packageCompiler{};

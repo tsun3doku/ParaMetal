@@ -352,23 +352,26 @@ void RuntimePackageCompiler::compileMeshPoints(
         PointPackage package{};
         package.productHandle = execState.productFor(outSocketKey, NodeProductType::Point);
         package.pointsPayloadHandle = data.payloadHandle;
-        package.positions = pointData->positions;
-        package.pointCount = static_cast<uint32_t>(pointData->positions.size());
         package.localToWorld = pointData->localToWorld;
 
-        // Look up upstream remesh from Geometry input socket
+        bool usedRemesh = false;
         const NodeSocketKey upstreamKey = graphState.edges.upstream(node.id, node.inputs[0].id);
         if (upstreamKey.value != 0) {
             const ProductHandle remeshProductHandle = execState.productFor(upstreamKey.value, NodeProductType::Remesh);
             const RemeshProduct* product = products.resolve<RemeshProduct>(remeshProductHandle);
             if (product && product->isValid()) {
-                package.positions.clear();
                 package.positions.reserve(product->intrinsicMesh.vertices.size());
                 for (const auto& vertex : product->intrinsicMesh.vertices) {
                     package.positions.push_back(glm::vec4(vertex.position, 1.0f));
                 }
                 package.pointCount = static_cast<uint32_t>(package.positions.size());
+                usedRemesh = true;
             }
+        }
+
+        if (!usedRemesh) {
+            package.positions = pointData->positions;
+            package.pointCount = static_cast<uint32_t>(pointData->positions.size());
         }
 
         HashPackage::seal(package);

@@ -64,23 +64,6 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(
     outConfig.modelBoundaryConditions.reserve(package.remeshProducts.size());
     outConfig.modelFixedTemperatureValues.reserve(package.remeshProducts.size());
 
-    for (size_t i = 0; i < package.remeshProducts.size(); ++i) {
-        const RemeshProduct* product = products->resolve<RemeshProduct>(package.remeshProducts[i]);
-        if (!product || product->runtimeModelId == 0) {
-            return false;
-        }
-
-
-        outConfig.modelIntrinsicMeshes.push_back(product->intrinsicMesh);
-        outConfig.modelRuntimeModelIds.push_back(product->runtimeModelId);
-        outConfig.modelTemperatureByRuntimeId[product->runtimeModelId] = package.resolvedInitialTemperature[i];
-        outConfig.modelBoundaryConditions[product->runtimeModelId] = package.resolvedBoundaryConditions[i];
-        outConfig.modelFixedTemperatureValues[product->runtimeModelId] = package.resolvedFixedTemperatureValues[i];
-        outConfig.modelDensity[product->runtimeModelId] = package.resolvedDensity[i];
-        outConfig.modelSpecificHeat[product->runtimeModelId] = package.resolvedSpecificHeat[i];
-        outConfig.modelConductivity[product->runtimeModelId] = package.resolvedConductivity[i];
-    }
-
     const size_t modelCount = package.remeshProducts.size();
     outConfig.supportingHalfedgeViews.resize(modelCount, VK_NULL_HANDLE);
     outConfig.supportingAngleViews.resize(modelCount, VK_NULL_HANDLE);
@@ -95,9 +78,19 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(
 
     for (size_t i = 0; i < modelCount; ++i) {
         const RemeshProduct* product = products->resolve<RemeshProduct>(package.remeshProducts[i]);
-        if (!product) {
+        if (!product || product->runtimeModelId == 0) {
             return false;
         }
+
+        outConfig.modelIntrinsicMeshes.push_back(product->intrinsicMesh);
+        outConfig.modelRuntimeModelIds.push_back(product->runtimeModelId);
+        outConfig.modelTemperatureByRuntimeId[product->runtimeModelId] = package.resolvedInitialTemperature[i];
+        outConfig.modelBoundaryConditions[product->runtimeModelId] = package.resolvedBoundaryConditions[i];
+        outConfig.modelFixedTemperatureValues[product->runtimeModelId] = package.resolvedFixedTemperatureValues[i];
+        outConfig.modelDensity[product->runtimeModelId] = package.resolvedDensity[i];
+        outConfig.modelSpecificHeat[product->runtimeModelId] = package.resolvedSpecificHeat[i];
+        outConfig.modelConductivity[product->runtimeModelId] = package.resolvedConductivity[i];
+
         outConfig.supportingHalfedgeViews[i] = product->supportingHalfedgeView;
         outConfig.supportingAngleViews[i] = product->supportingAngleView;
         outConfig.halfedgeViews[i] = product->halfedgeView;

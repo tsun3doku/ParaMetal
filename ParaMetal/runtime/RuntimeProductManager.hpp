@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <iostream>
 #include <type_traits>
 #include <unordered_map>
 #include <vector>
@@ -62,13 +61,6 @@ private:
     void destroy(PointProduct& product);
     void destroy(ContactProduct& product);
     void destroy(HeatProduct& product);
-    void logBufferResource(const char* label, VkBuffer buffer, VkDeviceSize offset) const;
-    void logProductRelease(uint64_t socketKey, const ModelProduct& product) const;
-    void logProductRelease(uint64_t socketKey, const RemeshProduct& product) const;
-    void logProductRelease(uint64_t socketKey, const VoronoiProduct& product) const;
-    void logProductRelease(uint64_t socketKey, const PointProduct& product) const;
-    void logProductRelease(uint64_t socketKey, const ContactProduct& product) const;
-    void logProductRelease(uint64_t socketKey, const HeatProduct& product) const;
 
     template <typename ProductT>
     static NodeProductType type() {

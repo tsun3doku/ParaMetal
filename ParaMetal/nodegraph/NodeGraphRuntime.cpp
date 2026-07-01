@@ -182,10 +182,6 @@ void NodeGraphRuntime::applyChange(const NodeGraphChange& change) {
     }
 }
 
-void NodeGraphRuntime::tick(const NodeGraphCompiled& compiled) {
-    execute(compiled);
-}
-
 void NodeGraphRuntime::execute(const NodeGraphCompiled& compiled) {
     if (graphState.nodes.size() > 0 && compiled.executionOrder.size() != graphState.nodes.size()) {
         currentEvaluationState.outputBySocket.clear();

@@ -44,13 +44,12 @@ public:
         }
     }
 
-    bool retain(uint64_t socketKey) {
+    void retain(uint64_t socketKey) {
         if (socketKey == 0 || !hasPackage(socketKey)) {
-            return false;
+            return;
         }
         staleSockets.erase(socketKey);
         retainedSockets.insert(socketKey);
-        return true;
     }
 
     void setProductHandle(uint64_t socketKey, const ProductHandle& handle) {
