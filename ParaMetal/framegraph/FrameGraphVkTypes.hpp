@@ -20,6 +20,8 @@ inline framegraph::ImageFormat toFrameGraphFormat(VkFormat format) {
         return framegraph::ImageFormat::B8G8R8A8Unorm;
     case VK_FORMAT_B8G8R8A8_SRGB:
         return framegraph::ImageFormat::B8G8R8A8Srgb;
+    case VK_FORMAT_R32_UINT:
+        return framegraph::ImageFormat::R32Uint;
     case VK_FORMAT_R16G16B16A16_SFLOAT:
         return framegraph::ImageFormat::R16G16B16A16Sfloat;
     case VK_FORMAT_D32_SFLOAT_S8_UINT:
@@ -42,6 +44,8 @@ inline VkFormat toVkFormat(framegraph::ImageFormat format) {
         return VK_FORMAT_B8G8R8A8_UNORM;
     case framegraph::ImageFormat::B8G8R8A8Srgb:
         return VK_FORMAT_B8G8R8A8_SRGB;
+    case framegraph::ImageFormat::R32Uint:
+        return VK_FORMAT_R32_UINT;
     case framegraph::ImageFormat::R16G16B16A16Sfloat:
         return VK_FORMAT_R16G16B16A16_SFLOAT;
     case framegraph::ImageFormat::D32SfloatS8Uint:

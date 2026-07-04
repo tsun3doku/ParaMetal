@@ -14,7 +14,7 @@ class CommandPool;
 class GridRenderer {
 public:
     GridRenderer(VulkanDevice& vulkanDevice, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager,
-                 uint32_t maxFramesInFlight, VkRenderPass renderPass, CommandPool& commandPool);
+                 uint32_t maxFramesInFlight, VkRenderPass renderPass, uint32_t subpass, CommandPool& commandPool);
     ~GridRenderer();
 
     void cleanup() const;
@@ -25,7 +25,7 @@ public:
     void createGridDescriptorSetLayout();
     void createGridDescriptorSets(uint32_t maxFramesInFlight);
 
-    void createGridPipeline(VkRenderPass renderPass);
+    void createGridPipeline(VkRenderPass renderPass, uint32_t subpass);
 
     uint32_t vertexCount = 6; 
 

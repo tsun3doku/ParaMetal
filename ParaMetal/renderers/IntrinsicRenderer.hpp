@@ -15,19 +15,18 @@ class iODT;
 
 class IntrinsicRenderer {
 public:
-    IntrinsicRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, CommandPool& commandPool,
-        VkRenderPass renderPass, uint32_t maxFramesInFlight, uint32_t subpassIndex);
+    IntrinsicRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, CommandPool& commandPool);
     ~IntrinsicRenderer();
     void cleanup();
 
     void apply(uint64_t socketKey, const RemeshDisplayController::Config& config);
     void remove(uint64_t socketKey);
-    void renderSupportingHalfedges(VkCommandBuffer commandBuffer, uint32_t currentFrame);
-    void renderIntrinsicNormals(VkCommandBuffer commandBuffer, uint32_t currentFrame);
-    void renderIntrinsicVertexNormals(VkCommandBuffer commandBuffer, uint32_t currentFrame);
+    bool initializeSurface(VkRenderPass renderPass, uint32_t maxFramesInFlight, uint32_t subpassIndex);
+    bool initializeOverlay(VkRenderPass renderPass, uint32_t maxFramesInFlight, uint32_t subpassIndex);
+    void renderSurface(VkCommandBuffer commandBuffer, uint32_t currentFrame);
+    void renderOverlay(VkCommandBuffer commandBuffer, uint32_t currentFrame);
 
 private:
-    bool initialize(VkRenderPass renderPass, uint32_t maxFramesInFlight, uint32_t subpassIndex);
     uint32_t calculateMipLevels(uint32_t width, uint32_t height);
     bool createWireframeTexture();
     void pruneStaleSocketResources();
@@ -50,6 +49,8 @@ private:
     bool createSupportingHalfedgePipeline(VkRenderPass renderPass, uint32_t subpassIndex);
     bool createIntrinsicNormalsPipeline(VkRenderPass renderPass, uint32_t subpassIndex);
     bool createIntrinsicVertexNormalsPipeline(VkRenderPass renderPass, uint32_t subpassIndex);
+    void renderIntrinsicNormals(VkCommandBuffer commandBuffer, uint32_t currentFrame);
+    void renderIntrinsicVertexNormals(VkCommandBuffer commandBuffer, uint32_t currentFrame);
 
     VulkanDevice& vulkanDevice;
     MemoryAllocator& allocator;
@@ -82,5 +83,6 @@ private:
     VkPipeline intrinsicVertexNormalsPipeline = VK_NULL_HANDLE;
     VkPipelineLayout intrinsicVertexNormalsPipelineLayout = VK_NULL_HANDLE;
 
-    bool initialized = false;
+    bool surfaceInitialized = false;
+    bool overlayInitialized = false;
 };

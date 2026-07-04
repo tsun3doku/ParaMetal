@@ -4,9 +4,11 @@ layout(triangles) in;
 layout(triangle_strip, max_vertices = 3) out;
 
 layout(location = 2) in vec3 vModelPos[];
+layout(location = 4) in vec3 vModelNormal[];
 
 layout(location = 2) out vec3 gModelPos;
 layout(location = 3) out vec2 gIntrinsicCoord;
+layout(location = 4) out vec3 gModelNormal;
 
 void main() {
     gl_PrimitiveID = gl_PrimitiveIDIn;
@@ -32,6 +34,7 @@ void main() {
     for (int i = 0; i < 3; ++i) {
         gModelPos = vModelPos[i];
         gIntrinsicCoord = (i == 0) ? p0_2D : (i == 1) ? p1_2D : p2_2D;
+        gModelNormal = vModelNormal[i];
         gl_Position = gl_in[i].gl_Position;
         EmitVertex();
     }

@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 class NodeGraph;
 class VulkanDevice;
@@ -23,6 +24,9 @@ public:
     void updateDisplayTransports();
     const NodeGraphCompiled& compiledState() const;
 
+    bool runtimeModelIdsForNode(NodeGraphNodeId nodeId,
+                                 std::vector<uint32_t>& outIds) const;
+
     RuntimeProductManager* getProductManager() { return productManager.get(); }
     RuntimePackageManager* getPackageManager() { return &packageManager; }
 
@@ -31,6 +35,9 @@ private:
     void compileRuntimePackages();
     void updateComputeTransport(uint64_t socketKey);
     void updateComputeTransports(const NodeGraphNode& node);
+    bool runtimeModelIdsForSocket(uint64_t socketKey,
+                                   std::vector<uint32_t>& outIds) const;
+    void addRuntimeModelId(std::vector<uint32_t>& outIds, uint32_t id) const;
 
     NodeGraph* bridge = nullptr;
     NodeRuntimeServices runtimeServices{};

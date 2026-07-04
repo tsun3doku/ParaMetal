@@ -13,8 +13,8 @@ ModelSelection::ModelSelection(
     VulkanDevice& device,
     VkFrameGraphRuntime& runtime,
     ModelRegistry& resourceManager,
-    framegraph::ResourceId depthResolveResourceId)
-    : vulkanDevice(device), frameGraphRuntime(runtime), resourceManager(resourceManager), depthResolveResourceId(depthResolveResourceId), pickingCommandPool(VK_NULL_HANDLE),
+    framegraph::ResourceId pickResourceId)
+    : vulkanDevice(device), frameGraphRuntime(runtime), resourceManager(resourceManager), pickResourceId(pickResourceId), pickingCommandPool(VK_NULL_HANDLE),
       stagingBuffer(VK_NULL_HANDLE), stagingBufferMemory(VK_NULL_HANDLE), stagingBufferMapped(nullptr) {
     if (!createPickingCommandPool() || !createStagingBuffer()) {
         std::cerr << "[ModelSelection] Initialization failed" << std::endl;
@@ -140,7 +140,7 @@ void ModelSelection::processPickingRequests(uint32_t currentFrame) {
         PickedResult result = pickAtPosition(request.x, request.y, currentFrame);
         lastPickedResult = result;  
         lastPickRequest = request; 
-        
+
         // Handle selection based on picked result and shift state 
         if (result.isModel()) {
             if (request.shiftPressed) {
@@ -158,11 +158,12 @@ void ModelSelection::processPickingRequests(uint32_t currentFrame) {
             // Clicked nothing without shift 
             clearSelection();
         }
+
     }
 }
 
 bool ModelSelection::createStagingBuffer() {
-    VkDeviceSize bufferSize = 1;  
+    VkDeviceSize bufferSize = sizeof(uint32_t);
     
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -255,64 +256,50 @@ PickedResult ModelSelection::pickAtPosition(int x, int y, uint32_t currentFrame)
         return PickedResult();
     }
     
-    // Get the stencil image from frameGraph
-    const auto& depthResolveImages = frameGraphRuntime.getResourceImages(depthResolveResourceId);
-    if (currentFrame >= depthResolveImages.size()) {
+    const auto& pickImages = frameGraphRuntime.getResourceImages(pickResourceId);
+    if (currentFrame >= pickImages.size()) {
         freeCmd("invalidFrame");
         return PickedResult();
     }
-    VkImage stencilImage = depthResolveImages[currentFrame];
-    if (stencilImage == VK_NULL_HANDLE) {
-        freeCmd("nullStencilImage");
+    VkImage pickImage = pickImages[currentFrame];
+    if (pickImage == VK_NULL_HANDLE) {
+        freeCmd("nullPickImage");
         return PickedResult();
     }
     
-    // Transition image to TRANSFER_SRC_OPTIMAL 
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL; 
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = stencilImage;
-    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+    barrier.image = pickImage;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     barrier.subresourceRange.baseMipLevel = 0;
     barrier.subresourceRange.levelCount = 1;
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = 1;
-    barrier.srcAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
+    barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 
     vkCmdPipelineBarrier(commandBuffer,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
         VK_PIPELINE_STAGE_TRANSFER_BIT,
         0, 0, nullptr, 0, nullptr, 1, &barrier);
     
-    // Copy single pixel stencil to staging buffer
     VkBufferImageCopy region{};
     region.bufferOffset = 0;
     region.bufferRowLength = 0;
     region.bufferImageHeight = 0;
-    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     region.imageSubresource.mipLevel = 0;
     region.imageSubresource.baseArrayLayer = 0;
     region.imageSubresource.layerCount = 1;
     region.imageOffset = {x, y, 0};
     region.imageExtent = {1, 1, 1};
     
-    vkCmdCopyImageToBuffer(commandBuffer, stencilImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+    vkCmdCopyImageToBuffer(commandBuffer, pickImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
         stagingBuffer, 1, &region);
-    
-    // Transition back to GENERAL for next frame 
-    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL; 
-    barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-    vkCmdPipelineBarrier(commandBuffer,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, 
-        0, 0, nullptr, 0, nullptr, 1, &barrier);
     
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
         freeCmd("endFail");
@@ -346,31 +333,31 @@ PickedResult ModelSelection::pickAtPosition(int x, int y, uint32_t currentFrame)
     vkDestroyFence(vulkanDevice.getDevice(), copyFence, nullptr);
     freeCmd("success");
     
-    uint8_t stencilValue = *static_cast<uint8_t*>(stagingBufferMapped);
+    uint32_t pickId = *static_cast<uint32_t*>(stagingBufferMapped);
      
     PickedResult result;
-     
-    result.stencilValue = stencilValue;
+    result.pickId = pickId;
 
-    // Model IDs are encoded directly into stencil values.
-    // 3-5 = translation arrows (X, Y, Z)
-    // 6-8 = rotation rings (X, Y, Z)  
-
-    if (stencilValue >= 3 && stencilValue <= 8) {
-        result.type = PickedType::Gizmo;
-        result.gizmoAxis = static_cast<PickedGizmoAxis>(((stencilValue - 3) % 3) + 1);
-    } else if (resourceManager.hasModel(stencilValue)) {
+    if (pickid::typeOf(pickId) == pickid::GizmoType) {
+        const uint32_t axis = pickid::gizmoAxisOf(pickId);
+        if (axis >= 1 && axis <= 3) {
+            result.type = PickedType::Gizmo;
+            result.gizmoAxis = static_cast<PickedGizmoAxis>(axis);
+            result.gizmoMode = pickid::gizmoModeOf(pickId);
+        }
+    } else if (pickid::typeOf(pickId) == pickid::ModelType) {
+        const uint32_t modelId = pickid::payloadOf(pickId);
+        if (!resourceManager.hasModel(modelId)) {
+            result.type = PickedType::None;
+            return result;
+        }
         result.type = PickedType::Model;
-        result.modelID = stencilValue;
+        result.modelID = modelId;
     } else {
         result.type = PickedType::None;
     }
     
     return result;
-}
-
-PickedResult ModelSelection::pickImmediately(int x, int y, uint32_t currentFrame) {
-    return pickAtPosition(x, y, currentFrame);
 }
 
 void ModelSelection::cleanup() {

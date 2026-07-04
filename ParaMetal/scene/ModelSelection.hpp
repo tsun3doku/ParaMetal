@@ -9,6 +9,8 @@
 #include <atomic>
 #include <vector>
 
+#include "PickId.hpp"
+
 class Camera;
 class Model;
 class VulkanDevice;
@@ -32,9 +34,10 @@ struct PickedResult {
     PickedType type;
     uint32_t modelID;          
     PickedGizmoAxis gizmoAxis;
-    uint8_t stencilValue;  // Raw stencil value to distinguish translation (3-5) vs rotation (6-8)
+    PickedGizmoMode gizmoMode;
+    uint32_t pickId;
     
-    PickedResult() : type(PickedType::None), modelID(0), gizmoAxis(PickedGizmoAxis::None), stencilValue(0) {}
+    PickedResult() : type(PickedType::None), modelID(0), gizmoAxis(PickedGizmoAxis::None), gizmoMode(PickedGizmoMode::None), pickId(0) {}
     
     bool isNone() const { 
         return type == PickedType::None; 
@@ -61,7 +64,7 @@ public:
         VulkanDevice& device,
         VkFrameGraphRuntime& frameGraphRuntime,
         ModelRegistry& resourceManager,
-        framegraph::ResourceId depthResolveResourceId);
+        framegraph::ResourceId pickResourceId);
     ~ModelSelection();
     bool isInitialized() const { return initialized; }
     
@@ -69,8 +72,6 @@ public:
     void processPickingRequests(uint32_t currentFrame);
     
     PickedResult pickAtPosition(int x, int y, uint32_t currentFrame);
-    
-    PickedResult pickImmediately(int x, int y, uint32_t currentFrame);
     
     bool createPickingCommandPool();
     bool createStagingBuffer();
@@ -106,7 +107,7 @@ private:
     VulkanDevice& vulkanDevice;
     VkFrameGraphRuntime& frameGraphRuntime;
     ModelRegistry& resourceManager;
-    framegraph::ResourceId depthResolveResourceId{};
+    framegraph::ResourceId pickResourceId{};
     VkCommandPool pickingCommandPool;
     
     VkBuffer stagingBuffer;

@@ -14,9 +14,15 @@
 #include "vulkan/VulkanDevice.hpp"
 
 #include "GeometryPass.hpp"
+#include "SurfacePass.hpp"
 #include "LightingPass.hpp"
 #include "OverlayPass.hpp"
+#include "PickPass.hpp"
 #include "BlendPass.hpp"
+#include "HeatOverlayRenderer.hpp"
+#include "VoronoiOverlayRenderer.hpp"
+#include "renderers/IntrinsicRenderer.hpp"
+#include "renderers/GizmoRenderer.hpp"
 
 SceneRenderer::SceneRenderer(VulkanDevice& device, MemoryAllocator& allocator, FrameGraph& graph, VkFrameGraphRuntime& runtime, ModelRegistry& manager, UniformBufferManager& ubo, uint32_t framesInFlight, CommandPool& commandPool)
     : vulkanDevice(device),
@@ -49,8 +55,10 @@ SceneRenderer::~SceneRenderer() {
 
 bool SceneRenderer::initializePasses() {
     const framegraph::PassId geometryPassId = frameGraph.getPassId(framegraph::passes::Geometry);
+    const framegraph::PassId surfacePassId = frameGraph.getPassId(framegraph::passes::Surface);
     const framegraph::PassId lightingPassId = frameGraph.getPassId(framegraph::passes::Lighting);
     const framegraph::PassId overlayPassId = frameGraph.getPassId(framegraph::passes::Overlay);
+    const framegraph::PassId pickPassId = frameGraph.getPassId(framegraph::passes::Pick);
     const framegraph::PassId blendPassId = frameGraph.getPassId(framegraph::passes::Blend);
 
     const framegraph::ResourceId albedoResolveId = frameGraph.getResourceId(framegraph::resources::AlbedoResolve);
@@ -60,9 +68,13 @@ bool SceneRenderer::initializePasses() {
     const framegraph::ResourceId depthMsaaId = frameGraph.getResourceId(framegraph::resources::DepthMSAA);
     const framegraph::ResourceId lineResolveId = frameGraph.getResourceId(framegraph::resources::LineResolve);
     const framegraph::ResourceId lightingResolveId = frameGraph.getResourceId(framegraph::resources::LightingResolve);
-    const framegraph::ResourceId surfaceResolveId = frameGraph.getResourceId(framegraph::resources::SurfaceResolve);
 
-    if (!geometryPassId.isValid() || !lightingPassId.isValid() || !overlayPassId.isValid() || !blendPassId.isValid()) {
+    if (!geometryPassId.isValid() ||
+        !surfacePassId.isValid() ||
+        !lightingPassId.isValid() ||
+        !overlayPassId.isValid() ||
+        !pickPassId.isValid() ||
+        !blendPassId.isValid()) {
         std::cerr << "[SceneRenderer] Failed to resolve pass ids" << std::endl;
         return false;
     }
@@ -72,8 +84,7 @@ bool SceneRenderer::initializePasses() {
         !depthResolveId.isValid() ||
         !depthMsaaId.isValid() ||
         !lineResolveId.isValid() ||
-        !lightingResolveId.isValid() ||
-        !surfaceResolveId.isValid()) {
+        !lightingResolveId.isValid()) {
         std::cerr << "[SceneRenderer] Failed to resolve resource ids" << std::endl;
         return false;
     }
@@ -87,6 +98,41 @@ bool SceneRenderer::initializePasses() {
         geometryPassId);
     geometryPass = geometry.get();
     addPass(std::move(geometry));
+
+    heatOverlayRenderer = std::make_unique<render::HeatOverlayRenderer>(
+        vulkanDevice,
+        memoryAllocator,
+        uniformBufferManager,
+        renderCommandPool);
+    voronoiOverlayRenderer = std::make_unique<render::VoronoiOverlayRenderer>(
+        vulkanDevice,
+        memoryAllocator,
+        uniformBufferManager,
+        renderCommandPool);
+    intrinsicRenderer = std::make_unique<IntrinsicRenderer>(
+        vulkanDevice,
+        memoryAllocator,
+        uniformBufferManager,
+        renderCommandPool);
+    gizmoRenderer = std::make_unique<GizmoRenderer>(
+        vulkanDevice,
+        frameGraphRuntime.getRenderPass(),
+        framegraph::toIndex(overlayPassId),
+        renderCommandPool);
+    if (!heatOverlayRenderer || !voronoiOverlayRenderer || !intrinsicRenderer || !gizmoRenderer) {
+        std::cerr << "[SceneRenderer] Failed to create surface visualization renderers" << std::endl;
+        return false;
+    }
+
+    auto surface = std::make_unique<render::SurfacePass>(
+        frameGraphRuntime,
+        *heatOverlayRenderer,
+        *voronoiOverlayRenderer,
+        *intrinsicRenderer,
+        surfacePassId,
+        maxFramesInFlight);
+    surfacePass = surface.get();
+    addPass(std::move(surface));
 
     auto lighting = std::make_unique<render::LightingPass>(
         vulkanDevice,
@@ -107,6 +153,10 @@ bool SceneRenderer::initializePasses() {
         resourceManager,
         uniformBufferManager,
         *geometryPass,
+        *heatOverlayRenderer,
+        *voronoiOverlayRenderer,
+        *intrinsicRenderer,
+        *gizmoRenderer,
         maxFramesInFlight,
         renderCommandPool,
         overlayPassId,
@@ -115,6 +165,16 @@ bool SceneRenderer::initializePasses() {
     overlayPass = overlay.get();
     addPass(std::move(overlay));
 
+    auto pick = std::make_unique<render::PickPass>(
+        vulkanDevice,
+        frameGraphRuntime,
+        resourceManager,
+        *geometryPass,
+        *gizmoRenderer,
+        pickPassId);
+    pickPass = pick.get();
+    addPass(std::move(pick));
+
     auto blend = std::make_unique<render::BlendPass>(
         vulkanDevice,
         memoryAllocator,
@@ -122,7 +182,6 @@ bool SceneRenderer::initializePasses() {
         frameGraphRuntime,
         maxFramesInFlight,
         blendPassId,
-        surfaceResolveId,
         lineResolveId,
         lightingResolveId,
         albedoResolveId);
@@ -269,7 +328,7 @@ void SceneRenderer::updateDescriptorSets() {
 }
 
 IntrinsicRenderer* SceneRenderer::getIntrinsicRenderer() const {
-    return overlayPass ? overlayPass->getIntrinsicRenderer() : nullptr;
+    return intrinsicRenderer.get();
 }
 
 render::ContactOverlayRenderer* SceneRenderer::getContactOverlayRenderer() const {
@@ -277,7 +336,7 @@ render::ContactOverlayRenderer* SceneRenderer::getContactOverlayRenderer() const
 }
 
 render::HeatOverlayRenderer* SceneRenderer::getHeatOverlayRenderer() const {
-    return overlayPass ? overlayPass->getHeatOverlayRenderer() : nullptr;
+    return heatOverlayRenderer.get();
 }
 
 render::PointOverlayRenderer* SceneRenderer::getPointOverlayRenderer() const {
@@ -285,7 +344,7 @@ render::PointOverlayRenderer* SceneRenderer::getPointOverlayRenderer() const {
 }
 
 render::VoronoiOverlayRenderer* SceneRenderer::getVoronoiOverlayRenderer() const {
-    return overlayPass ? overlayPass->getVoronoiOverlayRenderer() : nullptr;
+    return voronoiOverlayRenderer.get();
 }
 
 void SceneRenderer::setTimingOverlayLines(const std::vector<std::string>& lines) {
@@ -463,9 +522,18 @@ void SceneRenderer::cleanup() {
     destroyGpuTimingQueryPool();
     destroyPasses();
     geometryPass = nullptr;
+    surfacePass = nullptr;
     lightingPass = nullptr;
     overlayPass = nullptr;
+    pickPass = nullptr;
     blendPass = nullptr;
+    heatOverlayRenderer.reset();
+    voronoiOverlayRenderer.reset();
+    intrinsicRenderer.reset();
+    if (gizmoRenderer) {
+        gizmoRenderer->cleanup();
+        gizmoRenderer.reset();
+    }
 }
 
 void SceneRenderer::createGpuTimingQueryPool() {

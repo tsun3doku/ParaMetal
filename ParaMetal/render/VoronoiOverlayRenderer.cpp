@@ -19,15 +19,25 @@ VoronoiOverlayRenderer::~VoronoiOverlayRenderer() {
     cleanup();
 }
 
-void VoronoiOverlayRenderer::initialize(VkRenderPass renderPass, uint32_t subpass, uint32_t maxFramesInFlight) {
-    if (!voronoiRenderer || !pointRenderer || initialized) {
+void VoronoiOverlayRenderer::initializeSurface(VkRenderPass renderPass, uint32_t surfaceSubpass, uint32_t maxFramesInFlight) {
+    if (!voronoiRenderer || surfaceInitialized) {
         return;
     }
 
-    voronoiRenderer->initialize(renderPass, maxFramesInFlight);
-    pointRenderer->initialize(renderPass, subpass, maxFramesInFlight);
+    voronoiRenderer->initialize(renderPass, surfaceSubpass, maxFramesInFlight);
     this->maxFramesInFlight = maxFramesInFlight;
-    initialized = true;
+    surfaceInitialized = true;
+    rebuildBindings();
+}
+
+void VoronoiOverlayRenderer::initializeOverlay(VkRenderPass renderPass, uint32_t overlaySubpass, uint32_t maxFramesInFlight) {
+    if (!pointRenderer || overlayInitialized) {
+        return;
+    }
+
+    pointRenderer->initialize(renderPass, overlaySubpass, maxFramesInFlight);
+    this->maxFramesInFlight = maxFramesInFlight;
+    overlayInitialized = true;
     rebuildBindings();
 }
 
@@ -108,7 +118,7 @@ void VoronoiOverlayRenderer::rebuildBindings() {
 }
 
 void VoronoiOverlayRenderer::renderSurface(VkCommandBuffer commandBuffer, uint32_t frameIndex) {
-    if (!initialized || !voronoiRenderer) {
+    if (!surfaceInitialized || !voronoiRenderer) {
         return;
     }
 
@@ -116,7 +126,7 @@ void VoronoiOverlayRenderer::renderSurface(VkCommandBuffer commandBuffer, uint32
 }
 
 void VoronoiOverlayRenderer::renderPoints(VkCommandBuffer commandBuffer, uint32_t frameIndex, VkExtent2D extent) {
-    if (!initialized || !pointRenderer) {
+    if (!overlayInitialized || !pointRenderer) {
         return;
     }
 
@@ -141,7 +151,8 @@ void VoronoiOverlayRenderer::cleanup() {
     configsBySocket.clear();
     voronoiBindings.clear();
     maxFramesInFlight = 0;
-    initialized = false;
+    surfaceInitialized = false;
+    overlayInitialized = false;
     if (voronoiRenderer) {
         voronoiRenderer->cleanup();
     }

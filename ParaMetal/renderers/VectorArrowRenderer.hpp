@@ -27,7 +27,7 @@ public:
     VectorArrowRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, CommandPool& commandPool);
     ~VectorArrowRenderer();
 
-    void initialize(VkRenderPass renderPass, uint32_t maxFramesInFlight);
+    void initialize(VkRenderPass renderPass, uint32_t subpass, uint32_t maxFramesInFlight);
     void render(VkCommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<VectorRenderBinding>& vectors);
     void cleanup();
 
@@ -43,7 +43,7 @@ private:
     bool createArrowGeometry();
     bool createDescriptorSetLayout();
     bool createDescriptorPool(uint32_t maxFramesInFlight);
-    bool createPipeline(VkRenderPass renderPass);
+    bool createPipeline(VkRenderPass renderPass, uint32_t subpass);
     
     VkDescriptorSet allocateDescriptorSet(VkDescriptorPool pool);
     void updateDescriptorSet(VkDescriptorSet set, uint32_t frameIndex, const VectorRenderBinding& binding);

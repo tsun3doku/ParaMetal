@@ -346,7 +346,8 @@ void RuntimePackageCompiler::compileMeshPoints(
         const NodeDataBlock& data = value->data;
         const PointData* pointData = payloadRegistry->get<PointData>(data.payloadHandle);
         if (!pointData || !pointData->active) {
-            continue;
+            continue
+                ;
         }
 
         PointPackage package{};

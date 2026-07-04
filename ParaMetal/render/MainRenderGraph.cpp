@@ -31,12 +31,14 @@ static framegraph::ResourceId addColorImage(
     const framegraph::AttachmentOps& ops,
     framegraph::ResourceLayout finalLayout,
     framegraph::ResourceLifetime lifetime = framegraph::ResourceLifetime::Transient,
-    framegraph::ResourceLayout initialLayout = framegraph::ResourceLayout::Undefined) {
+    framegraph::ResourceLayout initialLayout = framegraph::ResourceLayout::Undefined,
+    bool isGraphOutput = false) {
     framegraph::ImageResourceCreateInfo createInfo{};
     createInfo.name = name;
     createInfo.lifetime = lifetime;
     createInfo.format = format;
     createInfo.useSwapchainFormat = useSwapchainFormat;
+    createInfo.isGraphOutput = isGraphOutput;
     createInfo.samples = samples;
     createInfo.imageUsage = usage;
     createInfo.viewAspect = framegraph::ImageAspect::Color;
@@ -226,27 +228,34 @@ void MainRenderGraph::buildMainRenderGraph(FrameGraph& frameGraph) {
         makeAttachmentOps(framegraph::AttachmentLoadOp::DontCare, framegraph::AttachmentStoreOp::Store),
         framegraph::ResourceLayout::ShaderReadOnly);
 
-    const framegraph::ResourceId resSwapchain = addSwapchainOutput(frameGraph, framegraph::resources::Swapchain);
-
-    const framegraph::ResourceId resSurfaceMSAA = addColorImage(
+    const framegraph::ResourceId resPickId = addColorImage(
         frameGraph,
-        framegraph::resources::SurfaceMSAA,
-        framegraph::ImageFormat::Undefined,
-        true,
-        framegraph::SampleCount::Count8,
-        framegraph::ImageUsage::ColorAttachment | framegraph::ImageUsage::TransientAttachment,
-        makeAttachmentOps(framegraph::AttachmentLoadOp::Clear, framegraph::AttachmentStoreOp::DontCare),
-        framegraph::ResourceLayout::ColorAttachment);
-
-    const framegraph::ResourceId resSurfaceResolve = addColorImage(
-        frameGraph,
-        framegraph::resources::SurfaceResolve,
-        framegraph::ImageFormat::Undefined,
-        true,
+        framegraph::resources::PickID,
+        framegraph::ImageFormat::R32Uint,
+        false,
         framegraph::SampleCount::Count1,
-        framegraph::ImageUsage::ColorAttachment | framegraph::ImageUsage::InputAttachment,
-        makeAttachmentOps(framegraph::AttachmentLoadOp::DontCare, framegraph::AttachmentStoreOp::Store),
-        framegraph::ResourceLayout::ShaderReadOnly);
+        framegraph::ImageUsage::ColorAttachment | framegraph::ImageUsage::TransferSrc,
+        makeAttachmentOps(framegraph::AttachmentLoadOp::Clear, framegraph::AttachmentStoreOp::Store),
+        framegraph::ResourceLayout::TransferSrc,
+        framegraph::ResourceLifetime::Transient,
+        framegraph::ResourceLayout::Undefined,
+        true);
+
+    const framegraph::ResourceId resPickDepth = addDepthStencilImage(
+        frameGraph,
+        framegraph::resources::PickDepth,
+        framegraph::ImageFormat::D32SfloatS8Uint,
+        false,
+        framegraph::SampleCount::Count1,
+        framegraph::ImageUsage::DepthStencilAttachment,
+        makeAttachmentOps(
+            framegraph::AttachmentLoadOp::Clear,
+            framegraph::AttachmentStoreOp::DontCare,
+            framegraph::AttachmentLoadOp::Clear,
+            framegraph::AttachmentStoreOp::DontCare),
+        framegraph::ResourceLayout::DepthStencilAttachment);
+
+    const framegraph::ResourceId resSwapchain = addSwapchainOutput(frameGraph, framegraph::resources::Swapchain);
 
     framegraph::PassDescription geometryPass{};
     geometryPass.name = framegraph::passes::Geometry;
@@ -262,6 +271,21 @@ void MainRenderGraph::buildMainRenderGraph(FrameGraph& frameGraph) {
     };
     geometryPass.depthStencil = makeRef(resDepthMSAA);
     frameGraph.addPassDesc(std::move(geometryPass));
+
+    framegraph::PassDescription surfacePass{};
+    surfacePass.name = framegraph::passes::Surface;
+    surfacePass.colors = {
+        makeRef(resAlbedoMSAA),
+    };
+    surfacePass.resolves = {
+        makeRef(resAlbedoResolve),
+    };
+    surfacePass.depthStencil = makeRef(
+        resDepthMSAA,
+        framegraph::ImageAspect::Depth | framegraph::ImageAspect::Stencil,
+        framegraph::ResourceLayout::DepthStencilReadOnly);
+    surfacePass.depthReadOnly = true;
+    frameGraph.addPassDesc(std::move(surfacePass));
 
     framegraph::PassDescription lightingPass{};
     lightingPass.name = framegraph::passes::Lighting;
@@ -286,11 +310,9 @@ void MainRenderGraph::buildMainRenderGraph(FrameGraph& frameGraph) {
     framegraph::PassDescription overlayPass{};
     overlayPass.name = framegraph::passes::Overlay;
     overlayPass.colors = {
-        makeRef(resSurfaceMSAA),
         makeRef(resLineMSAA),
     };
     overlayPass.resolves = {
-        makeRef(resSurfaceResolve),
         makeRef(resLineResolve),
     };
     overlayPass.depthStencil = makeRef(resDepthMSAA, std::nullopt, framegraph::ResourceLayout::General);
@@ -300,10 +322,20 @@ void MainRenderGraph::buildMainRenderGraph(FrameGraph& frameGraph) {
         framegraph::ResourceLayout::General);
     frameGraph.addPassDesc(std::move(overlayPass));
 
+    framegraph::PassDescription pickPass{};
+    pickPass.name = framegraph::passes::Pick;
+    pickPass.colors = {
+        makeRef(resPickId),
+    };
+    pickPass.depthStencil = makeRef(resPickDepth);
+    pickPass.additionalUses = {
+        { resLineResolve, framegraph::UsageType::InputAttachment, false },
+    };
+    frameGraph.addPassDesc(std::move(pickPass));
+
     framegraph::PassDescription blendPass{};
     blendPass.name = framegraph::passes::Blend;
     blendPass.inputs = {
-        makeRef(resSurfaceResolve),
         makeRef(resLineResolve),
         makeRef(resLightingResolve),
         makeRef(resAlbedoResolve),

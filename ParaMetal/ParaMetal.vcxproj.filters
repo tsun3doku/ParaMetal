@@ -186,10 +186,16 @@
     <ClCompile Include="render\GeometryPass.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="render\SurfacePass.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="render\LightingPass.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="render\OverlayPass.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="render\PickPass.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="render\HeatOverlayRenderer.cpp">
@@ -734,6 +740,15 @@
     <None Include="shaders\gizmo.vert">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="shaders\pick_gizmo.frag">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\pick_model.frag">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\pick_model.vert">
+      <Filter>Shaders</Filter>
+    </None>
     <None Include="shaders\intrinsic_supporting.frag">
       <Filter>Shaders</Filter>
     </None>
@@ -965,10 +980,19 @@
     <ClInclude Include="render\GeometryPass.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="render\SurfacePass.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="render\LightingPass.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="render\OverlayPass.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="render\PickPass.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="scene\PickId.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="render\HeatOverlayRenderer.hpp">

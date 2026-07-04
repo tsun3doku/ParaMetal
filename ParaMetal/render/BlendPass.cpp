@@ -20,14 +20,13 @@
 namespace render {
 
 BlendPass::BlendPass(VulkanDevice& device, MemoryAllocator& memoryAllocator, CommandPool& commandPool, VkFrameGraphRuntime& runtime, uint32_t framesInFlight, framegraph::PassId passId,
-    framegraph::ResourceId surfaceResolveId, framegraph::ResourceId lineResolveId, framegraph::ResourceId lightingResolveId, framegraph::ResourceId albedoResolveId)
+    framegraph::ResourceId lineResolveId, framegraph::ResourceId lightingResolveId, framegraph::ResourceId albedoResolveId)
     : vulkanDevice(device),
       memoryAllocator(memoryAllocator),
       commandPool(commandPool),
       frameGraphRuntime(runtime),
       maxFramesInFlight(framesInFlight),
       passId(passId),
-      surfaceResolveId(surfaceResolveId),
       lineResolveId(lineResolveId),
       lightingResolveId(lightingResolveId),
       albedoResolveId(albedoResolveId) {
@@ -74,20 +73,18 @@ void BlendPass::updateDescriptors() {
         return;
     }
     for (uint32_t i = 0; i < maxFramesInFlight; ++i) {
-        VkDescriptorImageInfo imageInfos[5]{};
-        imageInfos[0].imageView = frameGraphRuntime.getResourceViews(surfaceResolveId)[i];
+        VkDescriptorImageInfo imageInfos[4]{};
+        imageInfos[0].imageView = frameGraphRuntime.getResourceViews(lineResolveId)[i];
         imageInfos[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfos[1].imageView = frameGraphRuntime.getResourceViews(lineResolveId)[i];
+        imageInfos[1].imageView = frameGraphRuntime.getResourceViews(lightingResolveId)[i];
         imageInfos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfos[2].imageView = frameGraphRuntime.getResourceViews(lightingResolveId)[i];
+        imageInfos[2].imageView = frameGraphRuntime.getResourceViews(albedoResolveId)[i];
         imageInfos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfos[3].imageView = frameGraphRuntime.getResourceViews(albedoResolveId)[i];
+        imageInfos[3].imageView = backgroundImageView;
+        imageInfos[3].sampler = backgroundSampler;
         imageInfos[3].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfos[4].imageView = backgroundImageView;
-        imageInfos[4].sampler = backgroundSampler;
-        imageInfos[4].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-        VkWriteDescriptorSet descriptorWrites[5]{};
+        VkWriteDescriptorSet descriptorWrites[4]{};
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[0].dstSet = blendDescriptorSets[i];
         descriptorWrites[0].dstBinding = 0;
@@ -112,18 +109,11 @@ void BlendPass::updateDescriptors() {
         descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[3].dstSet = blendDescriptorSets[i];
         descriptorWrites[3].dstBinding = 3;
-        descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrites[3].descriptorCount = 1;
         descriptorWrites[3].pImageInfo = &imageInfos[3];
 
-        descriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[4].dstSet = blendDescriptorSets[i];
-        descriptorWrites[4].dstBinding = 4;
-        descriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[4].descriptorCount = 1;
-        descriptorWrites[4].pImageInfo = &imageInfos[4];
-
-        vkUpdateDescriptorSets(vulkanDevice.getDevice(), 5, descriptorWrites, 0, nullptr);
+        vkUpdateDescriptorSets(vulkanDevice.getDevice(), 4, descriptorWrites, 0, nullptr);
     }
 }
 
@@ -168,7 +158,7 @@ void BlendPass::destroy() {
 bool BlendPass::createBlendDescriptorPool(uint32_t maxFramesInFlight) {
     VkDescriptorPoolSize poolSizes[2]{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-    poolSizes[0].descriptorCount = maxFramesInFlight * 4;
+    poolSizes[0].descriptorCount = maxFramesInFlight * 3;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[1].descriptorCount = maxFramesInFlight;
 
@@ -186,7 +176,7 @@ bool BlendPass::createBlendDescriptorPool(uint32_t maxFramesInFlight) {
 }
 
 bool BlendPass::createBlendDescriptorSetLayout() {
-    VkDescriptorSetLayoutBinding bindings[5] = {};
+    VkDescriptorSetLayoutBinding bindings[4] = {};
     bindings[0].binding = 0;
     bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
     bindings[0].descriptorCount = 1;
@@ -203,18 +193,13 @@ bool BlendPass::createBlendDescriptorSetLayout() {
     bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
     bindings[3].binding = 3;
-    bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     bindings[3].descriptorCount = 1;
     bindings[3].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    bindings[4].binding = 4;
-    bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bindings[4].descriptorCount = 1;
-    bindings[4].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 5;
+    layoutInfo.bindingCount = 4;
     layoutInfo.pBindings = bindings;
 
     if (vkCreateDescriptorSetLayout(vulkanDevice.getDevice(), &layoutInfo, nullptr, &blendDescriptorSetLayout) != VK_SUCCESS) {
@@ -240,20 +225,18 @@ bool BlendPass::createBlendDescriptorSets(uint32_t maxFramesInFlight) {
     }
 
     for (size_t i = 0; i < maxFramesInFlight; i++) {
-        VkDescriptorImageInfo imageInfos[5] = {};
-        imageInfos[0].imageView = frameGraphRuntime.getResourceViews(surfaceResolveId)[i];
+        VkDescriptorImageInfo imageInfos[4] = {};
+        imageInfos[0].imageView = frameGraphRuntime.getResourceViews(lineResolveId)[i];
         imageInfos[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfos[1].imageView = frameGraphRuntime.getResourceViews(lineResolveId)[i];
+        imageInfos[1].imageView = frameGraphRuntime.getResourceViews(lightingResolveId)[i];
         imageInfos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfos[2].imageView = frameGraphRuntime.getResourceViews(lightingResolveId)[i];
+        imageInfos[2].imageView = frameGraphRuntime.getResourceViews(albedoResolveId)[i];
         imageInfos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfos[3].imageView = frameGraphRuntime.getResourceViews(albedoResolveId)[i];
+        imageInfos[3].imageView = backgroundImageView;
+        imageInfos[3].sampler = backgroundSampler;
         imageInfos[3].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfos[4].imageView = backgroundImageView;
-        imageInfos[4].sampler = backgroundSampler;
-        imageInfos[4].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-        VkWriteDescriptorSet descriptorWrites[5] = {};
+        VkWriteDescriptorSet descriptorWrites[4] = {};
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[0].dstSet = blendDescriptorSets[i];
         descriptorWrites[0].dstBinding = 0;
@@ -278,18 +261,11 @@ bool BlendPass::createBlendDescriptorSets(uint32_t maxFramesInFlight) {
         descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[3].dstSet = blendDescriptorSets[i];
         descriptorWrites[3].dstBinding = 3;
-        descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrites[3].descriptorCount = 1;
         descriptorWrites[3].pImageInfo = &imageInfos[3];
 
-        descriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[4].dstSet = blendDescriptorSets[i];
-        descriptorWrites[4].dstBinding = 4;
-        descriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[4].descriptorCount = 1;
-        descriptorWrites[4].pImageInfo = &imageInfos[4];
-
-        vkUpdateDescriptorSets(vulkanDevice.getDevice(), 5, descriptorWrites, 0, nullptr);
+        vkUpdateDescriptorSets(vulkanDevice.getDevice(), 4, descriptorWrites, 0, nullptr);
     }
     return true;
 }

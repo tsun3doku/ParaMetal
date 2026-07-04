@@ -325,22 +325,20 @@ void TimingRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpassInd
     depthStencil.depthWriteEnable = VK_FALSE;
     depthStencil.depthCompareOp = VK_COMPARE_OP_ALWAYS;
 
-    VkPipelineColorBlendAttachmentState blendAttachments[2] = {};
-    blendAttachments[0].colorWriteMask = 0;
-    blendAttachments[0].blendEnable = VK_FALSE;
-    blendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+    VkPipelineColorBlendAttachmentState blendAttachments[1] = {};
+    blendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    blendAttachments[1].blendEnable = VK_TRUE;
-    blendAttachments[1].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    blendAttachments[1].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    blendAttachments[1].colorBlendOp = VK_BLEND_OP_ADD;
-    blendAttachments[1].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    blendAttachments[1].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    blendAttachments[1].alphaBlendOp = VK_BLEND_OP_ADD;
+    blendAttachments[0].blendEnable = VK_TRUE;
+    blendAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    blendAttachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendAttachments[0].colorBlendOp = VK_BLEND_OP_ADD;
+    blendAttachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    blendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
 
     VkPipelineColorBlendStateCreateInfo colorBlend{};
     colorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlend.attachmentCount = 2;
+    colorBlend.attachmentCount = 1;
     colorBlend.pAttachments = blendAttachments;
 
     std::array<VkDynamicState, 2> dynamicStates = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };

@@ -13,6 +13,14 @@ layout(push_constant) uniform PushConstants {
     int _pad2;
 } pc;
 
+layout(binding = 18) uniform LightUniformBufferObject {
+    vec3 lightPos_Key;
+    vec3 lightPos_Rim;
+    vec3 lightAmbient;
+    vec4 lightParams;
+    vec3 cameraPos;
+} lightUbo;
+
 layout(std430, binding = 2) readonly buffer SeedBuffer {
     vec4 seeds[]; // xyz, w=padding
 };
@@ -48,15 +56,18 @@ const uint NEIGHBORS_TO_CHECK = 36;
 // Adaptive walk budget
 const int MIN_WALK_ITERATIONS = 4;
 const int MAX_WALK_ITERATIONS = 16;
-const float ITER_DIST_SCALE = 0.02; // Tune: higher = more iterations for large triangles
+const float ITER_DIST_SCALE = 0.02; // Higher = more iterations for large triangles
 const float EARLY_EXIT_REL_IMPROVEMENT = 1e-4;
 
 const uint SECOND_RING_NEIGHBORS = 2;
 
 const float WIRE_DIST_WIDTH = 0.005;
-
+const float EXIT_PLANE_DEPTH_SCALE = 0.90;
+const float EXIT_PLANE_MIN_DEPTH = 0.08;
+const float INTERIOR_EDGE_WIDTH = 0.035;
+const float INTERIOR_EDGE_STRENGTH = 0.6;
 const float PI = 3.14159265359;
-const int IMAX = 1024;
+const int IMAX = 128;
 
 vec3 paletteColor(uint cellID) {
     // Randomize index using golden ratio for even distribution
@@ -84,91 +95,143 @@ vec3 paletteColor(uint cellID) {
     return linearColor;
 }
 
+vec3 safeNormalize(vec3 v, vec3 fallback) {
+    float len2 = dot(v, v);
+    if (len2 < 1e-12) {
+        return fallback;
+    }
+    return v * inversesqrt(len2);
+}
+
+vec3 modelSpaceViewRay(vec3 modelSpacePos, mat3 invModelMatrix) {
+    vec3 viewRayWorld = (pc.modelMatrix * vec4(modelSpacePos, 1.0)).xyz - lightUbo.cameraPos;
+    return normalize(invModelMatrix * viewRayWorld);
+}
+
+bool seedBisectorPlane(vec3 cellPos, uint neighborID, out vec3 planeNormal, out vec3 midpoint) {
+    if (neighborID >= seeds.length()) return false;
+    vec3 d = cellPos - seeds[neighborID].xyz;
+    planeNormal = safeNormalize(d, vec3(0.0));
+    midpoint = (cellPos + seeds[neighborID].xyz) * 0.5;
+    return dot(planeNormal, planeNormal) > 0.0;
+}
+
+vec3 applyExitPlaneShading(vec3 baseColor, float exitDepth, vec3 exitPlaneNormal, float seedDistanceHint, mat3 normalMatrix) {
+    float depth01 = clamp(exitDepth / max(seedDistanceHint * EXIT_PLANE_DEPTH_SCALE, 1e-6), 0.0, 1.0);
+    if (exitDepth >= 1e30 || depth01 < EXIT_PLANE_MIN_DEPTH) {
+        return baseColor;
+    }
+
+    vec3 wallNormal = safeNormalize(normalMatrix * exitPlaneNormal, vec3(0.0, 0.0, 1.0));
+    float key = abs(dot(wallNormal, safeNormalize(-lightUbo.lightPos_Key, vec3(0.0, 0.0, 1.0))));
+    float rim = abs(dot(wallNormal, safeNormalize(-lightUbo.lightPos_Rim, vec3(0.0, 0.0, 1.0))));
+
+    float wallLight = clamp((key > 0.70 ? 0.94 : (key > 0.38 ? 0.80 : 0.62)) + (rim > 0.78 ? 0.04 : 0.0), 0.58, 0.98);
+    float luminance = dot(baseColor, vec3(0.2126, 0.7152, 0.0722));
+    return mix(vec3(luminance), baseColor, 1.10) * wallLight;
+}
+
+float interiorWallEdgeMask(uint cellID, uint exitNeighborID, vec3 cellPos, vec3 exitPlaneNormal, vec3 hitPos, vec3 dHitPosDx, vec3 dHitPosDy) {
+    if (exitNeighborID == 0xFFFFFFFF) return 0.0;
+
+    float edgeMask = 0.0;
+    vec3 exitNormal = safeNormalize(exitPlaneNormal, vec3(0.0, 0.0, 1.0));
+    float exitD = dot(exitNormal, hitPos);
+    uint neighborStart = cellID * K_NEIGHBORS;
+
+    for (uint i = 0; i < NEIGHBORS_TO_CHECK; ++i) {
+        uint neighborIdx = neighborStart + i;
+        if (neighborIdx >= neighborIndices.length()) break;
+
+        uint neighborID = neighborIndices[neighborIdx];
+        if (neighborID == 0xFFFFFFFF) break;
+        if (neighborID == exitNeighborID) continue;
+
+        vec3 planeNormal, midpoint;
+        if (!seedBisectorPlane(cellPos, neighborID, planeNormal, midpoint)) continue;
+
+        vec3 lineDir = cross(exitNormal, planeNormal);
+        float denom = dot(lineDir, lineDir);
+        if (denom < 1e-6) continue;
+
+        float planeD = dot(planeNormal, midpoint);
+        vec3 linePoint = (cross(planeNormal, lineDir) * exitD + cross(lineDir, exitNormal) * planeD) / denom;
+        vec3 lineNormalOnWall = safeNormalize(cross(lineDir, exitNormal), planeNormal);
+        float lineDist = abs(dot(hitPos - linePoint, lineNormalOnWall));
+
+        float invInteriorWidth = 1.0 / max(INTERIOR_EDGE_WIDTH, 1e-6);
+        float dx = abs(dot(dHitPosDx, lineNormalOnWall));
+        float dy = abs(dot(dHitPosDy, lineNormalOnWall));
+        vec2 texDx = vec2(dx * invInteriorWidth, 0.0);
+        vec2 texDy = vec2(dy * invInteriorWidth, 0.0);
+        vec4 lineTex = textureGrad(
+            wireframe,
+            vec2(clamp(lineDist * invInteriorWidth, 0.0, 1.0), 0.5),
+            texDx,
+            texDy);
+        edgeMask = max(edgeMask, lineTex.a);
+    }
+    return edgeMask;
+}
+
 bool ccw(vec2 p, vec2 q, vec2 r) {
-    float det = (p.x - r.x) * (q.y - r.y) - (p.y - r.y) * (q.x - r.x);
-    return det >= 0.0;
+    return ((p.x - r.x) * (q.y - r.y) - (p.y - r.y) * (q.x - r.x)) >= 0.0;
 }
 
 bool crossing(vec2 v_a, vec2 v_b, vec2 p) {
-    vec2 origin = vec2(0.0, 0.0);
-    bool t0 = ccw(origin, p, v_a);
-    bool t1 = ccw(origin, p, v_b);
-    bool u0 = ccw(v_a, v_b, origin);
-    bool u1 = ccw(v_a, v_b, p);
-    return ((t0 && !t1) || (!t0 && t1)) && ((u0 && !u1) || (!u0 && u1));
+    // Check if the segment v_a v_b is crossed by the ray to p
+    vec2 origin = vec2(0.0);
+    return (ccw(origin, p, v_a) != ccw(origin, p, v_b)) && (ccw(v_a, v_b, origin) != ccw(v_a, v_b, p));
 }
 
 float area(vec2 p, vec2 q, vec2 r) {
+    // 2D cross product determinant for signed area of triangle (p, q, r)
     float det = (q.x * r.y + p.x * q.y + p.y * r.x) - (q.x * p.y + r.x * q.y + r.y * p.x);
     return det / 2.0;
 }
 
-vec3 clampBarycentric(vec3 b) {
-    vec3 clamped = max(b, vec3(0.0));
-    float sum = clamped.x + clamped.y + clamped.z;
-    if (sum < 1e-8) {
-        return vec3(1.0, 0.0, 0.0);
-    }
-    return clamped / sum;
-}
-
 int mate(int he) {
     if (he < 0) return -1;
-    ivec4 halfedge = texelFetch(H, he);
-    int edgeIdx = halfedge.g;
+    int edgeIdx = texelFetch(H, he).g;
     if (edgeIdx < 0) return -1;
     ivec2 edge = texelFetch(E, edgeIdx).rg;
     return (edge.r == he) ? edge.g : edge.r;
 }
 
 bool loadInputTriangleChart(int inputTri, out ivec3 faceHEs, out vec2 triCoords[3]) {
+    // Fetch input halfedges for the triangle face
     int h0 = texelFetch(T_input, inputTri).r;
-    if (h0 < 0) {
-        return false;
-    }
-
-    int h1 = texelFetch(H_input, h0).a;
-    if (h1 < 0) {
-        return false;
-    }
-
-    int h2 = texelFetch(H_input, h1).a;
-    if (h2 < 0) {
-        return false;
-    }
+    int h1 = (h0 >= 0) ? texelFetch(H_input, h0).a : -1;
+    int h2 = (h1 >= 0) ? texelFetch(H_input, h1).a : -1;
+    if (h2 < 0) return false;
 
     faceHEs = ivec3(h0, h1, h2);
 
+    // Fetch input edge indices
     int e0 = texelFetch(H_input, h0).g;
     int e1 = texelFetch(H_input, h1).g;
     int e2 = texelFetch(H_input, h2).g;
-    if (e0 < 0 || e1 < 0 || e2 < 0) {
-        return false;
-    }
+    if (e0 < 0 || e1 < 0 || e2 < 0) return false;
 
+    // Fetch edge lengths and verify positivity
     float a = texelFetch(L_input, e0).r;
     float b = texelFetch(L_input, e1).r;
     float c = texelFetch(L_input, e2).r;
-    if (a <= 0.0 || b <= 0.0 || c <= 0.0) {
-        return false;
-    }
+    if (a <= 0.0 || b <= 0.0 || c <= 0.0) return false;
 
-    triCoords[0] = vec2(0.0, 0.0);
+    // Construct local 2D coordinate system (flatten triangle to 2D chart)
+    triCoords[0] = vec2(0.0);
     triCoords[1] = vec2(a, 0.0);
     float x = (a * a + c * c - b * b) / (2.0 * a);
-    float y2 = max(c * c - x * x, 0.0);
-    triCoords[2] = vec2(x, sqrt(y2));
-
+    triCoords[2] = vec2(x, sqrt(max(c * c - x * x, 0.0)));
     return true;
 }
 
-bool findIntrinsicTriangleFromSeed(vec2 p, int inputHe, vec2 seedOrigin, float seedPhi, out int intrinsicTri, out int failureCode) {
+bool findIntrinsicTriangleFromSeed(vec2 p, int inputHe, vec2 seedOrigin, float seedPhi, out int intrinsicTri) {
     int h0 = texelFetch(S, inputHe).r;
     float phi0 = seedPhi + texelFetch(A, inputHe).r;
-
     if (h0 < 0) {
         intrinsicTri = -1;
-        failureCode = -1;
         return false;
     }
 
@@ -176,12 +239,10 @@ bool findIntrinsicTriangleFromSeed(vec2 p, int inputHe, vec2 seedOrigin, float s
     int e0 = he0.g;
     if (e0 < 0) {
         intrinsicTri = -1;
-        failureCode = -1;
         return false;
     }
 
     float l0 = texelFetch(L, e0).r;
-
     vec2 v0 = seedOrigin;
     vec2 v1 = v0 + vec2(l0 * cos(phi0), l0 * sin(phi0));
 
@@ -189,10 +250,8 @@ bool findIntrinsicTriangleFromSeed(vec2 p, int inputHe, vec2 seedOrigin, float s
         ivec4 halfedge = texelFetch(H, h0);
         int t = halfedge.b;
         int h1 = halfedge.a;
-
         if (h1 < 0 || t < 0) {
             intrinsicTri = -1;
-            failureCode = -2 - iter;
             return false;
         }
 
@@ -208,13 +267,11 @@ bool findIntrinsicTriangleFromSeed(vec2 p, int inputHe, vec2 seedOrigin, float s
         float l1 = texelFetch(L, e1).r;
         float l2 = texelFetch(L, e2).r;
 
-        float alpha = acos(clamp((l0*l0 + l1*l1 - l2*l2) / (2.0*l0*l1), -1.0, 1.0));
+        float denom1 = 2.0 * l0 * l1;
+        float alpha = (denom1 > 1e-9) ? acos(clamp((l0*l0 + l1*l1 - l2*l2) / denom1, -1.0, 1.0)) : 0.0;
         float phi1 = phi0 + PI - alpha;
         vec2 v2 = vec2(v1.x + l1*cos(phi1), v1.y + l1*sin(phi1));
-        float a = area(v0, v1, v2);
-        if (abs(a) < 1e-10) {
-            break;
-        }
+        if (abs(area(v0, v1, v2)) < 1e-10) break;
 
         bool out_v1v2 = !ccw(v1, v2, p);
         if (out_v1v2 && crossing(v1, v2, p)) {
@@ -231,7 +288,8 @@ bool findIntrinsicTriangleFromSeed(vec2 p, int inputHe, vec2 seedOrigin, float s
         else if (out_v1v2 || !ccw(v2, v0, p)) {
             int m2 = mate(h2);
             if (m2 != -1) {
-                float beta = acos(clamp((l0*l0 + l2*l2 - l1*l1) / (2.0*l0*l2), -1.0, 1.0));
+                float denom2 = 2.0 * l0 * l2;
+                float beta = (denom2 > 1e-9) ? acos(clamp((l0*l0 + l2*l2 - l1*l1) / denom2, -1.0, 1.0)) : 0.0;
                 v1 = v2;
                 l0 = l2;
                 h0 = m2;
@@ -242,76 +300,50 @@ bool findIntrinsicTriangleFromSeed(vec2 p, int inputHe, vec2 seedOrigin, float s
         }
         else {
             intrinsicTri = t;
-            failureCode = 0;
             return true;
         }
     }
 
     intrinsicTri = -1;
-    failureCode = -1;
     return false;
 }
 
 int findIntrinsicTriangle(int inputTri, vec2 p) {
     ivec3 faceHEs;
     vec2 triCoords[3];
-    if (!loadInputTriangleChart(inputTri, faceHEs, triCoords)) {
-        return -1;
-    }
+    if (!loadInputTriangleChart(inputTri, faceHEs, triCoords)) return -1;
 
-    int bestFailure = -1;
-    bool hadSeed = false;
     for (int i = 0; i < 3; ++i) {
         int inputHe = faceHEs[i];
-        int supportHe = texelFetch(S, inputHe).r;
-        if (supportHe < 0) {
-            continue;
-        }
+        if (texelFetch(S, inputHe).r < 0) continue;
 
-        hadSeed = true;
         vec2 edgeDir = triCoords[(i + 1) % 3] - triCoords[i];
-        float seedPhi = atan(edgeDir.y, edgeDir.x);
-
         int intrinsicTri = -1;
-        int failureCode = -1;
-        if (findIntrinsicTriangleFromSeed(p, inputHe, triCoords[i], seedPhi, intrinsicTri, failureCode)) {
+        if (findIntrinsicTriangleFromSeed(p, inputHe, triCoords[i], atan(edgeDir.y, edgeDir.x), intrinsicTri)) {
             return intrinsicTri;
         }
-
-        if (failureCode < bestFailure) {
-            bestFailure = failureCode;
-        }
     }
-
-    if (!hadSeed) {
-        return -1;
-    }
-    return bestFailure;
+    return -1;
 }
 
 void main() {
     vec3 modelSpacePos = vModelPos;
-
     int inputTri = gl_PrimitiveID;
     int intrinsicTri = findIntrinsicTriangle(inputTri, vIntrinsicCoord);
     if (intrinsicTri < 0) {
-        outColor = vec4(1, 0, 1, 1);
+        outColor = vec4(1, 0, 1, 0.20);
         return;
     }
 
-    // Initialize search with candidate list
     uint bestCellID = 0xFFFFFFFF;
     float minDistSq = 3.402823466e+38;
 
     uint candBase = uint(intrinsicTri) * K_CANDIDATES;
-    if (candBase + K_CANDIDATES <= candidates.length()) {
-        for (uint i = 0; i < K_CANDIDATES; ++i) {
-            uint cid = candidates[candBase + i];
-            if (cid == 0xFFFFFFFF || cid >= seeds.length()) {
-                continue;
-            }
-            vec3 s = seeds[cid].xyz;
-            vec3 d = modelSpacePos - s;
+    uint limit = min(candidates.length() - candBase, K_CANDIDATES);
+    for (uint i = 0; i < limit; ++i) {
+        uint cid = candidates[candBase + i];
+        if (cid != 0xFFFFFFFF && cid < seeds.length()) {
+            vec3 d = modelSpacePos - seeds[cid].xyz;
             float distSq = dot(d, d);
             if (distSq < minDistSq) {
                 minDistSq = distSq;
@@ -321,7 +353,7 @@ void main() {
     }
 
     if (bestCellID == 0xFFFFFFFF) {
-        outColor = vec4(1, 0, 1, 1); // Error pink
+        outColor = vec4(1, 0, 1, 0.20);
         return;
     }
 
@@ -333,144 +365,116 @@ void main() {
 
     float prevMinDistSq = minDistSq;
 
-    // Iterative walk from hint cell to closest cell
     for (int iter = 0; iter < maxIters; ++iter) {
-        
         bool improved = false;
         uint neighborStart = bestCellID * K_NEIGHBORS;
-
-        // Check neighbors of the current best cell 
         uint neighborLimit = (iter == 0) ? NEIGHBORS_TO_CHECK : min(uint(24), NEIGHBORS_TO_CHECK);
         for (uint i = 0; i < neighborLimit; i++) {
             uint neighborIdx = neighborStart + i;
-            
-            // Bounds check
-            if (neighborIdx >= neighborIndices.length()) 
-                break;
+            if (neighborIdx >= neighborIndices.length()) break;
             
             uint neighborID = neighborIndices[neighborIdx];
+            if (neighborID == 0xFFFFFFFF) break;
+            if (neighborID >= seeds.length()) continue;
 
-            // Skip invalid neighbors
-            if (neighborID == 0xFFFFFFFF)
-                break;
-
-            if (neighborID >= seeds.length())
-                continue;
-
-            vec3 neighborPos = seeds[neighborID].xyz;
-            vec3 diff = modelSpacePos - neighborPos;
+            vec3 diff = modelSpacePos - seeds[neighborID].xyz;
             float distSq = dot(diff, diff); 
-
             if (distSq < minDistSq) {
                 minDistSq = distSq;
                 bestCellID = neighborID;
                 improved = true;
             }
         }
-
-        // Local and global minimum found
-        if (!improved)
-            break;
-
-        float improvement = prevMinDistSq - minDistSq;
-        if (improvement <= prevMinDistSq * EARLY_EXIT_REL_IMPROVEMENT) {
-            break;
-        }
+        if (!improved || (prevMinDistSq - minDistSq) <= prevMinDistSq * EARLY_EXIT_REL_IMPROVEMENT) break;
         prevMinDistSq = minDistSq;
     }
 
     vec3 bestPos = seeds[bestCellID].xyz;
+    vec3 dPosDx = dFdx(modelSpacePos);
+    vec3 dPosDy = dFdy(modelSpacePos);
+    mat3 invModelMatrix = inverse(mat3(pc.modelMatrix));
+    mat3 normalMatrix = transpose(invModelMatrix);
+    vec3 viewRayModel = modelSpaceViewRay(modelSpacePos, invModelMatrix);
 
     float minBoundaryDist = 3.402823466e+38;
+    float exitPlaneDepth = 3.402823466e+38;
+    vec3 exitPlaneNormal = vec3(0.0);
+    uint exitPlaneNeighborID = 0xFFFFFFFF;
     uint bestCompetitorID = bestCellID;
-    {
-        uint neighborStart = bestCellID * K_NEIGHBORS;
-        for (uint i = 0; i < NEIGHBORS_TO_CHECK; i++) {
-            uint neighborIdx = neighborStart + i;
-            if (neighborIdx >= neighborIndices.length())
-                break;
 
-            uint neighborID = neighborIndices[neighborIdx];
-            if (neighborID == 0xFFFFFFFF)
-                break;
-            if (neighborID >= seeds.length())
-                continue;
+    uint neighborStart = bestCellID * K_NEIGHBORS;
+    for (uint i = 0; i < NEIGHBORS_TO_CHECK; i++) {
+        uint neighborIdx = neighborStart + i;
+        if (neighborIdx >= neighborIndices.length()) break;
 
-            vec3 neighborPos = seeds[neighborID].xyz;
-            vec3 d = neighborPos - bestPos;
-            float lenD = length(d);
-            if (lenD <= 1e-8)
-                continue;
+        uint neighborID = neighborIndices[neighborIdx];
+        if (neighborID == 0xFFFFFFFF) break;
 
-            vec3 diffN = modelSpacePos - neighborPos;
-            float distSqN = dot(diffN, diffN);
-            float boundaryDist = (distSqN - minDistSq) / (2.0 * lenD);
-            float absBoundaryDist = abs(boundaryDist);
-            if (absBoundaryDist < minBoundaryDist) {
-                minBoundaryDist = absBoundaryDist;
-                bestCompetitorID = neighborID;
+        vec3 planeNormal, midpoint;
+        if (!seedBisectorPlane(bestPos, neighborID, planeNormal, midpoint)) continue;
+
+        float boundaryDist = dot(planeNormal, modelSpacePos - midpoint);
+        float rayRate = dot(planeNormal, viewRayModel);
+        if (rayRate < -1e-5) {
+            float exitT = max(boundaryDist, 0.0) / -rayRate;
+            if (exitT < exitPlaneDepth) {
+                exitPlaneDepth = exitT;
+                exitPlaneNormal = planeNormal;
+                exitPlaneNeighborID = neighborID;
             }
+        }
 
-            uint neighborStart2 = neighborID * K_NEIGHBORS;
-            for (uint j = 0; j < SECOND_RING_NEIGHBORS; j++) {
-                uint neighborIdx2 = neighborStart2 + j;
-                if (neighborIdx2 >= neighborIndices.length())
-                    break;
+        float absBoundaryDist = abs(boundaryDist);
+        if (absBoundaryDist < minBoundaryDist) {
+            minBoundaryDist = absBoundaryDist;
+            bestCompetitorID = neighborID;
+        }
 
-                uint neighborID2 = neighborIndices[neighborIdx2];
-                if (neighborID2 == 0xFFFFFFFF)
-                    break;
-                if (neighborID2 >= seeds.length())
-                    continue;
+        uint neighborStart2 = neighborID * K_NEIGHBORS;
+        for (uint j = 0; j < SECOND_RING_NEIGHBORS; j++) {
+            uint neighborIdx2 = neighborStart2 + j;
+            if (neighborIdx2 >= neighborIndices.length()) break;
 
-                vec3 neighborPos2 = seeds[neighborID2].xyz;
-                vec3 d2 = neighborPos2 - bestPos;
-                float lenD2 = length(d2);
-                if (lenD2 <= 1e-8)
-                    continue;
-
-                vec3 diffN2 = modelSpacePos - neighborPos2;
-                float distSqN2 = dot(diffN2, diffN2);
-                float boundaryDist2 = (distSqN2 - minDistSq) / (2.0 * lenD2);
-                float absBoundaryDist2 = abs(boundaryDist2);
+            uint neighborID2 = neighborIndices[neighborIdx2];
+            if (neighborID2 == 0xFFFFFFFF) break;
+            
+            vec3 planeNormal2, midpoint2;
+            if (seedBisectorPlane(bestPos, neighborID2, planeNormal2, midpoint2)) {
+                float absBoundaryDist2 = abs(dot(planeNormal2, modelSpacePos - midpoint2));
                 if (absBoundaryDist2 < minBoundaryDist) {
                     minBoundaryDist = absBoundaryDist2;
                     bestCompetitorID = neighborID2;
                 }
             }
-
-            if (minBoundaryDist <= 1e-8)
-                break;
         }
     }
 
     vec3 color = paletteColor(bestCellID);
-    vec3 wireColor = vec3(0.0, 0.0, 0.0);
-    vec3 base = color;
+    vec3 base = applyExitPlaneShading(color, exitPlaneDepth, exitPlaneNormal, hintSeedDist, normalMatrix);
 
     float invW = 1.0 / max(WIRE_DIST_WIDTH, 1e-6);
-    float u = clamp(minBoundaryDist * invW, 0.0, 1.0);
-    
-    // Calculate the analytical gradient of the distance field.
-    // The closest boundary is defined as the bisector plane between bestPos and bestCompetitorPos.
-    // The direction of greatest change for minBoundaryDist is exactly the normal to this plane.
     vec3 competitorPos = seeds[bestCompetitorID].xyz;
-    vec3 boundaryNormal = normalize(bestPos - competitorPos);
-    
-    // We project the analytical spatial gradient onto the screen using the rasterizer derivatives.
-    // This gives us the exact rate of change of the distance field in screen space pixels,
-    // avoiding the spikes that happen when taking dFdx() of non-linear or piecewise functions.
-    vec3 dPosDx = dFdx(modelSpacePos);
-    vec3 dPosDy = dFdy(modelSpacePos);
-    
+    vec3 boundaryNormal = safeNormalize(bestPos - competitorPos, vec3(0.0, 0.0, 1.0));
+
+    // Screen space derivatives of boundary distance for wireframe filter footprint
     float dx = abs(dot(boundaryNormal, dPosDx));
     float dy = abs(dot(boundaryNormal, dPosDy));
-    
     vec2 gradX = vec2(dx * invW, 0.0);
     vec2 gradY = vec2(dy * invW, 0.0);
-    
-    vec4 wcolor = textureGrad(wireframe, vec2(u, 0.5), gradX, gradY);
-    base = mix(base, wireColor, wcolor.a);
 
-    outColor = vec4(base, 1.0);
+    float u = clamp(minBoundaryDist * invW, 0.0, 1.0);
+    vec4 wcolor = textureGrad(wireframe, vec2(min(u, 0.5), 0.5), gradX, gradY);
+    
+    if (exitPlaneDepth < 1e30) {
+        vec3 hitPos = modelSpacePos + viewRayModel * exitPlaneDepth;
+        // Screen space derivatives of the hit position for wall edge filtering
+        vec3 dHitPosDx = dFdx(hitPos);
+        vec3 dHitPosDy = dFdy(hitPos);
+        float wallEdge = interiorWallEdgeMask(bestCellID, exitPlaneNeighborID, bestPos, exitPlaneNormal, hitPos, dHitPosDx, dHitPosDy);
+        wallEdge *= 1.0 - wcolor.a;
+        base = mix(base, base * 0.28, wallEdge * INTERIOR_EDGE_STRENGTH);
+    }
+
+    vec3 wireColor = vec3(0.0);
+    outColor = vec4(mix(base, wireColor, wcolor.a), 0.50);
 }

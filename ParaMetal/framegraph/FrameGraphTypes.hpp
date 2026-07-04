@@ -34,6 +34,7 @@ enum class ImageFormat : uint32_t {
     R8G8B8A8Srgb,
     B8G8R8A8Unorm,
     B8G8R8A8Srgb,
+    R32Uint,
     R16G16B16A16Sfloat,
     D32SfloatS8Uint
 };
@@ -180,6 +181,7 @@ struct ImageResourceCreateInfo {
     ResourceLifetime lifetime = ResourceLifetime::Transient;
     bool isAttachment = true;
     bool useSwapchainFormat = false;
+    bool isGraphOutput = false;
     ImageFormat format = ImageFormat::Undefined;
     SampleCount samples = SampleCount::Count1;
     ImageUsage imageUsage = ImageUsage::None;

@@ -4,6 +4,7 @@
 #include "vulkan/CommandBufferManager.hpp"
 #include "framegraph/FrameController.hpp"
 #include "framegraph/FrameGraph.hpp"
+#include "framegraph/FrameGraphPasses.hpp"
 #include "framegraph/FrameGraphResources.hpp"
 #include "framegraph/FrameGraphVkTypes.hpp"
 #include "framegraph/FrameSync.hpp"
@@ -90,7 +91,7 @@ bool RenderRuntime::initializeBase(VkFormat swapChainFormat, VkExtent2D extent, 
         vulkanDevice,
         frameGraphBackend->getRuntime(),
         resourceManager,
-        frameGraph->getResourceId(framegraph::resources::DepthResolve));
+        frameGraph->getResourceId(framegraph::resources::PickID));
     if (!modelSelection) {
         return false;
     }
@@ -106,7 +107,7 @@ bool RenderRuntime::initializeBase(VkFormat swapChainFormat, VkExtent2D extent, 
         vulkanDevice,
         sceneRenderer->getGbufferDescriptorSetLayout(),
         frameGraphBackend->getRuntime().getRenderPass(),
-        2);
+        framegraph::toIndex(frameGraph->getPassId(framegraph::passes::Overlay)));
     if (!wireframeRenderer) {
         return false;
     }

@@ -288,8 +288,10 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="render\PointOverlayRenderer.cpp" />
     <ClCompile Include="render\VoronoiOverlayRenderer.cpp" />
     <ClCompile Include="render\GeometryPass.cpp" />
+    <ClCompile Include="render\SurfacePass.cpp" />
     <ClCompile Include="render\LightingPass.cpp" />
     <ClCompile Include="render\OverlayPass.cpp" />
+    <ClCompile Include="render\PickPass.cpp" />
     <ClCompile Include="render\BlendPass.cpp" />
     <ClCompile Include="mesh\\remesher\\GeodesicTracer.cpp" />
     <ClCompile Include="scene\GizmoController.cpp" />
@@ -445,6 +447,9 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <None Include="shaders\gbuffer.vert" />
     <None Include="shaders\gizmo.frag" />
     <None Include="shaders\gizmo.vert" />
+    <None Include="shaders\pick_gizmo.frag" />
+    <None Include="shaders\pick_model.frag" />
+    <None Include="shaders\pick_model.vert" />
     <None Include="shaders\grid.frag" />
     <None Include="shaders\grid.vert" />
     <None Include="shaders\grid_label.frag" />
@@ -604,8 +609,10 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="render\SceneRenderer.hpp" />
     <ClInclude Include="render\HeatOverlayRenderer.hpp" />
     <ClInclude Include="render\GeometryPass.hpp" />
+    <ClInclude Include="render\SurfacePass.hpp" />
     <ClInclude Include="render\LightingPass.hpp" />
     <ClInclude Include="render\OverlayPass.hpp" />
+    <ClInclude Include="render\PickPass.hpp" />
     <ClInclude Include="render\BlendPass.hpp" />
     <ClInclude Include="mesh\\remesher\\GeodesicTracer.hpp" />
     <ClInclude Include="util\GeometryUtils.hpp" />
@@ -644,6 +651,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="heat\HeatSystemDebugStage.hpp" />
     <ClInclude Include="scene\LightingSystem.hpp" />
     <ClInclude Include="scene\MaterialSystem.hpp" />
+    <ClInclude Include="scene\PickId.hpp" />
     <ClInclude Include="nodegraph\NodeGraphController.hpp" />
     <ClInclude Include="nodegraph\NodeGraph.hpp" />
     <ClInclude Include="nodegraph\NodeGraphSave.hpp" />

@@ -224,7 +224,7 @@ void main() {
     if (push.sourceParams.y > 0.5) {
         float normalized = clamp(push.sourceParams.x / TEMPERATURE_SCALE, 0.0, 1.0);
         vec3 heatColor = temperatureToColor(normalized);
-        gAlbedo = vec4(heatColor, 1.0);
+        gAlbedo = vec4(heatColor, 0.05);
         gNormal = vec4(normalize(fragNormal), 0.0);
         return;
     }
@@ -233,7 +233,7 @@ void main() {
     ivec3 faceHEs;
     vec2 triCoords[3];
     if (!loadInputTriangleChart(inputTri, faceHEs, triCoords)) {
-        gAlbedo = vec4(errorColor, 1.0);
+        gAlbedo = vec4(errorColor, 0.05);
         gNormal = vec4(normalize(fragNormal), 0.0);
         return;
     }
@@ -241,14 +241,14 @@ void main() {
     vec3 baryCoords;
     int intrinsicTri = findIntrinsicTriangle(inputTri, inputChartPoint(triCoords), baryCoords);
     if (intrinsicTri < 0) {
-        gAlbedo = vec4(errorColor, 1.0);
+        gAlbedo = vec4(errorColor, 0.05);
         gNormal = vec4(normalize(fragNormal), 0.0);
         return;
     }
 
     int href = texelFetch(T, intrinsicTri).r;
     if (href < 0) {
-        gAlbedo = vec4(errorColor, 1.0);
+        gAlbedo = vec4(errorColor, 0.05);
         gNormal = vec4(normalize(fragNormal), 0.0);
         return;
     }
@@ -263,7 +263,7 @@ void main() {
     int v2 = texelFetch(H, h2_ref).r;
 
     if (v0 < 0 || v1 < 0 || v2 < 0) {
-        gAlbedo = vec4(errorColor, 1.0);
+        gAlbedo = vec4(errorColor, 0.05);
         gNormal = vec4(normalize(fragNormal), 0.0);
         return;
     }
@@ -288,6 +288,6 @@ void main() {
     vec3 heatColor = temperatureToColor(normalized);
     heatColor = mix(vec3(0.0), heatColor, contourFactor);
 
-    gAlbedo = vec4(heatColor, 1.0);
+    gAlbedo = vec4(heatColor, 0.05);
     gNormal = vec4(normalize(fragNormal), 0.0);
 }

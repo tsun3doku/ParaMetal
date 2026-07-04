@@ -20,7 +20,7 @@ layout(set = 0, binding = 10) uniform samplerBuffer L_input;    // Input edge le
 layout(set = 0, binding = 11) uniform sampler2D wireframe;      // Wireframe texture
 
 const float PI = 3.14159265359;
-const int IMAX = 1024;  // Higher budget for thin input triangles over dense intrinsic meshes
+const int IMAX = 128;  // Higher budget for thin input triangles over dense intrinsic meshes
 
 bool ccw(vec2 p, vec2 q, vec2 r) {
     float det = (p.x - r.x) * (q.y - r.y) - (p.y - r.y) * (q.x - r.x);
@@ -309,7 +309,7 @@ void main() {
     ivec3 faceHEs;
     vec2 triCoords[3];
     if (!loadInputTriangleChart(inputTri, faceHEs, triCoords)) {
-        outColor = vec4(0, 1, 1, 1);
+        outColor = vec4(0, 1, 1, 0.20);
         return;
     }
 
@@ -324,11 +324,11 @@ void main() {
             // Hit invalid data during walk
             int iter = -(intrinsicTri + 2);
             float intensity = float(iter) / 50.0;
-            outColor = vec4(0, 0, intensity, 1);
+            outColor = vec4(0, 0, intensity, 0.20);
             return;
         } else {
             // Walk completed but didnt converge
-            outColor = vec4(0.8, 0.8, 0.8, 1);
+            outColor = vec4(0.8, 0.8, 0.8, 0.20);
             return;
         }
     }
@@ -357,21 +357,21 @@ float luminance = dot(linearColor, vec3(0.2126, 0.7152, 0.0722));
 linearColor = mix(vec3(luminance), linearColor, saturation);
 
 // Intrinsic wireframe using intrinsic barycentric derivatives
-    vec3 color = linearColor;
-    vec3 wireColor = vec3(0.0, 0.0, 0.0);
-    vec3 fx = duvwdx;
-    vec3 fy = duvwdy;
+vec3 color = linearColor;
+vec3 wireColor = vec3(0.0, 0.0, 0.0);
+vec3 fx = duvwdx;
+vec3 fy = duvwdy;
 
-    vec4 wcolor = textureGrad(wireframe, vec2(baryCoords.x, 0.5), vec2(fx.x, 0.0), vec2(fy.x, 0.0));
-    color = mix(color, wireColor, wcolor.a);
+vec4 wcolor = textureGrad(wireframe, vec2(baryCoords.x, 0.5), vec2(fx.x, 0.0), vec2(fy.x, 0.0));
+color = mix(color, wireColor, wcolor.a);
 
-    wcolor = textureGrad(wireframe, vec2(baryCoords.y, 0.5), vec2(fx.y, 0.0), vec2(fy.y, 0.0));
-    color = mix(color, wireColor, wcolor.a);
+wcolor = textureGrad(wireframe, vec2(baryCoords.y, 0.5), vec2(fx.y, 0.0), vec2(fy.y, 0.0));
+color = mix(color, wireColor, wcolor.a);
 
-    wcolor = textureGrad(wireframe, vec2(baryCoords.z, 0.5), vec2(fx.z, 0.0), vec2(fy.z, 0.0));
-    color = mix(color, wireColor, wcolor.a);
+wcolor = textureGrad(wireframe, vec2(baryCoords.z, 0.5), vec2(fx.z, 0.0), vec2(fy.z, 0.0));
+color = mix(color, wireColor, wcolor.a);
 
-    color = clamp(color, vec3(0.0), vec3(1.0));
+color = clamp(color, vec3(0.0), vec3(1.0));
 
 outColor = vec4(color, 1.0);
 }

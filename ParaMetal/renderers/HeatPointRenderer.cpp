@@ -21,13 +21,13 @@ HeatPointRenderer::~HeatPointRenderer() {
     cleanup();
 }
 
-void HeatPointRenderer::initialize(VkRenderPass renderPass, uint32_t maxFramesInFlight) {
+void HeatPointRenderer::initialize(VkRenderPass renderPass, uint32_t subpass, uint32_t maxFramesInFlight) {
     if (initialized)
         return;
 
     if (!createDescriptorSetLayout() ||
         !createDescriptorPool(maxFramesInFlight) ||
-        !createPipeline(renderPass)) {
+        !createPipeline(renderPass, subpass)) {
         cleanup();
         return;
     }
@@ -87,7 +87,7 @@ bool HeatPointRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
     return true;
 }
 
-bool HeatPointRenderer::createPipeline(VkRenderPass renderPass) {
+bool HeatPointRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpass) {
     std::vector<char> vertCode;
     std::vector<char> fragCode;
     if (!readFile("shaders/heat_point_vert.spv", vertCode) ||
@@ -186,7 +186,7 @@ bool HeatPointRenderer::createPipeline(VkRenderPass renderPass) {
     depthStencil.front = stencilOp;
     depthStencil.back = stencilOp;
 
-    VkPipelineColorBlendAttachmentState colorBlendAttachments[2] = {};
+    VkPipelineColorBlendAttachmentState colorBlendAttachments[1] = {};
     colorBlendAttachments[0].colorWriteMask =
         VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
@@ -197,13 +197,11 @@ bool HeatPointRenderer::createPipeline(VkRenderPass renderPass) {
     colorBlendAttachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
     colorBlendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
     colorBlendAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
-    colorBlendAttachments[1].colorWriteMask = 0;
-    colorBlendAttachments[1].blendEnable = VK_FALSE;
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = 2;
+    colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = colorBlendAttachments;
 
     std::vector<VkDynamicState> dynamicStates = {
@@ -250,7 +248,7 @@ bool HeatPointRenderer::createPipeline(VkRenderPass renderPass) {
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = pipelineLayout;
     pipelineInfo.renderPass = renderPass;
-    pipelineInfo.subpass = 2;
+    pipelineInfo.subpass = subpass;
 
     if (vkCreateGraphicsPipelines(vulkanDevice.getDevice(), VK_NULL_HANDLE, 1,
         &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {

@@ -21,7 +21,8 @@ public:
     VoronoiOverlayRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, CommandPool& renderCommandPool);
     ~VoronoiOverlayRenderer();
 
-    void initialize(VkRenderPass renderPass, uint32_t subpass, uint32_t maxFramesInFlight);
+    void initializeSurface(VkRenderPass renderPass, uint32_t surfaceSubpass, uint32_t maxFramesInFlight);
+    void initializeOverlay(VkRenderPass renderPass, uint32_t overlaySubpass, uint32_t maxFramesInFlight);
     void apply(uint64_t socketKey, const VoronoiDisplayController::Config& config);
     void remove(uint64_t socketKey);
     void renderSurface(VkCommandBuffer commandBuffer, uint32_t frameIndex);
@@ -36,7 +37,8 @@ private:
     std::unordered_map<uint64_t, VoronoiDisplayController::Config> configsBySocket;
     std::vector<VoronoiRenderer::VoronoiRenderBinding> voronoiBindings;
     uint32_t maxFramesInFlight = 0;
-    bool initialized = false;
+    bool surfaceInitialized = false;
+    bool overlayInitialized = false;
 };
 
 } 

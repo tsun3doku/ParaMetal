@@ -22,6 +22,7 @@ class VulkanDevice;
 class CommandPool;
 class VkFrameGraphRuntime;
 class IntrinsicRenderer;
+class GizmoRenderer;
 namespace render { class ContactOverlayRenderer; }
 namespace render { class HeatOverlayRenderer; }
 namespace render { class PointOverlayRenderer; }
@@ -29,8 +30,10 @@ namespace render { class VoronoiOverlayRenderer; }
 
 namespace render {
 class GeometryPass;
+class SurfacePass;
 class LightingPass;
 class OverlayPass;
+class PickPass;
 class BlendPass;
 
 struct RenderFrameRequest {
@@ -123,9 +126,15 @@ private:
     CommandPool& renderCommandPool;
 
     render::GeometryPass* geometryPass = nullptr;
+    render::SurfacePass* surfacePass = nullptr;
     render::LightingPass* lightingPass = nullptr;
     render::OverlayPass* overlayPass = nullptr;
+    render::PickPass* pickPass = nullptr;
     render::BlendPass* blendPass = nullptr;
+    std::unique_ptr<render::HeatOverlayRenderer> heatOverlayRenderer;
+    std::unique_ptr<render::VoronoiOverlayRenderer> voronoiOverlayRenderer;
+    std::unique_ptr<IntrinsicRenderer> intrinsicRenderer;
+    std::unique_ptr<GizmoRenderer> gizmoRenderer;
 
     uint32_t maxFramesInFlight = 0;
     VkQueryPool gpuTimingQueryPool = VK_NULL_HANDLE;

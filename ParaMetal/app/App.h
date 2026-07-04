@@ -11,6 +11,7 @@
 class NodeGraph;
 class CameraController;
 class ModelSelection;
+class NodeGraphController;
 class RenderSettingsController;
 class RuntimeQuery;
 class SceneController;
@@ -44,6 +45,8 @@ public:
     const SceneController* getSceneController() const;
     ModelSelection* getModelSelection();
     const ModelSelection* getModelSelection() const;
+    NodeGraphController* getNodeGraphController();
+    const NodeGraphController* getNodeGraphController() const;
 
 private:
     std::unique_ptr<RuntimeSystems> systems;

@@ -27,14 +27,14 @@ public:
     HeatSurfaceRenderer(VulkanDevice& device, UniformBufferManager& uniformBufferManager);
     ~HeatSurfaceRenderer();
 
-    void initialize(VkRenderPass renderPass, uint32_t maxFramesInFlight);
+    void initialize(VkRenderPass renderPass, uint32_t subpass, uint32_t maxFramesInFlight);
     void cleanup();
     void render(VkCommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<SurfaceRenderBinding>& surfaces);
 
 private:
     bool createDescriptorPool(uint32_t maxFramesInFlight);
     bool createDescriptorSetLayout();
-    bool createPipeline(VkRenderPass renderPass);
+    bool createPipeline(VkRenderPass renderPass, uint32_t subpass);
     void drawModel(VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet, const SurfaceRenderBinding& binding) const;
     
     VkDescriptorSet allocateDescriptorSet(VkDescriptorPool pool);

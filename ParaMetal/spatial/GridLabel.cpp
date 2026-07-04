@@ -16,7 +16,7 @@
 #include "libs/stb/stb_image.h"
 
 GridLabel::GridLabel(VulkanDevice& vulkanDevice, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager,
-                     uint32_t maxFramesInFlight, VkRenderPass renderPass, CommandPool& commandPool)
+                     uint32_t maxFramesInFlight, VkRenderPass renderPass, uint32_t subpass, CommandPool& commandPool)
     : vulkanDevice(vulkanDevice), allocator(allocator), uniformBufferManager(uniformBufferManager), commandPool(commandPool) {
     
     if (!glyphText.load()) {
@@ -29,7 +29,7 @@ GridLabel::GridLabel(VulkanDevice& vulkanDevice, MemoryAllocator& allocator, Uni
     createDescriptorPool(vulkanDevice, maxFramesInFlight);
     createDescriptorSetLayout(vulkanDevice);
     createDescriptorSets(vulkanDevice, uniformBufferManager, maxFramesInFlight);
-    createPipeline(vulkanDevice, renderPass);
+    createPipeline(vulkanDevice, renderPass, subpass);
 }
 
 GridLabel::~GridLabel() {
@@ -292,7 +292,7 @@ void GridLabel::createDescriptorSets(VulkanDevice& vulkanDevice, UniformBufferMa
     }
 }
 
-void GridLabel::createPipeline(VulkanDevice& vulkanDevice, VkRenderPass renderPass) {
+void GridLabel::createPipeline(VulkanDevice& vulkanDevice, VkRenderPass renderPass, uint32_t subpass) {
     auto vertShaderCode = readFile("shaders/grid_label_vert.spv");
     auto fragShaderCode = readFile("shaders/grid_label_frag.spv");
 
@@ -408,25 +408,22 @@ void GridLabel::createPipeline(VulkanDevice& vulkanDevice, VkRenderPass renderPa
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
 
-    VkPipelineColorBlendAttachmentState colorBlendAttachments[2] = {};
-    // Surface overlay target disabled for labels.
-    colorBlendAttachments[0].colorWriteMask = 0;
-    colorBlendAttachments[0].blendEnable = VK_FALSE;
+    VkPipelineColorBlendAttachmentState colorBlendAttachments[1] = {};
     // Line overlay target.
-    colorBlendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+    colorBlendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                                               VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachments[1].blendEnable = VK_TRUE;
-    colorBlendAttachments[1].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    colorBlendAttachments[1].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorBlendAttachments[1].colorBlendOp = VK_BLEND_OP_ADD;
-    colorBlendAttachments[1].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachments[1].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    colorBlendAttachments[1].alphaBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachments[0].blendEnable = VK_TRUE;
+    colorBlendAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorBlendAttachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachments[0].colorBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = 2;
+    colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = colorBlendAttachments;
 
     std::vector<VkDynamicState> dynamicStates = {
@@ -465,7 +462,7 @@ void GridLabel::createPipeline(VulkanDevice& vulkanDevice, VkRenderPass renderPa
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = pipelineLayout;
     pipelineInfo.renderPass = renderPass;
-    pipelineInfo.subpass = 2;  // Same subpass as grid
+    pipelineInfo.subpass = subpass;
 
     if (vkCreateGraphicsPipelines(vulkanDevice.getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
         std::cerr << "[GridLabel] Failed to create graphics pipeline" << std::endl;

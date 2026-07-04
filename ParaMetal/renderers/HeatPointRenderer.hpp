@@ -25,14 +25,14 @@ public:
     HeatPointRenderer(VulkanDevice& device, UniformBufferManager& uniformBufferManager);
     ~HeatPointRenderer();
 
-    void initialize(VkRenderPass renderPass, uint32_t maxFramesInFlight);
+    void initialize(VkRenderPass renderPass, uint32_t subpass, uint32_t maxFramesInFlight);
     void cleanup();
     void render(VkCommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<PointRenderBinding>& bindings, VkExtent2D extent);
 
 private:
     bool createDescriptorSetLayout();
     bool createDescriptorPool(uint32_t maxFramesInFlight);
-    bool createPipeline(VkRenderPass renderPass);
+    bool createPipeline(VkRenderPass renderPass, uint32_t subpass);
     
     VkDescriptorSet allocateDescriptorSet(VkDescriptorPool pool);
     void updateDescriptorSet(VkDescriptorSet set, uint32_t frameIndex, const PointRenderBinding& binding);

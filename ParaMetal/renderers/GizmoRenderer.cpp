@@ -5,6 +5,7 @@
 #include "framegraph/FramePass.hpp"
 #include "scene/GizmoController.hpp"
 #include "scene/ModelSelection.hpp"
+#include "scene/PickId.hpp"
 #include "vulkan/ModelRegistry.hpp"
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/VulkanImage.hpp"
@@ -303,22 +304,20 @@ void GizmoRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpassInde
     depthStencil.front = stencilOp;
     depthStencil.back = stencilOp;
 
-    VkPipelineColorBlendAttachmentState colorAttachments[2] = {};
-    colorAttachments[0].colorWriteMask = 0;
-    colorAttachments[0].blendEnable = VK_FALSE;
-    colorAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+    VkPipelineColorBlendAttachmentState colorAttachments[1] = {};
+    colorAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorAttachments[1].blendEnable = VK_TRUE;
-    colorAttachments[1].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    colorAttachments[1].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorAttachments[1].colorBlendOp = VK_BLEND_OP_ADD;
-    colorAttachments[1].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorAttachments[1].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    colorAttachments[1].alphaBlendOp = VK_BLEND_OP_ADD;
+    colorAttachments[0].blendEnable = VK_TRUE;
+    colorAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorAttachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorAttachments[0].colorBlendOp = VK_BLEND_OP_ADD;
+    colorAttachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.attachmentCount = 2;
+    colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = colorAttachments;
 
     VkPushConstantRange pushRange{};
@@ -373,6 +372,146 @@ void GizmoRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpassInde
 
     vkDestroyShaderModule(vulkanDevice.getDevice(), vertModule, nullptr);
     vkDestroyShaderModule(vulkanDevice.getDevice(), fragModule, nullptr);
+}
+
+bool GizmoRenderer::createPickPipeline(VkRenderPass renderPass, uint32_t subpassIndex) {
+    destroyPickPipeline();
+
+    auto vertCode = readFile("shaders/gizmo_vert.spv");
+    auto fragCode = readFile("shaders/pick_gizmo_frag.spv");
+
+    VkShaderModule vertModule = createShaderModule(vulkanDevice, vertCode);
+    VkShaderModule fragModule = createShaderModule(vulkanDevice, fragCode);
+    if (vertModule == VK_NULL_HANDLE || fragModule == VK_NULL_HANDLE) {
+        if (vertModule != VK_NULL_HANDLE) {
+            vkDestroyShaderModule(vulkanDevice.getDevice(), vertModule, nullptr);
+        }
+        if (fragModule != VK_NULL_HANDLE) {
+            vkDestroyShaderModule(vulkanDevice.getDevice(), fragModule, nullptr);
+        }
+        std::cerr << "[GizmoRenderer] Failed to create pick shader modules" << std::endl;
+        return false;
+    }
+
+    VkPipelineShaderStageCreateInfo stages[2] = {};
+    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = vertModule;
+    stages[0].pName = "main";
+
+    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = fragModule;
+    stages[1].pName = "main";
+
+    const auto bindingDesc = GizmoVertex::getBindingDescription();
+    const auto attrDescs = GizmoVertex::getAttributeDescriptions();
+
+    VkPipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInput.vertexBindingDescriptionCount = 1;
+    vertexInput.pVertexBindingDescriptions = &bindingDesc;
+    vertexInput.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDescs.size());
+    vertexInput.pVertexAttributeDescriptions = attrDescs.data();
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_FALSE;
+    depthStencil.depthWriteEnable = VK_FALSE;
+    depthStencil.stencilTestEnable = VK_FALSE;
+
+    VkPipelineColorBlendAttachmentState colorAttachment{};
+    colorAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT;
+    colorAttachment.blendEnable = VK_FALSE;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorAttachment;
+
+    VkPushConstantRange pushRange{};
+    pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushRange.size = sizeof(GizmoPushConstants);
+
+    VkPipelineLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges = &pushRange;
+
+    if (vkCreatePipelineLayout(vulkanDevice.getDevice(), &layoutInfo, nullptr, &pickPipelineLayout) != VK_SUCCESS) {
+        vkDestroyShaderModule(vulkanDevice.getDevice(), vertModule, nullptr);
+        vkDestroyShaderModule(vulkanDevice.getDevice(), fragModule, nullptr);
+        std::cerr << "[GizmoRenderer] Failed to create pick pipeline layout" << std::endl;
+        return false;
+    }
+
+    VkDynamicState dynamicStates[] = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = 2;
+    dynamicState.pDynamicStates = dynamicStates;
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = stages;
+    pipelineInfo.pVertexInputState = &vertexInput;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.layout = pickPipelineLayout;
+    pipelineInfo.renderPass = renderPass;
+    pipelineInfo.subpass = subpassIndex;
+
+    const VkResult result = vkCreateGraphicsPipelines(vulkanDevice.getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pickPipeline);
+    vkDestroyShaderModule(vulkanDevice.getDevice(), vertModule, nullptr);
+    vkDestroyShaderModule(vulkanDevice.getDevice(), fragModule, nullptr);
+    if (result != VK_SUCCESS) {
+        destroyPickPipeline();
+        std::cerr << "[GizmoRenderer] Failed to create pick pipeline" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+void GizmoRenderer::destroyPickPipeline() {
+    if (pickPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(vulkanDevice.getDevice(), pickPipeline, nullptr);
+        pickPipeline = VK_NULL_HANDLE;
+    }
+    if (pickPipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(vulkanDevice.getDevice(), pickPipelineLayout, nullptr);
+        pickPipelineLayout = VK_NULL_HANDLE;
+    }
 }
 
 void GizmoRenderer::render(
@@ -442,7 +581,67 @@ void GizmoRenderer::render(
     }
 }
 
-void GizmoRenderer::renderAxis(const RenderState& state, const glm::vec3& direction, const glm::vec3& color, bool hovered) {
+void GizmoRenderer::renderPick(
+    VkCommandBuffer commandBuffer,
+    const glm::vec3& position,
+    VkExtent2D extent,
+    float scale,
+    const render::SceneView& sceneView,
+    const GizmoController& gizmoController) {
+    if (pickPipeline == VK_NULL_HANDLE || pickPipelineLayout == VK_NULL_HANDLE) {
+        return;
+    }
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pickPipeline);
+
+    RenderState state{};
+    state.commandBuffer = commandBuffer;
+    state.position = position;
+    state.scale = scale;
+    state.distance = glm::distance(sceneView.cameraPosition, position);
+    state.view = sceneView.view;
+    state.proj = sceneView.proj;
+    state.cameraFov = sceneView.cameraFov;
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(extent.width);
+    viewport.height = static_cast<float>(extent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = { 0, 0 };
+    scissor.extent = extent;
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    const GizmoAxis activeAxis = gizmoController.getActiveAxis();
+    const GizmoMode currentMode = gizmoController.getMode();
+    const bool isDragging = activeAxis != GizmoAxis::None;
+
+    if (!isDragging || (currentMode == GizmoMode::Translate && activeAxis == GizmoAxis::X)) {
+        renderAxis(state, glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(1.0f), false, pickid::encodeGizmo(PickedGizmoMode::Translate, 1));
+    }
+    if (!isDragging || (currentMode == GizmoMode::Translate && activeAxis == GizmoAxis::Y)) {
+        renderAxis(state, glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(1.0f), false, pickid::encodeGizmo(PickedGizmoMode::Translate, 2));
+    }
+    if (!isDragging || (currentMode == GizmoMode::Translate && activeAxis == GizmoAxis::Z)) {
+        renderAxis(state, glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(1.0f), false, pickid::encodeGizmo(PickedGizmoMode::Translate, 3));
+    }
+    if (!isDragging || (currentMode == GizmoMode::Rotate && activeAxis == GizmoAxis::X)) {
+        renderRotationRing(state, glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(1.0f), false, 1.0f, pickid::encodeGizmo(PickedGizmoMode::Rotate, 1));
+    }
+    if (!isDragging || (currentMode == GizmoMode::Rotate && activeAxis == GizmoAxis::Z)) {
+        renderRotationRing(state, glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(1.0f), false, 0.97f, pickid::encodeGizmo(PickedGizmoMode::Rotate, 3));
+    }
+    if (!isDragging || (currentMode == GizmoMode::Rotate && activeAxis == GizmoAxis::Y)) {
+        renderRotationRing(state, glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(1.0f), false, 0.94f, pickid::encodeGizmo(PickedGizmoMode::Rotate, 2));
+    }
+}
+
+void GizmoRenderer::renderAxis(const RenderState& state, const glm::vec3& direction, const glm::vec3& color, bool hovered, uint32_t pickId) {
     const float offsetDistance = getArrowDistance(state.scale, state.distance, state.cameraFov);
     const float arrowScale = getArrowSize(state.scale, state.distance, state.cameraFov);
     const glm::vec3 offsetPosition = state.position + direction * offsetDistance;
@@ -478,10 +677,11 @@ void GizmoRenderer::renderAxis(const RenderState& state, const glm::vec3& direct
     pc.proj = state.proj;
     pc.color = color;
     pc.hovered = hovered ? 1.0f : 0.0f;
+    pc.pickId = pickId;
 
     vkCmdPushConstants(
         state.commandBuffer,
-        pipelineLayout,
+        pickId == 0 ? pipelineLayout : pickPipelineLayout,
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
         0,
         sizeof(GizmoPushConstants),
@@ -494,7 +694,7 @@ void GizmoRenderer::renderAxis(const RenderState& state, const glm::vec3& direct
     vkCmdDrawIndexed(state.commandBuffer, coneIndexCount, 1, 0, 0, 0);
 }
 
-void GizmoRenderer::renderRotationRing(const RenderState& state, const glm::vec3& axis, const glm::vec3& color, bool hovered, float radiusMultiplier) {
+void GizmoRenderer::renderRotationRing(const RenderState& state, const glm::vec3& axis, const glm::vec3& color, bool hovered, float radiusMultiplier, uint32_t pickId) {
     const float scaled = applyDistanceScaling(state.scale, state.distance, state.cameraFov);
     const float ringScale = scaled * 0.75f * radiusMultiplier;
 
@@ -519,10 +719,11 @@ void GizmoRenderer::renderRotationRing(const RenderState& state, const glm::vec3
     pc.proj = state.proj;
     pc.color = color;
     pc.hovered = hovered ? 1.0f : 0.0f;
+    pc.pickId = pickId;
 
     vkCmdPushConstants(
         state.commandBuffer,
-        pipelineLayout,
+        pickId == 0 ? pipelineLayout : pickPipelineLayout,
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
         0,
         sizeof(GizmoPushConstants),
@@ -608,6 +809,7 @@ float GizmoRenderer::getArrowDistance(float baseScale, float distance, float cam
 }
 
 void GizmoRenderer::cleanup() {
+    destroyPickPipeline();
     if (coneVertexBuffer != VK_NULL_HANDLE) {
         vkDestroyBuffer(vulkanDevice.getDevice(), coneVertexBuffer, nullptr);
         coneVertexBuffer = VK_NULL_HANDLE;

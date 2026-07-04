@@ -24,6 +24,7 @@
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 
+
 NodeGraphController::NodeGraphController(NodeGraph* bridge, const NodeRuntimeServices& services)
     : bridge(bridge),
       runtimeServices(services),
@@ -273,4 +274,78 @@ void NodeGraphController::updateDisplayTransports() {
 
 const NodeGraphCompiled& NodeGraphController::compiledState() const {
     return plan;
+}
+
+void NodeGraphController::addRuntimeModelId(
+    std::vector<uint32_t>& outIds, uint32_t id) const
+{
+    if (id == 0) return;
+    for (uint32_t existing : outIds) {
+        if (existing == id) return;
+    }
+    outIds.push_back(id);
+}
+
+bool NodeGraphController::runtimeModelIdsForSocket(
+    uint64_t socketKey, std::vector<uint32_t>& outIds) const
+{
+    if (socketKey == 0 || !productManager) {
+        return false;
+    }
+
+    if (const ModelPackage* pkg = packageManager.findAny<ModelPackage>(socketKey)) {
+        const ModelProduct* p = productManager->resolve<ModelProduct>(pkg->productHandle);
+        if (p)
+            addRuntimeModelId(outIds, p->runtimeModelId);
+        return true;
+    }
+    if (const RemeshPackage* pkg = packageManager.findAny<RemeshPackage>(socketKey)) {
+        const RemeshProduct* p = productManager->resolve<RemeshProduct>(pkg->productHandle);
+        if (p)
+            addRuntimeModelId(outIds, p->runtimeModelId);
+        return true;
+    }
+    if (const VoronoiPackage* pkg = packageManager.findAny<VoronoiPackage>(socketKey)) {
+        const VoronoiProduct* p = productManager->resolve<VoronoiProduct>(pkg->productHandle);
+        if (p && p->runtimeModelId != 0)
+            addRuntimeModelId(outIds, p->runtimeModelId);
+        return true;
+    }
+    if (const HeatPackage* pkg = packageManager.findAny<HeatPackage>(socketKey)) {
+        for (const ProductHandle& h : pkg->modelProducts) {
+            const ModelProduct* p = productManager->resolve<ModelProduct>(h);
+            if (p)
+                addRuntimeModelId(outIds, p->runtimeModelId);
+        }
+        return true;
+    }
+    if (const ContactPackage* pkg = packageManager.findAny<ContactPackage>(socketKey)) {
+        if (const ContactProduct* p = productManager->resolve<ContactProduct>(pkg->productHandle)) {
+            addRuntimeModelId(outIds, p->modelARuntimeModelId);
+            addRuntimeModelId(outIds, p->modelBRuntimeModelId);
+        }
+        return true;
+    }
+    if (packageManager.findAny<PointPackage>(socketKey)) {
+        // Point packages do not own selectable runtime model IDs.
+        return true;
+    }
+    return false;
+}
+
+bool NodeGraphController::runtimeModelIdsForNode(
+    NodeGraphNodeId nodeId, std::vector<uint32_t>& outIds) const
+{
+    outIds.clear();
+    const auto it = runtime.state().nodes.find(nodeId.value);
+    if (it == runtime.state().nodes.end()) {
+        return false;
+    }
+
+    for (const NodeGraphSocket& output : it->second.outputs) {
+        const uint64_t socketKey = NodeSocketKey(it->second.id, output.id).value;
+        if (runtimeModelIdsForSocket(socketKey, outIds))
+            return true;
+    }
+    return false;
 }

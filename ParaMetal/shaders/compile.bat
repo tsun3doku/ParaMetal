@@ -53,6 +53,9 @@ C:/VulkanSDK/1.3.283.0/Bin/glslc.exe voronoi_surface.frag -o voronoi_surface_fra
 
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe gizmo.vert -o gizmo_vert.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe gizmo.frag -o gizmo_frag.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe pick_model.vert -o pick_model_vert.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe pick_model.frag -o pick_model_frag.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe pick_gizmo.frag -o pick_gizmo_frag.spv
 
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe point_cloud.vert -o point_cloud_vert.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe point_cloud.frag -o point_cloud_frag.spv

@@ -137,6 +137,20 @@ const ModelSelection* App::getModelSelection() const {
     return nullptr;
 }
 
+NodeGraphController* App::getNodeGraphController() {
+    if (systems) {
+        return systems->getNodeGraphController();
+    }
+    return nullptr;
+}
+
+const NodeGraphController* App::getNodeGraphController() const {
+    if (systems) {
+        return systems->getNodeGraphController();
+    }
+    return nullptr;
+}
+
 void App::setSimPaused(bool paused) {
     if (systems) {
         systems->setSimPaused(paused);

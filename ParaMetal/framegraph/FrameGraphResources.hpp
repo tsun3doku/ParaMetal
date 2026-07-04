@@ -20,6 +20,8 @@ inline constexpr std::string_view LineMSAA = "LineMSAA";
 inline constexpr std::string_view LineResolve = "LineResolve";
 inline constexpr std::string_view SurfaceMSAA = "SurfaceMSAA";
 inline constexpr std::string_view SurfaceResolve = "SurfaceResolve";
+inline constexpr std::string_view PickID = "PickID";
+inline constexpr std::string_view PickDepth = "PickDepth";
 inline constexpr std::string_view Swapchain = "Swapchain";
 
 }

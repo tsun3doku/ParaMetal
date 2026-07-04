@@ -41,6 +41,10 @@ public:
         ModelRegistry& resources,
         UniformBufferManager& ubo,
         GeometryPass& geometry,
+        HeatOverlayRenderer& heatOverlayRenderer,
+        VoronoiOverlayRenderer& voronoiOverlayRenderer,
+        IntrinsicRenderer& intrinsicRenderer,
+        GizmoRenderer& gizmoRenderer,
         uint32_t framesInFlight,
         CommandPool& pool,
         framegraph::PassId passId,
@@ -66,6 +70,10 @@ public:
 private:
 
     GeometryPass& geometryPass;
+    HeatOverlayRenderer& heatOverlayRenderer;
+    VoronoiOverlayRenderer& voronoiOverlayRenderer;
+    IntrinsicRenderer& intrinsicRenderer;
+    GizmoRenderer& gizmoRenderer;
     ::VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
     VkFrameGraphRuntime& frameGraphRuntime;
@@ -78,14 +86,10 @@ private:
     framegraph::ResourceId depthMsaaId{};
 
     std::unique_ptr<OutlineRenderer> outlineRenderer;
-    std::unique_ptr<IntrinsicRenderer> intrinsicRenderer;
     std::unique_ptr<ContactOverlayRenderer> contactOverlayRenderer;
-    std::unique_ptr<HeatOverlayRenderer> heatOverlayRenderer;
     std::unique_ptr<PointOverlayRenderer> pointOverlayRenderer;
-    std::unique_ptr<VoronoiOverlayRenderer> voronoiOverlayRenderer;
     std::unique_ptr<TimingRenderer> timingOverlay;
     std::unique_ptr<GridRenderer> gridRenderer;
-    std::unique_ptr<GizmoRenderer> gizmoRenderer;
     bool ready = false;
 };
 

@@ -3,6 +3,7 @@
 #include "nodegraph/NodeGraphPayloadTypes.hpp"
 #include "nodegraph/NodeGraphRegistry.hpp"
 #include "nodegraph/NodeGraphUtils.hpp"
+#include "nodegraph/NodeGraphController.hpp"
 #include "nodegraph/ui/scene/NodeGraphCanvas.hpp"
 #include "nodegraph/ui/scene/NodeGraphScene.hpp"
 #include "nodegraph/ui/widgets/NodePanel.hpp"
@@ -71,7 +72,11 @@ void NodeGraphEditorWidget::setSceneController(const SceneController* sceneContr
 
 void NodeGraphEditorWidget::setModelSelection(ModelSelection* modelSelectionPtr) {
     modelSelection = modelSelectionPtr;
-    lastObservedRuntimeModelId = std::numeric_limits<uint32_t>::max();
+    syncedRuntimeModelId = std::numeric_limits<uint32_t>::max();
+}
+
+void NodeGraphEditorWidget::setNodeGraphController(NodeGraphController* controller) {
+    nodeGraphController = controller;
 }
 
 void NodeGraphEditorWidget::refreshGraph() {
@@ -232,26 +237,19 @@ void NodeGraphEditorWidget::handleGraphSelectionChanged(NodeGraphNodeId nodeId) 
         nodePanel->setNode(nodeId);
     }
 
-    uint32_t runtimeModelId = 0;
-    if (bridge && sceneController && nodeId.isValid()) {
-        NodeGraphNode node{};
-        if (bridge->getNode(nodeId, node) && getNodeTypeId(node.typeId) == nodegraphtypes::Model) {
-            const NodeGraphSocket* outputSocket = node.outputOfType(payloadtypes::Geometry);
-            if (outputSocket && outputSocket->id.isValid()) {
-                sceneController->tryGetSocketRuntimeModelId(NodeSocketKey(node.id, outputSocket->id), runtimeModelId);
-            }
-        }
+    std::vector<uint32_t> ids;
+    if (nodeGraphController && nodeId.isValid()) {
+        nodeGraphController->runtimeModelIdsForNode(nodeId, ids);
     }
 
     if (modelSelection) {
-        if (runtimeModelId != 0) {
-            modelSelection->setSelectedModelID(runtimeModelId);
-        } else {
-            modelSelection->clearSelection();
+        modelSelection->clearSelection();
+        for (uint32_t id : ids) {
+            modelSelection->addSelectedModelID(id);
         }
     }
 
-    lastObservedRuntimeModelId = runtimeModelId;
+    syncedRuntimeModelId = ids.empty() ? 0 : ids.front();
 }
 
 void NodeGraphEditorWidget::openInspectorForNode(NodeGraphNodeId nodeId) {
@@ -271,20 +269,18 @@ void NodeGraphEditorWidget::syncViewportSelectionToGraph() {
     }
 
     const uint32_t selectedRuntimeModelId = modelSelection->getSelectedModelID();
-    if (selectedRuntimeModelId == lastObservedRuntimeModelId) {
+    if (selectedRuntimeModelId == syncedRuntimeModelId) {
         return;
     }
 
-    lastObservedRuntimeModelId = selectedRuntimeModelId;
+    syncedRuntimeModelId = selectedRuntimeModelId;
 
     NodeGraphNodeId nodeId{};
     if (selectedRuntimeModelId != 0) {
         uint64_t outputSocketKey = 0;
-        NodeGraphSocketId outputSocketId{};
         if (sceneController->tryGetRuntimeModelSocketKey(selectedRuntimeModelId, outputSocketKey)) {
             const NodeSocketKey key(outputSocketKey);
             nodeId = key.node();
-            outputSocketId = key.socket();
         }
     }
 

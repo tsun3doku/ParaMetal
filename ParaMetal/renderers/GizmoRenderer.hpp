@@ -53,6 +53,8 @@ struct GizmoPushConstants {
     alignas(16) glm::mat4 proj;
     alignas(16) glm::vec3 color;
     float hovered;
+    uint32_t pickId;
+    uint32_t padding[3];
 };
 
 class GizmoRenderer {
@@ -64,10 +66,20 @@ public:
     void createConeGeometry();
     void createRingGeometry();
     void createPipeline(VkRenderPass renderPass, uint32_t subpassIndex);
+    bool createPickPipeline(VkRenderPass renderPass, uint32_t subpassIndex);
+    void destroyPickPipeline();
 
     float calculateGizmoScale(ModelRegistry& resourceManager, const ModelSelection& modelSelection) const;
 
     void render(
+        VkCommandBuffer commandBuffer,
+        const glm::vec3& position,
+        VkExtent2D extent,
+        float scale,
+        const render::SceneView& sceneView,
+        const GizmoController& gizmoController);
+
+    void renderPick(
         VkCommandBuffer commandBuffer,
         const glm::vec3& position,
         VkExtent2D extent,
@@ -93,14 +105,16 @@ private:
     float getArrowDistance(float baseScale, float distance, float cameraFov) const;
 
     void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& memory);
-    void renderAxis(const RenderState& state, const glm::vec3& direction, const glm::vec3& color, bool hovered);
-    void renderRotationRing(const RenderState& state, const glm::vec3& axis, const glm::vec3& color, bool hovered, float radiusMultiplier = 1.0f);
+    void renderAxis(const RenderState& state, const glm::vec3& direction, const glm::vec3& color, bool hovered, uint32_t pickId = 0);
+    void renderRotationRing(const RenderState& state, const glm::vec3& axis, const glm::vec3& color, bool hovered, float radiusMultiplier = 1.0f, uint32_t pickId = 0);
 
     VulkanDevice& vulkanDevice;
     CommandPool& renderCommandPool;
 
     VkPipeline pipeline = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    VkPipeline pickPipeline = VK_NULL_HANDLE;
+    VkPipelineLayout pickPipelineLayout = VK_NULL_HANDLE;
 
     VkBuffer coneVertexBuffer = VK_NULL_HANDLE;
     VkDeviceMemory coneVertexBufferMemory = VK_NULL_HANDLE;

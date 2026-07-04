@@ -352,6 +352,10 @@ NodeGraphController* RenderContext::nodeGraphController() {
     return nodeGraphControllerState.get();
 }
 
+const NodeGraphController* RenderContext::nodeGraphController() const {
+    return nodeGraphControllerState.get();
+}
+
 InputController* RenderContext::inputController() {
     return inputControllerState.get();
 }

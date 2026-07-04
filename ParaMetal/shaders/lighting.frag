@@ -73,9 +73,9 @@ vec3 evaluateDirectionalBRDF(vec3 N, vec3 V, vec3 L, vec3 albedo, float roughnes
 void main() {
     // Read Gbuffer data
     vec4 albedoSample = subpassLoad(inputAlbedo);
-    float coverage = clamp(albedoSample.a, 0.0, 1.0);
-    if (coverage <= 0.0) {
-        // No geometry coverage at this sample: keep the cleared lighting color.
+    float lightingMix = clamp(albedoSample.a, 0.0, 1.0);
+    if (lightingMix <= 0.0) {
+        // No geometry coverage at this sample
         discard;
     }
 
@@ -100,7 +100,7 @@ void main() {
     vec3 direct = evaluateDirectionalBRDF(normal, viewDir, keyDir, albedo, roughness, F0, keyRadiance) +
                   evaluateDirectionalBRDF(normal, viewDir, rimDir, albedo, roughness, F0, rimRadiance);
     vec3 litColor = ambient + direct;
+    vec3 finalColor = mix(albedo, litColor, lightingMix);
 
-    // Silhouette coverage is handled by per-sample stencil in lighting subpass.
-    fragColor = vec4(litColor, 1.0);
+    fragColor = vec4(finalColor, 1.0);
 }

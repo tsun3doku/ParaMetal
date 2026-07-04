@@ -205,7 +205,7 @@ bool ContactLineRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpa
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
 
-    VkPipelineColorBlendAttachmentState colorBlendAttachments[2] = {};
+    VkPipelineColorBlendAttachmentState colorBlendAttachments[1] = {};
     colorBlendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
     colorBlendAttachments[0].blendEnable = VK_TRUE;
@@ -216,26 +216,10 @@ bool ContactLineRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpa
     colorBlendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
     colorBlendAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
 
-    if (subpass == 2) {
-        // Surface overlay target disabled for line renderers.
-        colorBlendAttachments[0].colorWriteMask = 0;
-        colorBlendAttachments[0].blendEnable = VK_FALSE;
-        colorBlendAttachments[1] = colorBlendAttachments[0];
-        colorBlendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-        colorBlendAttachments[1].blendEnable = VK_TRUE;
-        colorBlendAttachments[1].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-        colorBlendAttachments[1].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        colorBlendAttachments[1].colorBlendOp = VK_BLEND_OP_ADD;
-        colorBlendAttachments[1].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-        colorBlendAttachments[1].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-        colorBlendAttachments[1].alphaBlendOp = VK_BLEND_OP_ADD;
-    }
-
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = (subpass == 2) ? 2 : 1;
+    colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = colorBlendAttachments;
 
     std::vector<VkDynamicState> dynamicStates = {
@@ -391,7 +375,7 @@ bool ContactLineRenderer::createOutlinePipeline(VkRenderPass renderPass, uint32_
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
 
-    VkPipelineColorBlendAttachmentState colorBlendAttachments[2] = {};
+    VkPipelineColorBlendAttachmentState colorBlendAttachments[1] = {};
     colorBlendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
     colorBlendAttachments[0].blendEnable = VK_TRUE;
@@ -402,26 +386,10 @@ bool ContactLineRenderer::createOutlinePipeline(VkRenderPass renderPass, uint32_
     colorBlendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
     colorBlendAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
 
-    if (subpass == 2) {
-        // Surface overlay target disabled for line renderers.
-        colorBlendAttachments[0].colorWriteMask = 0;
-        colorBlendAttachments[0].blendEnable = VK_FALSE;
-        colorBlendAttachments[1] = colorBlendAttachments[0];
-        colorBlendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-        colorBlendAttachments[1].blendEnable = VK_TRUE;
-        colorBlendAttachments[1].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-        colorBlendAttachments[1].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        colorBlendAttachments[1].colorBlendOp = VK_BLEND_OP_ADD;
-        colorBlendAttachments[1].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-        colorBlendAttachments[1].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-        colorBlendAttachments[1].alphaBlendOp = VK_BLEND_OP_ADD;
-    }
-
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = (subpass == 2) ? 2 : 1;
+    colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = colorBlendAttachments;
 
     std::vector<VkDynamicState> dynamicStates = {

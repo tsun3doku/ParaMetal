@@ -11,15 +11,15 @@
 #include "GridLabel.hpp"
 
 
-GridRenderer::GridRenderer(VulkanDevice& vulkanDevice, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, uint32_t maxFramesInFlight, VkRenderPass renderPass, CommandPool& commandPool)
+GridRenderer::GridRenderer(VulkanDevice& vulkanDevice, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, uint32_t maxFramesInFlight, VkRenderPass renderPass, uint32_t subpass, CommandPool& commandPool)
     : vulkanDevice(vulkanDevice), allocator(allocator), uniformBufferManager(uniformBufferManager) {
     createGridDescriptorPool(maxFramesInFlight);
     createGridDescriptorSetLayout();
     createGridDescriptorSets(maxFramesInFlight);
 
-    createGridPipeline(renderPass);
+    createGridPipeline(renderPass, subpass);
 
-    gridLabel = std::make_unique<GridLabel>(vulkanDevice, allocator, uniformBufferManager, maxFramesInFlight, renderPass, commandPool);
+    gridLabel = std::make_unique<GridLabel>(vulkanDevice, allocator, uniformBufferManager, maxFramesInFlight, renderPass, subpass, commandPool);
 }
 
 GridRenderer::~GridRenderer() {
@@ -106,7 +106,7 @@ VkDescriptorSetAllocateInfo allocInfo{};
     }
 }
 
-void GridRenderer::createGridPipeline(VkRenderPass renderPass) {
+void GridRenderer::createGridPipeline(VkRenderPass renderPass, uint32_t subpass) {
     auto vertShaderCode = readFile("shaders/grid_vert.spv"); 
     auto fragShaderCode = readFile("shaders/grid_frag.spv"); 
 
@@ -169,26 +169,23 @@ void GridRenderer::createGridPipeline(VkRenderPass renderPass) {
     depthStencilState.depthBoundsTestEnable = VK_FALSE; 
     depthStencilState.stencilTestEnable = VK_FALSE; 
     
-    VkPipelineColorBlendAttachmentState colorBlendAttachments[2] = {};
-    // Surface overlay target disabled for line-only grid.
-    colorBlendAttachments[0].colorWriteMask = 0;
-    colorBlendAttachments[0].blendEnable = VK_FALSE;
+    VkPipelineColorBlendAttachmentState colorBlendAttachments[1] = {};
     // Line overlay target.
-    colorBlendAttachments[1].blendEnable = VK_TRUE;
-    colorBlendAttachments[1].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    colorBlendAttachments[1].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorBlendAttachments[1].colorBlendOp = VK_BLEND_OP_ADD;
-    colorBlendAttachments[1].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachments[1].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorBlendAttachments[1].alphaBlendOp = VK_BLEND_OP_ADD;
-    colorBlendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+    colorBlendAttachments[0].blendEnable = VK_TRUE;
+    colorBlendAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorBlendAttachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachments[0].colorBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
     colorBlending.logicOp = VK_LOGIC_OP_COPY;
-    colorBlending.attachmentCount = 2;
+    colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = colorBlendAttachments;
     colorBlending.blendConstants[0] = 0.0f;
     colorBlending.blendConstants[1] = 0.0f;
@@ -231,7 +228,7 @@ void GridRenderer::createGridPipeline(VkRenderPass renderPass) {
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = gridPipelineLayout;
     pipelineInfo.renderPass = renderPass;
-    pipelineInfo.subpass = 2;
+    pipelineInfo.subpass = subpass;
 
     if (vkCreateGraphicsPipelines(vulkanDevice.getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &gridPipeline) != VK_SUCCESS) {
         std::cerr << "[GridRenderer] Failed to create graphics pipeline" << std::endl;

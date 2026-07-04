@@ -27,7 +27,6 @@ public:
     uint32_t loadModel(const std::string& modelPath, uint32_t preferredModelId = 0);
     bool removeModelByID(uint32_t modelId);
     bool tryGetRuntimeModelSocketKey(uint32_t runtimeModelId, uint64_t& outSocketKey) const;
-    bool tryGetSocketRuntimeModelId(uint64_t socketKey, uint32_t& outRuntimeModelId) const;
     void focusOnVisibleModel();
     void focusCameraOn(const glm::vec3& localCenter);
 

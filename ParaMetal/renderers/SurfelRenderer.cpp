@@ -19,7 +19,7 @@ SurfelRenderer::~SurfelRenderer() {
     cleanup();
 }
 
-void SurfelRenderer::initialize(VkRenderPass renderPass, uint32_t maxFramesInFlight) {
+void SurfelRenderer::initialize(VkRenderPass renderPass, uint32_t subpass, uint32_t maxFramesInFlight) {
     if (initialized) 
         return;
     
@@ -28,7 +28,7 @@ void SurfelRenderer::initialize(VkRenderPass renderPass, uint32_t maxFramesInFli
     if (!createSurfelDescriptorSetLayout() ||
         !createSurfelDescriptorPool(maxFramesInFlight) ||
         !createSurfelDescriptorSets(maxFramesInFlight) ||
-        !createSurfelPipeline(renderPass)) {
+        !createSurfelPipeline(renderPass, subpass)) {
         cleanup();
         return;
     }
@@ -221,7 +221,7 @@ bool SurfelRenderer::createSurfelDescriptorSets(uint32_t maxFramesInFlight) {
     return true;
 }
 
-bool SurfelRenderer::createSurfelPipeline(VkRenderPass renderPass) {
+bool SurfelRenderer::createSurfelPipeline(VkRenderPass renderPass, uint32_t subpass) {
     std::vector<char> vertShaderCode;
     std::vector<char> fragShaderCode;
     if (!readFile("shaders/surfel_debug_vert.spv", vertShaderCode) ||
@@ -309,25 +309,22 @@ bool SurfelRenderer::createSurfelPipeline(VkRenderPass renderPass) {
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
     
-    VkPipelineColorBlendAttachmentState colorBlendAttachments[2] = {};
-    // Surface overlay target disabled for debug surfels.
-    colorBlendAttachments[0].colorWriteMask = 0;
-    colorBlendAttachments[0].blendEnable = VK_FALSE;
+    VkPipelineColorBlendAttachmentState colorBlendAttachments[1] = {};
     // Line overlay target.
-    colorBlendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+    colorBlendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachments[1].blendEnable = VK_TRUE;
-    colorBlendAttachments[1].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    colorBlendAttachments[1].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorBlendAttachments[1].colorBlendOp = VK_BLEND_OP_ADD;
-    colorBlendAttachments[1].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachments[1].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    colorBlendAttachments[1].alphaBlendOp = VK_BLEND_OP_ADD;
-    
+    colorBlendAttachments[0].blendEnable = VK_TRUE;
+    colorBlendAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorBlendAttachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachments[0].colorBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
+
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = 2;
+    colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = colorBlendAttachments;
     
     VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
@@ -362,7 +359,7 @@ bool SurfelRenderer::createSurfelPipeline(VkRenderPass renderPass) {
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = pipelineLayout;
     pipelineInfo.renderPass = renderPass;
-    pipelineInfo.subpass = 2; // Grid subpass 
+    pipelineInfo.subpass = subpass;
     
     if (vkCreateGraphicsPipelines(vulkanDevice.getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
         vkDestroyPipelineLayout(vulkanDevice.getDevice(), pipelineLayout, nullptr);

@@ -183,6 +183,14 @@ const ModelSelection* RuntimeSystems::getModelSelection() const {
     return &renderRuntime->getModelSelection();
 }
 
+NodeGraphController* RuntimeSystems::getNodeGraphController() {
+    return render.nodeGraphController();
+}
+
+const NodeGraphController* RuntimeSystems::getNodeGraphController() const {
+    return render.nodeGraphController();
+}
+
 void RuntimeSystems::cleanup() {
     runtimeController.shutdown();
     render.shutdown();

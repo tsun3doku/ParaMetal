@@ -8,6 +8,7 @@
 class App;
 class QAction;
 class ModelSelection;
+class NodeGraphController;
 class NodeGraphEditorWidget;
 class NodeGraph;
 class PyTerminalWidget;
@@ -72,6 +73,7 @@ private:
     const SceneController* boundSceneController = nullptr;
     ModelSelection* boundModelSelection = nullptr;
     const RuntimeQuery* boundRuntimeQuery = nullptr;
+    NodeGraphController* boundNodeGraphController = nullptr;
     QSplitter* mainSplitter = nullptr;
     TimelineWidget* timelineWidget = nullptr;
     TimelineNodeController* timelineNodeController = nullptr;

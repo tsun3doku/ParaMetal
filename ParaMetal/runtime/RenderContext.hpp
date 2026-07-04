@@ -66,6 +66,7 @@ public:
     NodeGraph* nodeGraph();
     const NodeGraph* nodeGraph() const;
     NodeGraphController* nodeGraphController();
+    const NodeGraphController* nodeGraphController() const;
     InputController* inputController();
 
 private:

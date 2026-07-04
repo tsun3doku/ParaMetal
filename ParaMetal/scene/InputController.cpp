@@ -165,10 +165,10 @@ void InputController::updateGizmo() {
                     static_cast<float>(initialParams.rotateYDegrees),
                     static_cast<float>(initialParams.rotateZDegrees));
 
-                if (lastPick.stencilValue >= 3 && lastPick.stencilValue <= 5) {
+                if (lastPick.gizmoMode == PickedGizmoMode::Translate) {
                     gizmoController.setMode(GizmoMode::Translate);
                 }
-                else if (lastPick.stencilValue >= 6 && lastPick.stencilValue <= 8) {
+                else if (lastPick.gizmoMode == PickedGizmoMode::Rotate) {
                     gizmoController.setMode(GizmoMode::Rotate);
                 }
 

@@ -304,6 +304,12 @@ void MainWindow::syncNodeGraph() {
         boundModelSelection = modelSelection;
     }
 
+    NodeGraphController* nodeGraphController = app ? app->getNodeGraphController() : nullptr;
+    if (nodeGraphController != boundNodeGraphController) {
+        nodeGraphEditor->setNodeGraphController(nodeGraphController);
+        boundNodeGraphController = nodeGraphController;
+    }
+
     if (!app) {
         nodeGraphEditor->syncSelection();
         return;

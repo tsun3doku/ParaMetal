@@ -29,7 +29,7 @@ VectorArrowRenderer::~VectorArrowRenderer() {
     cleanup();
 }
 
-void VectorArrowRenderer::initialize(VkRenderPass renderPass, uint32_t maxFramesInFlight) {
+void VectorArrowRenderer::initialize(VkRenderPass renderPass, uint32_t subpass, uint32_t maxFramesInFlight) {
     if (initialized) {
         cleanup();
     }
@@ -37,7 +37,7 @@ void VectorArrowRenderer::initialize(VkRenderPass renderPass, uint32_t maxFrames
     if (!createArrowGeometry() ||
         !createDescriptorSetLayout() ||
         !createDescriptorPool(maxFramesInFlight) ||
-        !createPipeline(renderPass)) {
+        !createPipeline(renderPass, subpass)) {
         cleanup();
         return;
     }
@@ -188,7 +188,7 @@ void VectorArrowRenderer::updateDescriptorSet(VkDescriptorSet set, uint32_t fram
     vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
-bool VectorArrowRenderer::createPipeline(VkRenderPass renderPass) {
+bool VectorArrowRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpass) {
     std::vector<char> vertShaderCode;
     std::vector<char> fragShaderCode;
     if (!readFile("shaders/vector_arrow_vert.spv", vertShaderCode) ||
@@ -274,24 +274,22 @@ bool VectorArrowRenderer::createPipeline(VkRenderPass renderPass) {
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
 
-    VkPipelineColorBlendAttachmentState colorAttachments[2] = {};
-    colorAttachments[0].colorWriteMask = 0;
-    colorAttachments[0].blendEnable = VK_FALSE;
-    colorAttachments[1].colorWriteMask =
+    VkPipelineColorBlendAttachmentState colorAttachments[1] = {};
+    colorAttachments[0].colorWriteMask =
         VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorAttachments[1].blendEnable = VK_TRUE;
-    colorAttachments[1].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    colorAttachments[1].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorAttachments[1].colorBlendOp = VK_BLEND_OP_ADD;
-    colorAttachments[1].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorAttachments[1].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    colorAttachments[1].alphaBlendOp = VK_BLEND_OP_ADD;
+    colorAttachments[0].blendEnable = VK_TRUE;
+    colorAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorAttachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorAttachments[0].colorBlendOp = VK_BLEND_OP_ADD;
+    colorAttachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = 2;
+    colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = colorAttachments;
 
     std::vector<VkDynamicState> dynamicStates = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
@@ -333,7 +331,7 @@ bool VectorArrowRenderer::createPipeline(VkRenderPass renderPass) {
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = pipelineLayout;
     pipelineInfo.renderPass = renderPass;
-    pipelineInfo.subpass = 2;
+    pipelineInfo.subpass = subpass;
 
     if (vkCreateGraphicsPipelines(vulkanDevice.getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
         vkDestroyPipelineLayout(vulkanDevice.getDevice(), pipelineLayout, nullptr);

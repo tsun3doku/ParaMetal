@@ -203,7 +203,7 @@ bool VoronoiRenderer::createWireframeTexture() {
     return true;
 }
 
-void VoronoiRenderer::initialize(VkRenderPass renderPass, uint32_t maxFramesInFlight) {
+void VoronoiRenderer::initialize(VkRenderPass renderPass, uint32_t subpass, uint32_t maxFramesInFlight) {
     if (initialized) {
         cleanup();
     }
@@ -211,7 +211,7 @@ void VoronoiRenderer::initialize(VkRenderPass renderPass, uint32_t maxFramesInFl
     if (!createWireframeTexture() ||
         !createDescriptorSetLayout() ||
         !createDescriptorPool(maxFramesInFlight) ||
-        !createPipeline(renderPass)) {
+        !createPipeline(renderPass, subpass)) {
         cleanup();
         return;
     }
@@ -226,7 +226,7 @@ bool VoronoiRenderer::createDescriptorSetLayout() {
     uboLayoutBinding.descriptorCount = 1;
     uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     uboLayoutBinding.pImmutableSamplers = nullptr;
-    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
     // Binding 2: Seed positions 
     VkDescriptorSetLayoutBinding seedLayoutBinding{};
@@ -329,12 +329,20 @@ bool VoronoiRenderer::createDescriptorSetLayout() {
     wireframeBinding.pImmutableSamplers = nullptr;
     wireframeBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    std::array<VkDescriptorSetLayoutBinding, 15> bindings = { 
+    VkDescriptorSetLayoutBinding lightLayoutBinding{};
+    lightLayoutBinding.binding = 18;
+    lightLayoutBinding.descriptorCount = 1;
+    lightLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    lightLayoutBinding.pImmutableSamplers = nullptr;
+    lightLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    std::array<VkDescriptorSetLayoutBinding, 16> bindings = {
         uboLayoutBinding, seedLayoutBinding, neighborLayoutBinding,
         supportingLayoutBinding, supportingAngleLayoutBinding, halfedgeLayoutBinding, edgeLayoutBinding, triLayoutBinding, lengthLayoutBinding,
         inputHalfedgeLayoutBinding, inputEdgeLayoutBinding, inputTriangleLayoutBinding, inputLengthLayoutBinding,
         candidateLayoutBinding,
-        wireframeBinding
+        wireframeBinding,
+        lightLayoutBinding
     };
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
@@ -355,7 +363,7 @@ bool VoronoiRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
 
     std::array<VkDescriptorPoolSize, 4> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = maxModels;
+    poolSizes[0].descriptorCount = maxModels * 2;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     poolSizes[1].descriptorCount = maxModels * 3;
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
@@ -400,7 +408,7 @@ VkDescriptorSet VoronoiRenderer::allocateDescriptorSet(VkDescriptorPool pool) {
 }
 
 void VoronoiRenderer::updateDescriptorSet(VkDescriptorSet set, uint32_t frameIndex, const VoronoiRenderBinding& binding) {
-    std::array<VkWriteDescriptorSet, 15> descriptorWrites{};
+    std::array<VkWriteDescriptorSet, 16> descriptorWrites{};
 
     // Binding 0: UBO
     VkDescriptorBufferInfo uboInfo{};
@@ -494,10 +502,23 @@ void VoronoiRenderer::updateDescriptorSet(VkDescriptorSet set, uint32_t frameInd
     descriptorWrites[14].descriptorCount = 1;
     descriptorWrites[14].pImageInfo = &wireframeInfo;
 
+    VkDescriptorBufferInfo lightInfo{};
+    lightInfo.buffer = uniformBufferManager.getLightBuffers()[frameIndex];
+    lightInfo.offset = uniformBufferManager.getLightBufferOffsets()[frameIndex];
+    lightInfo.range = sizeof(LightUniformBufferObject);
+
+    descriptorWrites[15].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[15].dstSet = set;
+    descriptorWrites[15].dstBinding = 18;
+    descriptorWrites[15].dstArrayElement = 0;
+    descriptorWrites[15].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrites[15].descriptorCount = 1;
+    descriptorWrites[15].pBufferInfo = &lightInfo;
+
     vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 }
 
-bool VoronoiRenderer::createPipeline(VkRenderPass renderPass) {
+bool VoronoiRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpass) {
     std::vector<char> vertShaderCode;
     std::vector<char> geomShaderCode;
     std::vector<char> fragShaderCode;
@@ -587,22 +608,20 @@ bool VoronoiRenderer::createPipeline(VkRenderPass renderPass) {
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depthStencil.depthTestEnable = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_TRUE;
-    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.depthWriteEnable = VK_FALSE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
     
-    VkPipelineColorBlendAttachmentState colorBlendAttachments[2] = {};
+    VkPipelineColorBlendAttachmentState colorBlendAttachments[1] = {};
     colorBlendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
     colorBlendAttachments[0].blendEnable = VK_FALSE;
-    colorBlendAttachments[1].colorWriteMask = 0;
-    colorBlendAttachments[1].blendEnable = VK_FALSE;
     
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = 2;
+    colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = colorBlendAttachments;
     
     VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
@@ -645,7 +664,7 @@ bool VoronoiRenderer::createPipeline(VkRenderPass renderPass) {
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = pipelineLayout;
     pipelineInfo.renderPass = renderPass;
-    pipelineInfo.subpass = 2; // Grid subpass
+    pipelineInfo.subpass = subpass;
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
     
     if (vkCreateGraphicsPipelines(vulkanDevice.getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {

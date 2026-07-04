@@ -27,7 +27,7 @@ public:
         glm::vec2 texCoord;
     };
 
-    GridLabel(VulkanDevice& vulkanDevice, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, uint32_t maxFramesInFlight, VkRenderPass renderPass, CommandPool& commandPool);
+    GridLabel(VulkanDevice& vulkanDevice, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, uint32_t maxFramesInFlight, VkRenderPass renderPass, uint32_t subpass, CommandPool& commandPool);
     ~GridLabel();
 
     void updateLabels(const glm::vec3& gridSize);
@@ -41,7 +41,7 @@ private:
     void createDescriptorPool(VulkanDevice& vulkanDevice, uint32_t maxFramesInFlight);
     void createDescriptorSetLayout(VulkanDevice& vulkanDevice);
     void createDescriptorSets(VulkanDevice& vulkanDevice, UniformBufferManager& uniformBufferManager, uint32_t maxFramesInFlight);
-    void createPipeline(VulkanDevice& vulkanDevice, VkRenderPass renderPass);
+    void createPipeline(VulkanDevice& vulkanDevice, VkRenderPass renderPass, uint32_t subpass);
     void generateMipmaps(VkImage image, VkFormat format, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
     
     void generateLabelInstances(const glm::vec3& gridSize);

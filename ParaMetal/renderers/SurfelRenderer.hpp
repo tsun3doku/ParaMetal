@@ -20,7 +20,7 @@ public:
     SurfelRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, CommandPool& commandPool);
     ~SurfelRenderer();
 
-    void initialize(VkRenderPass renderPass, uint32_t maxFramesInFlight);
+    void initialize(VkRenderPass renderPass, uint32_t subpass, uint32_t maxFramesInFlight);
     
     void createCircleGeometry(int segments = 16);  
     void render(VkCommandBuffer cmdBuffer, VkBuffer surfaceBuffer, VkDeviceSize surfaceBufferOffset, uint32_t surfelCount, 
@@ -36,7 +36,7 @@ private:
     bool createSurfelDescriptorSetLayout();
     bool createSurfelDescriptorPool(uint32_t maxFramesInFlight);
     bool createSurfelDescriptorSets(uint32_t maxFramesInFlight);
-    bool createSurfelPipeline(VkRenderPass renderPass);
+    bool createSurfelPipeline(VkRenderPass renderPass, uint32_t subpass);
 
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;

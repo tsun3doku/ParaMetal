@@ -7,6 +7,7 @@
 
 class NodeGraph;
 class NodeGraphCanvas;
+class NodeGraphController;
 class NodeGraphScene;
 class NodePanel;
 class ModelSelection;
@@ -23,6 +24,7 @@ public:
     void setGraph(NodeGraph* bridge);
     void setSceneController(const SceneController* sceneController);
     void setModelSelection(ModelSelection* modelSelection);
+    void setNodeGraphController(NodeGraphController* controller);
     void refreshGraph();
     void resetToDefaultGraph();
 
@@ -46,10 +48,11 @@ private:
     NodeGraphEditor editor;
     const SceneController* sceneController = nullptr;
     ModelSelection* modelSelection = nullptr;
+    NodeGraphController* nodeGraphController = nullptr;
     NodeGraphScene* graphScene = nullptr;
     NodePanel* nodePanel = nullptr;
     NodeGraphCanvas* graphCanvas = nullptr;
     QTimer* refreshTimer = nullptr;
     bool suppressGraphSelectionHandling = false;
-    uint32_t lastObservedRuntimeModelId = 0;
+    uint32_t syncedRuntimeModelId = 0;
 };

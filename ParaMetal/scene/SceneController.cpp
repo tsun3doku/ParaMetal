@@ -48,15 +48,6 @@ bool SceneController::tryGetRuntimeModelSocketKey(uint32_t runtimeModelId, uint6
     return modelComputeRuntime->tryGetSocketKey(runtimeModelId, outSocketKey);
 }
 
-bool SceneController::tryGetSocketRuntimeModelId(uint64_t socketKey, uint32_t& outRuntimeModelId) const {
-    outRuntimeModelId = 0;
-    if (!modelComputeRuntime) {
-        return false;
-    }
-
-    return modelComputeRuntime->tryGetRuntimeModelId(socketKey, outRuntimeModelId);
-}
-
 void SceneController::focusOnVisibleModel() {
     for (uint32_t modelId : resourceManager.getRenderableModelIds()) {
         glm::vec3 localCenter(0.0f);

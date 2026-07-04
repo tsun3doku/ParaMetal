@@ -35,7 +35,7 @@ framegraph::ResourceId FrameGraph::addImageResource(framegraph::ImageResourceCre
     desc.lifetime = createInfo.lifetime;
     desc.isAttachment = createInfo.isAttachment;
     desc.useSwapchainFormat = createInfo.useSwapchainFormat;
-    desc.isGraphOutput = (createInfo.lifetime == framegraph::ResourceLifetime::External);
+    desc.isGraphOutput = createInfo.isGraphOutput || createInfo.lifetime == framegraph::ResourceLifetime::External;
     desc.format = createInfo.format;
     desc.samples = createInfo.samples;
     desc.imageUsage = createInfo.imageUsage;

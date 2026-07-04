@@ -32,9 +32,27 @@
 
 namespace render {
 
-OverlayPass::OverlayPass(VulkanDevice& device, MemoryAllocator& allocator, VkFrameGraphRuntime& runtime, ModelRegistry& resources, UniformBufferManager& ubo, GeometryPass& geometry,
-    uint32_t framesInFlight, CommandPool& pool, framegraph::PassId passId, framegraph::ResourceId depthResolveId, framegraph::ResourceId depthMsaaId)
+OverlayPass::OverlayPass(
+    VulkanDevice& device,
+    MemoryAllocator& allocator,
+    VkFrameGraphRuntime& runtime,
+    ModelRegistry& resources,
+    UniformBufferManager& ubo,
+    GeometryPass& geometry,
+    HeatOverlayRenderer& heatOverlayRenderer,
+    VoronoiOverlayRenderer& voronoiOverlayRenderer,
+    IntrinsicRenderer& intrinsicRenderer,
+    GizmoRenderer& gizmo,
+    uint32_t framesInFlight,
+    CommandPool& pool,
+    framegraph::PassId passId,
+    framegraph::ResourceId depthResolveId,
+    framegraph::ResourceId depthMsaaId)
     : geometryPass(geometry),
+      heatOverlayRenderer(heatOverlayRenderer),
+      voronoiOverlayRenderer(voronoiOverlayRenderer),
+      intrinsicRenderer(intrinsicRenderer),
+      gizmoRenderer(gizmo),
       vulkanDevice(device),
       memoryAllocator(allocator),
       frameGraphRuntime(runtime),
@@ -66,15 +84,10 @@ void OverlayPass::create() {
         return;
     }
 
-    intrinsicRenderer = std::make_unique<IntrinsicRenderer>(
-        vulkanDevice,
-        memoryAllocator,
-        uniformBufferManager,
-        renderCommandPool,
-        frameGraphRuntime.getRenderPass(),
-        maxFramesInFlight,
-        framegraph::toIndex(passId));
-    if (!intrinsicRenderer) {
+    if (!intrinsicRenderer.initializeOverlay(
+            frameGraphRuntime.getRenderPass(),
+            maxFramesInFlight,
+            framegraph::toIndex(passId))) {
         std::cerr << "[OverlayPass] Failed to create intrinsic renderer" << std::endl;
         destroy();
         return;
@@ -103,33 +116,11 @@ void OverlayPass::create() {
         framegraph::toIndex(passId),
         maxFramesInFlight);
 
-    heatOverlayRenderer = std::make_unique<HeatOverlayRenderer>(
-        vulkanDevice,
-        memoryAllocator,
-        uniformBufferManager,
-        renderCommandPool);
-    if (!heatOverlayRenderer) {
-        std::cerr << "[OverlayPass] Failed to create heat overlay renderer" << std::endl;
-        destroy();
-        return;
-    }
-
-    heatOverlayRenderer->initialize(
+    heatOverlayRenderer.initializeOverlay(
         frameGraphRuntime.getRenderPass(),
+        framegraph::toIndex(passId),
         maxFramesInFlight);
-
-    voronoiOverlayRenderer = std::make_unique<VoronoiOverlayRenderer>(
-        vulkanDevice,
-        memoryAllocator,
-        uniformBufferManager,
-        renderCommandPool);
-    if (!voronoiOverlayRenderer) {
-        std::cerr << "[OverlayPass] Failed to create voronoi overlay renderer" << std::endl;
-        destroy();
-        return;
-    }
-
-    voronoiOverlayRenderer->initialize(
+    voronoiOverlayRenderer.initializeOverlay(
         frameGraphRuntime.getRenderPass(),
         framegraph::toIndex(passId),
         maxFramesInFlight);
@@ -148,15 +139,16 @@ void OverlayPass::create() {
         framegraph::toIndex(passId),
         maxFramesInFlight);
 
-    gridRenderer = std::make_unique<GridRenderer>(vulkanDevice, memoryAllocator, uniformBufferManager, maxFramesInFlight, frameGraphRuntime.getRenderPass(), renderCommandPool);
+    gridRenderer = std::make_unique<GridRenderer>(
+        vulkanDevice,
+        memoryAllocator,
+        uniformBufferManager,
+        maxFramesInFlight,
+        frameGraphRuntime.getRenderPass(),
+        framegraph::toIndex(passId),
+        renderCommandPool);
     if (!gridRenderer) {
         std::cerr << "[OverlayPass] Failed to create grid renderer" << std::endl;
-        destroy();
-        return;
-    }
-    gizmoRenderer = std::make_unique<GizmoRenderer>(vulkanDevice, frameGraphRuntime.getRenderPass(), framegraph::toIndex(passId), renderCommandPool);
-    if (!gizmoRenderer) {
-        std::cerr << "[OverlayPass] Failed to create gizmo renderer" << std::endl;
         destroy();
         return;
     }
@@ -191,7 +183,7 @@ void OverlayPass::updateGridLabels(const glm::vec3& gridSize) {
 }
 
 IntrinsicRenderer* OverlayPass::getIntrinsicRenderer() const {
-    return intrinsicRenderer.get();
+    return &intrinsicRenderer;
 }
 
 ContactOverlayRenderer* OverlayPass::getContactOverlayRenderer() const {
@@ -199,11 +191,11 @@ ContactOverlayRenderer* OverlayPass::getContactOverlayRenderer() const {
 }
 
 HeatOverlayRenderer* OverlayPass::getHeatOverlayRenderer() const {
-    return heatOverlayRenderer.get();
+    return &heatOverlayRenderer;
 }
 
 VoronoiOverlayRenderer* OverlayPass::getVoronoiOverlayRenderer() const {
-    return voronoiOverlayRenderer.get();
+    return &voronoiOverlayRenderer;
 }
 
 PointOverlayRenderer* OverlayPass::getPointOverlayRenderer() const {
@@ -224,28 +216,16 @@ void OverlayPass::record(const FrameContext& context, const SceneView& view, con
     VkCommandBuffer commandBuffer = context.commandBuffer;
     const uint32_t currentFrame = context.currentFrame;
     const VkExtent2D extent = context.extent;
-    if (intrinsicRenderer) {
-        intrinsicRenderer->renderSupportingHalfedges(commandBuffer, currentFrame);
-    }
-
     if (contactOverlayRenderer) {
         contactOverlayRenderer->render(commandBuffer, currentFrame, extent);
     }
-    if (heatOverlayRenderer) {
-        heatOverlayRenderer->renderWorld(commandBuffer, currentFrame);
-    }
-    if (voronoiOverlayRenderer) {
-        voronoiOverlayRenderer->renderSurface(commandBuffer, currentFrame);
-        voronoiOverlayRenderer->renderPoints(commandBuffer, currentFrame, extent);
-    }
+    heatOverlayRenderer.renderOverlay(commandBuffer, currentFrame);
+    voronoiOverlayRenderer.renderPoints(commandBuffer, currentFrame, extent);
     if (pointOverlayRenderer) {
         pointOverlayRenderer->render(commandBuffer, currentFrame, extent);
     }
 
-    if (intrinsicRenderer) {
-        intrinsicRenderer->renderIntrinsicNormals(commandBuffer, currentFrame);
-        intrinsicRenderer->renderIntrinsicVertexNormals(commandBuffer, currentFrame);
-    }
+    intrinsicRenderer.renderOverlay(commandBuffer, currentFrame);
 
     if (outlineRenderer) {
         outlineRenderer->render(commandBuffer, currentFrame, modelSelection);
@@ -285,7 +265,7 @@ void OverlayPass::record(const FrameContext& context, const SceneView& view, con
         timingOverlay->render(commandBuffer, currentFrame, extent);
     }
 
-    if (modelSelection.getSelected() && gizmoRenderer) {
+    if (modelSelection.getSelected()) {
         VkClearAttachment clearAttachment{};
         clearAttachment.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
         clearAttachment.clearValue.depthStencil = { 1.0f, 0 };
@@ -299,13 +279,11 @@ void OverlayPass::record(const FrameContext& context, const SceneView& view, con
         vkCmdClearAttachments(commandBuffer, 1, &clearAttachment, 1, &clearRect);
 
         const glm::vec3 gizmoPosition = gizmoController.calculateGizmoPosition(resourceManager, modelSelection);
-        const float gizmoScale = gizmoRenderer->calculateGizmoScale(resourceManager, modelSelection);
-        gizmoRenderer->render(commandBuffer, gizmoPosition, extent, gizmoScale, view, gizmoController);
+        const float gizmoScale = gizmoRenderer.calculateGizmoScale(resourceManager, modelSelection);
+        gizmoRenderer.render(commandBuffer, gizmoPosition, extent, gizmoScale, view, gizmoController);
     }
 
-    if (heatOverlayRenderer) {
-        heatOverlayRenderer->renderScreen(commandBuffer, currentFrame, extent);
-    }
+    heatOverlayRenderer.renderScreen(commandBuffer, currentFrame, extent);
 }
 
 void OverlayPass::destroy() {
@@ -314,21 +292,9 @@ void OverlayPass::destroy() {
         outlineRenderer->cleanup();
         outlineRenderer.reset();
     }
-    if (intrinsicRenderer) {
-        intrinsicRenderer->cleanup();
-        intrinsicRenderer.reset();
-    }
     if (contactOverlayRenderer) {
         contactOverlayRenderer->cleanup();
         contactOverlayRenderer.reset();
-    }
-    if (heatOverlayRenderer) {
-        heatOverlayRenderer->cleanup();
-        heatOverlayRenderer.reset();
-    }
-    if (voronoiOverlayRenderer) {
-        voronoiOverlayRenderer->cleanup();
-        voronoiOverlayRenderer.reset();
     }
     if (pointOverlayRenderer) {
         pointOverlayRenderer->cleanup();
@@ -343,11 +309,6 @@ void OverlayPass::destroy() {
         gridRenderer->cleanup();
         gridRenderer.reset();
     }
-    if (gizmoRenderer) {
-        gizmoRenderer->cleanup();
-        gizmoRenderer.reset();
-    }
-
 }
 
 } // namespace render

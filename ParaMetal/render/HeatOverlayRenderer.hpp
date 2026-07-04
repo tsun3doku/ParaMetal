@@ -26,10 +26,12 @@ public:
         CommandPool& commandPool);
     ~HeatOverlayRenderer();
 
-    void initialize(VkRenderPass renderPass, uint32_t maxFramesInFlight);
+    void initializeSurface(VkRenderPass renderPass, uint32_t surfaceSubpass, uint32_t maxFramesInFlight);
+    void initializeOverlay(VkRenderPass renderPass, uint32_t overlaySubpass, uint32_t maxFramesInFlight);
     void apply(uint64_t socketKey, const HeatDisplayController::Config& config);
     void remove(uint64_t socketKey);
-    void renderWorld(VkCommandBuffer commandBuffer, uint32_t frameIndex);
+    void renderSurface(VkCommandBuffer commandBuffer, uint32_t frameIndex);
+    void renderOverlay(VkCommandBuffer commandBuffer, uint32_t frameIndex);
     void renderScreen(VkCommandBuffer commandBuffer, uint32_t frameIndex, VkExtent2D extent);
     void cleanup();
 
@@ -46,7 +48,8 @@ private:
     std::vector<HeatSurfaceRenderer::SurfaceRenderBinding> surfaceBindings;
     std::vector<VectorArrowRenderer::VectorRenderBinding> fluxVectorBindings;
     uint32_t maxFramesInFlight = 0;
-    bool initialized = false;
+    bool surfaceInitialized = false;
+    bool overlayInitialized = false;
 };
 
 }

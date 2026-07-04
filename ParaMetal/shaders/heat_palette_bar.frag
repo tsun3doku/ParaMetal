@@ -12,7 +12,7 @@ layout(push_constant) uniform PushConstants {
 
 layout(location = 0) in vec2 inBarUV;
 
-layout(location = 1) out vec4 outColor;
+layout(location = 0) out vec4 outColor;
 
 const float BORDER_THICKNESS_PX = 1.0;
 

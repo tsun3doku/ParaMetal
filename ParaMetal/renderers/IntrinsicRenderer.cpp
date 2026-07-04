@@ -18,38 +18,50 @@
 #include <iostream>
 #include <unordered_set>
 
-IntrinsicRenderer::IntrinsicRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uboManager, CommandPool& commandPool,
-    VkRenderPass renderPass, uint32_t maxFramesInFlight, uint32_t subpassIndex)
-    : vulkanDevice(device), allocator(allocator), uniformBufferManager(uboManager), renderCommandPool(commandPool), maxFramesInFlight(maxFramesInFlight) {
-    if (!initialize(renderPass, maxFramesInFlight, subpassIndex)) {
-        std::cerr << "[IntrinsicRenderer] Failed to initialize renderer resources" << std::endl;
-    }
+IntrinsicRenderer::IntrinsicRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uboManager, CommandPool& commandPool)
+    : vulkanDevice(device), allocator(allocator), uniformBufferManager(uboManager), renderCommandPool(commandPool) {
 }
 
 IntrinsicRenderer::~IntrinsicRenderer() {
     cleanup();
 }
 
-bool IntrinsicRenderer::initialize(VkRenderPass renderPass, uint32_t maxFramesInFlight, uint32_t subpassIndex) {
-    if (initialized) {
-        cleanup();
+bool IntrinsicRenderer::initializeSurface(VkRenderPass renderPass, uint32_t updatedMaxFramesInFlight, uint32_t subpassIndex) {
+    if (surfaceInitialized) {
+        return true;
     }
 
+    maxFramesInFlight = updatedMaxFramesInFlight;
     if (!createWireframeTexture() ||
         !createSupportingHalfedgeDescriptorPool(maxFramesInFlight) ||
         !createSupportingHalfedgeDescriptorSetLayout() ||
+        !createSupportingHalfedgePipeline(renderPass, subpassIndex)) {
+        cleanup();
+        return false;
+    }
+
+    surfaceInitialized = true;
+    return true;
+}
+
+bool IntrinsicRenderer::initializeOverlay(VkRenderPass renderPass, uint32_t updatedMaxFramesInFlight, uint32_t subpassIndex) {
+    if (overlayInitialized) {
+        return true;
+    }
+
+    maxFramesInFlight = updatedMaxFramesInFlight;
+    if (!createWireframeTexture() ||
         !createIntrinsicNormalsDescriptorPool(maxFramesInFlight) ||
         !createIntrinsicNormalsDescriptorSetLayout() ||
         !createIntrinsicVertexNormalsDescriptorPool(maxFramesInFlight) ||
         !createIntrinsicVertexNormalsDescriptorSetLayout() ||
-        !createSupportingHalfedgePipeline(renderPass, subpassIndex) ||
         !createIntrinsicNormalsPipeline(renderPass, subpassIndex) ||
         !createIntrinsicVertexNormalsPipeline(renderPass, subpassIndex)) {
         cleanup();
         return false;
     }
 
-    initialized = true;
+    overlayInitialized = true;
     return true;
 }
 
@@ -798,25 +810,17 @@ bool IntrinsicRenderer::createSupportingHalfedgePipeline(VkRenderPass renderPass
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
 
-    VkPipelineColorBlendAttachmentState colorBlendAttachments[2] = {};
-    colorBlendAttachments[0].colorWriteMask =
+    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.colorWriteMask =
         VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachments[0].blendEnable = VK_TRUE;
-    colorBlendAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    colorBlendAttachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorBlendAttachments[0].colorBlendOp = VK_BLEND_OP_ADD;
-    colorBlendAttachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    colorBlendAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
-    colorBlendAttachments[1].colorWriteMask = 0;
-    colorBlendAttachments[1].blendEnable = VK_FALSE;
+    colorBlendAttachment.blendEnable = VK_FALSE;
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = 2;
-    colorBlending.pAttachments = colorBlendAttachments;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
 
     std::vector<VkDynamicState> dynamicStates = {
         VK_DYNAMIC_STATE_VIEWPORT,
@@ -966,24 +970,22 @@ bool IntrinsicRenderer::createIntrinsicNormalsPipeline(VkRenderPass renderPass, 
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
 
-    VkPipelineColorBlendAttachmentState colorBlendAttachments[2] = {};
-    colorBlendAttachments[0].colorWriteMask = 0;
-    colorBlendAttachments[0].blendEnable = VK_FALSE;
-    colorBlendAttachments[1].colorWriteMask =
+    VkPipelineColorBlendAttachmentState colorBlendAttachments[1] = {};
+    colorBlendAttachments[0].colorWriteMask =
         VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachments[1].blendEnable = VK_TRUE;
-    colorBlendAttachments[1].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    colorBlendAttachments[1].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorBlendAttachments[1].colorBlendOp = VK_BLEND_OP_ADD;
-    colorBlendAttachments[1].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachments[1].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    colorBlendAttachments[1].alphaBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachments[0].blendEnable = VK_TRUE;
+    colorBlendAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorBlendAttachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachments[0].colorBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = 2;
+    colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = colorBlendAttachments;
 
     std::vector<VkDynamicState> dynamicStates = {
@@ -1132,24 +1134,22 @@ bool IntrinsicRenderer::createIntrinsicVertexNormalsPipeline(VkRenderPass render
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
 
-    VkPipelineColorBlendAttachmentState colorBlendAttachments[2] = {};
-    colorBlendAttachments[0].colorWriteMask = 0;
-    colorBlendAttachments[0].blendEnable = VK_FALSE;
-    colorBlendAttachments[1].colorWriteMask =
+    VkPipelineColorBlendAttachmentState colorBlendAttachments[1] = {};
+    colorBlendAttachments[0].colorWriteMask =
         VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachments[1].blendEnable = VK_TRUE;
-    colorBlendAttachments[1].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    colorBlendAttachments[1].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorBlendAttachments[1].colorBlendOp = VK_BLEND_OP_ADD;
-    colorBlendAttachments[1].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachments[1].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    colorBlendAttachments[1].alphaBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachments[0].blendEnable = VK_TRUE;
+    colorBlendAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorBlendAttachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachments[0].colorBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = 2;
+    colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = colorBlendAttachments;
 
     std::vector<VkDynamicState> dynamicStates = {
@@ -1214,8 +1214,8 @@ bool IntrinsicRenderer::createIntrinsicVertexNormalsPipeline(VkRenderPass render
     return true;
 }
 
-void IntrinsicRenderer::renderSupportingHalfedges(VkCommandBuffer commandBuffer, uint32_t currentFrame) {
-    if (!initialized || supportingHalfedgePipeline == VK_NULL_HANDLE) {
+void IntrinsicRenderer::renderSurface(VkCommandBuffer commandBuffer, uint32_t currentFrame) {
+    if (!surfaceInitialized || supportingHalfedgePipeline == VK_NULL_HANDLE) {
         return;
     }
 
@@ -1253,8 +1253,13 @@ void IntrinsicRenderer::renderSupportingHalfedges(VkCommandBuffer commandBuffer,
     vkCmdSetDepthBias(commandBuffer, 0.0f, 0.0f, 0.0f);
 }
 
+void IntrinsicRenderer::renderOverlay(VkCommandBuffer commandBuffer, uint32_t currentFrame) {
+    renderIntrinsicNormals(commandBuffer, currentFrame);
+    renderIntrinsicVertexNormals(commandBuffer, currentFrame);
+}
+
 void IntrinsicRenderer::renderIntrinsicNormals(VkCommandBuffer commandBuffer, uint32_t currentFrame) {
-    if (!initialized || intrinsicNormalsPipeline == VK_NULL_HANDLE) {
+    if (!overlayInitialized || intrinsicNormalsPipeline == VK_NULL_HANDLE) {
         return;
     }
 
@@ -1294,7 +1299,7 @@ void IntrinsicRenderer::renderIntrinsicNormals(VkCommandBuffer commandBuffer, ui
 }
 
 void IntrinsicRenderer::renderIntrinsicVertexNormals(VkCommandBuffer commandBuffer, uint32_t currentFrame) {
-    if (!initialized || intrinsicVertexNormalsPipeline == VK_NULL_HANDLE) {
+    if (!overlayInitialized || intrinsicVertexNormalsPipeline == VK_NULL_HANDLE) {
         return;
     }
 
@@ -1407,6 +1412,7 @@ void IntrinsicRenderer::cleanup() {
     intrinsicNormalsDescriptorSetsBySocket.clear();
     intrinsicVertexNormalsDescriptorSetsBySocket.clear();
     remeshConfigsBySocketKey.clear();
-    initialized = false;
+    surfaceInitialized = false;
+    overlayInitialized = false;
 }
 

@@ -21,7 +21,6 @@ public:
         VkFrameGraphRuntime& frameGraphRuntime,
         uint32_t framesInFlight,
         framegraph::PassId passId,
-        framegraph::ResourceId surfaceResolveId,
         framegraph::ResourceId lineResolveId,
         framegraph::ResourceId lightingResolveId,
         framegraph::ResourceId albedoResolveId);
@@ -49,7 +48,6 @@ private:
     VkFrameGraphRuntime& frameGraphRuntime;
     uint32_t maxFramesInFlight = 0;
     framegraph::PassId passId{};
-    framegraph::ResourceId surfaceResolveId{};
     framegraph::ResourceId lineResolveId{};
     framegraph::ResourceId lightingResolveId{};
     framegraph::ResourceId albedoResolveId{};

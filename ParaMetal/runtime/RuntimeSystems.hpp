@@ -20,6 +20,7 @@
 class NodeGraph;
 class CameraController;
 class ModelSelection;
+class NodeGraphController;
 class RuntimeQuery;
 class SceneController;
 struct WindowRuntimeState;
@@ -51,6 +52,8 @@ public:
     const SceneController* getSceneController() const;
     ModelSelection* getModelSelection();
     const ModelSelection* getModelSelection() const;
+    NodeGraphController* getNodeGraphController();
+    const NodeGraphController* getNodeGraphController() const;
 
 private:
     void cleanup();

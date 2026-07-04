@@ -26,18 +26,29 @@ HeatOverlayRenderer::~HeatOverlayRenderer() {
     cleanup();
 }
 
-void HeatOverlayRenderer::initialize(VkRenderPass renderPass, uint32_t updatedMaxFramesInFlight) {
-    if (!surfaceRenderer || !vectorArrowRenderer || initialized) {
+void HeatOverlayRenderer::initializeSurface(VkRenderPass renderPass, uint32_t surfaceSubpass, uint32_t updatedMaxFramesInFlight) {
+    if (!surfaceRenderer || surfaceInitialized) {
         return;
     }
 
     maxFramesInFlight = updatedMaxFramesInFlight;
-    surfaceRenderer->initialize(renderPass, maxFramesInFlight);
-    vectorArrowRenderer->initialize(renderPass, maxFramesInFlight);
-    if (heatPaletteRenderer) {
-        heatPaletteRenderer->initialize(renderPass, 2, maxFramesInFlight);
+    surfaceRenderer->initialize(renderPass, surfaceSubpass, maxFramesInFlight);
+    surfaceInitialized = true;
+    rebuildBindings();
+}
+
+void HeatOverlayRenderer::initializeOverlay(VkRenderPass renderPass, uint32_t overlaySubpass, uint32_t updatedMaxFramesInFlight) {
+    if (!vectorArrowRenderer || overlayInitialized) {
+        return;
     }
-    initialized = true;
+
+    maxFramesInFlight = updatedMaxFramesInFlight;
+    vectorArrowRenderer->initialize(renderPass, overlaySubpass, maxFramesInFlight);
+    if (heatPaletteRenderer) {
+        heatPaletteRenderer->initialize(renderPass, overlaySubpass, maxFramesInFlight);
+    }
+    overlayInitialized = true;
+    rebuildBindings();
 }
 
 void HeatOverlayRenderer::apply(uint64_t socketKey, const HeatDisplayController::Config& config) {
@@ -62,7 +73,7 @@ void HeatOverlayRenderer::remove(uint64_t socketKey) {
 }
 
 void HeatOverlayRenderer::rebuildBindings() {
-    if (!initialized || !surfaceRenderer || !vectorArrowRenderer) {
+    if (!surfaceRenderer || !vectorArrowRenderer) {
         return;
     }
 
@@ -167,17 +178,24 @@ void HeatOverlayRenderer::rebuildBindings() {
     }
 }
 
-void HeatOverlayRenderer::renderWorld(VkCommandBuffer commandBuffer, uint32_t frameIndex) {
-    if (!initialized || !surfaceRenderer || !vectorArrowRenderer) {
+void HeatOverlayRenderer::renderSurface(VkCommandBuffer commandBuffer, uint32_t frameIndex) {
+    if (!surfaceInitialized || !surfaceRenderer) {
         return;
     }
 
     surfaceRenderer->render(commandBuffer, frameIndex, surfaceBindings);
+}
+
+void HeatOverlayRenderer::renderOverlay(VkCommandBuffer commandBuffer, uint32_t frameIndex) {
+    if (!overlayInitialized || !vectorArrowRenderer) {
+        return;
+    }
+
     vectorArrowRenderer->render(commandBuffer, frameIndex, fluxVectorBindings);
 }
 
 void HeatOverlayRenderer::renderScreen(VkCommandBuffer commandBuffer, uint32_t frameIndex, VkExtent2D extent) {
-    if (!initialized || !heatPaletteRenderer) {
+    if (!overlayInitialized || !heatPaletteRenderer) {
         return;
     }
 
@@ -189,7 +207,8 @@ void HeatOverlayRenderer::cleanup() {
     surfaceBindings.clear();
     fluxVectorBindings.clear();
     maxFramesInFlight = 0;
-    initialized = false;
+    surfaceInitialized = false;
+    overlayInitialized = false;
     if (surfaceRenderer) {
         surfaceRenderer->cleanup();
     }
