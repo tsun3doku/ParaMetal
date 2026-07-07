@@ -30,25 +30,22 @@ struct GridUniformBufferObject {
 };  // 128 bytes
 
 struct LightUniformBufferObject {
-    alignas(16) glm::vec3 lightPos_Key; // 16 byte aligned
-    alignas(16) glm::vec3 lightPos_Rim; // 16 byte aligned
-    alignas(16) glm::vec3 lightAmbient; // 16 byte aligned
-    alignas(16) glm::vec4 lightParams;  // x=keyIntensity, y=rimIntensity, z=ambientIntensity, w=pad
+    alignas(16) glm::vec4 iblParams;    // x=intensity, y=diffuseScale, z=specularScale, w=maxReflectionLod
     alignas(16) glm::vec3 cameraPos;    // Camera world position for specular view direction
     float _padding0 = 0.0f;
-};  // 80 bytes
+};  // 32 bytes
 
 struct MaterialData {
     alignas(16) glm::vec3 baseColor;    
     float roughness;                   
-    float specularF0;                   
+    float metalness;                    // 0=dielectric, 1=metal
     float _padding1 = 0.0f;
     float _padding2 = 0.0f;
 };  // 32 bytes
 
 struct MaterialUniformBufferObject {
     alignas(16) glm::vec4 baseColorRoughness; // xyz=baseColor, w=roughness
-    alignas(16) glm::vec4 specular;           // x=specularF0, yzw=reserved
+    alignas(16) glm::vec4 materialParams;     // x=metalness [0=dielectric, 1=metal], yzw=reserved
 };  // 32 bytes
 
 struct SSAOKernelBufferObject {

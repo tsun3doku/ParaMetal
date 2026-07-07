@@ -23,13 +23,11 @@ vec3 linearToSrgb(vec3 c)
 void main() {
     vec4 lighting = subpassLoad(lightingInput);
     vec4 lineOverlay = subpassLoad(lineOverlayInput);
-    vec4 albedoCoverage = subpassLoad(albedoCoverageInput);
 
     vec3 clearColor = texture(backgroundTexture, inUV).rgb;
 
-    // Albedo alpha stores lighting mix
-    float materialPresence = albedoCoverage.a;
-    vec3 color = (materialPresence > 1e-5) ? lighting.rgb : clearColor;
+    float coverage = clamp(lighting.a, 0.0, 1.0);
+    vec3 color = lighting.rgb + clearColor.rgb * (1.0 - coverage);
     color = color * (1.0 - lineOverlay.a) + lineOverlay.rgb;
     outColor = vec4(linearToSrgb(color), 1.0);
 }

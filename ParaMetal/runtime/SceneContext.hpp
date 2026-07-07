@@ -6,6 +6,7 @@
 #include "scene/CameraController.hpp"
 
 class LightingSystem;
+class IBLSystem;
 class MaterialSystem;
 class ModelUploader;
 class ModelRegistry;
@@ -33,6 +34,8 @@ public:
     const MaterialSystem* materialSystem() const;
     LightingSystem* lightingSystem();
     const LightingSystem* lightingSystem() const;
+    IBLSystem* iblSystem();
+    const IBLSystem* iblSystem() const;
 
 private:
     Camera camera;
@@ -42,5 +45,6 @@ private:
     std::unique_ptr<ModelUploader> modelUploaderState;
     std::unique_ptr<MaterialSystem> materialSystemState;
     std::unique_ptr<LightingSystem> lightingSystemState;
+    std::unique_ptr<IBLSystem> iblSystemState;
     bool initialized = false;
 };

@@ -1,4 +1,4 @@
-﻿#include "MaterialSystem.hpp"
+#include "MaterialSystem.hpp"
 
 #include "vulkan/UniformBufferManager.hpp"
 
@@ -64,8 +64,8 @@ void MaterialSystem::update(uint32_t frameIndex) {
 MaterialData MaterialSystem::createDefaultMaterial() {
     MaterialData material{};
     material.baseColor = glm::vec3(0.62f, 0.64f, 0.66f);
-    material.roughness = 0.40f;
-    material.specularF0 = 0.035f;
+    material.roughness = 0.05f;
+    material.metalness = 0.0f;
     return material;
 }
 
@@ -73,9 +73,9 @@ MaterialUniformBufferObject MaterialSystem::packMaterial(const MaterialData& mat
     MaterialUniformBufferObject packed{};
     const glm::vec3 clampedColor = glm::clamp(material.baseColor, glm::vec3(0.0f), glm::vec3(1.0f));
     const float roughness = std::clamp(material.roughness, 0.04f, 1.0f);
-    const float specularF0 = std::clamp(material.specularF0, 0.0f, 1.0f);
+    const float metalness = std::clamp(material.metalness, 0.0f, 1.0f);
 
     packed.baseColorRoughness = glm::vec4(clampedColor, roughness);
-    packed.specular = glm::vec4(specularF0, 0.0f, 0.0f, 0.0f);
+    packed.materialParams = glm::vec4(metalness, 0.0f, 0.0f, 0.0f);
     return packed;
 }

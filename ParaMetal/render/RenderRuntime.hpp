@@ -21,6 +21,7 @@ class MemoryAllocator;
 class ModelRegistry;
 class UniformBufferManager;
 class InputController;
+class IBLSystem;
 class LightingSystem;
 class MaterialSystem;
 class FrameGraph;
@@ -47,7 +48,7 @@ public:
         std::atomic<bool>& isShuttingDown);
     ~RenderRuntime();
 
-    bool initializeBase(VkFormat swapChainFormat, VkExtent2D extent, MemoryAllocator& allocator, ModelRegistry& resourceManager, UniformBufferManager& ubo);
+    bool initializeBase(VkFormat swapChainFormat, VkExtent2D extent, MemoryAllocator& allocator, ModelRegistry& resourceManager, UniformBufferManager& ubo, IBLSystem& iblSystem);
     bool initializeFrameController(const FrameControllerServices& services);
 
     bool initializeSyncObjects();

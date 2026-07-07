@@ -29,6 +29,7 @@
 #include "render/RenderRuntime.hpp"
 #include "render/SceneRenderer.hpp"
 #include "render/WindowRuntimeState.hpp"
+#include "scene/IBLSystem.hpp"
 #include "scene/InputController.hpp"
 #include "scene/LightingSystem.hpp"
 #include "scene/MaterialSystem.hpp"
@@ -48,7 +49,8 @@ bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, Win
     auto* resourceManager = scene.resourceManager();
     auto* modelUploader = scene.modelUploader();
     auto* uniformBufferManager = scene.uniformBufferManager();
-    if (!allocator || !commandPool || !transferCommandPool || !resourceManager || !modelUploader || !uniformBufferManager) {
+    auto* iblSystem = scene.iblSystem();
+    if (!allocator || !commandPool || !transferCommandPool || !resourceManager || !modelUploader || !uniformBufferManager || !iblSystem) {
         return false;
     }
 
@@ -75,7 +77,8 @@ bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, Win
         swapChainExtent,
         *allocator,
         *resourceManager,
-        *uniformBufferManager)) {
+        *uniformBufferManager,
+        *iblSystem)) {
         shutdown();
         return false;
     }

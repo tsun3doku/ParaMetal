@@ -2,6 +2,7 @@
 
 #include "VulkanCoreContext.hpp"
 #include "render/RenderConfig.hpp"
+#include "scene/IBLSystem.hpp"
 #include "scene/LightingSystem.hpp"
 #include "scene/MaterialSystem.hpp"
 #include "scene/ModelUploader.hpp"
@@ -29,6 +30,11 @@ bool SceneContext::initialize(VulkanCoreContext& core) {
     uniformBufferManagerState = std::make_unique<UniformBufferManager>(core.device(), *allocator, renderconfig::MaxFramesInFlight);
     materialSystemState = std::make_unique<MaterialSystem>(*uniformBufferManagerState);
     lightingSystemState = std::make_unique<LightingSystem>(cameraControllerState.getCamera(), *uniformBufferManagerState);
+    iblSystemState = std::make_unique<IBLSystem>(core.device(), *allocator, *commandPool);
+    if (!iblSystemState->initialize()) {
+        shutdown();
+        return false;
+    }
     modelUploaderState = std::make_unique<ModelUploader>(core.device(), *allocator, cameraControllerState.getCamera(), *transferCommandPool);
     resourceManagerState = std::make_unique<ModelRegistry>(*allocator);
 
@@ -46,6 +52,10 @@ void SceneContext::shutdown() {
     }
 
     lightingSystemState.reset();
+    if (iblSystemState) {
+        iblSystemState->cleanup();
+    }
+    iblSystemState.reset();
     materialSystemState.reset();
     modelUploaderState.reset();
     resourceManagerState.reset();
@@ -103,4 +113,12 @@ LightingSystem* SceneContext::lightingSystem() {
 
 const LightingSystem* SceneContext::lightingSystem() const {
     return lightingSystemState.get();
+}
+
+IBLSystem* SceneContext::iblSystem() {
+    return iblSystemState.get();
+}
+
+const IBLSystem* SceneContext::iblSystem() const {
+    return iblSystemState.get();
 }

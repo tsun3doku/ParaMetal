@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "framegraph/FrameGraphPasses.hpp"
+#include "scene/IBLSystem.hpp"
 #include "util/file_utils.h"
 #include "util/Structs.hpp"
 #include "vulkan/UniformBufferManager.hpp"
@@ -22,7 +23,9 @@ LightingPass::LightingPass(
     framegraph::PassId passId,
     framegraph::ResourceId albedoResolveId,
     framegraph::ResourceId normalResolveId,
-    framegraph::ResourceId positionResolveId)
+    framegraph::ResourceId positionResolveId,
+    framegraph::ResourceId materialResolveId,
+    IBLSystem& iblSystem)
     : vulkanDevice(device),
       frameGraphRuntime(runtime),
       uniformBufferManager(ubo),
@@ -30,7 +33,9 @@ LightingPass::LightingPass(
       passId(passId),
       albedoResolveId(albedoResolveId),
       normalResolveId(normalResolveId),
-      positionResolveId(positionResolveId) {
+      positionResolveId(positionResolveId),
+      materialResolveId(materialResolveId),
+      iblSystem(iblSystem) {
 }
 
 const char* LightingPass::name() const {
@@ -40,6 +45,14 @@ const char* LightingPass::name() const {
 void LightingPass::create() {
     ready = false;
     destroy();
+    if (!iblSystem.isInitialized() ||
+        iblSystem.getIrradianceView() == VK_NULL_HANDLE ||
+        iblSystem.getPrefilteredView() == VK_NULL_HANDLE ||
+        iblSystem.getBrdfLutView() == VK_NULL_HANDLE ||
+        iblSystem.getSampler() == VK_NULL_HANDLE) {
+        std::cerr << "[LightingPass] Missing required IBL resources" << std::endl;
+        return;
+    }
     if (!createLightingDescriptorPool(maxFramesInFlight)) {
         destroy();
         return;
@@ -69,43 +82,95 @@ void LightingPass::updateDescriptors() {
     }
     for (uint32_t i = 0; i < maxFramesInFlight; ++i) {
         VkDescriptorImageInfo albedoImageInfo{};
-        albedoImageInfo.imageView = frameGraphRuntime.getResourceViews(albedoResolveId)[i];
+        albedoImageInfo.imageView   = frameGraphRuntime.getResourceViews(albedoResolveId)[i];
         albedoImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
         VkDescriptorImageInfo normalImageInfo{};
-        normalImageInfo.imageView = frameGraphRuntime.getResourceViews(normalResolveId)[i];
+        normalImageInfo.imageView   = frameGraphRuntime.getResourceViews(normalResolveId)[i];
         normalImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
         VkDescriptorImageInfo positionImageInfo{};
-        positionImageInfo.imageView = frameGraphRuntime.getResourceViews(positionResolveId)[i];
+        positionImageInfo.imageView   = frameGraphRuntime.getResourceViews(positionResolveId)[i];
         positionImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-        VkWriteDescriptorSet descriptorWrites[3]{};
+        VkDescriptorImageInfo materialImageInfo{};
+        materialImageInfo.imageView   = frameGraphRuntime.getResourceViews(materialResolveId)[i];
+        materialImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[0].dstSet = lightingDescriptorSets[i];
-        descriptorWrites[0].dstBinding = 0;
-        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-        descriptorWrites[0].descriptorCount = 1;
-        descriptorWrites[0].pImageInfo = &albedoImageInfo;
+        VkWriteDescriptorSet writes[4]{};
 
-        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[1].dstSet = lightingDescriptorSets[i];
-        descriptorWrites[1].dstBinding = 1;
-        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-        descriptorWrites[1].descriptorCount = 1;
-        descriptorWrites[1].pImageInfo = &normalImageInfo;
+        writes[0].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet          = lightingDescriptorSets[i];
+        writes[0].dstBinding      = 0;
+        writes[0].descriptorType  = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        writes[0].descriptorCount = 1;
+        writes[0].pImageInfo      = &albedoImageInfo;
 
-        descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[2].dstSet = lightingDescriptorSets[i];
-        descriptorWrites[2].dstBinding = 2;
-        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-        descriptorWrites[2].descriptorCount = 1;
-        descriptorWrites[2].pImageInfo = &positionImageInfo;
+        writes[1].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[1].dstSet          = lightingDescriptorSets[i];
+        writes[1].dstBinding      = 1;
+        writes[1].descriptorType  = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        writes[1].descriptorCount = 1;
+        writes[1].pImageInfo      = &normalImageInfo;
 
-        vkUpdateDescriptorSets(vulkanDevice.getDevice(), 3, descriptorWrites, 0, nullptr);
+        writes[2].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[2].dstSet          = lightingDescriptorSets[i];
+        writes[2].dstBinding      = 2;
+        writes[2].descriptorType  = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        writes[2].descriptorCount = 1;
+        writes[2].pImageInfo      = &positionImageInfo;
+
+        writes[3].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[3].dstSet          = lightingDescriptorSets[i];
+        writes[3].dstBinding      = 3;
+        writes[3].descriptorType  = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        writes[3].descriptorCount = 1;
+        writes[3].pImageInfo      = &materialImageInfo;
+
+        vkUpdateDescriptorSets(vulkanDevice.getDevice(), 4, writes, 0, nullptr);
+
+        VkDescriptorImageInfo irrInfo{};
+        irrInfo.sampler     = iblSystem.getSampler();
+        irrInfo.imageView   = iblSystem.getIrradianceView();
+        irrInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        VkDescriptorImageInfo preInfo{};
+        preInfo.sampler     = iblSystem.getSampler();
+        preInfo.imageView   = iblSystem.getPrefilteredView();
+        preInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        VkDescriptorImageInfo brdfInfo{};
+        brdfInfo.sampler     = iblSystem.getSampler();
+        brdfInfo.imageView   = iblSystem.getBrdfLutView();
+        brdfInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        VkWriteDescriptorSet iblWrites[3]{};
+
+        iblWrites[0].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        iblWrites[0].dstSet          = lightingDescriptorSets[i];
+        iblWrites[0].dstBinding      = 6;
+        iblWrites[0].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        iblWrites[0].descriptorCount = 1;
+        iblWrites[0].pImageInfo      = &irrInfo;
+
+        iblWrites[1].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        iblWrites[1].dstSet          = lightingDescriptorSets[i];
+        iblWrites[1].dstBinding      = 7;
+        iblWrites[1].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        iblWrites[1].descriptorCount = 1;
+        iblWrites[1].pImageInfo      = &preInfo;
+
+        iblWrites[2].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        iblWrites[2].dstSet          = lightingDescriptorSets[i];
+        iblWrites[2].dstBinding      = 8;
+        iblWrites[2].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        iblWrites[2].descriptorCount = 1;
+        iblWrites[2].pImageInfo      = &brdfInfo;
+
+        vkUpdateDescriptorSets(vulkanDevice.getDevice(), 3, iblWrites, 0, nullptr);
     }
 }
+
 
 void LightingPass::record(const FrameContext& context, const SceneView& view, const RenderFlags& flags, RenderServices& services) {
     (void)view;
@@ -145,17 +210,19 @@ void LightingPass::destroy() {
 }
 
 bool LightingPass::createLightingDescriptorPool(uint32_t maxFramesInFlight) {
-    std::array<VkDescriptorPoolSize, 2> poolSizes{};
-    poolSizes[0].type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-    poolSizes[0].descriptorCount = static_cast<uint32_t>(maxFramesInFlight) * 3;
-    poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[1].descriptorCount = static_cast<uint32_t>(maxFramesInFlight) * 2;
+    std::array<VkDescriptorPoolSize, 3> poolSizes{};
+    poolSizes[0].type            = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    poolSizes[0].descriptorCount = static_cast<uint32_t>(maxFramesInFlight) * 4; // albedo, normal, position, material
+    poolSizes[1].type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSizes[1].descriptorCount = static_cast<uint32_t>(maxFramesInFlight) * 2; // ubo, lightUbo
+    poolSizes[2].type            = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[2].descriptorCount = static_cast<uint32_t>(maxFramesInFlight) * 3; // irradiance, prefiltered, brdfLut
 
     VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-    poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = static_cast<uint32_t>(maxFramesInFlight);
+    poolInfo.pPoolSizes    = poolSizes.data();
+    poolInfo.maxSets       = static_cast<uint32_t>(maxFramesInFlight);
 
     if (vkCreateDescriptorPool(vulkanDevice.getDevice(), &poolInfo, nullptr, &lightingDescriptorPool) != VK_SUCCESS) {
         std::cerr << "[LightingPass] Failed to create descriptor pool" << std::endl;
@@ -166,17 +233,24 @@ bool LightingPass::createLightingDescriptorPool(uint32_t maxFramesInFlight) {
 
 bool LightingPass::createLightingDescriptorSetLayout() {
     std::vector<VkDescriptorSetLayoutBinding> bindings = {
-        {0, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
-        {1, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
-        {2, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
-        {4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
-        {5, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        // GBuffer input attachments
+        {0, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,      1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        {1, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,      1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        {2, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,      1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        {3, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,      1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        // UBOs
+        {4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,        1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        {5, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,        1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        // IBL environment maps
+        {6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}, // irradianceMap
+        {7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}, // prefilteredMap
+        {8, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}, // brdfLut
     };
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
+    layoutInfo.pBindings    = bindings.data();
 
     if (vkCreateDescriptorSetLayout(vulkanDevice.getDevice(), &layoutInfo, nullptr, &lightingDescriptorSetLayout) != VK_SUCCESS) {
         std::cerr << "[LightingPass] Failed to create descriptor set layout" << std::endl;
@@ -213,6 +287,10 @@ bool LightingPass::createLightingDescriptorSets(UniformBufferManager& uniformBuf
         positionImageInfo.imageView = frameGraphRuntime.getResourceViews(positionResolveId)[i];
         positionImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
+        VkDescriptorImageInfo materialImageInfo{};
+        materialImageInfo.imageView = frameGraphRuntime.getResourceViews(materialResolveId)[i];
+        materialImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
         VkDescriptorBufferInfo uboBufferInfo{};
         uboBufferInfo.buffer = uniformBufferManager.getUniformBuffers()[i];
         uboBufferInfo.offset = uniformBufferManager.getUniformBufferOffsets()[i];
@@ -223,46 +301,95 @@ bool LightingPass::createLightingDescriptorSets(UniformBufferManager& uniformBuf
         lightBufferInfo.offset = uniformBufferManager.getLightBufferOffsets()[i];
         lightBufferInfo.range = sizeof(LightUniformBufferObject);
 
-        std::array<VkWriteDescriptorSet, 5> descriptorWrites{};
-        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[0].dstSet = lightingDescriptorSets[i];
-        descriptorWrites[0].dstBinding = 0;
-        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        VkWriteDescriptorSet descriptorWrites[6]{};
+
+        descriptorWrites[0].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[0].dstSet          = lightingDescriptorSets[i];
+        descriptorWrites[0].dstBinding      = 0;
+        descriptorWrites[0].descriptorType  = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
         descriptorWrites[0].descriptorCount = 1;
-        descriptorWrites[0].pImageInfo = &albedoImageInfo;
+        descriptorWrites[0].pImageInfo      = &albedoImageInfo;
 
-        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[1].dstSet = lightingDescriptorSets[i];
-        descriptorWrites[1].dstBinding = 1;
-        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        descriptorWrites[1].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[1].dstSet          = lightingDescriptorSets[i];
+        descriptorWrites[1].dstBinding      = 1;
+        descriptorWrites[1].descriptorType  = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
         descriptorWrites[1].descriptorCount = 1;
-        descriptorWrites[1].pImageInfo = &normalImageInfo;
+        descriptorWrites[1].pImageInfo      = &normalImageInfo;
 
-        descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[2].dstSet = lightingDescriptorSets[i];
-        descriptorWrites[2].dstBinding = 2;
-        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        descriptorWrites[2].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[2].dstSet          = lightingDescriptorSets[i];
+        descriptorWrites[2].dstBinding      = 2;
+        descriptorWrites[2].descriptorType  = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
         descriptorWrites[2].descriptorCount = 1;
-        descriptorWrites[2].pImageInfo = &positionImageInfo;
+        descriptorWrites[2].pImageInfo      = &positionImageInfo;
 
-        descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[3].dstSet = lightingDescriptorSets[i];
-        descriptorWrites[3].dstBinding = 4;
-        descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrites[3].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[3].dstSet          = lightingDescriptorSets[i];
+        descriptorWrites[3].dstBinding      = 3;
+        descriptorWrites[3].descriptorType  = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
         descriptorWrites[3].descriptorCount = 1;
-        descriptorWrites[3].pBufferInfo = &uboBufferInfo;
+        descriptorWrites[3].pImageInfo      = &materialImageInfo;
 
-        descriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[4].dstSet = lightingDescriptorSets[i];
-        descriptorWrites[4].dstBinding = 5;
-        descriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrites[4].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[4].dstSet          = lightingDescriptorSets[i];
+        descriptorWrites[4].dstBinding      = 4;
+        descriptorWrites[4].descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         descriptorWrites[4].descriptorCount = 1;
-        descriptorWrites[4].pBufferInfo = &lightBufferInfo;
+        descriptorWrites[4].pBufferInfo     = &uboBufferInfo;
 
-        vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+        descriptorWrites[5].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[5].dstSet          = lightingDescriptorSets[i];
+        descriptorWrites[5].dstBinding      = 5;
+        descriptorWrites[5].descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrites[5].descriptorCount = 1;
+        descriptorWrites[5].pBufferInfo     = &lightBufferInfo;
+
+        vkUpdateDescriptorSets(vulkanDevice.getDevice(), 6, descriptorWrites, 0, nullptr);
+
+        VkDescriptorImageInfo irrInfo{};
+        irrInfo.sampler     = iblSystem.getSampler();
+        irrInfo.imageView   = iblSystem.getIrradianceView();
+        irrInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        VkDescriptorImageInfo preInfo{};
+        preInfo.sampler     = iblSystem.getSampler();
+        preInfo.imageView   = iblSystem.getPrefilteredView();
+        preInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        VkDescriptorImageInfo brdfInfo{};
+        brdfInfo.sampler     = iblSystem.getSampler();
+        brdfInfo.imageView   = iblSystem.getBrdfLutView();
+        brdfInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        VkWriteDescriptorSet iblWrites[3]{};
+
+        iblWrites[0].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        iblWrites[0].dstSet          = lightingDescriptorSets[i];
+        iblWrites[0].dstBinding      = 6;
+        iblWrites[0].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        iblWrites[0].descriptorCount = 1;
+        iblWrites[0].pImageInfo      = &irrInfo;
+
+        iblWrites[1].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        iblWrites[1].dstSet          = lightingDescriptorSets[i];
+        iblWrites[1].dstBinding      = 7;
+        iblWrites[1].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        iblWrites[1].descriptorCount = 1;
+        iblWrites[1].pImageInfo      = &preInfo;
+
+        iblWrites[2].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        iblWrites[2].dstSet          = lightingDescriptorSets[i];
+        iblWrites[2].dstBinding      = 8;
+        iblWrites[2].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        iblWrites[2].descriptorCount = 1;
+        iblWrites[2].pImageInfo      = &brdfInfo;
+
+        vkUpdateDescriptorSets(vulkanDevice.getDevice(), 3, iblWrites, 0, nullptr);
     }
     return true;
 }
+
 
 bool LightingPass::createLightingPipeline() {
     auto vertShaderCode = readFile("shaders/lighting_vert.spv");

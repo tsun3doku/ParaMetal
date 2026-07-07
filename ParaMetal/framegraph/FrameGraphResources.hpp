@@ -7,11 +7,13 @@ namespace framegraph::resources {
 inline constexpr std::string_view AlbedoMSAA = "AlbedoMSAA";
 inline constexpr std::string_view NormalMSAA = "NormalMSAA";
 inline constexpr std::string_view PositionMSAA = "PositionMSAA";
+inline constexpr std::string_view MaterialMSAA = "MaterialMSAA";
 inline constexpr std::string_view DepthMSAA = "DepthMSAA";
 
 inline constexpr std::string_view AlbedoResolve = "AlbedoResolve";
 inline constexpr std::string_view NormalResolve = "NormalResolve";
 inline constexpr std::string_view PositionResolve = "PositionResolve";
+inline constexpr std::string_view MaterialResolve = "MaterialResolve";
 inline constexpr std::string_view DepthResolve = "DepthResolve";
 
 inline constexpr std::string_view LightingMSAA = "LightingMSAA";

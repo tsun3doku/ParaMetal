@@ -402,7 +402,13 @@
     <ClCompile Include="voronoi\VoronoiCandidateCompute.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="scene\tinyexr_impl.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="scene\LightingSystem.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="scene\IBLSystem.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="scene\MaterialSystem.cpp">
@@ -708,6 +714,18 @@
       <Filter>Shaders</Filter>
     </None>
     <None Include="shaders\lighting.frag">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\ibl_brdf_lut.slang">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\ibl_equirect_to_cube.slang">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\ibl_irradiance.slang">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\ibl_prefilter.slang">
       <Filter>Shaders</Filter>
     </None>
     <None Include="shaders\heat_tetra.comp">
@@ -1226,7 +1244,13 @@
     <ClInclude Include="voronoi\VoronoiCandidateCompute.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="libs\tinyexr\tinyexr.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="scene\LightingSystem.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="scene\IBLSystem.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="scene\MaterialSystem.hpp">

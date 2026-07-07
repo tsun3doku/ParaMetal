@@ -6,6 +6,7 @@
 #include "framegraph/FrameGraph.hpp"
 #include "framegraph/FrameGraphPasses.hpp"
 #include "framegraph/FrameGraphResources.hpp"
+#include "scene/IBLSystem.hpp"
 #include "vulkan/CommandBufferManager.hpp"
 #include "vulkan/ModelRegistry.hpp"
 #include "SceneRenderer.hpp"
@@ -24,7 +25,8 @@
 #include "renderers/IntrinsicRenderer.hpp"
 #include "renderers/GizmoRenderer.hpp"
 
-SceneRenderer::SceneRenderer(VulkanDevice& device, MemoryAllocator& allocator, FrameGraph& graph, VkFrameGraphRuntime& runtime, ModelRegistry& manager, UniformBufferManager& ubo, uint32_t framesInFlight, CommandPool& commandPool)
+SceneRenderer::SceneRenderer(VulkanDevice& device, MemoryAllocator& allocator, FrameGraph& graph, VkFrameGraphRuntime& runtime, ModelRegistry& manager, UniformBufferManager& ubo, uint32_t framesInFlight, CommandPool& commandPool,
+                             IBLSystem& iblSystem)
     : vulkanDevice(device),
       memoryAllocator(allocator),
       frameGraph(graph),
@@ -32,6 +34,7 @@ SceneRenderer::SceneRenderer(VulkanDevice& device, MemoryAllocator& allocator, F
       resourceManager(manager),
       uniformBufferManager(ubo),
       renderCommandPool(commandPool),
+      iblSystem(iblSystem),
       maxFramesInFlight(framesInFlight) {
     ready = initializePasses();
     if (!ready) {
@@ -64,6 +67,7 @@ bool SceneRenderer::initializePasses() {
     const framegraph::ResourceId albedoResolveId = frameGraph.getResourceId(framegraph::resources::AlbedoResolve);
     const framegraph::ResourceId normalResolveId = frameGraph.getResourceId(framegraph::resources::NormalResolve);
     const framegraph::ResourceId positionResolveId = frameGraph.getResourceId(framegraph::resources::PositionResolve);
+    const framegraph::ResourceId materialResolveId = frameGraph.getResourceId(framegraph::resources::MaterialResolve);
     const framegraph::ResourceId depthResolveId = frameGraph.getResourceId(framegraph::resources::DepthResolve);
     const framegraph::ResourceId depthMsaaId = frameGraph.getResourceId(framegraph::resources::DepthMSAA);
     const framegraph::ResourceId lineResolveId = frameGraph.getResourceId(framegraph::resources::LineResolve);
@@ -81,6 +85,7 @@ bool SceneRenderer::initializePasses() {
     if (!albedoResolveId.isValid() ||
         !normalResolveId.isValid() ||
         !positionResolveId.isValid() ||
+        !materialResolveId.isValid() ||
         !depthResolveId.isValid() ||
         !depthMsaaId.isValid() ||
         !lineResolveId.isValid() ||
@@ -142,7 +147,9 @@ bool SceneRenderer::initializePasses() {
         lightingPassId,
         albedoResolveId,
         normalResolveId,
-        positionResolveId);
+        positionResolveId,
+        materialResolveId,
+        iblSystem);
     lightingPass = lighting.get();
     addPass(std::move(lighting));
 
@@ -456,9 +463,6 @@ bool SceneRenderer::recordCommandBuffer(
             clearValue.depthStencil = { 1.0f, 0 };
         } else {
             clearValue.color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
-            if (resource.name == framegraph::resources::LightingMSAA) {
-                clearValue.color = { { clearColorLinear[0], clearColorLinear[1], clearColorLinear[2], 1.0f } };
-            }
         }
 
         clearValues[attachmentIndex] = clearValue;

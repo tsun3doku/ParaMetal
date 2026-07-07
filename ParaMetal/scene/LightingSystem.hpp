@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <glm/glm.hpp>
 
@@ -13,25 +13,18 @@ public:
 
     void update(uint32_t frameIndex);
 
-    void setDirectionalLight(const glm::vec3& direction, const glm::vec3& color);
-    void setAmbient(const glm::vec3& ambient);
-    void setRimLight(const glm::vec3& direction, const glm::vec3& color);
-    void setKeyAndRim(const glm::vec3& keyDir, const glm::vec3& rimDir);
-    void setColors(const glm::vec3& keyColor, const glm::vec3& rimColor, const glm::vec3& ambient);
-    void setIntensity(float keyIntensity, float rimIntensity);
+    void setIBLIntensity(float intensity);
+    void setIBLDiffuseScale(float diffuseScale);
+    void setIBLSpecularScale(float specularScale);
+    void setIBLMaxReflectionLod(float maxReflectionLod);
     void setEnabled(bool enabled);
 
 private:
     Camera& camera;
     UniformBufferManager& uniformBufferManager;
-
-    glm::vec3 lightDir = glm::vec3(0.0f, -1.0f, 0.0f);
-    glm::vec3 rimDir = glm::vec3(0.0f, -1.0f, 0.0f);
-    glm::vec3 lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
-    glm::vec3 rimColor = glm::vec3(1.0f, 1.0f, 1.0f);
-    glm::vec3 ambientColor = glm::vec3(1.0f, 1.0f, 1.0f);
-    float keyIntensity = 1.15f;
-    float rimIntensity = 0.10f;
-    float ambientIntensity = 0.12f;
+    float iblIntensity = 0.12f;
+    float iblDiffuseScale = 1.0f;
+    float iblSpecularScale = 1.0f;
+    float iblMaxReflectionLod = 6.0f;
     bool enabled = true;
 };

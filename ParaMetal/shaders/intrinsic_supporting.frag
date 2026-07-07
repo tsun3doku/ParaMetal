@@ -4,6 +4,7 @@
 layout(location = 4) in vec3 fragBaryCoord;
 
 layout(location = 0) out vec4 outColor;
+layout(location = 1) out vec4 outMaterial;
 
 // Texture buffers for supporting halfedge data
 layout(set = 0, binding = 1) uniform isamplerBuffer S;  // Supporting halfedge per input halfedge
@@ -21,6 +22,44 @@ layout(set = 0, binding = 11) uniform sampler2D wireframe;      // Wireframe tex
 
 const float PI = 3.14159265359;
 const int IMAX = 128;  // Higher budget for thin input triangles over dense intrinsic meshes
+const float INTRINSIC_ROUGHNESS = 0.05;
+const float INTRINSIC_METALNESS = 0.0;
+const float INTRINSIC_LIGHTING_MIX = 0.5;
+
+vec4 intrinsicMaterial() {
+    return vec4(INTRINSIC_ROUGHNESS, INTRINSIC_METALNESS, INTRINSIC_LIGHTING_MIX, 0.0);
+}
+
+void writeIntrinsicSurface(vec3 albedo) {
+    outColor = vec4(albedo, 1.0);
+    outMaterial = intrinsicMaterial();
+}
+
+vec3 applyWireMask(vec3 baseColor, float wireMask) {
+    return mix(baseColor, vec3(0.0), wireMask);
+}
+
+vec3 intrinsicPaletteColor(int triangleID) {
+    const float goldenRatio = 0.618033988749895;
+    float randomVal = fract(float(triangleID) * goldenRatio);
+    int index = int(randomVal * 7.0);
+
+    vec3 palette[7] = vec3[](
+        vec3(0.510, 0.765, 0.941), // #82c3f0 (Denim Blue)
+        vec3(0.812, 0.922, 1.000), // #cfebff (Pale Blue Lily)
+        vec3(0.976, 0.922, 0.651), // #f9eba6 (Light Tan)
+        vec3(1.000, 0.820, 0.871), // #ffd1de (Light Pink)
+        vec3(1.000, 0.600, 0.750), // #ff99bf (Pastel Magenta)
+        vec3(0.647, 0.949, 0.776), // #a5f2c6 (Mint Green)
+        vec3(0.780, 0.640, 0.940)  // #c7a3f0 (Lilac)
+    );
+
+    vec3 linearColor = pow(palette[index], vec3(2.2));
+
+    float saturation = 1.2;
+    float luminance = dot(linearColor, vec3(0.2126, 0.7152, 0.0722));
+    return mix(vec3(luminance), linearColor, saturation);
+}
 
 bool ccw(vec2 p, vec2 q, vec2 r) {
     float det = (p.x - r.x) * (q.y - r.y) - (p.y - r.y) * (q.x - r.x);
@@ -309,7 +348,7 @@ void main() {
     ivec3 faceHEs;
     vec2 triCoords[3];
     if (!loadInputTriangleChart(inputTri, faceHEs, triCoords)) {
-        outColor = vec4(0, 1, 1, 0.20);
+        writeIntrinsicSurface(vec3(0, 1, 1));
         return;
     }
 
@@ -324,54 +363,27 @@ void main() {
             // Hit invalid data during walk
             int iter = -(intrinsicTri + 2);
             float intensity = float(iter) / 50.0;
-            outColor = vec4(0, 0, intensity, 0.20);
+            writeIntrinsicSurface(vec3(0, 0, intensity));
             return;
         } else {
             // Walk completed but didnt converge
-            outColor = vec4(0.8, 0.8, 0.8, 0.20);
+            writeIntrinsicSurface(vec3(0.8, 0.8, 0.8));
             return;
         }
     }
-    
-// Randomize index 
-const float goldenRatio = 0.618033988749895;
-float randomVal = fract(float(intrinsicTri) * goldenRatio);
-int index = int(randomVal * 7.0); 
 
-vec3 palette[7] = vec3[](
-    vec3(0.510, 0.765, 0.941), // #82c3f0 (Denim Blue)
-    vec3(0.812, 0.922, 1.000), // #cfebff (Pale Blue Lily)
-    vec3(0.976, 0.922, 0.651), // #f9eba6 (Light Tan)
-    vec3(1.000, 0.820, 0.871), // #ffd1de (Light Pink)
-    vec3(1.000, 0.600, 0.750), // #ff99bf (Pastel Magenta)
-    vec3(0.647, 0.949, 0.776), // #a5f2c6 (Mint Green)
-    vec3(0.780, 0.640, 0.940)  // #c7a3f0 (Lilac)
-);
+    vec3 albedo = intrinsicPaletteColor(intrinsicTri);
+    vec3 fx = duvwdx;
+    vec3 fy = duvwdy;
 
-vec3 sRGB = palette[index];
-vec3 linearColor = pow(sRGB, vec3(2.2));
+    vec4 xWire = textureGrad(wireframe, vec2(baryCoords.x, 0.5), vec2(fx.x, 0.0), vec2(fy.x, 0.0));
+    albedo = applyWireMask(albedo, xWire.a);
 
-float saturation = 1.2; 
-float luminance = dot(linearColor, vec3(0.2126, 0.7152, 0.0722));
+    vec4 yWire = textureGrad(wireframe, vec2(baryCoords.y, 0.5), vec2(fx.y, 0.0), vec2(fy.y, 0.0));
+    albedo = applyWireMask(albedo, yWire.a);
 
-linearColor = mix(vec3(luminance), linearColor, saturation);
+    vec4 zWire = textureGrad(wireframe, vec2(baryCoords.z, 0.5), vec2(fx.z, 0.0), vec2(fy.z, 0.0));
+    albedo = applyWireMask(albedo, zWire.a);
 
-// Intrinsic wireframe using intrinsic barycentric derivatives
-vec3 color = linearColor;
-vec3 wireColor = vec3(0.0, 0.0, 0.0);
-vec3 fx = duvwdx;
-vec3 fy = duvwdy;
-
-vec4 wcolor = textureGrad(wireframe, vec2(baryCoords.x, 0.5), vec2(fx.x, 0.0), vec2(fy.x, 0.0));
-color = mix(color, wireColor, wcolor.a);
-
-wcolor = textureGrad(wireframe, vec2(baryCoords.y, 0.5), vec2(fx.y, 0.0), vec2(fy.y, 0.0));
-color = mix(color, wireColor, wcolor.a);
-
-wcolor = textureGrad(wireframe, vec2(baryCoords.z, 0.5), vec2(fx.z, 0.0), vec2(fy.z, 0.0));
-color = mix(color, wireColor, wcolor.a);
-
-color = clamp(color, vec3(0.0), vec3(1.0));
-
-outColor = vec4(color, 1.0);
+    writeIntrinsicSurface(clamp(albedo, vec3(0.0), vec3(1.0)));
 }

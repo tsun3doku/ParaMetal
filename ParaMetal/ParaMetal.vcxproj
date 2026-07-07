@@ -137,7 +137,7 @@
       <PreprocessorDefinitions>
       </PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;$(ProjectDir)libs/isotropicremesher/src;$(ProjectDir)libs/tinyply/source;$(VULKAN_SDK)/Include;$(ProjectDir)libs/glfw-3.4.bin.WIN64/include;$(ProjectDir)libs/glm;$(ProjectDir)libs/stb;$(ProjectDir)libs/tinyobjloader;$(ProjectDir)libs/nanoflann;$(ProjectDir)libs/pybind11/include;C:\Users\tsundoku\AppData\Local\Programs\Python\Python312\include;C:\Qt\6.9.3\msvc2022_64\include\QtGui\6.9.3;C:\Qt\6.9.3\msvc2022_64\include\QtGui\6.9.3\QtGui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;$(ProjectDir)libs/isotropicremesher/src;$(ProjectDir)libs/tinyply/source;$(VULKAN_SDK)/Include;$(ProjectDir)libs/glfw-3.4.bin.WIN64/include;$(ProjectDir)libs/glm;$(ProjectDir)libs/stb;$(ProjectDir)libs/tinyobjloader;$(ProjectDir)libs/nanoflann;$(ProjectDir)libs/pybind11/include;$(ProjectDir)libs/tinyexr/deps/nanozlib;C:\Users\tsundoku\AppData\Local\Programs\Python\Python312\include;C:\Qt\6.9.3\msvc2022_64\include\QtGui\6.9.3;C:\Qt\6.9.3\msvc2022_64\include\QtGui\6.9.3\QtGui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
@@ -180,7 +180,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;$(ProjectDir)libs/isotropicremesher/src;$(ProjectDir)libs/tinyply/source;$(VULKAN_SDK)/Include;$(ProjectDir)libs/glfw-3.4.bin.WIN64/include;$(ProjectDir)libs/glm;$(ProjectDir)libs/stb;$(ProjectDir)libs/tinyobjloader;$(ProjectDir)libs/pybind11/include;C:\Users\tsundoku\AppData\Local\Programs\Python\Python312\include;C:\Qt\6.9.3\msvc2022_64\include\QtGui\6.9.3;C:\Qt\6.9.3\msvc2022_64\include\QtGui\6.9.3\QtGui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;$(ProjectDir)libs/isotropicremesher/src;$(ProjectDir)libs/tinyply/source;$(VULKAN_SDK)/Include;$(ProjectDir)libs/glfw-3.4.bin.WIN64/include;$(ProjectDir)libs/glm;$(ProjectDir)libs/stb;$(ProjectDir)libs/tinyobjloader;$(ProjectDir)libs/pybind11/include;$(ProjectDir)libs/tinyexr/deps/nanozlib;C:\Users\tsundoku\AppData\Local\Programs\Python\Python312\include;C:\Qt\6.9.3\msvc2022_64\include\QtGui\6.9.3;C:\Qt\6.9.3\msvc2022_64\include\QtGui\6.9.3\QtGui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <OpenMPSupport>true</OpenMPSupport>
@@ -325,6 +325,8 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="heat\HeatSystemSimStage.cpp" />
     <ClCompile Include="heat\HeatSystemSurfaceStage.cpp" />
     <ClCompile Include="heat\HeatSystemDebugStage.cpp" />
+    <ClCompile Include="scene\tinyexr_impl.cpp" />
+    <ClCompile Include="scene\IBLSystem.cpp" />
     <ClCompile Include="scene\LightingSystem.cpp" />
     <ClCompile Include="scene\MaterialSystem.cpp" />
     <ClCompile Include="nodegraph\NodeGraphController.cpp" />
@@ -479,6 +481,10 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <None Include="shaders\intrinsic_vertex_normals.frag" />
     <None Include="shaders\intrinsic_vertex_normals.geom" />
     <None Include="shaders\intrinsic_vertex_normals.vert" />
+    <None Include="shaders\ibl_brdf_lut.slang" />
+    <None Include="shaders\ibl_equirect_to_cube.slang" />
+    <None Include="shaders\ibl_irradiance.slang" />
+    <None Include="shaders\ibl_prefilter.slang" />
     <None Include="shaders\lighting.frag" />
     <None Include="shaders\lighting.vert" />
     <None Include="shaders\outline.frag" />
@@ -649,6 +655,8 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="heat\HeatSystemSimStage.hpp" />
     <ClInclude Include="heat\HeatSystemSurfaceStage.hpp" />
     <ClInclude Include="heat\HeatSystemDebugStage.hpp" />
+    <ClInclude Include="libs\tinyexr\tinyexr.h" />
+    <ClInclude Include="scene\IBLSystem.hpp" />
     <ClInclude Include="scene\LightingSystem.hpp" />
     <ClInclude Include="scene\MaterialSystem.hpp" />
     <ClInclude Include="scene\PickId.hpp" />

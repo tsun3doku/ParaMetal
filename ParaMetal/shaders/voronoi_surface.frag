@@ -4,6 +4,7 @@ layout(location = 2) in vec3 vModelPos;
 layout(location = 3) in vec2 vIntrinsicCoord;
 
 layout(location = 0) out vec4 outColor;
+layout(location = 1) out vec4 outMaterial;
 
 layout(push_constant) uniform PushConstants {
     mat4 modelMatrix;
@@ -13,13 +14,12 @@ layout(push_constant) uniform PushConstants {
     int _pad2;
 } pc;
 
-layout(binding = 18) uniform LightUniformBufferObject {
-    vec3 lightPos_Key;
-    vec3 lightPos_Rim;
-    vec3 lightAmbient;
-    vec4 lightParams;
-    vec3 cameraPos;
-} lightUbo;
+layout(binding = 0) uniform UniformBufferObject {
+    mat4 model;
+    mat4 view;
+    mat4 proj;
+    vec3 color;
+} ubo;
 
 layout(std430, binding = 2) readonly buffer SeedBuffer {
     vec4 seeds[]; // xyz, w=padding
@@ -66,8 +66,24 @@ const float EXIT_PLANE_DEPTH_SCALE = 0.90;
 const float EXIT_PLANE_MIN_DEPTH = 0.08;
 const float INTERIOR_EDGE_WIDTH = 0.035;
 const float INTERIOR_EDGE_STRENGTH = 0.6;
+const float VORONOI_ROUGHNESS = 0.05;
+const float VORONOI_METALNESS = 0.0;
+const float VORONOI_LIGHTING_MIX = 0.5;
 const float PI = 3.14159265359;
 const int IMAX = 128;
+
+vec4 voronoiMaterial() {
+    return vec4(VORONOI_ROUGHNESS, VORONOI_METALNESS, VORONOI_LIGHTING_MIX, 0.0);
+}
+
+void writeVoronoiSurface(vec3 albedo) {
+    outColor = vec4(albedo, 1.0);
+    outMaterial = voronoiMaterial();
+}
+
+vec3 applyWireMask(vec3 baseColor, float wireMask) {
+    return mix(baseColor, vec3(0.0), wireMask);
+}
 
 vec3 paletteColor(uint cellID) {
     // Randomize index using golden ratio for even distribution
@@ -104,7 +120,8 @@ vec3 safeNormalize(vec3 v, vec3 fallback) {
 }
 
 vec3 modelSpaceViewRay(vec3 modelSpacePos, mat3 invModelMatrix) {
-    vec3 viewRayWorld = (pc.modelMatrix * vec4(modelSpacePos, 1.0)).xyz - lightUbo.cameraPos;
+    vec3 cameraPos = inverse(ubo.view)[3].xyz;
+    vec3 viewRayWorld = (pc.modelMatrix * vec4(modelSpacePos, 1.0)).xyz - cameraPos;
     return normalize(invModelMatrix * viewRayWorld);
 }
 
@@ -116,17 +133,15 @@ bool seedBisectorPlane(vec3 cellPos, uint neighborID, out vec3 planeNormal, out 
     return dot(planeNormal, planeNormal) > 0.0;
 }
 
-vec3 applyExitPlaneShading(vec3 baseColor, float exitDepth, vec3 exitPlaneNormal, float seedDistanceHint, mat3 normalMatrix) {
+vec3 applyExitPlaneShading(vec3 baseColor, float exitDepth, vec3 exitPlaneNormal, float seedDistanceHint, mat3 normalMatrix, vec3 viewRayModel) {
     float depth01 = clamp(exitDepth / max(seedDistanceHint * EXIT_PLANE_DEPTH_SCALE, 1e-6), 0.0, 1.0);
     if (exitDepth >= 1e30 || depth01 < EXIT_PLANE_MIN_DEPTH) {
         return baseColor;
     }
 
     vec3 wallNormal = safeNormalize(normalMatrix * exitPlaneNormal, vec3(0.0, 0.0, 1.0));
-    float key = abs(dot(wallNormal, safeNormalize(-lightUbo.lightPos_Key, vec3(0.0, 0.0, 1.0))));
-    float rim = abs(dot(wallNormal, safeNormalize(-lightUbo.lightPos_Rim, vec3(0.0, 0.0, 1.0))));
-
-    float wallLight = clamp((key > 0.70 ? 0.94 : (key > 0.38 ? 0.80 : 0.62)) + (rim > 0.78 ? 0.04 : 0.0), 0.58, 0.98);
+    float viewFacing = abs(dot(wallNormal, safeNormalize(-viewRayModel, vec3(0.0, 0.0, 1.0))));
+    float wallLight = mix(0.62, 0.94, viewFacing);
     float luminance = dot(baseColor, vec3(0.2126, 0.7152, 0.0722));
     return mix(vec3(luminance), baseColor, 1.10) * wallLight;
 }
@@ -331,7 +346,7 @@ void main() {
     int inputTri = gl_PrimitiveID;
     int intrinsicTri = findIntrinsicTriangle(inputTri, vIntrinsicCoord);
     if (intrinsicTri < 0) {
-        outColor = vec4(1, 0, 1, 0.20);
+        writeVoronoiSurface(vec3(1, 0, 1));
         return;
     }
 
@@ -353,7 +368,7 @@ void main() {
     }
 
     if (bestCellID == 0xFFFFFFFF) {
-        outColor = vec4(1, 0, 1, 0.20);
+        writeVoronoiSurface(vec3(1, 0, 1));
         return;
     }
 
@@ -449,8 +464,8 @@ void main() {
         }
     }
 
-    vec3 color = paletteColor(bestCellID);
-    vec3 base = applyExitPlaneShading(color, exitPlaneDepth, exitPlaneNormal, hintSeedDist, normalMatrix);
+    vec3 cellColor = paletteColor(bestCellID);
+    vec3 depthShadedColor = applyExitPlaneShading(cellColor, exitPlaneDepth, exitPlaneNormal, hintSeedDist, normalMatrix, viewRayModel);
 
     float invW = 1.0 / max(WIRE_DIST_WIDTH, 1e-6);
     vec3 competitorPos = seeds[bestCompetitorID].xyz;
@@ -463,7 +478,7 @@ void main() {
     vec2 gradY = vec2(dy * invW, 0.0);
 
     float u = clamp(minBoundaryDist * invW, 0.0, 1.0);
-    vec4 wcolor = textureGrad(wireframe, vec2(min(u, 0.5), 0.5), gradX, gradY);
+    vec4 boundaryWire = textureGrad(wireframe, vec2(min(u, 0.5), 0.5), gradX, gradY);
     
     if (exitPlaneDepth < 1e30) {
         vec3 hitPos = modelSpacePos + viewRayModel * exitPlaneDepth;
@@ -471,10 +486,10 @@ void main() {
         vec3 dHitPosDx = dFdx(hitPos);
         vec3 dHitPosDy = dFdy(hitPos);
         float wallEdge = interiorWallEdgeMask(bestCellID, exitPlaneNeighborID, bestPos, exitPlaneNormal, hitPos, dHitPosDx, dHitPosDy);
-        wallEdge *= 1.0 - wcolor.a;
-        base = mix(base, base * 0.28, wallEdge * INTERIOR_EDGE_STRENGTH);
+        wallEdge *= 1.0 - boundaryWire.a;
+        depthShadedColor = mix(depthShadedColor, depthShadedColor * 0.28, wallEdge * INTERIOR_EDGE_STRENGTH);
     }
 
-    vec3 wireColor = vec3(0.0);
-    outColor = vec4(mix(base, wireColor, wcolor.a), 0.50);
+    vec3 albedo = applyWireMask(depthShadedColor, boundaryWire.a);
+    writeVoronoiSurface(albedo);
 }

@@ -329,8 +329,8 @@ bool GeometryPass::createGeometryPipeline() {
     depthStencil.front = stencilOp;
     depthStencil.back = stencilOp;
 
-    VkPipelineColorBlendAttachmentState colorBlendAttachments[3] = {};
-    for (int i = 0; i < 3; ++i) {
+    VkPipelineColorBlendAttachmentState colorBlendAttachments[4] = {};
+    for (int i = 0; i < 4; ++i) {
         colorBlendAttachments[i].colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
             VK_COLOR_COMPONENT_G_BIT |
             VK_COLOR_COMPONENT_B_BIT |
@@ -340,7 +340,7 @@ bool GeometryPass::createGeometryPipeline() {
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.attachmentCount = 3;
+    colorBlending.attachmentCount = 4;
     colorBlending.pAttachments = colorBlendAttachments;
 
     std::vector<VkDynamicState> dynamicStates = {
@@ -483,15 +483,15 @@ bool GeometryPass::createStencilOnlyPipeline() {
     depthStencil.front = stencilOp;
     depthStencil.back = stencilOp;
 
-    VkPipelineColorBlendAttachmentState colorBlendAttachments[3] = {};
-    for (int i = 0; i < 3; ++i) {
+    VkPipelineColorBlendAttachmentState colorBlendAttachments[4] = {};
+    for (int i = 0; i < 4; ++i) {
         colorBlendAttachments[i].colorWriteMask = 0;
         colorBlendAttachments[i].blendEnable = VK_FALSE;
     }
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.attachmentCount = 3;
+    colorBlending.attachmentCount = 4;
     colorBlending.pAttachments = colorBlendAttachments;
 
     std::vector<VkDynamicState> dynamicStates = {

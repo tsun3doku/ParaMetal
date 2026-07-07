@@ -21,6 +21,7 @@ class FrameGraph;
 class VulkanDevice;
 class CommandPool;
 class VkFrameGraphRuntime;
+class IBLSystem;
 class IntrinsicRenderer;
 class GizmoRenderer;
 namespace render { class ContactOverlayRenderer; }
@@ -60,7 +61,8 @@ inline constexpr std::array<float, 4> clearColorLinear = {0.0144f, 0.0144f, 0.01
 
 class SceneRenderer {
 public:
-    SceneRenderer(VulkanDevice& device, MemoryAllocator& allocator, FrameGraph& graph, VkFrameGraphRuntime& frameGraphRuntime, ModelRegistry& manager, UniformBufferManager& ubo, uint32_t framesInFlight, CommandPool& commandPool);
+    SceneRenderer(VulkanDevice& device, MemoryAllocator& allocator, FrameGraph& graph, VkFrameGraphRuntime& frameGraphRuntime, ModelRegistry& manager, UniformBufferManager& ubo, uint32_t framesInFlight, CommandPool& commandPool,
+                  IBLSystem& iblSystem);
     ~SceneRenderer();
 
     void resize(VkExtent2D extent);
@@ -124,6 +126,7 @@ private:
     ModelRegistry& resourceManager;
     UniformBufferManager& uniformBufferManager;
     CommandPool& renderCommandPool;
+    IBLSystem& iblSystem;
 
     render::GeometryPass* geometryPass = nullptr;
     render::SurfacePass* surfacePass = nullptr;
@@ -146,6 +149,7 @@ private:
     std::vector<render::Pass*> orderedPasses;
 
     std::vector<VkCommandBuffer> gbufferCommandBuffers;
+
     bool ready = false;
 };
 

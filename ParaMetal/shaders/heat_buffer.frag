@@ -18,7 +18,7 @@ layout(push_constant) uniform PushConstants {
 
 // GBuffer outputs
 layout(location = 0) out vec4 gAlbedo;
-layout(location = 1) out vec4 gNormal;
+layout(location = 1) out vec4 gMaterial;
 
 // Texture buffers for supporting halfedge data 
 layout(set = 0, binding = 1) uniform isamplerBuffer S;  // Supporting halfedge per input halfedge
@@ -48,8 +48,43 @@ layout(set = 0, binding = 11) readonly buffer HeatColors {
 } heatColors;
 
 const float PI = 3.14159265359;
-const int IMAX = 1024;
+const int IMAX = 128;
 const vec3 errorColor = vec3(1.0, 0.0, 1.0);
+const float HEAT_ROUGHNESS = 0.05;
+const float HEAT_METALNESS = 0.0;
+const float HEAT_LIGHTING_MIX = 0.1;
+const float HEAT_CONTOUR_SPACING = 20.0;
+
+vec4 heatMaterial() {
+    return vec4(HEAT_ROUGHNESS, HEAT_METALNESS, HEAT_LIGHTING_MIX, 0.0);
+}
+
+void writeHeatSurface(vec3 albedo) {
+    gAlbedo = vec4(albedo, 1.0);
+    gMaterial = heatMaterial();
+}
+
+vec3 heatColorFromTemperature(float temperature) {
+    float normalized = clamp(temperature / TEMPERATURE_SCALE, 0.0, 1.0);
+    return temperatureToColor(normalized);
+}
+
+float heatContourMask(float temperature) {
+    float d = mod(temperature, HEAT_CONTOUR_SPACING);
+    float distToContour = min(d, HEAT_CONTOUR_SPACING - d);
+    float pixelGrad = length(vec2(dFdx(temperature), dFdy(temperature)));
+    if (pixelGrad <= 1e-3) {
+        return 1.0;
+    }
+
+    float contourHalfWidth = pixelGrad * 1.5;
+    return smoothstep(0.0, contourHalfWidth, distToContour);
+}
+
+vec3 heatAlbedo(float temperature) {
+    vec3 heatColor = heatColorFromTemperature(temperature);
+    return mix(vec3(0.0), heatColor, heatContourMask(temperature));
+}
 
 bool ccw(vec2 p, vec2 q, vec2 r) {
     float det = (p.x - r.x) * (q.y - r.y) - (p.y - r.y) * (q.x - r.x);
@@ -222,10 +257,7 @@ int findIntrinsicTriangle(int inputTri, vec2 p, out vec3 baryCoords) {
 
 void main() {
     if (push.sourceParams.y > 0.5) {
-        float normalized = clamp(push.sourceParams.x / TEMPERATURE_SCALE, 0.0, 1.0);
-        vec3 heatColor = temperatureToColor(normalized);
-        gAlbedo = vec4(heatColor, 0.05);
-        gNormal = vec4(normalize(fragNormal), 0.0);
+        writeHeatSurface(heatColorFromTemperature(push.sourceParams.x));
         return;
     }
 
@@ -233,23 +265,20 @@ void main() {
     ivec3 faceHEs;
     vec2 triCoords[3];
     if (!loadInputTriangleChart(inputTri, faceHEs, triCoords)) {
-        gAlbedo = vec4(errorColor, 0.05);
-        gNormal = vec4(normalize(fragNormal), 0.0);
+        writeHeatSurface(errorColor);
         return;
     }
 
     vec3 baryCoords;
     int intrinsicTri = findIntrinsicTriangle(inputTri, inputChartPoint(triCoords), baryCoords);
     if (intrinsicTri < 0) {
-        gAlbedo = vec4(errorColor, 0.05);
-        gNormal = vec4(normalize(fragNormal), 0.0);
+        writeHeatSurface(errorColor);
         return;
     }
 
     int href = texelFetch(T, intrinsicTri).r;
     if (href < 0) {
-        gAlbedo = vec4(errorColor, 0.05);
-        gNormal = vec4(normalize(fragNormal), 0.0);
+        writeHeatSurface(errorColor);
         return;
     }
 
@@ -263,8 +292,7 @@ void main() {
     int v2 = texelFetch(H, h2_ref).r;
 
     if (v0 < 0 || v1 < 0 || v2 < 0) {
-        gAlbedo = vec4(errorColor, 0.05);
-        gNormal = vec4(normalize(fragNormal), 0.0);
+        writeHeatSurface(errorColor);
         return;
     }
     
@@ -273,21 +301,5 @@ void main() {
     float temp2 = heatColors.surfacePoints[v2].temperature;
 
     float interpolatedTemp = baryCoords.x * temp0 + baryCoords.y * temp1 + baryCoords.z * temp2;
-    
-    float contourSpacing = 20.0;
-    float d = mod(interpolatedTemp, contourSpacing);
-    float distToContour = min(d, contourSpacing - d);
-    float pixelGrad = length(vec2(dFdx(interpolatedTemp), dFdy(interpolatedTemp)));
-    float contourFactor = 1.0;
-    if (pixelGrad > 1e-3) {
-        float contourHalfWidth = pixelGrad * 1.5;
-        contourFactor = smoothstep(0.0, contourHalfWidth, distToContour);
-    }
-
-    float normalized = clamp(interpolatedTemp / TEMPERATURE_SCALE, 0.0, 1.0);
-    vec3 heatColor = temperatureToColor(normalized);
-    heatColor = mix(vec3(0.0), heatColor, contourFactor);
-
-    gAlbedo = vec4(heatColor, 0.05);
-    gNormal = vec4(normalize(fragNormal), 0.0);
+    writeHeatSurface(heatAlbedo(interpolatedTemp));
 }

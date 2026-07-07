@@ -4,10 +4,12 @@
 #include "framegraph/FrameGraphTypes.hpp"
 
 #include <vector>
+#include <vulkan/vulkan.h>
 
 class UniformBufferManager;
 class VulkanDevice;
 class VkFrameGraphRuntime;
+class IBLSystem;
 
 namespace render {
 
@@ -21,7 +23,9 @@ public:
         framegraph::PassId passId,
         framegraph::ResourceId albedoResolveId,
         framegraph::ResourceId normalResolveId,
-        framegraph::ResourceId positionResolveId);
+        framegraph::ResourceId positionResolveId,
+        framegraph::ResourceId materialResolveId,
+        IBLSystem& iblSystem);
 
     const char* name() const override;
     void create() override;
@@ -44,15 +48,16 @@ private:
     framegraph::ResourceId albedoResolveId{};
     framegraph::ResourceId normalResolveId{};
     framegraph::ResourceId positionResolveId{};
+    framegraph::ResourceId materialResolveId{};
+    IBLSystem& iblSystem;
 
-    VkDescriptorPool lightingDescriptorPool = VK_NULL_HANDLE;
+    VkDescriptorPool      lightingDescriptorPool      = VK_NULL_HANDLE;
     VkDescriptorSetLayout lightingDescriptorSetLayout = VK_NULL_HANDLE;
     std::vector<VkDescriptorSet> lightingDescriptorSets;
 
     VkPipelineLayout lightingPipelineLayout = VK_NULL_HANDLE;
-    VkPipeline lightingPipeline = VK_NULL_HANDLE;
+    VkPipeline       lightingPipeline       = VK_NULL_HANDLE;
     bool ready = false;
 };
 
 } // namespace render
-

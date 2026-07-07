@@ -329,20 +329,12 @@ bool VoronoiRenderer::createDescriptorSetLayout() {
     wireframeBinding.pImmutableSamplers = nullptr;
     wireframeBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    VkDescriptorSetLayoutBinding lightLayoutBinding{};
-    lightLayoutBinding.binding = 18;
-    lightLayoutBinding.descriptorCount = 1;
-    lightLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    lightLayoutBinding.pImmutableSamplers = nullptr;
-    lightLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    std::array<VkDescriptorSetLayoutBinding, 16> bindings = {
+    std::array<VkDescriptorSetLayoutBinding, 15> bindings = {
         uboLayoutBinding, seedLayoutBinding, neighborLayoutBinding,
         supportingLayoutBinding, supportingAngleLayoutBinding, halfedgeLayoutBinding, edgeLayoutBinding, triLayoutBinding, lengthLayoutBinding,
         inputHalfedgeLayoutBinding, inputEdgeLayoutBinding, inputTriangleLayoutBinding, inputLengthLayoutBinding,
         candidateLayoutBinding,
-        wireframeBinding,
-        lightLayoutBinding
+        wireframeBinding
     };
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
@@ -363,7 +355,7 @@ bool VoronoiRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
 
     std::array<VkDescriptorPoolSize, 4> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = maxModels * 2;
+    poolSizes[0].descriptorCount = maxModels;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     poolSizes[1].descriptorCount = maxModels * 3;
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
@@ -408,7 +400,7 @@ VkDescriptorSet VoronoiRenderer::allocateDescriptorSet(VkDescriptorPool pool) {
 }
 
 void VoronoiRenderer::updateDescriptorSet(VkDescriptorSet set, uint32_t frameIndex, const VoronoiRenderBinding& binding) {
-    std::array<VkWriteDescriptorSet, 16> descriptorWrites{};
+    std::array<VkWriteDescriptorSet, 15> descriptorWrites{};
 
     // Binding 0: UBO
     VkDescriptorBufferInfo uboInfo{};
@@ -501,19 +493,6 @@ void VoronoiRenderer::updateDescriptorSet(VkDescriptorSet set, uint32_t frameInd
     descriptorWrites[14].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     descriptorWrites[14].descriptorCount = 1;
     descriptorWrites[14].pImageInfo = &wireframeInfo;
-
-    VkDescriptorBufferInfo lightInfo{};
-    lightInfo.buffer = uniformBufferManager.getLightBuffers()[frameIndex];
-    lightInfo.offset = uniformBufferManager.getLightBufferOffsets()[frameIndex];
-    lightInfo.range = sizeof(LightUniformBufferObject);
-
-    descriptorWrites[15].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrites[15].dstSet = set;
-    descriptorWrites[15].dstBinding = 18;
-    descriptorWrites[15].dstArrayElement = 0;
-    descriptorWrites[15].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptorWrites[15].descriptorCount = 1;
-    descriptorWrites[15].pBufferInfo = &lightInfo;
 
     vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 }
@@ -613,15 +592,17 @@ bool VoronoiRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpass) 
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
     
-    VkPipelineColorBlendAttachmentState colorBlendAttachments[1] = {};
-    colorBlendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachments[0].blendEnable = VK_FALSE;
+    VkPipelineColorBlendAttachmentState colorBlendAttachments[2] = {};
+    for (int i = 0; i < 2; ++i) {
+        colorBlendAttachments[i].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        colorBlendAttachments[i].blendEnable = VK_FALSE;
+    }
     
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = 1;
+    colorBlending.attachmentCount = 2;
     colorBlending.pAttachments = colorBlendAttachments;
     
     VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};

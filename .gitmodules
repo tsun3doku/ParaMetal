@@ -10,3 +10,6 @@
 [submodule "ParaMetal/libs/pybind11"]
 	path = ParaMetal/libs/pybind11
 	url = https://github.com/pybind/pybind11.git
+[submodule "ParaMetal/libs/tinyexr"]
+	path = ParaMetal/libs/tinyexr
+	url = https://github.com/syoyo/tinyexr.git

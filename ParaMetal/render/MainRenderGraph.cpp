@@ -129,6 +129,16 @@ void MainRenderGraph::buildMainRenderGraph(FrameGraph& frameGraph) {
         makeAttachmentOps(framegraph::AttachmentLoadOp::Clear, framegraph::AttachmentStoreOp::DontCare),
         framegraph::ResourceLayout::ColorAttachment);
 
+    const framegraph::ResourceId resMaterialMSAA = addColorImage(
+        frameGraph,
+        framegraph::resources::MaterialMSAA,
+        framegraph::ImageFormat::R8G8B8A8Unorm,
+        false,
+        framegraph::SampleCount::Count8,
+        framegraph::ImageUsage::ColorAttachment | framegraph::ImageUsage::InputAttachment,
+        makeAttachmentOps(framegraph::AttachmentLoadOp::Clear, framegraph::AttachmentStoreOp::DontCare),
+        framegraph::ResourceLayout::ColorAttachment);
+
     const framegraph::ResourceId resDepthMSAA = addDepthStencilImage(
         frameGraph,
         framegraph::resources::DepthMSAA,
@@ -175,6 +185,16 @@ void MainRenderGraph::buildMainRenderGraph(FrameGraph& frameGraph) {
         makeAttachmentOps(framegraph::AttachmentLoadOp::DontCare, framegraph::AttachmentStoreOp::Store),
         framegraph::ResourceLayout::ShaderReadOnly);
 
+    const framegraph::ResourceId resMaterialResolve = addColorImage(
+        frameGraph,
+        framegraph::resources::MaterialResolve,
+        framegraph::ImageFormat::R8G8B8A8Unorm,
+        false,
+        framegraph::SampleCount::Count1,
+        framegraph::ImageUsage::ColorAttachment | framegraph::ImageUsage::InputAttachment,
+        makeAttachmentOps(framegraph::AttachmentLoadOp::DontCare, framegraph::AttachmentStoreOp::Store),
+        framegraph::ResourceLayout::ShaderReadOnly);
+
     const framegraph::ResourceId resDepthResolve = addDepthStencilImage(
         frameGraph,
         framegraph::resources::DepthResolve,
@@ -191,8 +211,8 @@ void MainRenderGraph::buildMainRenderGraph(FrameGraph& frameGraph) {
     const framegraph::ResourceId resLightingMSAA = addColorImage(
         frameGraph,
         framegraph::resources::LightingMSAA,
-        framegraph::ImageFormat::Undefined,
-        true,
+        framegraph::ImageFormat::R16G16B16A16Sfloat,
+        false,
         framegraph::SampleCount::Count8,
         framegraph::ImageUsage::ColorAttachment | framegraph::ImageUsage::TransientAttachment,
         makeAttachmentOps(framegraph::AttachmentLoadOp::Clear, framegraph::AttachmentStoreOp::Store),
@@ -221,8 +241,8 @@ void MainRenderGraph::buildMainRenderGraph(FrameGraph& frameGraph) {
     const framegraph::ResourceId resLightingResolve = addColorImage(
         frameGraph,
         framegraph::resources::LightingResolve,
-        framegraph::ImageFormat::Undefined,
-        true,
+        framegraph::ImageFormat::R16G16B16A16Sfloat,
+        false,
         framegraph::SampleCount::Count1,
         framegraph::ImageUsage::ColorAttachment | framegraph::ImageUsage::InputAttachment,
         makeAttachmentOps(framegraph::AttachmentLoadOp::DontCare, framegraph::AttachmentStoreOp::Store),
@@ -263,11 +283,13 @@ void MainRenderGraph::buildMainRenderGraph(FrameGraph& frameGraph) {
         makeRef(resAlbedoMSAA),
         makeRef(resNormalMSAA),
         makeRef(resPositionMSAA),
+        makeRef(resMaterialMSAA),
     };
     geometryPass.resolves = {
         makeRef(resAlbedoResolve),
         makeRef(resNormalResolve),
         makeRef(resPositionResolve),
+        makeRef(resMaterialResolve),
     };
     geometryPass.depthStencil = makeRef(resDepthMSAA);
     frameGraph.addPassDesc(std::move(geometryPass));
@@ -276,9 +298,11 @@ void MainRenderGraph::buildMainRenderGraph(FrameGraph& frameGraph) {
     surfacePass.name = framegraph::passes::Surface;
     surfacePass.colors = {
         makeRef(resAlbedoMSAA),
+        makeRef(resMaterialMSAA),
     };
     surfacePass.resolves = {
         makeRef(resAlbedoResolve),
+        makeRef(resMaterialResolve),
     };
     surfacePass.depthStencil = makeRef(
         resDepthMSAA,
@@ -293,6 +317,7 @@ void MainRenderGraph::buildMainRenderGraph(FrameGraph& frameGraph) {
         makeRef(resAlbedoResolve),
         makeRef(resNormalResolve),
         makeRef(resPositionResolve),
+        makeRef(resMaterialResolve),
         makeRef(
             resDepthMSAA,
             framegraph::ImageAspect::Stencil,

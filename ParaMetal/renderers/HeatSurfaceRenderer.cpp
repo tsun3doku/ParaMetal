@@ -201,16 +201,18 @@ bool HeatSurfaceRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpa
     depthStencil.front = stencilOp;
     depthStencil.back = stencilOp;
 
-    VkPipelineColorBlendAttachmentState colorBlendAttachments[1] = {};
-    colorBlendAttachments[0].colorWriteMask =
-        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachments[0].blendEnable = VK_FALSE;
+    VkPipelineColorBlendAttachmentState colorBlendAttachments[2] = {};
+    for (int i = 0; i < 2; ++i) {
+        colorBlendAttachments[i].colorWriteMask =
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        colorBlendAttachments[i].blendEnable = VK_FALSE;
+    }
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = 1;
+    colorBlending.attachmentCount = 2;
     colorBlending.pAttachments = colorBlendAttachments;
 
     std::vector<VkDynamicState> dynamicStates = {

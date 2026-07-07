@@ -1,8 +1,9 @@
-﻿#include "LightingSystem.hpp"
+#include "LightingSystem.hpp"
 
 #include "Camera.hpp"
 #include "vulkan/UniformBufferManager.hpp"
 
+#include <algorithm>
 #include <cstring>
 
 LightingSystem::LightingSystem(Camera& camera, UniformBufferManager& uniformBufferManager)
@@ -11,17 +12,11 @@ LightingSystem::LightingSystem(Camera& camera, UniformBufferManager& uniformBuff
 
 void LightingSystem::update(uint32_t frameIndex) {
     LightUniformBufferObject lightUbo{};
-    lightUbo.lightPos_Key = glm::normalize(lightDir);
-    lightUbo.lightPos_Rim = glm::normalize(rimDir);
-    lightUbo.lightAmbient = ambientColor;
-    lightUbo.lightParams = glm::vec4(keyIntensity, rimIntensity, ambientIntensity, 0.0f);
+    lightUbo.iblParams = glm::vec4(iblIntensity, iblDiffuseScale, iblSpecularScale, iblMaxReflectionLod);
     lightUbo.cameraPos = camera.getPosition();
 
     if (!enabled) {
-        lightUbo.lightPos_Key = glm::vec3(0.0f);
-        lightUbo.lightPos_Rim = glm::vec3(0.0f);
-        lightUbo.lightAmbient = glm::vec3(0.0f);
-        lightUbo.lightParams = glm::vec4(0.0f);
+        lightUbo.iblParams = glm::vec4(0.0f);
         lightUbo.cameraPos = glm::vec3(0.0f);
     }
 
@@ -31,34 +26,20 @@ void LightingSystem::update(uint32_t frameIndex) {
     }
 }
 
-void LightingSystem::setDirectionalLight(const glm::vec3& direction, const glm::vec3& color) {
-    lightDir = direction;
-    lightColor = color;
+void LightingSystem::setIBLIntensity(float intensity) {
+    iblIntensity = std::max(intensity, 0.0f);
 }
 
-void LightingSystem::setAmbient(const glm::vec3& ambient) {
-    ambientColor = ambient;
+void LightingSystem::setIBLDiffuseScale(float diffuseScale) {
+    iblDiffuseScale = std::max(diffuseScale, 0.0f);
 }
 
-void LightingSystem::setRimLight(const glm::vec3& direction, const glm::vec3& color) {
-    rimDir = direction;
-    rimColor = color;
+void LightingSystem::setIBLSpecularScale(float specularScale) {
+    iblSpecularScale = std::max(specularScale, 0.0f);
 }
 
-void LightingSystem::setKeyAndRim(const glm::vec3& keyDir, const glm::vec3& rimDir) {
-    lightDir = keyDir;
-    this->rimDir = rimDir;
-}
-
-void LightingSystem::setColors(const glm::vec3& keyColor, const glm::vec3& rimColor, const glm::vec3& ambient) {
-    lightColor = keyColor;
-    this->rimColor = rimColor;
-    ambientColor = ambient;
-}
-
-void LightingSystem::setIntensity(float keyIntensity, float rimIntensity) {
-    this->keyIntensity = keyIntensity;
-    this->rimIntensity = rimIntensity;
+void LightingSystem::setIBLMaxReflectionLod(float maxReflectionLod) {
+    iblMaxReflectionLod = std::max(maxReflectionLod, 0.0f);
 }
 
 void LightingSystem::setEnabled(bool enabled) {

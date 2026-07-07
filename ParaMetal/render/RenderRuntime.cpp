@@ -9,6 +9,7 @@
 #include "framegraph/FrameGraphVkTypes.hpp"
 #include "framegraph/FrameSync.hpp"
 #include "scene/GizmoController.hpp"
+#include "scene/IBLSystem.hpp"
 #include "scene/InputController.hpp"
 #include "scene/LightingSystem.hpp"
 #include "MainRenderGraph.hpp"
@@ -47,7 +48,7 @@ RenderRuntime::RenderRuntime(
 
 RenderRuntime::~RenderRuntime() = default;
 
-bool RenderRuntime::initializeBase(VkFormat swapChainFormat, VkExtent2D extent, MemoryAllocator& allocator, ModelRegistry& resourceManager, UniformBufferManager& ubo) {
+bool RenderRuntime::initializeBase(VkFormat swapChainFormat, VkExtent2D extent, MemoryAllocator& allocator, ModelRegistry& resourceManager, UniformBufferManager& ubo, IBLSystem& iblSystem) {
     if (swapChainFormat == VK_FORMAT_UNDEFINED || extent.width == 0 || extent.height == 0) {
         return false;
     }
@@ -78,7 +79,8 @@ bool RenderRuntime::initializeBase(VkFormat swapChainFormat, VkExtent2D extent, 
         resourceManager,
         ubo,
         renderconfig::MaxFramesInFlight,
-        renderCommandPool);
+        renderCommandPool,
+        iblSystem);
     if (!sceneRenderer) {
         return false;
     }

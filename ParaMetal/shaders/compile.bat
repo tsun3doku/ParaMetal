@@ -79,7 +79,12 @@ slangc voronoi_candidates.slang -target spirv -o voronoi_candidates_comp.spv
 slangc lloyd_accumulate.slang -target spirv -o lloyd_accumulate_comp.spv
 slangc lloyd_update.slang -target spirv -o lloyd_update_comp.spv
 
-REM QRhi viewport blit shaders (.qsb multi-backend format)
+slangc ibl_equirect_to_cube.slang -target spirv -o ibl_equirect_to_cube_comp.spv
+slangc ibl_irradiance.slang -target spirv -o ibl_irradiance_comp.spv
+slangc ibl_prefilter.slang -target spirv -o ibl_prefilter_comp.spv
+slangc ibl_brdf_lut.slang -target spirv -o ibl_brdf_lut_comp.spv
+
+REM QRhi viewport blit shaders 
 C:/Qt/6.9.3/msvc2022_64/bin/qsb.exe --glsl "100 es,120,150" --hlsl 50 --msl 12 -o viewport_blit.vert.qsb viewport_blit.vert
 C:/Qt/6.9.3/msvc2022_64/bin/qsb.exe --glsl "100 es,120,150" --hlsl 50 --msl 12 -o viewport_blit.frag.qsb viewport_blit.frag
 
