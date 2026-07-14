@@ -1,14 +1,11 @@
 #include "HeatModelRuntime.hpp"
 
 #include "heat/HeatSystemPlayback.hpp"
-#include "runtime/RuntimeProducts.hpp"
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/MemoryAllocator.hpp"
-#include "voronoi/VoronoiAdapters.hpp"
 #include "voronoi/VoronoiGpuStructs.hpp"
 #include "vulkan/CommandBufferManager.hpp"
 #include "vulkan/VulkanBuffer.hpp"
-#include "util/GeometryUtils.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -19,80 +16,25 @@
 HeatModelRuntime::HeatModelRuntime(
     VulkanDevice& device,
     MemoryAllocator& allocator,
-    const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
+    const std::vector<glm::vec3>& surfacePositions,
+    const std::vector<glm::vec3>& surfaceNormals,
+    const std::vector<uint32_t>& surfaceTriangleIndices,
     CommandPool& cmdPool,
-    float initialTemperatureValue)
+    float initialTemperatureValueC)
     : vulkanDevice(device),
       memoryAllocator(allocator),
-      intrinsicMesh(intrinsicMesh),
+      surfacePositions(surfacePositions),
+      surfaceNormals(surfaceNormals),
+      surfaceTriangleIndices(surfaceTriangleIndices),
       renderCommandPool(cmdPool),
-      fixedTemperatureValue(initialTemperatureValue) {
-    intrinsicVertexCount = intrinsicMesh.vertices.size();
-    initialized = (intrinsicVertexCount > 0);
+      initialTemperatureC(initialTemperatureValueC) {
+    initialized = !surfacePositions.empty() &&
+        surfaceNormals.size() == surfacePositions.size() &&
+        !surfaceTriangleIndices.empty();
 }
 
 HeatModelRuntime::~HeatModelRuntime() {
     cleanup();
-}
-
-bool HeatModelRuntime::appendProduct(HeatProduct& product) {
-    if (intrinsicVertexCount == 0 || intrinsicMesh.indices.size() < 3) {
-        return false;
-    }
-
-    const size_t vertexCount = intrinsicVertexCount;
-    std::vector<glm::vec3> positions(vertexCount);
-    for (size_t i = 0; i < vertexCount; ++i) {
-        positions[i] = intrinsicMesh.vertices[i].position;
-    }
-    const std::vector<float> vertexAreas = computeVertexAreas(positions, intrinsicMesh.indices);
-
-    std::vector<heat::SurfacePoint> surfacePoints(vertexCount);
-    for (size_t i = 0; i < vertexCount; ++i) {
-        surfacePoints[i].position    = positions[i];
-        surfacePoints[i].temperature = fixedTemperatureValue;
-        surfacePoints[i].normal      = intrinsicMesh.vertices[i].normal;
-        surfacePoints[i].area        = (i < vertexAreas.size()) ? vertexAreas[i] : 0.0f;
-        surfacePoints[i].color       = glm::vec4(1.0f);
-    }
-
-    const VkDeviceSize storageAlignment = vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
-
-    VkBuffer surfBuf = VK_NULL_HANDLE;
-    VkDeviceSize surfOffset = 0;
-    if (uploadDeviceBuffer(memoryAllocator, renderCommandPool,
-            surfacePoints.data(), sizeof(heat::SurfacePoint) * vertexCount,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT,
-            storageAlignment, surfBuf, surfOffset) != VK_SUCCESS) {
-        return false;
-    }
-
-    std::vector<glm::vec4> zeroGradients(vertexCount, glm::vec4(0.0f));
-    VkBuffer gradBuf = VK_NULL_HANDLE;
-    VkDeviceSize gradOffset = 0;
-    if (uploadDeviceBuffer(memoryAllocator, renderCommandPool,
-            zeroGradients.data(), sizeof(glm::vec4) * vertexCount,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-            storageAlignment, gradBuf, gradOffset) != VK_SUCCESS) {
-        memoryAllocator.free(surfBuf, surfOffset);
-        return false;
-    }
-
-    product.modelSurfaceBuffers.push_back(surfBuf);
-    product.modelSurfaceBufferOffsets.push_back(surfOffset);
-    product.modelSurfacePointCounts.push_back(static_cast<uint32_t>(vertexCount));
-    product.modelSurfaceGradientBuffers.push_back(gradBuf);
-    product.modelSurfaceGradientBufferOffsets.push_back(gradOffset);
-
-    return true;
-}
-
-void HeatModelRuntime::setBoundaryCondition(uint32_t bc) {
-    boundaryCondition = bc;
-}
-
-void HeatModelRuntime::setFixedTemperatureValue(float temperature) {
-    fixedTemperatureValue = temperature;
 }
 
 void HeatModelRuntime::setMaterialProperties(float density, float specificHeat, float conductivity) {
@@ -125,7 +67,19 @@ void HeatModelRuntime::cleanup() {
     surfaceGradientHistorySetA = VK_NULL_HANDLE;
     surfaceGradientHistorySetB = VK_NULL_HANDLE;
 
+    simNodeBuffer = VK_NULL_HANDLE;
+    simNodeOffset = 0;
+    simNodeCouplingBuffer = VK_NULL_HANDLE;
+    simNodeCouplingOffset = 0;
+    historyBuffer = VK_NULL_HANDLE;
+    historyBufferOffset = 0;
+    historyBufferFrameCapacity = 0;
+
     cleanupSimulationBuffers();
+    boundaryRuntime.cleanup(memoryAllocator);
+    freeBuffer(memoryAllocator, volumetricPowerDensityBuffer, volumetricPowerDensityBufferOffset);
+    freeBuffer(memoryAllocator, volumetricPowerDensityStagingBuffer, volumetricPowerDensityStagingBufferOffset);
+    volumetricPowerDensityStagingMapped = nullptr;
     initialized = false;
 }
 
@@ -180,11 +134,9 @@ bool HeatModelRuntime::updateAllDescriptors(
     VkDescriptorPool voronoiPool,
     VkBuffer playbackBuffer,
     VkDeviceSize playbackBufferOffset,
-    VkBuffer historyBuffer,
-    VkDeviceSize historyBufferOffset,
     bool forceReallocate) {
-    const size_t intrinsicVertexCount = getIntrinsicVertexCount();
-    if (intrinsicVertexCount == 0 ||
+    const size_t surfaceVertexCount = getSurfaceVertexCount();
+    if (surfaceVertexCount == 0 ||
         gmlsSurfaceStencilBuffer == VK_NULL_HANDLE ||
         gmlsSurfaceWeightBuffer == VK_NULL_HANDLE ||
         gmlsSurfaceGradientWeightBuffer == VK_NULL_HANDLE ||
@@ -193,13 +145,15 @@ bool HeatModelRuntime::updateAllDescriptors(
         playbackBuffer == VK_NULL_HANDLE ||
         historyBuffer == VK_NULL_HANDLE ||
         simNodeBuffer == VK_NULL_HANDLE ||
-        simGMLSInterfaceBuffer == VK_NULL_HANDLE ||
+        simNodeCouplingBuffer == VK_NULL_HANDLE ||
         materialBuffer == VK_NULL_HANDLE ||
-        tempBufferA == VK_NULL_HANDLE ||
-        tempBufferB == VK_NULL_HANDLE ||
-        contactAccumulatorBuffer == VK_NULL_HANDLE ||
+        boundaryRuntime.getNodeBuffer() == VK_NULL_HANDLE ||
+        boundaryRuntime.getContributionBuffer() == VK_NULL_HANDLE ||
+        volumetricPowerDensityBuffer == VK_NULL_HANDLE ||
+        !tempBufferA.isValid() ||
+        !tempBufferB.isValid() ||
         simNodeCount == 0 ||
-        simGMLSInterfaceCount == 0 ||
+        simNodeCouplingCount == 0 ||
         historyBufferFrameCapacity == 0) {
         return false;
     }
@@ -268,35 +222,43 @@ bool HeatModelRuntime::updateAllDescriptors(
         voronoiDescriptorSetA == VK_NULL_HANDLE) return false;
 
     // Common info
-    VkDescriptorBufferInfo surfaceInfo{ surfaceBuffer, surfaceBufferOffset, sizeof(heat::SurfacePoint) * intrinsicVertexCount };
-    VkDescriptorBufferInfo gradientInfo{ surfaceGradientBuffer, surfaceGradientBufferOffset, sizeof(glm::vec4) * intrinsicVertexCount };
+    VkDescriptorBufferInfo surfaceInfo{ surfaceBuffer, surfaceBufferOffset, sizeof(heat::SurfacePoint) * surfaceVertexCount };
+    VkDescriptorBufferInfo gradientInfo{ surfaceGradientBuffer, surfaceGradientBufferOffset, sizeof(glm::vec4) * surfaceVertexCount };
     VkDescriptorBufferInfo playbackInfo{ playbackBuffer, playbackBufferOffset, sizeof(heat::SimPlaybackUniform) };
-    VkDescriptorBufferInfo historyInfo{ historyBuffer, historyBufferOffset, static_cast<VkDeviceSize>(historyBufferFrameCapacity) * simNodeCount * sizeof(float) };
-    VkDescriptorBufferInfo gmlsStencilInfo{ gmlsSurfaceStencilBuffer, gmlsSurfaceStencilBufferOffset, intrinsicVertexCount * sizeof(voronoi::GMLSSurfaceStencil) };
+    VkDescriptorBufferInfo gmlsStencilInfo{ gmlsSurfaceStencilBuffer, gmlsSurfaceStencilBufferOffset, surfaceVertexCount * sizeof(voronoi::GMLSSurfaceStencil) };
     VkDescriptorBufferInfo gmlsValueWeightInfo{ gmlsSurfaceWeightBuffer, gmlsSurfaceWeightBufferOffset, gmlsSurfaceWeightCount * sizeof(voronoi::GMLSSurfaceWeight) };
     VkDescriptorBufferInfo gmlsGradientWeightInfo{ gmlsSurfaceGradientWeightBuffer, gmlsSurfaceGradientWeightBufferOffset, gmlsSurfaceGradientWeightCount * sizeof(voronoi::GMLSSurfaceGradientWeight) };
     
     VkDescriptorBufferInfo vNodeInfo{simNodeBuffer, simNodeOffset, simNodeCount * sizeof(voronoi::Node)};
-    VkDescriptorBufferInfo vGmlsInfo{simGMLSInterfaceBuffer, simGMLSInterfaceOffset, simGMLSInterfaceCount * sizeof(voronoi::GMLSInterface)};
+    VkDescriptorBufferInfo nodeCouplingInfo{
+        simNodeCouplingBuffer,
+        simNodeCouplingOffset,
+        simNodeCouplingCount * sizeof(voronoi::NodeCoupling)};
     VkDescriptorBufferInfo vMatInfo{materialBuffer, materialBufferOffset, simNodeCount * sizeof(heat::MaterialNode)};
+    VkDescriptorBufferInfo boundaryNodeInfo{boundaryRuntime.getNodeBuffer(), boundaryRuntime.getNodeBufferOffset(), simNodeCount * sizeof(heat::BoundaryNode)};
+    VkDescriptorBufferInfo boundaryContributionInfo{boundaryRuntime.getContributionBuffer(), boundaryRuntime.getContributionBufferOffset(), VK_WHOLE_SIZE};
+    VkDescriptorBufferInfo surfaceBoundaryIndexInfo{boundaryRuntime.getSurfaceIndexBuffer(), boundaryRuntime.getSurfaceIndexBufferOffset(), surfaceVertexCount * sizeof(uint32_t)};
+    VkDescriptorBufferInfo boundaryStateInfo{boundaryRuntime.getStateBuffer(), boundaryRuntime.getStateBufferOffset(), VK_WHOLE_SIZE};
+    VkDescriptorBufferInfo volumetricPowerDensityInfo{volumetricPowerDensityBuffer, volumetricPowerDensityBufferOffset, simNodeCount * sizeof(float)};
     const VkDescriptorSet sTempSets[2] = { surfaceComputeSetA, surfaceComputeSetB };
     const VkDescriptorSet sGradSets[2] = { surfaceGradientComputeSetA, surfaceGradientComputeSetB };
     const VkDescriptorSet vSets[2] = { voronoiDescriptorSetA, voronoiDescriptorSetB };
-    const VkBuffer tempBuffers[2] = { tempBufferA, tempBufferB };
-    const VkDeviceSize tempOffsets[2] = { tempBufferAOffset, tempBufferBOffset };
+    const VkBuffer tempBuffers[2] = { tempBufferA.getBuffer(), tempBufferB.getBuffer() };
+    const VkDeviceSize tempOffsets[2] = { 0, 0 };
 
     for (uint32_t pass = 0; pass < 2; ++pass) {
         VkDescriptorBufferInfo nodeTempInfo{ tempBuffers[pass], tempOffsets[pass], simNodeCount * sizeof(float) };
         VkDescriptorBufferInfo nodeNextTempInfo{ tempBuffers[1-pass], tempOffsets[1-pass], simNodeCount * sizeof(float) };
-        VkDescriptorBufferInfo fluxInfo{ contactAccumulatorBuffer, contactAccumulatorBufferOffset, simNodeCount * sizeof(float) * 2 };
 
         // Surface Temperature Updates
-        std::array<VkWriteDescriptorSet, 4> sTempWrites{};
+        std::array<VkWriteDescriptorSet, 6> sTempWrites{};
         sTempWrites[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sTempSets[pass], 0, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &nodeTempInfo, nullptr};
         sTempWrites[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sTempSets[pass], 1, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &surfaceInfo, nullptr};
-        sTempWrites[2] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sTempSets[pass], 10, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsStencilInfo, nullptr};
-        sTempWrites[3] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sTempSets[pass], 11, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsValueWeightInfo, nullptr};
-        vkUpdateDescriptorSets(vulkanDevice.getDevice(), 4, sTempWrites.data(), 0, nullptr);
+        sTempWrites[2] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sTempSets[pass], 8, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &surfaceBoundaryIndexInfo, nullptr};
+        sTempWrites[3] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sTempSets[pass], 9, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &boundaryStateInfo, nullptr};
+        sTempWrites[4] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sTempSets[pass], 10, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsStencilInfo, nullptr};
+        sTempWrites[5] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sTempSets[pass], 11, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsValueWeightInfo, nullptr};
+        vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(sTempWrites.size()), sTempWrites.data(), 0, nullptr);
 
         // Surface Gradient Updates
         std::array<VkWriteDescriptorSet, 5> sGradWrites{};
@@ -308,14 +270,17 @@ bool HeatModelRuntime::updateAllDescriptors(
         vkUpdateDescriptorSets(vulkanDevice.getDevice(), 5, sGradWrites.data(), 0, nullptr);
 
         // Diffusion
-        std::array<VkWriteDescriptorSet, 7> vWrites{};
+        std::array<VkWriteDescriptorSet, 10> vWrites{};
         vWrites[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 0, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &vNodeInfo, nullptr};
-        vWrites[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 1, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &vGmlsInfo, nullptr};
+        vWrites[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 1, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &nodeCouplingInfo, nullptr};
         vWrites[2] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 2, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &vMatInfo, nullptr};
         vWrites[3] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 3, 0, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, nullptr, &playbackInfo, nullptr};
         vWrites[4] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 4, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &nodeTempInfo, nullptr};
         vWrites[5] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 5, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &nodeNextTempInfo, nullptr};
-        vWrites[6] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 7, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &fluxInfo, nullptr};
+        vWrites[6] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 8, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &boundaryNodeInfo, nullptr};
+        vWrites[7] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 9, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &boundaryStateInfo, nullptr};
+        vWrites[8] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 10, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &boundaryContributionInfo, nullptr};
+        vWrites[9] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vSets[pass], 11, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &volumetricPowerDensityInfo, nullptr};
         vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(vWrites.size()), vWrites.data(), 0, nullptr);
     }
 
@@ -325,11 +290,13 @@ bool HeatModelRuntime::updateAllDescriptors(
         const VkDescriptorSet historySets[2] = { surfaceHistoryComputeSetA, surfaceHistoryComputeSetB };
         const VkDescriptorSet gradHistorySets[2] = { surfaceGradientHistorySetA, surfaceGradientHistorySetB };
         for (uint32_t pass = 0; pass < 2; ++pass) {
-            std::array<VkWriteDescriptorSet, 4> hTempWrites{};
+            std::array<VkWriteDescriptorSet, 6> hTempWrites{};
             hTempWrites[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, historySets[pass], 0, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &historyFrameInfo, nullptr};
             hTempWrites[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, historySets[pass], 1, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &surfaceInfo, nullptr};
-            hTempWrites[2] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, historySets[pass], 10, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsStencilInfo, nullptr};
-            hTempWrites[3] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, historySets[pass], 11, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsValueWeightInfo, nullptr};
+            hTempWrites[2] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, historySets[pass], 8, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &surfaceBoundaryIndexInfo, nullptr};
+            hTempWrites[3] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, historySets[pass], 9, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &boundaryStateInfo, nullptr};
+            hTempWrites[4] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, historySets[pass], 10, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsStencilInfo, nullptr};
+            hTempWrites[5] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, historySets[pass], 11, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsValueWeightInfo, nullptr};
             vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(hTempWrites.size()), hTempWrites.data(), 0, nullptr);
 
             std::array<VkWriteDescriptorSet, 5> hGradWrites{};
@@ -361,22 +328,105 @@ bool HeatModelRuntime::createMaterialBuffer(const std::vector<heat::MaterialNode
 
 void HeatModelRuntime::setSimResources(
     VkBuffer nodeBuffer, VkDeviceSize nodeOffset, uint32_t nodeCount,
-    VkBuffer gmlsBuffer, VkDeviceSize gmlsOffset, uint32_t gmlsCount) {
+    VkBuffer couplingBuffer, VkDeviceSize couplingOffset, uint32_t couplingCount) {
     this->simNodeBuffer = nodeBuffer;
     this->simNodeOffset = nodeOffset;
     this->simNodeCount = nodeCount;
-    this->simGMLSInterfaceBuffer = gmlsBuffer;
-    this->simGMLSInterfaceOffset = gmlsOffset;
-    this->simGMLSInterfaceCount = gmlsCount;
+    this->simNodeCouplingBuffer = couplingBuffer;
+    this->simNodeCouplingOffset = couplingOffset;
+    this->simNodeCouplingCount = couplingCount;
 }
 
-void HeatModelRuntime::setVoronoiToSimNodeId(const std::vector<uint32_t>& mapping) {
-    voronoiToSimNodeId = mapping;
+bool HeatModelRuntime::configureBoundary(
+    const std::vector<uint32_t>& nodeIds,
+    const std::vector<float>& patchAreas) {
+    const size_t surfaceVertexCount = getSurfaceVertexCount();
+    std::vector<HeatBoundaryRuntime::Region> regions;
+    if (boundaryConditionType != 0u) {
+        HeatBoundaryRuntime::Region region;
+        region.id = 0u;
+        region.state = {boundaryConditionType, boundaryTemperatureC, boundaryHeatFlux, boundaryHeatTransferCoefficient};
+        region.nodeIds = nodeIds;
+        for (uint32_t nodeId : nodeIds) {
+            if (nodeId >= patchAreas.size()) {
+                return false;
+            }
+        }
+        if (boundaryConditionType == 1u) {
+            region.surfacePointIds.resize(surfaceVertexCount);
+            for (uint32_t surfacePointId = 0; surfacePointId < surfaceVertexCount; ++surfacePointId) {
+                region.surfacePointIds[surfacePointId] = surfacePointId;
+            }
+        }
+        regions.push_back(std::move(region));
+    }
+
+    if (!boundaryRuntime.configureRegions(
+            regions, simNodeCount, static_cast<uint32_t>(surfaceVertexCount), nodeIds, patchAreas)) {
+        return false;
+    }
+
+    return configureVolumetricSource(volumetricPowerDensity);
+}
+
+bool HeatModelRuntime::resolveBoundaryContactAreas(const std::vector<float>& coveredAreas) {
+    return boundaryRuntime.resolveContactAreas(coveredAreas) &&
+        boundaryRuntime.createBuffers(vulkanDevice, memoryAllocator, renderCommandPool);
+}
+
+bool HeatModelRuntime::configureVolumetricSource(float powerDensity) {
+    if (!std::isfinite(powerDensity) || simNodeCount == 0) return false;
+    volumetricPowerDensities.assign(simNodeCount, powerDensity);
+
+    freeBuffer(memoryAllocator, volumetricPowerDensityBuffer, volumetricPowerDensityBufferOffset);
+    freeBuffer(memoryAllocator, volumetricPowerDensityStagingBuffer, volumetricPowerDensityStagingBufferOffset);
+    volumetricPowerDensityStagingMapped = nullptr;
+    const VkDeviceSize byteSize = simNodeCount * sizeof(float);
+    const VkDeviceSize alignment = vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
+    if (uploadDeviceBuffer(memoryAllocator, renderCommandPool, volumetricPowerDensities.data(), byteSize,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, alignment,
+            volumetricPowerDensityBuffer, volumetricPowerDensityBufferOffset) != VK_SUCCESS) return false;
+    if (createStagingBuffer(memoryAllocator, byteSize, volumetricPowerDensityStagingBuffer,
+            volumetricPowerDensityStagingBufferOffset, &volumetricPowerDensityStagingMapped) != VK_SUCCESS) return false;
+    volumetricPowerDensityDirty = false;
+    return true;
+}
+
+bool HeatModelRuntime::setVolumetricPowerDensity(float powerDensity) {
+    if (!std::isfinite(powerDensity) || volumetricPowerDensities.size() != simNodeCount) return false;
+    volumetricPowerDensity = powerDensity;
+    bool changed = false;
+    for (float& value : volumetricPowerDensities) {
+        changed = changed || value != powerDensity;
+        value = powerDensity;
+    }
+    volumetricPowerDensityDirty = volumetricPowerDensityDirty || changed;
+    return true;
+}
+
+void HeatModelRuntime::uploadRuntimeLoads(VkCommandBuffer commandBuffer) {
+    boundaryRuntime.uploadState(commandBuffer);
+    if (!volumetricPowerDensityDirty || commandBuffer == VK_NULL_HANDLE ||
+        volumetricPowerDensityStagingMapped == nullptr || volumetricPowerDensityBuffer == VK_NULL_HANDLE) return;
+    const VkDeviceSize byteSize = volumetricPowerDensities.size() * sizeof(float);
+    std::memcpy(volumetricPowerDensityStagingMapped, volumetricPowerDensities.data(), byteSize);
+    VkBufferCopy copy{volumetricPowerDensityStagingBufferOffset, volumetricPowerDensityBufferOffset, byteSize};
+    vkCmdCopyBuffer(commandBuffer, volumetricPowerDensityStagingBuffer, volumetricPowerDensityBuffer, 1, &copy);
+    VkBufferMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.buffer = volumetricPowerDensityBuffer;
+    barrier.offset = volumetricPowerDensityBufferOffset;
+    barrier.size = byteSize;
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0, 0, nullptr, 1, &barrier, 0, nullptr);
+    volumetricPowerDensityDirty = false;
 }
 
 
 bool HeatModelRuntime::ensureSimulationBuffers(uint32_t nodeCount) {
-    if (this->simNodeCount == nodeCount && tempBufferA != VK_NULL_HANDLE) {
+    if (this->simNodeCount == nodeCount && tempBufferA.isValid() && tempBufferB.isValid()) {
         return true;
     }
 
@@ -385,59 +435,20 @@ bool HeatModelRuntime::ensureSimulationBuffers(uint32_t nodeCount) {
 
     if (nodeCount == 0) return true;
 
-    // Allocate Temp A
-    auto [handleA, offsetA] = memoryAllocator.allocate(
-        nodeCount * sizeof(float),
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    tempBufferA = handleA;
-    tempBufferAOffset = offsetA;
-
-    // Allocate Temp B
-    auto [handleB, offsetB] = memoryAllocator.allocate(
-        nodeCount * sizeof(float),
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    tempBufferB = handleB;
-    tempBufferBOffset = offsetB;
-
-    // Allocate coupling accumulator 
-    auto [handleFlux, offsetFlux] = memoryAllocator.allocate(
-        nodeCount * sizeof(float) * 2,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    contactAccumulatorBuffer = handleFlux;
-    contactAccumulatorBufferOffset = offsetFlux;
-
-    if (contactAccumulatorBuffer != VK_NULL_HANDLE) {
-        const VkDeviceSize accumulatorSize = nodeCount * sizeof(float) * 2;
-        VkCommandBuffer cmd = renderCommandPool.beginCommands();
-        if (cmd == VK_NULL_HANDLE) {
-            return false;
-        }
-        vkCmdFillBuffer(cmd, contactAccumulatorBuffer, contactAccumulatorBufferOffset, accumulatorSize, 0u);
-        if (!renderCommandPool.endCommands(cmd)) {
-            std::cerr << "[HEAT-UPLOAD] contactAccumulatorFill failed"
-                      << " simNodeCount=" << nodeCount
-                      << " dstBuffer=" << contactAccumulatorBuffer
-                      << " dstOffset=" << contactAccumulatorBufferOffset
-                      << " size=" << accumulatorSize
-                      << std::endl;
-            return false;
-        }
-    }
-
-    return tempBufferA != VK_NULL_HANDLE && tempBufferB != VK_NULL_HANDLE && contactAccumulatorBuffer != VK_NULL_HANDLE;
+    const VkDeviceSize byteSize = nodeCount * sizeof(float);
+    const VkBufferUsageFlags usage =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    return tempBufferA.initialize(vulkanDevice, byteSize, usage) &&
+        tempBufferB.initialize(vulkanDevice, byteSize, usage);
 }
 
 void HeatModelRuntime::cleanupSimulationBuffers() {
-    freeBuffer(memoryAllocator, tempBufferA, tempBufferAOffset);
-    freeBuffer(memoryAllocator, tempBufferB, tempBufferBOffset);
-    freeBuffer(memoryAllocator, contactAccumulatorBuffer, contactAccumulatorBufferOffset);
-}
-
-void HeatModelRuntime::setStencilKDTree(std::unique_ptr<StencilKDTree> kdTree) {
-    stencilKDTree = std::move(kdTree);
+    cudaTempBufferA.cleanup();
+    cudaTempBufferB.cleanup();
+    tempBufferA.cleanup();
+    tempBufferB.cleanup();
 }
 
 void HeatModelRuntime::updateHistoryDescriptorOffset(uint32_t displayFrame, VkDeviceSize frameStride, uint32_t currentFrame) {

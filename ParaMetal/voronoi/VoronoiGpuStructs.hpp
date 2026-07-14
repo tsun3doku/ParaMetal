@@ -6,6 +6,19 @@
 
 namespace voronoi {
 
+struct SurfaceVertex {
+    glm::vec4 position{0.0f, 0.0f, 0.0f, 1.0f};
+    glm::vec4 normal{0.0f, 0.0f, 1.0f, 0.0f};
+};
+
+static_assert(sizeof(SurfaceVertex) == 32, "SurfaceVertex must match GPU stride");
+
+struct NodeFlags {
+    static constexpr uint32_t Ghost = 1u << 0;
+    static constexpr uint32_t Surface = 1u << 1;
+    static constexpr uint32_t TriangleOverflow = 1u << 2;
+};
+
 struct Neighbor {
     uint32_t neighborIndex;
     float areaOverDistance;
@@ -18,12 +31,12 @@ struct Node {
     uint32_t interfaceNeighborCount;
 };
 
-struct GMLSInterface {
-    uint32_t neighborIdx;
+struct NodeCoupling {
+    uint32_t neighborNodeId;
     float conductance;
 };
 
-static_assert(sizeof(GMLSInterface) == 8, "GMLSInterface must match GPU stride");
+static_assert(sizeof(NodeCoupling) == 8, "NodeCoupling must match GPU stride");
 
 struct GMLSSurfaceStencil {
     uint32_t valueWeightOffset;

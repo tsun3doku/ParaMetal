@@ -24,7 +24,7 @@ ProductHandle RuntimeModelComputeTransport::apply(uint64_t socketKey, const Mode
         return {};
     }
 
-    modelRuntime->setModelMatrix(runtimeModelId, toMat4(package.localToWorld));
+    modelRuntime->setModelMatrix(runtimeModelId, toMat4(package.geometry.localToWorld));
 
     ModelProduct product{};
     if (!modelRuntime->exportProduct(runtimeModelId, product)) {

@@ -25,12 +25,17 @@ ProductHandle RuntimeContactComputeTransport::apply(uint64_t socketKey, const Co
     config.minNormalDot = package.authored.pair.minNormalDot;
     config.contactRadius = package.authored.pair.contactRadius;
     config.modelALocalToWorld = package.modelALocalToWorld;
-    config.modelAIntrinsicMesh = modelARemeshProduct->intrinsicMesh;
+    config.modelAMesh = buildContactMesh(
+        modelARemeshProduct->surfacePositions,
+        modelARemeshProduct->surfaceNormals,
+        modelARemeshProduct->surfaceTriangleIndices);
     config.modelBLocalToWorld = package.modelBLocalToWorld;
-    config.modelBIntrinsicMesh = modelBRemeshProduct->intrinsicMesh;
+    config.modelBMesh = buildContactMesh(
+        modelBRemeshProduct->surfacePositions,
+        modelBRemeshProduct->surfaceNormals,
+        modelBRemeshProduct->surfaceTriangleIndices);
     config.modelARuntimeModelId = modelARemeshProduct->runtimeModelId;
     config.modelBRuntimeModelId = modelBRemeshProduct->runtimeModelId;
-    config.modelBTriangleIndices = modelBRemeshProduct->intrinsicMesh.indices;
     config.computeHash = computeHash;
 
     if (!config.isValid()) {
@@ -56,4 +61,3 @@ void RuntimeContactComputeTransport::remove(uint64_t socketKey) {
     }
     controller->remove(socketKey);
 }
-

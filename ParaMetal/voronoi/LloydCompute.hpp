@@ -22,11 +22,11 @@ public:
         VkBuffer voxelOffsetsBuffer = VK_NULL_HANDLE;
         VkDeviceSize voxelOffsetsBufferOffset = 0;
 
-        VkBuffer voronoiNeighborIndicesBuffer = VK_NULL_HANDLE;
-        VkDeviceSize voronoiNeighborIndicesBufferOffset = 0;
+        VkBuffer candidateNeighborIndicesBuffer = VK_NULL_HANDLE;
+        VkDeviceSize candidateNeighborIndicesBufferOffset = 0;
 
-        VkBuffer voronoiSeedFlagsBuffer = VK_NULL_HANDLE;
-        VkDeviceSize voronoiSeedFlagsBufferOffset = 0;
+        VkBuffer nodeFlagsBuffer = VK_NULL_HANDLE;
+        VkDeviceSize nodeFlagsBufferOffset = 0;
 
         VkBuffer voxelGridParamsBuffer = VK_NULL_HANDLE;
         VkDeviceSize voxelGridParamsBufferOffset = 0;

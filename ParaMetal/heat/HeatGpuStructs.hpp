@@ -18,9 +18,9 @@ struct SimPlaybackUniform {
 
 struct SurfacePoint {
     glm::vec3 position;
-    float temperature;
+    float temperatureC;
     glm::vec3 normal;
-    float area;
+    float vertexArea;
     glm::vec4 color;
 };
 
@@ -34,10 +34,32 @@ struct MaterialNode {
     float density;
     float specificHeat;
     float conductivity;
-    float fixedTemperatureValue;
-    uint32_t boundaryCondition;
-    uint32_t _pad0;
+    float pad0;
+    uint32_t pad1;
+    uint32_t pad2;
 };
+
+struct BoundaryState {
+    uint32_t conditionType;
+    float temperatureC;
+    float heatFlux;
+    float heatTransferCoefficient;
+};
+
+struct BoundaryNode {
+    uint32_t contributionOffset;
+    uint32_t contributionCount;
+    uint32_t dirichletStateIndex;
+};
+
+struct BoundaryContribution {
+    uint32_t stateIndex;
+    float area;
+};
+
+static_assert(sizeof(BoundaryState) == 16, "BoundaryState must match GPU stride");
+static_assert(sizeof(BoundaryNode) == 12, "BoundaryNode must match GPU stride");
+static_assert(sizeof(BoundaryContribution) == 8, "BoundaryContribution must match GPU stride");
 
 struct BufferPushConstant {
     alignas(16) glm::mat4 modelMatrix;

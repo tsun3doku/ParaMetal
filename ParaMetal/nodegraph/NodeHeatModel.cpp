@@ -44,9 +44,12 @@ void NodeHeatModel::execute(NodeKernelEval& eval) const {
         payload.density = static_cast<float>(params.density);
         payload.specificHeat = static_cast<float>(params.specificHeat);
         payload.conductivity = static_cast<float>(params.conductivity);
-        payload.initialTemperature = static_cast<float>(params.initialTemperature);
-        payload.boundaryCondition = params.boundaryCondition;
-        payload.fixedTemperatureValue = static_cast<float>(params.fixedTemperatureValue);
+        payload.initialTemperatureC = static_cast<float>(params.initialTemperatureC);
+        payload.boundaryCondition.type = params.boundaryConditionType;
+        payload.boundaryCondition.temperatureC = static_cast<float>(params.boundaryTemperatureC);
+        payload.boundaryCondition.heatFlux = static_cast<float>(params.heatFlux);
+        payload.boundaryCondition.heatTransferCoefficient = static_cast<float>(params.heatTransferCoefficient);
+        payload.volumetricHeatSource.powerDensity = static_cast<float>(params.volumetricPowerDensity);
         const uint64_t payloadKey = NodeSocketKey(eval.node.id, outputSocket.id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, eval.outputHashes);
         populateMetadata(outputValue, nullptr, payloadRegistry);
@@ -63,9 +66,12 @@ HashValues NodeHeatModel::computeOutputHashes(const NodeKernelHash& hash) const 
     HashBuilder::combineFloat(thermalHash, static_cast<float>(params.density));
     HashBuilder::combineFloat(thermalHash, static_cast<float>(params.specificHeat));
     HashBuilder::combineFloat(thermalHash, static_cast<float>(params.conductivity));
-    HashBuilder::combineFloat(thermalHash, static_cast<float>(params.initialTemperature));
-    HashBuilder::combine(thermalHash, static_cast<uint64_t>(params.boundaryCondition));
-    HashBuilder::combineFloat(thermalHash, static_cast<float>(params.fixedTemperatureValue));
+    HashBuilder::combineFloat(thermalHash, static_cast<float>(params.initialTemperatureC));
+    HashBuilder::combine(thermalHash, static_cast<uint64_t>(params.boundaryConditionType));
+    HashBuilder::combineFloat(thermalHash, static_cast<float>(params.boundaryTemperatureC));
+    HashBuilder::combineFloat(thermalHash, static_cast<float>(params.heatFlux));
+    HashBuilder::combineFloat(thermalHash, static_cast<float>(params.heatTransferCoefficient));
+    HashBuilder::combineFloat(thermalHash, static_cast<float>(params.volumetricPowerDensity));
 
     uint64_t simulationHash = HashBuilder::start();
     HashBuilder::combine(simulationHash, geometryHash);

@@ -11,7 +11,6 @@
 #include "domain/RemeshData.hpp"
 #include "domain/VoronoiData.hpp"
 #include "hash/HashValues.hpp"
-#include "mesh/remesher/SupportingHalfedge.hpp"
 #include "nodegraph/NodeGraphProductTypes.hpp"
 
 //                                                   [ Invariant:
@@ -26,12 +25,6 @@ struct ModelPackage {
     HashValues hashes{};
     ProductHandle productHandle{};
     GeometryData geometry;
-    std::array<float, 16> localToWorld{
-        1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 1.0f, 0.0f,
-        0.0f, 0.0f, 0.0f, 1.0f
-    };
 
     uint64_t computeHash() const { return hashes.geometry; }
     uint64_t displayHash() const { return hashes.display; }
@@ -146,9 +139,12 @@ struct HeatPackage {
     std::vector<float> resolvedDensity;
     std::vector<float> resolvedSpecificHeat;
     std::vector<float> resolvedConductivity;
-    std::vector<float> resolvedInitialTemperature;
-    std::vector<uint32_t> resolvedBoundaryConditions;
-    std::vector<float> resolvedFixedTemperatureValues;
+    std::vector<float> resolvedInitialTemperaturesC;
+    std::vector<uint32_t> resolvedBoundaryConditionTypes;
+    std::vector<float> resolvedBoundaryTemperaturesC;
+    std::vector<float> resolvedBoundaryHeatFluxes;
+    std::vector<float> resolvedBoundaryHeatTransferCoefficients;
+    std::vector<float> resolvedVolumetricPowerDensities;
 
     uint64_t computeHash() const { return hashes.full; }
     uint64_t displayHash() const { return hashes.display; }

@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "FrameTypes.hpp"
+#include "ComputePass.hpp"
 
 class VulkanDevice;
 class FrameSync;
@@ -18,6 +19,7 @@ struct FrameComputeCollection {
     bool waitForComputeSemaphore = false;
     bool insertComputeToGraphicsBarrier = false;
     VkPipelineStageFlags waitDstStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    ComputePass::Synchronization synchronization{};
     FrameStageResult result = FrameStageResult::Continue;
 };
 

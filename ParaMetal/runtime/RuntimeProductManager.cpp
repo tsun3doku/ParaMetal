@@ -63,15 +63,10 @@ void RuntimeProductManager::destroy(RemeshProduct& product) {
 }
 
 void RuntimeProductManager::destroy(VoronoiProduct& product) {
+    freeBuffer(memoryAllocator, product.candidateNodeBuffer, product.candidateNodeBufferOffset);
+    freeBuffer(memoryAllocator, product.candidateNeighborIndicesBuffer, product.candidateNeighborIndicesBufferOffset);
     freeBuffer(memoryAllocator, product.nodeBuffer, product.nodeBufferOffset);
-    freeBuffer(memoryAllocator, product.voronoiNeighborBuffer, product.voronoiNeighborBufferOffset);
-    freeBuffer(memoryAllocator, product.voronoiNeighborIndicesBuffer, product.voronoiNeighborIndicesBufferOffset);
-    freeBuffer(memoryAllocator, product.voronoiInterfaceAreasBuffer, product.voronoiInterfaceAreasBufferOffset);
-    freeBuffer(memoryAllocator, product.voronoiInterfaceNeighborIdsBuffer, product.voronoiInterfaceNeighborIdsBufferOffset);
-    freeBuffer(memoryAllocator, product.voronoiGMLSInterfaceBuffer, product.voronoiGMLSInterfaceBufferOffset);
-    freeBuffer(memoryAllocator, product.simNodeBuffer, product.simNodeBufferOffset);
-    freeBuffer(memoryAllocator, product.simGMLSInterfaceBuffer, product.simGMLSInterfaceBufferOffset);
-    freeBuffer(memoryAllocator, product.voronoiSeedFlagsBuffer, product.voronoiSeedFlagsBufferOffset);
+    freeBuffer(memoryAllocator, product.couplingBuffer, product.couplingBufferOffset);
     freeBuffer(memoryAllocator, product.seedPositionBuffer, product.seedPositionBufferOffset);
     freeBuffer(memoryAllocator, product.occupancyPointBuffer, product.occupancyPointBufferOffset);
     freeBuffer(memoryAllocator, product.candidateBuffer, product.candidateBufferOffset);

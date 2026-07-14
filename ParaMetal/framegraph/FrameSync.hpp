@@ -13,6 +13,10 @@ public:
         bool waitForComputeSemaphore = false;
         bool insertComputeToGraphicsBarrier = false;
         VkPipelineStageFlags computeWaitDstStageMask = 0;
+        VkSemaphore externalWaitSemaphore = VK_NULL_HANDLE;
+        uint64_t externalWaitValue = 0;
+        VkSemaphore externalSignalSemaphore = VK_NULL_HANDLE;
+        uint64_t externalSignalValue = 0;
     };
 
     bool initialize(VkDevice device, uint32_t maxFramesInFlight);

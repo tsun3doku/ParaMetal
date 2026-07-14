@@ -28,32 +28,24 @@ void ContactSystem::setParams(float minNormalDot, float contactRadius) {
 
 void ContactSystem::setModelAState(
     const std::array<float, 16>& localToWorld,
-    const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
+    const ContactMesh& mesh,
     uint32_t runtimeModelId) {
     if (!runtime) {
         return;
     }
 
-    runtime->setModelAState(localToWorld, intrinsicMesh, runtimeModelId);
+    runtime->setModelAState(localToWorld, mesh, runtimeModelId);
 }
 
 void ContactSystem::setModelBState(
     const std::array<float, 16>& localToWorld,
-    const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
+    const ContactMesh& mesh,
     uint32_t runtimeModelId) {
     if (!runtime) {
         return;
     }
 
-    runtime->setModelBState(localToWorld, intrinsicMesh, runtimeModelId);
-}
-
-void ContactSystem::setModelBTriangleIndices(const std::vector<uint32_t>& triangleIndices) {
-    if (!runtime) {
-        return;
-    }
-
-    runtime->setModelBTriangleIndices(triangleIndices);
+    runtime->setModelBState(localToWorld, mesh, runtimeModelId);
 }
 
 void ContactSystem::ensureConfigured() {
@@ -66,7 +58,7 @@ void ContactSystem::ensureConfigured() {
 
 void ContactSystem::disable() {
     if (runtime) {
-        runtime->clear(memoryAllocator);
+        runtime->clear();
     }
 }
 
@@ -90,8 +82,4 @@ const std::vector<ContactLineVertex>& ContactSystem::getOutlineVertices() const 
 const std::vector<ContactLineVertex>& ContactSystem::getCorrespondenceVertices() const {
     static const std::vector<ContactLineVertex> empty;
     return runtime ? runtime->getCorrespondenceVertices() : empty;
-}
-
-bool ContactSystem::hasContact() const {
-    return runtime ? runtime->hasContact() : false;
 }

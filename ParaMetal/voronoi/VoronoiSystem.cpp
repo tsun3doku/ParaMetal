@@ -22,7 +22,7 @@ VoronoiSystem::VoronoiSystem(
       commandPool(commandPool),
       maxFramesInFlight(maxFramesInFlight) {
 
-    voronoiSystemBuildStage = std::make_unique<VoronoiSystemBuildStage>(vulkanDevice, memoryAllocator, runtime.resourcesRef(), commandPool);
+    voronoiSystemBuildStage = std::make_unique<VoronoiSystemBuildStage>(vulkanDevice, memoryAllocator, commandPool);
     initializeVoronoiCandidateCompute();
 
     initialized = true;
@@ -37,26 +37,22 @@ void VoronoiSystem::failInitialization(const char* stage) {
     cleanup();
 }
 
-void VoronoiSystem::setReceiverGeometry(
-    uint32_t receiverNodeModelId,
-    const std::vector<glm::vec3>& receiverGeometryPositions,
-    const std::vector<uint32_t>& receiverGeometryTriangleIndices,
-    const SupportingHalfedge::IntrinsicMesh& receiverIntrinsicMesh,
-    const std::vector<VoronoiModelRuntime::SurfaceVertex>& receiverSurfaceVertices,
-    const std::vector<uint32_t>& receiverIntrinsicTriangleIndices,
-    uint32_t receiverModelId,
+void VoronoiSystem::setMeshGeometry(
+    const std::vector<glm::vec3>& geometryPositions,
+    const std::vector<uint32_t>& geometryTriangleIndices,
+    const std::vector<voronoi::SurfaceVertex>& surfaceVertices,
+    const std::vector<uint32_t>& surfaceTriangleIndices,
+    uint32_t runtimeModelId,
     const glm::mat4& meshModelMatrix) {
-    runtime.setReceiverGeometry(
+    runtime.setMeshGeometry(
         vulkanDevice,
         memoryAllocator,
         commandPool,
-        receiverNodeModelId,
-        receiverGeometryPositions,
-        receiverGeometryTriangleIndices,
-        receiverIntrinsicMesh,
-        receiverSurfaceVertices,
-        receiverIntrinsicTriangleIndices,
-        receiverModelId,
+        geometryPositions,
+        geometryTriangleIndices,
+        surfaceVertices,
+        surfaceTriangleIndices,
+        runtimeModelId,
         meshModelMatrix);
 
 }
@@ -74,8 +70,8 @@ void VoronoiSystem::setSeedPositions(const std::vector<glm::vec4>& positions) {
     runtime.setSeedPositions(positions);
 }
 
-void VoronoiSystem::clearReceiverGeometry() {
-    runtime.clearReceiverGeometry();
+void VoronoiSystem::clearGeometry() {
+    runtime.clearGeometry();
 }
 
 void VoronoiSystem::setParams(float cellSize, int voxelResolution) {
@@ -121,7 +117,7 @@ bool VoronoiSystem::rebuildVoronoiRuntime() {
         return false;
     }
 
-    if (runtime.resourcesRef().voronoiNodeCount == 0) {
+    if (voronoiSystemBuildStage->getCandidateNodeCount() == 0) {
         return false;
     }
 
@@ -142,11 +138,10 @@ void VoronoiSystem::executeBufferTransfers() {
 }
 
 void VoronoiSystem::dispatchVoronoiCandidateUpdates() {
-    if (!voronoiCandidateCompute || runtime.resourcesRef().voronoiNodeCount == 0) {
+    if (!voronoiCandidateCompute || voronoiSystemBuildStage->getCandidateNodeCount() == 0) {
         return;
     }
 
-    const VoronoiResources& resources = runtime.resourcesRef();
     size_t dispatchedCount = 0;
     size_t skippedMissingGeometryRuntime = 0;
     size_t skippedZeroFaces = 0;
@@ -163,9 +158,7 @@ void VoronoiSystem::dispatchVoronoiCandidateUpdates() {
     }
 
     VoronoiModelRuntime* modelRuntime = static_cast<VoronoiModelRuntime*>(domainRuntime);
-    const uint32_t receiverModelId = modelRuntime->getRuntimeModelId();
-    (void)receiverModelId;
-    uint32_t faceCount = static_cast<uint32_t>(modelRuntime->getIntrinsicTriangleCount());
+    uint32_t faceCount = static_cast<uint32_t>(modelRuntime->getSurfaceTriangleCount());
     if (modelRuntime->getSurfaceBuffer() == VK_NULL_HANDLE) {
         ++skippedMissingGeometryRuntime;
         return;
@@ -184,20 +177,18 @@ void VoronoiSystem::dispatchVoronoiCandidateUpdates() {
     bindings.vertexBufferOffset = modelRuntime->getSurfaceBufferOffset();
     bindings.faceIndexBuffer = modelRuntime->getTriangleIndicesBuffer();
     bindings.faceIndexBufferOffset = modelRuntime->getTriangleIndicesBufferOffset();
-    bindings.seedPositionBuffer = resources.seedPositionBuffer;
-    bindings.seedPositionBufferOffset = resources.seedPositionBufferOffset;
+    bindings.seedPositionBuffer = voronoiSystemBuildStage->getSeedPositionBuffer();
+    bindings.seedPositionBufferOffset = voronoiSystemBuildStage->getSeedPositionBufferOffset();
     bindings.candidateBuffer = modelRuntime->getCandidateBuffer();
     bindings.candidateBufferOffset = modelRuntime->getCandidateBufferOffset();
 
     voronoiCandidateCompute->updateDescriptors(bindings);
-    voronoiCandidateCompute->dispatch(faceCount, runtime.getVoronoiNodeCount());
+    voronoiCandidateCompute->dispatch(faceCount, voronoiSystemBuildStage->getCandidateNodeCount());
     ++dispatchedCount;
 
 }
 
 void VoronoiSystem::cleanupResources() {
-    runtime.cleanupResources(vulkanDevice);
-
     if (voronoiSystemBuildStage) {
         voronoiSystemBuildStage->cleanupResources();
     }
@@ -207,5 +198,8 @@ void VoronoiSystem::cleanupResources() {
 }
 
 void VoronoiSystem::cleanup() {
+    if (voronoiSystemBuildStage) {
+        voronoiSystemBuildStage->cleanup();
+    }
     runtime.cleanup(memoryAllocator);
 }

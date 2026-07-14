@@ -45,9 +45,7 @@ bool FrameSync::initialize(VkDevice deviceHandle, uint32_t maxFramesInFlight) {
         if (vkCreateFence(device, &fenceInfo, nullptr, &slot.computeFence) != VK_SUCCESS) {
             return failCreate();
         }
-        // Fences are created signaled so the very first waitForSlot (before any
-        // submit has run) succeeds immediately. Mark the slot as submitted to
-        // match that signaled state.
+
         slot.graphicsSubmittedThisLap = true;
         slot.computeSubmittedThisLap = true;
     }
@@ -89,15 +87,10 @@ void FrameSync::waitForSlot() {
 
     const FrameSlot& slot = frameSlots[currentFrame];
 
-    // Graphics always submits, so its fence is always signaled this lap.
     if (slot.graphicsSubmittedThisLap) {
         vkWaitForFences(device, 1, &slot.graphicsFence, VK_TRUE, UINT64_MAX);
     }
 
-    // Compute fence is only signaled when compute work was submitted this lap.
-    // Waiting on it unconditionally was the permanent-hang source: a frame
-    // whose compute submit was skipped (or failed before signaling) left the
-    // fence unsignaled, and the next lap's wait blocked forever.
     if (slot.computeSubmittedThisLap) {
         vkWaitForFences(device, 1, &slot.computeFence, VK_TRUE, UINT64_MAX);
     }
@@ -108,7 +101,6 @@ void FrameSync::waitForAllFrameFences() {
         return;
     }
 
-    // One-off path (resource uploads). Wait on every slot's fences directly.
     for (const FrameSlot& slot : frameSlots) {
         vkWaitForFences(device, 1, &slot.graphicsFence, VK_TRUE, UINT64_MAX);
         vkWaitForFences(device, 1, &slot.computeFence, VK_TRUE, UINT64_MAX);
@@ -144,27 +136,54 @@ VkResult FrameSync::submitFrame(VkQueue computeQueue, VkQueue graphicsQueue,
 
     FrameSlot& slot = frameSlots[currentFrame];
 
-    // Clear this lap's submitted flags before submitting. They get set true
-    // only when the corresponding vkQueueSubmit succeeds. If a submit fails or
-    // is skipped, the flag stays false and the next waitForSlot on this slot
-    // skips the wait - no unsignaled-fence hang.
     slot.graphicsSubmittedThisLap = false;
     slot.computeSubmittedThisLap = false;
 
-    // Compute submit (optional). Reset + submit are bound together here, so a
-    // reset can never exist without a signal in the same atomic operation.
     if (submission.computeCommandBuffer != VK_NULL_HANDLE) {
         vkResetFences(device, 1, &slot.computeFence);
 
+        std::array<VkSemaphore, 1> waitSemaphores{};
+        std::array<VkPipelineStageFlags, 1> waitStages{};
+        std::array<uint64_t, 1> waitValues{};
+        uint32_t waitCount = 0;
+        if (submission.externalWaitSemaphore != VK_NULL_HANDLE) {
+            waitSemaphores[waitCount] = submission.externalWaitSemaphore;
+            waitStages[waitCount] = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            waitValues[waitCount] = submission.externalWaitValue;
+            ++waitCount;
+        }
+
+        std::array<VkSemaphore, 2> signalSemaphores{};
+        std::array<uint64_t, 2> signalValues{};
+        uint32_t signalCount = 0;
+        if (submission.waitForComputeSemaphore) {
+            signalSemaphores[signalCount] = slot.computeFinishedSemaphore;
+            signalValues[signalCount] = 0;
+            ++signalCount;
+        }
+        if (submission.externalSignalSemaphore != VK_NULL_HANDLE) {
+            signalSemaphores[signalCount] = submission.externalSignalSemaphore;
+            signalValues[signalCount] = submission.externalSignalValue;
+            ++signalCount;
+        }
+
+        VkTimelineSemaphoreSubmitInfo timelineInfo{};
+        timelineInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+        timelineInfo.waitSemaphoreValueCount = waitCount;
+        timelineInfo.pWaitSemaphoreValues = waitValues.data();
+        timelineInfo.signalSemaphoreValueCount = signalCount;
+        timelineInfo.pSignalSemaphoreValues = signalValues.data();
+
         VkSubmitInfo computeSubmitInfo{};
         computeSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        computeSubmitInfo.pNext = &timelineInfo;
+        computeSubmitInfo.waitSemaphoreCount = waitCount;
+        computeSubmitInfo.pWaitSemaphores = waitSemaphores.data();
+        computeSubmitInfo.pWaitDstStageMask = waitStages.data();
         computeSubmitInfo.commandBufferCount = 1;
         computeSubmitInfo.pCommandBuffers = &submission.computeCommandBuffer;
-
-        if (submission.waitForComputeSemaphore) {
-            computeSubmitInfo.signalSemaphoreCount = 1;
-            computeSubmitInfo.pSignalSemaphores = &slot.computeFinishedSemaphore;
-        }
+        computeSubmitInfo.signalSemaphoreCount = signalCount;
+        computeSubmitInfo.pSignalSemaphores = signalSemaphores.data();
 
         const VkResult computeResult = vkQueueSubmit(computeQueue, 1, &computeSubmitInfo, slot.computeFence);
         if (computeResult == VK_SUCCESS) {
@@ -172,14 +191,11 @@ VkResult FrameSync::submitFrame(VkQueue computeQueue, VkQueue graphicsQueue,
         } else {
             std::cerr << "[SUBMIT] COMPUTE failed VkResult=" << static_cast<int>(computeResult)
                       << " frame=" << currentFrame << std::endl;
-            // On compute failure we do NOT submit graphics: the graphics
-            // command may depend on compute output and the compute fence is
-            // unsignaled. Bail with the error so the caller recreates.
             return computeResult;
         }
     }
 
-    // Graphics submit (required).
+    // Graphics submit 
     if (submission.graphicsCommandBuffer != VK_NULL_HANDLE) {
         vkResetFences(device, 1, &slot.graphicsFence);
 
@@ -238,20 +254,12 @@ void FrameSync::advanceFrame() {
         return;
     }
 
-    // NOTE: do NOT clear the submittedThisLap flags here. They persist across
-    // laps because they answer "is this slot's fence in-flight?" - and once a
-    // submitFrame sets a flag true, that fence stays in-flight until the NEXT
-    // submitFrame on the same slot drains it (via waitForSlot) and resets it.
-    // Clearing here would make the next waitForSlot skip the wait, reusing
-    // in-flight command buffers and hanging the GPU.
-
     currentFrame = (currentFrame + 1) % frameCount;
 }
 
 void FrameSync::resetFrameIndex() {
     currentFrame = 0;
-    // Fences survive a reset; mark all slots submitted so the next waitForSlot
-    // doesn't hang on a slot that has no in-flight work yet.
+
     for (FrameSlot& slot : frameSlots) {
         slot.graphicsSubmittedThisLap = true;
         slot.computeSubmittedThisLap = true;

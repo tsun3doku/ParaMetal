@@ -1,7 +1,7 @@
 #pragma once
 
 #include "contact/ContactTypes.hpp"
-#include "mesh/remesher/SupportingHalfedge.hpp"
+#include "contact/ContactMapping.hpp"
 #include "vulkan/CommandBufferManager.hpp"
 
 #include <cstdint>
@@ -20,13 +20,12 @@ public:
     void setParams(float minNormalDot, float contactRadius);
     void setModelAState(
         const std::array<float, 16>& localToWorld,
-        const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
+        const ContactMesh& mesh,
         uint32_t runtimeModelId);
     void setModelBState(
         const std::array<float, 16>& localToWorld,
-        const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
+        const ContactMesh& mesh,
         uint32_t runtimeModelId);
-    void setModelBTriangleIndices(const std::vector<uint32_t>& triangleIndices);
     void ensureConfigured();
     void disable();
 
@@ -35,7 +34,6 @@ public:
     VkDeviceSize getContactPairBufferOffset() const;
     const std::vector<ContactLineVertex>& getOutlineVertices() const;
     const std::vector<ContactLineVertex>& getCorrespondenceVertices() const;
-    bool hasContact() const;
 
 private:
     VulkanDevice& vulkanDevice;

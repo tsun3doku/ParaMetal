@@ -24,7 +24,7 @@ void RuntimeModelDisplayTransport::sync(const RuntimePackageManager& registry, c
 
         ModelDisplayController::Config config{};
         config.runtimeModelId = product->runtimeModelId;
-        config.modelMatrix = toMat4(package.localToWorld);
+        config.modelMatrix = toMat4(package.geometry.localToWorld);
         uint64_t displayHash = HashBuilder::start();
         HashBuilder::combine(displayHash, config.runtimeModelId);
         HashBuilder::combinePod(displayHash, config.modelMatrix);

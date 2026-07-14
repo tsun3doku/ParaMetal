@@ -102,43 +102,26 @@ void FrameController::drawFrame(const render::RenderFlags& flags, const std::vec
         }
     }
 
-    // Wait for the current slot's fences (only those signaled this lap). This
-    // is the safe replacement for the unconditional compute-fence wait that
-    // caused the permanent hang on submit failure / skipped compute.
     frameSync.waitForSlot();
     const uint32_t frameIndex = frameSync.getCurrentFrameIndex();
 
     FrameState frameState{};
     frameState.frameIndex = frameIndex;
-    uint32_t imageIndex = 0;
-    const FrameStageResult acquireResult = swapchainStage.acquireFrameImage(imageIndex);
-    if (acquireResult == FrameStageResult::RecreateSwapchain) {
-        std::cerr << "[DRAW] acquire recreate frameCall=" << callIndex << std::endl;
-        (void)recreateSwapChain();
-        return;
-    }
-    if (acquireResult != FrameStageResult::Continue) {
-        std::cerr << "[DRAW] acquire fail result=" << static_cast<int>(acquireResult)
-                  << " frameCall=" << callIndex << std::endl;
-        return;
-    }
-
     std::vector<std::string> timingLines = buildFrameTimingLines(frameState.frameIndex);
     frameUpdateStage.processPicking(frameState.frameIndex);
 
     frameState.extent = swapchainManager.getExtent();
-    frameState.imageIndex = imageIndex;
     frameState.sceneView = cameraController.buildSceneView(frameState.extent);
     frameState.flags = flags;
     frameUpdateStage.updateFrameState(frameState.frameIndex, frameState.sceneView);
 
-    // Stages only record work; they never touch sync. FrameController commits
-    // the whole frame atomically via submitFrame below, so no stage can leave
-    // a fence reset-without-signal.
     const FrameComputeCollection computeCollection = frameComputeStage.collect(frameState.frameIndex, computePasses);
-    if (!handleStageResult(computeCollection.result)) {
+    if (computeCollection.result != FrameStageResult::Continue) {
         std::cerr << "[DRAW] compute stage fail result=" << static_cast<int>(computeCollection.result)
                   << " frameCall=" << callIndex << std::endl;
+        if (computeCollection.result == FrameStageResult::RecreateSwapchain) {
+            (void)recreateSwapChain();
+        }
         return;
     }
 
@@ -147,23 +130,40 @@ void FrameController::drawFrame(const render::RenderFlags& flags, const std::vec
     syncState.insertComputeToGraphicsBarrier = computeCollection.insertComputeToGraphicsBarrier;
     syncState.waitDstStageMask = computeCollection.waitDstStageMask;
 
+    uint32_t imageIndex = 0;
+    const FrameStageResult acquireResult = swapchainStage.acquireFrameImage(imageIndex);
+    if (acquireResult == FrameStageResult::RecreateSwapchain) {
+        std::cerr << "[DRAW] acquire recreate frameCall=" << callIndex << std::endl;
+        (void)recreateSwapChain();
+        return;
+    }
+    if (acquireResult != FrameStageResult::Continue) {
+        std::cerr << "[DRAW] acquire fatal frameCall=" << callIndex << std::endl;
+        isShuttingDown.store(true, std::memory_order_release);
+        return;
+    }
+    frameState.imageIndex = imageIndex;
+
     updateTimingOverlay(timingLines, frameState.flags);
 
     const FrameGraphicsCollection graphicsCollection = frameGraphicsStage.collect(frameState, syncState);
-    if (!handleStageResult(graphicsCollection.result)) {
+    if (graphicsCollection.result != FrameStageResult::Continue) {
         std::cerr << "[DRAW] graphics stage fail result=" << static_cast<int>(graphicsCollection.result)
                   << " frameCall=" << callIndex << std::endl;
+        (void)recreateSwapChain();
         return;
     }
 
-    // Single atomic commit. submitFrame resets + submits both fences together
-    // and records which were signaled so the next waitForSlot knows the truth.
     FrameSync::FrameSubmission submission{};
     submission.computeCommandBuffer = computeCollection.commandBuffer;
     submission.graphicsCommandBuffer = graphicsCollection.commandBuffer;
     submission.waitForComputeSemaphore = computeCollection.waitForComputeSemaphore;
     submission.insertComputeToGraphicsBarrier = computeCollection.insertComputeToGraphicsBarrier;
     submission.computeWaitDstStageMask = computeCollection.waitDstStageMask;
+    submission.externalWaitSemaphore = computeCollection.synchronization.waitSemaphore;
+    submission.externalWaitValue = computeCollection.synchronization.waitValue;
+    submission.externalSignalSemaphore = computeCollection.synchronization.signalSemaphore;
+    submission.externalSignalValue = computeCollection.synchronization.signalValue;
 
     const VkResult submitResult = frameSync.submitFrame(
         vulkanDevice.getComputeQueue(),
@@ -176,6 +176,7 @@ void FrameController::drawFrame(const render::RenderFlags& flags, const std::vec
         std::cerr << "[DRAW] submitResult=" << static_cast<int>(submitResult)
                   << " frameCall=" << callIndex << std::endl;
         if (submitResult == VK_ERROR_DEVICE_LOST) {
+            isShuttingDown.store(true, std::memory_order_release);
             return;
         }
         (void)recreateSwapChain();
@@ -191,6 +192,7 @@ void FrameController::drawFrame(const render::RenderFlags& flags, const std::vec
     if (presentResult != FrameStageResult::Continue) {
         std::cerr << "[DRAW] present fail result=" << static_cast<int>(presentResult)
                   << " frameCall=" << callIndex << std::endl;
+        isShuttingDown.store(true, std::memory_order_release);
         return;
     }
 
@@ -215,20 +217,4 @@ void FrameController::updateTimingOverlay(std::vector<std::string>& timingLines,
     }
 
     sceneRenderer.setTimingOverlayLines({});
-}
-
-bool FrameController::handleStageResult(FrameStageResult result) {
-    switch (result) {
-    case FrameStageResult::Continue:
-        return true;
-    case FrameStageResult::SkipFrame:
-        return false;
-    case FrameStageResult::RecreateSwapchain:
-        (void)recreateSwapChain();
-        return false;
-    case FrameStageResult::Fatal:
-        return false;
-    }
-
-    return false;
 }

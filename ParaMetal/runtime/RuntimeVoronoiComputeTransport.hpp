@@ -1,6 +1,6 @@
 #pragma once
 
-#include "heat/VoronoiSystemComputeController.hpp"
+#include "voronoi/VoronoiSystemComputeController.hpp"
 #include "runtime/RuntimePackages.hpp"
 #include "runtime/RuntimeProductManager.hpp"
 

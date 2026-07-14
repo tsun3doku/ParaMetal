@@ -169,13 +169,16 @@ static NodeTypeDefinition buildHeatModelNode() {
             {nodegraphparams::heatmodel::Density, "Density", NodeGraphParamType::Float, HeatSimDefaults::density, 0, false, "", false},
             {nodegraphparams::heatmodel::SpecificHeat, "Specific Heat", NodeGraphParamType::Float, HeatSimDefaults::specificHeat, 0, false, "", false},
             {nodegraphparams::heatmodel::Conductivity, "Conductivity", NodeGraphParamType::Float, HeatSimDefaults::conductivity, 0, false, "", false},
-            {nodegraphparams::heatmodel::InitialTemperature, "Initial Temperature", NodeGraphParamType::Float, HeatSimDefaults::ambientTemperature, 0, false, "", false},
+            {nodegraphparams::heatmodel::InitialTemperatureC, "Initial Temperature (C)", NodeGraphParamType::Float, HeatSimDefaults::ambientTemperatureC, 0, false, "", false},
             makeEnumParamDefinition(
                 nodegraphparams::heatmodel::BoundaryCondition,
                 "Boundary Condition",
-                "None",
-                {"None", "Fixed Temperature", "Fixed Power"}),
-            {nodegraphparams::heatmodel::FixedTemperatureValue, "Fixed Temperature", NodeGraphParamType::Float, HeatSimDefaults::ambientTemperature, 0, false, "", false},
+                "Adiabatic",
+                {"Adiabatic", "Dirichlet Temperature", "Neumann Heat Flux", "Robin Convection"}),
+            {nodegraphparams::heatmodel::DirichletTemperatureC, "Boundary Temperature (C)", NodeGraphParamType::Float, HeatSimDefaults::ambientTemperatureC, 0, false, "", false},
+            {nodegraphparams::heatmodel::HeatFlux, "Inward Heat Flux (W/m²)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::heatmodel::HeatTransferCoefficient, "Heat Transfer Coefficient (W/(m²·K))", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::heatmodel::VolumetricPowerDensity, "Volumetric Power Density (W/m³)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
         },
     };
 }
@@ -220,7 +223,7 @@ static NodeTypeDefinition buildVoronoiNode() {
 static NodeTypeDefinition buildHeatSolveNode() {
     return {
         nodegraphtypes::HeatSolve,
-        "Heat Solve",
+        "Ember",
         NodeGraphNodeCategory::System,
         {
             makeInputSocket("Volume", NodeGraphValueType::Volume, true),

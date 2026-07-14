@@ -32,7 +32,6 @@ static void combineInputList(
     }
 }
 
-// Resolve the first valid payload in an input group, or nullptr.
 static const NodeDataBlock* firstPayload(const std::vector<const NodeDataBlock*>& inputs) {
     for (const NodeDataBlock* input : inputs) {
         if (input && input->payloadHandle.key != 0) {

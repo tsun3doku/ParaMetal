@@ -1,9 +1,9 @@
 struct SurfacePoint
 {
     float3 position;
-    float  temperature;
+    float  temperatureC;
     float3 normal;
-    float  area;
+    float  vertexArea;
     float4 color;
 };
 
@@ -21,12 +21,22 @@ struct GMLSSurfaceWeight
     float weight;
 };
 
+struct BoundaryState
+{
+    uint conditionType;
+    float temperatureC;
+    float heatFlux;
+    float heatTransferCoefficient;
+};
+
 struct HeatModelPushConstant {
     uint elementCount;
 };
 
 [[vk::binding(0)]] StructuredBuffer<float> nodeTemperatureReadBuffer;
 [[vk::binding(1)]] RWStructuredBuffer<SurfacePoint> surfaceBuffer;
+[[vk::binding(8)]] StructuredBuffer<uint> surfaceBoundaryIndexBuffer;
+[[vk::binding(9)]] StructuredBuffer<BoundaryState> boundaryStateBuffer;
 
 [[vk::binding(10)]] StructuredBuffer<GMLSSurfaceStencil> gmlsSurfaceStencilBuffer;
 [[vk::binding(11)]] StructuredBuffer<GMLSSurfaceWeight> gmlsSurfaceWeightBuffer;
@@ -48,7 +58,8 @@ void main(uint3 dtid : SV_DispatchThreadID)
     uint nodeStride = 0;
     nodeTemperatureReadBuffer.GetDimensions(nodeCount, nodeStride);
 
-    float displayTemp = 0.0;
+    float weightedTemperature = 0.0;
+    float weightSum = 0.0;
 
     uint stencilCount = 0;
     uint stencilStride = 0;
@@ -67,10 +78,24 @@ void main(uint3 dtid : SV_DispatchThreadID)
     for (uint i = 0; i < stencil.valueWeightCount; ++i)
     {
         GMLSSurfaceWeight weight = gmlsSurfaceWeightBuffer[stencil.valueWeightOffset + i];
-        displayTemp += weight.weight * nodeTemperatureReadBuffer[weight.cellIndex];
+        weightedTemperature += weight.weight * nodeTemperatureReadBuffer[weight.cellIndex];
+        weightSum += weight.weight;
+    }
+
+    if (abs(weightSum) <= 1e-8f) return;
+
+    float temperatureC = weightedTemperature / weightSum;
+    uint boundaryIndex = surfaceBoundaryIndexBuffer[vertexID];
+    if (boundaryIndex != 0xffffffffu)
+    {
+        BoundaryState boundary = boundaryStateBuffer[boundaryIndex];
+        if (boundary.conditionType == 1u)
+        {
+            temperatureC = boundary.temperatureC;
+        }
     }
 
     SurfacePoint p = surfaceBuffer[vertexID];
-    p.temperature = displayTemp;
+    p.temperatureC = temperatureC;
     surfaceBuffer[vertexID] = p;
 }

@@ -6,7 +6,6 @@
 #include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/VulkanBuffer.hpp"
 #include "vulkan/VulkanDevice.hpp"
-#include "voronoi/VoronoiAdapters.hpp"
 
 #include <array>
 #include <cstring>
@@ -19,18 +18,19 @@ VoronoiModelRuntime::VoronoiModelRuntime(
     MemoryAllocator& memoryAllocator,
     uint32_t runtimeModelId,
     const glm::mat4& modelMatrix,
-    CpuData cpuData,
+    const std::vector<glm::vec3>& geometryPositions,
+    const std::vector<uint32_t>& geometryTriangleIndices,
+    const std::vector<voronoi::SurfaceVertex>& surfaceVertices,
+    const std::vector<uint32_t>& surfaceTriangleIndices,
     CommandPool& renderCommandPool)
     : vulkanDevice(vulkanDevice),
       memoryAllocator(memoryAllocator),
-      nodeModelId(cpuData.nodeModelId),
       runtimeModelId(runtimeModelId),
       modelMatrix(modelMatrix),
-      intrinsicMesh(std::move(cpuData.intrinsicMesh)),
-      geometryPositions(std::move(cpuData.geometryPositions)),
-      geometryTriangleIndices(std::move(cpuData.geometryTriangleIndices)),
-      surfaceVertices(std::move(cpuData.surfaceVertices)),
-      intrinsicTriangleIndices(std::move(cpuData.intrinsicTriangleIndices)),
+      geometryPositions(geometryPositions),
+      geometryTriangleIndices(geometryTriangleIndices),
+      surfaceVertices(surfaceVertices),
+      surfaceTriangleIndices(surfaceTriangleIndices),
       renderCommandPool(renderCommandPool) {
 }
 
@@ -38,23 +38,20 @@ VoronoiModelRuntime::~VoronoiModelRuntime() {
 }
 
 bool VoronoiModelRuntime::createVoronoiBuffers() {
-    if (intrinsicMesh.vertices.empty()) {
-        std::cerr << "[VoronoiModelRuntime] Missing intrinsic state for model" << std::endl;
+    if (surfaceVertices.empty() || surfaceTriangleIndices.empty()) {
+        std::cerr << "[VoronoiModelRuntime] Missing surface geometry for model" << std::endl;
         return false;
     }
 
-    const size_t vertexCount = intrinsicMesh.vertices.size();
-    const size_t triangleCount = intrinsicMesh.indices.size() / 3;
+    const size_t vertexCount = surfaceVertices.size();
+    const size_t triangleCount = surfaceTriangleIndices.size() / 3;
     if (vertexCount == 0) {
         std::cerr << "[VoronoiModelRuntime] Model has 0 intrinsic vertices" << std::endl;
         return false;
     }
 
-    intrinsicVertexCount = vertexCount;
-    intrinsicTriangleCount = triangleCount;
-
     constexpr uint32_t K_CANDIDATES = 64;
-    const VkDeviceSize triangleIndicesBufferSize = sizeof(uint32_t) * intrinsicTriangleIndices.size();
+    const VkDeviceSize triangleIndicesBufferSize = sizeof(uint32_t) * surfaceTriangleIndices.size();
     const VkDeviceSize candidateBufferSize = sizeof(uint32_t) * triangleCount * K_CANDIDATES;
     const VkDeviceSize storageAlignment = vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
 
@@ -86,7 +83,7 @@ bool VoronoiModelRuntime::createVoronoiBuffers() {
         cleanup();
         return false;
     }
-    std::memcpy(triIdxStagingData, intrinsicTriangleIndices.data(), static_cast<size_t>(triangleIndicesBufferSize));
+    std::memcpy(triIdxStagingData, surfaceTriangleIndices.data(), static_cast<size_t>(triangleIndicesBufferSize));
 
     freeBuffer(memoryAllocator, voronoiCandidateBuffer, voronoiCandidateBufferOffset);
 
@@ -162,7 +159,7 @@ bool VoronoiModelRuntime::createSurfaceBuffers() {
 
     freeBuffer(memoryAllocator, surfaceBuffer, surfaceBufferOffset);
 
-    const VkDeviceSize vertexBufferSize = sizeof(SurfaceVertex) * vertexCount;
+    const VkDeviceSize vertexBufferSize = sizeof(voronoi::SurfaceVertex) * vertexCount;
     const VkDeviceSize storageAlignment = vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
     if (uploadDeviceBuffer(
             memoryAllocator,
@@ -188,7 +185,7 @@ void VoronoiModelRuntime::stageGMLSSurfaceData(
     const std::vector<voronoi::GMLSSurfaceStencil>& stencils,
     const std::vector<voronoi::GMLSSurfaceWeight>& valueWeights,
     const std::vector<voronoi::GMLSSurfaceGradientWeight>& gradientWeights) {
-    if (stencils.empty() || intrinsicVertexCount == 0 || stencils.size() != intrinsicVertexCount) {
+    if (stencils.empty() || surfaceVertices.empty() || stencils.size() != surfaceVertices.size()) {
         return;
     }
 
@@ -247,7 +244,7 @@ void VoronoiModelRuntime::stageGMLSSurfaceData(
 }
 
 void VoronoiModelRuntime::cleanup() {
-    // Product buffers: owned by published VoronoiProduct / RuntimeProducts.
+    // Product buffers owned by published VoronoiProduct 
     voronoiCandidateBuffer = VK_NULL_HANDLE;
     voronoiCandidateBufferOffset = 0;
     gmlsSurfaceStencilBuffer = VK_NULL_HANDLE;
@@ -257,19 +254,15 @@ void VoronoiModelRuntime::cleanup() {
     gmlsSurfaceGradientWeightBuffer = VK_NULL_HANDLE;
     gmlsSurfaceGradientWeightBufferOffset = 0;
 
-    // Internal buffers: not part of any product, free normally.
+    // Internal buffers not part of any product
     freeBuffer(memoryAllocator, triangleIndicesBuffer, triangleIndicesBufferOffset);
     freeBuffer(memoryAllocator, surfaceBuffer, surfaceBufferOffset);
 }
 
-void VoronoiModelRuntime::setStencilKDTree(std::unique_ptr<StencilKDTree> kdTree) {
-    stencilKDTree = std::move(kdTree);
-}
-
-std::vector<glm::vec3> VoronoiModelRuntime::getIntrinsicSurfacePositions() const {
+std::vector<glm::vec3> VoronoiModelRuntime::getSurfacePositions() const {
     std::vector<glm::vec3> positions;
     positions.reserve(surfaceVertices.size());
-    for (const SurfaceVertex& vertex : surfaceVertices) {
+    for (const voronoi::SurfaceVertex& vertex : surfaceVertices) {
         positions.push_back(glm::vec3(vertex.position));
     }
     return positions;

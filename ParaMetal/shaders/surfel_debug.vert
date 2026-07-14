@@ -5,9 +5,9 @@ layout(location = 0) in vec3 aPos;
 
 struct SurfacePoint {
     vec3 position;      
-    float temperature;    
+    float temperatureC;
     vec3 normal;        
-    float area;         
+    float vertexArea;
     vec4 color;         
 };
 
@@ -41,8 +41,7 @@ void main() {
     // Get surfel from surface points
     vec3 surfelPosModel = surfacePoints[surfelIndex].position;
     vec3 surfelNormalModel = surfacePoints[surfelIndex].normal;
-    float area = surfacePoints[surfelIndex].area;
-    float temperature = surfacePoints[surfelIndex].temperature;
+    float temperatureC = surfacePoints[surfelIndex].temperatureC;
     
     // Transform to world space
     vec3 surfelPosWorld = (debugParams.modelMatrix * vec4(surfelPosModel, 1.0)).xyz;
@@ -63,7 +62,7 @@ void main() {
     gl_Position = ubo.proj * ubo.view * vec4(worldPos, 1.0);
     
     // Color based on temperature
-    float normalizedTemp = clamp((temperature - 20.0) / 100.0, 0.0, 1.0);
+    float normalizedTemp = clamp((temperatureC - 20.0) / 100.0, 0.0, 1.0);
 
     vec3 color = mix(vec3(0.0, 0.0, 1.0), vec3(1.0, 0.0, 0.0), normalizedTemp);
     outColor = vec4(color, 0.6); 

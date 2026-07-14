@@ -117,9 +117,9 @@ private:
             }
 
             outConfig.models.push_back(*modelProduct);
-            outConfig.modelTemperatures.push_back(package.resolvedInitialTemperature[i]);
-            outConfig.modelFixedTemperatures.push_back(package.resolvedFixedTemperatureValues[i]);
-            outConfig.modelBoundaryConditions.push_back(static_cast<HeatBoundaryCondition>(package.resolvedBoundaryConditions[i]));
+            outConfig.modelInitialTemperaturesC.push_back(package.resolvedInitialTemperaturesC[i]);
+            outConfig.modelBoundaryTemperaturesC.push_back(package.resolvedBoundaryTemperaturesC[i]);
+            outConfig.modelBoundaryConditionTypes.push_back(package.resolvedBoundaryConditionTypes[i]);
             outConfig.modelBufferViews.push_back(modelBufferViews);
 
             const auto surfaceIt = std::find(

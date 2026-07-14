@@ -35,19 +35,47 @@ NodeHeatModelPanel::NodeHeatModelPanel(QWidget* parent)
     bcRow->addWidget(new QLabel("Boundary Condition:", this));
     boundaryConditionCombo = new QComboBox(this);
     nodegraphwidgets::styleComboBox(boundaryConditionCombo);
-    boundaryConditionCombo->addItem("None", static_cast<int>(HeatBoundaryCondition::None));
-    boundaryConditionCombo->addItem("Fixed Temperature", static_cast<int>(HeatBoundaryCondition::FixedTemperature));
-    boundaryConditionCombo->addItem("Fixed Power", static_cast<int>(HeatBoundaryCondition::FixedPower));
+    boundaryConditionCombo->addItem("Adiabatic", static_cast<int>(BoundaryCondition::Type::Adiabatic));
+    boundaryConditionCombo->addItem("Dirichlet Temperature", static_cast<int>(BoundaryCondition::Type::DirichletTemperature));
+    boundaryConditionCombo->addItem("Neumann Heat Flux", static_cast<int>(BoundaryCondition::Type::NeumannHeatFlux));
+    boundaryConditionCombo->addItem("Robin Convection", static_cast<int>(BoundaryCondition::Type::RobinConvection));
     bcRow->addWidget(boundaryConditionCombo, 1);
     layout->addLayout(bcRow);
 
-    // Temperature (for Fixed Temperature BC)
-    QHBoxLayout* tempRow = new QHBoxLayout();
-    tempRow->addWidget(new QLabel("Fixed Temperature (K):", this));
-    temperatureEdit = nodegraphwidgets::createNumericEdit(this, 0.0, 10000.0, 2);
-    temperatureEdit->setText(QString::number(HeatSimDefaults::ambientTemperature, 'f', 2));
-    tempRow->addWidget(temperatureEdit, 1);
-    layout->addLayout(tempRow);
+    QHBoxLayout* initialTempRow = new QHBoxLayout();
+    initialTempRow->addWidget(new QLabel("Initial Temperature (C):", this));
+    initialTemperatureEdit = nodegraphwidgets::createNumericEdit(this, -273.15, 10000.0, 2);
+    initialTemperatureEdit->setText(QString::number(HeatSimDefaults::ambientTemperatureC, 'f', 2));
+    initialTempRow->addWidget(initialTemperatureEdit, 1);
+    layout->addLayout(initialTempRow);
+
+    QHBoxLayout* boundaryTempRow = new QHBoxLayout();
+    boundaryTempRow->addWidget(new QLabel("Boundary Temperature (C):", this));
+    boundaryTemperatureEdit = nodegraphwidgets::createNumericEdit(this, -273.15, 10000.0, 2);
+    boundaryTemperatureEdit->setText(QString::number(HeatSimDefaults::ambientTemperatureC, 'f', 2));
+    boundaryTempRow->addWidget(boundaryTemperatureEdit, 1);
+    layout->addLayout(boundaryTempRow);
+
+    QHBoxLayout* heatFluxRow = new QHBoxLayout();
+    heatFluxRow->addWidget(new QLabel("Inward Heat Flux (W/m²):", this));
+    heatFluxEdit = nodegraphwidgets::createNumericEdit(this, -1.0e12, 1.0e12, 3);
+    heatFluxEdit->setText("0");
+    heatFluxRow->addWidget(heatFluxEdit, 1);
+    layout->addLayout(heatFluxRow);
+
+    QHBoxLayout* htcRow = new QHBoxLayout();
+    htcRow->addWidget(new QLabel("HTC (W/(m²·K)):", this));
+    heatTransferCoefficientEdit = nodegraphwidgets::createNumericEdit(this, 0.0, 1.0e12, 3);
+    heatTransferCoefficientEdit->setText("0");
+    htcRow->addWidget(heatTransferCoefficientEdit, 1);
+    layout->addLayout(htcRow);
+
+    QHBoxLayout* volumetricRow = new QHBoxLayout();
+    volumetricRow->addWidget(new QLabel("Power Density (W/m³):", this));
+    volumetricPowerDensityEdit = nodegraphwidgets::createNumericEdit(this, -1.0e15, 1.0e15, 3);
+    volumetricPowerDensityEdit->setText("0");
+    volumetricRow->addWidget(volumetricPowerDensityEdit, 1);
+    layout->addLayout(volumetricRow);
 
     // Density
     QHBoxLayout* densityRow = new QHBoxLayout();
@@ -77,7 +105,11 @@ NodeHeatModelPanel::NodeHeatModelPanel(QWidget* parent)
 
     connect(materialPresetCombo, &QComboBox::currentIndexChanged, this, [this](int) { onPresetEdited(); });
     connect(boundaryConditionCombo, &QComboBox::currentIndexChanged, this, [this](int) { onSettingsEdited(); });
-    connect(temperatureEdit, &QLineEdit::editingFinished, this, [this]() { onSettingsEdited(); });
+    connect(initialTemperatureEdit, &QLineEdit::editingFinished, this, [this]() { onSettingsEdited(); });
+    connect(boundaryTemperatureEdit, &QLineEdit::editingFinished, this, [this]() { onSettingsEdited(); });
+    connect(heatFluxEdit, &QLineEdit::editingFinished, this, [this]() { onSettingsEdited(); });
+    connect(heatTransferCoefficientEdit, &QLineEdit::editingFinished, this, [this]() { onSettingsEdited(); });
+    connect(volumetricPowerDensityEdit, &QLineEdit::editingFinished, this, [this]() { onSettingsEdited(); });
     connect(densityEdit, &QLineEdit::editingFinished, this, [this]() { onMaterialValueEdited(); });
     connect(specificHeatEdit, &QLineEdit::editingFinished, this, [this]() { onMaterialValueEdited(); });
     connect(conductivityEdit, &QLineEdit::editingFinished, this, [this]() { onMaterialValueEdited(); });
@@ -92,12 +124,15 @@ bool NodeHeatModelPanel::writeParameters() {
     NodeGraphEditor editor(bridge());
     HeatModelNodeParams params{};
     params.materialPreset = static_cast<HeatMaterialPresetId>(materialPresetCombo->currentData().toInt());
-    params.boundaryCondition = static_cast<HeatBoundaryCondition>(boundaryConditionCombo->currentData().toInt());
-    params.fixedTemperatureValue = temperatureEdit->text().toDouble();
+    params.boundaryConditionType = static_cast<BoundaryCondition::Type>(boundaryConditionCombo->currentData().toInt());
+    params.boundaryTemperatureC = boundaryTemperatureEdit->text().toDouble();
+    params.heatFlux = heatFluxEdit->text().toDouble();
+    params.heatTransferCoefficient = heatTransferCoefficientEdit->text().toDouble();
+    params.volumetricPowerDensity = volumetricPowerDensityEdit->text().toDouble();
     params.density = densityEdit->text().toDouble();
     params.specificHeat = specificHeatEdit->text().toDouble();
     params.conductivity = conductivityEdit->text().toDouble();
-    params.initialTemperature = temperatureEdit->text().toDouble();
+    params.initialTemperatureC = initialTemperatureEdit->text().toDouble();
     if (!writeHeatModelNodeParams(editor, currentNodeId(), params)) {
         setStatus("Failed to update heat model settings.");
         return false;
@@ -177,13 +212,17 @@ void NodeHeatModelPanel::refreshFromNode() {
 
     // Set boundary condition combo
     for (int i = 0; i < boundaryConditionCombo->count(); ++i) {
-        if (boundaryConditionCombo->itemData(i).toInt() == static_cast<int>(params.boundaryCondition)) {
+        if (boundaryConditionCombo->itemData(i).toInt() == static_cast<int>(params.boundaryConditionType)) {
             boundaryConditionCombo->setCurrentIndex(i);
             break;
         }
     }
 
-    temperatureEdit->setText(QString::number(params.fixedTemperatureValue, 'f', 2));
+    initialTemperatureEdit->setText(QString::number(params.initialTemperatureC, 'f', 2));
+    boundaryTemperatureEdit->setText(QString::number(params.boundaryTemperatureC, 'f', 2));
+    heatFluxEdit->setText(QString::number(params.heatFlux, 'g', 8));
+    heatTransferCoefficientEdit->setText(QString::number(params.heatTransferCoefficient, 'g', 8));
+    volumetricPowerDensityEdit->setText(QString::number(params.volumetricPowerDensity, 'g', 8));
     densityEdit->setText(QString::number(params.density, 'f', 1));
     specificHeatEdit->setText(QString::number(params.specificHeat, 'f', 1));
     conductivityEdit->setText(QString::number(params.conductivity, 'f', 2));

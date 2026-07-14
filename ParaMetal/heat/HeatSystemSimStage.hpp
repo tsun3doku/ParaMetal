@@ -8,37 +8,33 @@
 
 class HeatModelRuntime;
 class HeatSystemDiffusionStage;
-class ContactSystemComputeStage;
-class HeatContactRuntime;
 
 class HeatSystemSimStage {
 public:
     explicit HeatSystemSimStage() = default;
 
-    void recordComputeCommands(
+    // Records the physics substeps and (optionally) a history capture frame.
+    // temperatureBufferAIsCurrent is the persistent read-buffer parity carried
+    // across frames; the returned value is the parity after all substeps.
+    bool recordComputeCommands(
         VkCommandBuffer commandBuffer,
-        uint32_t currentFrame,
         const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
         const HeatSystemDiffusionStage& diffusionStage,
-        const ContactSystemComputeStage& contactStage,
-        const std::vector<std::unique_ptr<HeatContactRuntime>>& contactRuntimes,
         bool steppingPhysics,
         bool captureFrame,
-        uint32_t numSubsteps) const;
+        bool temperatureBufferAIsCurrent,
+        uint32_t diffusionSubsteps) const;
 
 private:
-    void recordSim(
+    bool recordSim(
         VkCommandBuffer commandBuffer,
-        uint32_t currentFrame,
         const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
         const HeatSystemDiffusionStage& diffusionStage,
-        const ContactSystemComputeStage& contactStage,
-        const std::vector<std::unique_ptr<HeatContactRuntime>>& contactRuntimes,
-        uint32_t numSubsteps) const;
+        bool temperatureBufferAIsCurrent,
+        uint32_t diffusionSubsteps) const;
 
     void recordHistoryCapture(
         VkCommandBuffer commandBuffer,
         const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
-        const HeatSystemDiffusionStage& diffusionStage,
-        uint32_t numSubsteps) const;
+        bool finalWritesBufferB) const;
 };

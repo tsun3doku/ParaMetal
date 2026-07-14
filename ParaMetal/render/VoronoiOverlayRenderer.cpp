@@ -70,7 +70,7 @@ void VoronoiOverlayRenderer::rebuildBindings() {
         if (config.runtimeModelId == 0 ||
             config.indexCount == 0 ||
             config.seedPositionBuffer == VK_NULL_HANDLE ||
-            config.neighborIndicesBuffer == VK_NULL_HANDLE ||
+            config.candidateNeighborIndicesBuffer == VK_NULL_HANDLE ||
             config.candidateBuffer == VK_NULL_HANDLE ||
             config.vertexBuffer == VK_NULL_HANDLE ||
             config.indexBuffer == VK_NULL_HANDLE ||
@@ -93,8 +93,8 @@ void VoronoiOverlayRenderer::rebuildBindings() {
         binding.vertexCount = static_cast<uint32_t>(config.intrinsicVertexCount);
         binding.seedBuffer = config.seedPositionBuffer;
         binding.seedOffset = config.seedPositionBufferOffset;
-        binding.neighborBuffer = config.neighborIndicesBuffer;
-        binding.neighborOffset = config.neighborIndicesBufferOffset;
+        binding.neighborBuffer = config.candidateNeighborIndicesBuffer;
+        binding.neighborOffset = config.candidateNeighborIndicesBufferOffset;
         binding.supportingHalfedgeView = config.supportingHalfedgeView;
         binding.supportingAngleView = config.supportingAngleView;
         binding.halfedgeView = config.halfedgeView;

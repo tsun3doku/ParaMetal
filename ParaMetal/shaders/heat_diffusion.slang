@@ -6,9 +6,9 @@ struct Node
     uint interfaceNeighborCount;
 };
 
-struct GMLSInterface
+struct NodeCoupling
 {
-    uint neighborIdx;
+    uint neighborNodeId;
     float conductance;
 };
 
@@ -19,9 +19,30 @@ struct MaterialNode
     float density;
     float specificHeat;
     float conductivity;
-    float fixedTemperatureValue;
-    uint boundaryCondition;
-    uint _pad0;
+    float pad0;
+    uint pad1;
+    uint pad2;
+};
+
+struct BoundaryState
+{
+    uint conditionType;
+    float temperatureC;
+    float heatFlux;
+    float heatTransferCoefficient;
+};
+
+struct BoundaryNode
+{
+    uint contributionOffset;
+    uint contributionCount;
+    uint dirichletStateIndex;
+};
+
+struct BoundaryContribution
+{
+    uint stateIndex;
+    float area;
 };
 
 struct SimPlayback
@@ -38,14 +59,17 @@ struct HeatModelPushConstant
 };
 
 [[vk::binding(0)]] StructuredBuffer<Node> simNodeBuffer;
-[[vk::binding(1)]] StructuredBuffer<GMLSInterface> gmlsInterfaceBuffer;
+[[vk::binding(1)]] StructuredBuffer<NodeCoupling> nodeCouplingBuffer;
 [[vk::binding(2)]] StructuredBuffer<MaterialNode> materialNodeBuffer;
 [[vk::binding(3)]] ConstantBuffer<SimPlayback> playback;
 
 [[vk::binding(4)]] StructuredBuffer<float> tempRead;
 [[vk::binding(5)]] RWStructuredBuffer<float> tempWrite;
 
-[[vk::binding(7)]] RWStructuredBuffer<float2> couplingAccumulator;
+[[vk::binding(8)]] StructuredBuffer<BoundaryNode> boundaryNodeBuffer;
+[[vk::binding(9)]] StructuredBuffer<BoundaryState> boundaryStateBuffer;
+[[vk::binding(10)]] StructuredBuffer<BoundaryContribution> boundaryContributionBuffer;
+[[vk::binding(11)]] StructuredBuffer<float> volumetricPowerDensityBuffer;
 
 [[vk::push_constant]] ConstantBuffer<HeatModelPushConstant> pushConstants;
 
@@ -57,11 +81,14 @@ void main(uint3 dtid : SV_DispatchThreadID)
         return;
     }
 
-    MaterialNode materialNode = materialNodeBuffer[localNodeID];
-    if (materialNode.boundaryCondition == 1u) {
-        tempWrite[localNodeID] = materialNode.fixedTemperatureValue;
+    BoundaryNode boundaryNode = boundaryNodeBuffer[localNodeID];
+    if (boundaryNode.dirichletStateIndex != 0xffffffffu) {
+        BoundaryState boundary = boundaryStateBuffer[boundaryNode.dirichletStateIndex];
+        tempWrite[localNodeID] = boundary.temperatureC;
         return;
     }
+
+    MaterialNode materialNode = materialNodeBuffer[localNodeID];
 
     Node node = simNodeBuffer[localNodeID];
     float thermalMass = max(materialNode.thermalMass, 1e-12);
@@ -71,9 +98,9 @@ void main(uint3 dtid : SV_DispatchThreadID)
     float totalFlux = 0.0;
 
     for (uint i = 0; i < node.neighborCount; ++i) {
-        GMLSInterface iface = gmlsInterfaceBuffer[node.neighborOffset + i];
-        float g = iface.conductance;
-        uint neighborLocalID = iface.neighborIdx;
+        NodeCoupling coupling = nodeCouplingBuffer[node.neighborOffset + i];
+        float g = coupling.conductance;
+        uint neighborLocalID = coupling.neighborNodeId;
         float neighborTemp = tempRead[neighborLocalID];
         totalConductance += g;
         totalFlux += g * neighborTemp;
@@ -82,16 +109,29 @@ void main(uint3 dtid : SV_DispatchThreadID)
     float dt = playback.deltaTime;
     float kappa = materialNode.conductivityPerMass;
 
-    float2 contactAccum = couplingAccumulator[localNodeID];
-    float contactK = contactAccum.x;
-    float contactKT = contactAccum.y;
-
     float invMass = 1.0 / thermalMass;
-    float denominator = 1.0 + dt * kappa * totalConductance + dt * contactK * invMass;
-    float numerator = currentTemp + dt * kappa * totalFlux + dt * contactKT * invMass;
-    float newTemp = numerator / denominator;
+    float denominator = 1.0;
+    float numerator = currentTemp;
 
-    tempWrite[localNodeID] = newTemp;
+    numerator += dt * kappa * totalFlux;
+    denominator += dt * kappa * totalConductance;
 
-    couplingAccumulator[localNodeID] = float2(0.0, 0.0);
+    float volumetricPower = volumetricPowerDensityBuffer[localNodeID] * node.volume;
+    numerator += dt * volumetricPower * invMass;
+
+    for (uint contributionIndex = 0; contributionIndex < boundaryNode.contributionCount; ++contributionIndex) {
+        BoundaryContribution contribution = boundaryContributionBuffer[
+            boundaryNode.contributionOffset + contributionIndex];
+        BoundaryState boundary = boundaryStateBuffer[contribution.stateIndex];
+        if (boundary.conditionType == 2u) {
+            float boundaryPower = boundary.heatFlux * contribution.area;
+            numerator += dt * boundaryPower * invMass;
+        }
+        if (boundary.conditionType == 3u) {
+            float boundaryConductance = boundary.heatTransferCoefficient * contribution.area;
+            numerator += dt * boundaryConductance * boundary.temperatureC * invMass;
+            denominator += dt * boundaryConductance * invMass;
+        }
+    }
+    tempWrite[localNodeID] = numerator / denominator;
 }

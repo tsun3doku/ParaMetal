@@ -3,106 +3,70 @@
 #include "heat/HeatModelRuntime.hpp"
 #include "heat/HeatSystemPlayback.hpp"
 #include "HeatSystemDiffusionStage.hpp"
-#include "contact/ContactSystemComputeStage.hpp"
-#include "heat/HeatContactRuntime.hpp"
 
-#include <iostream>
-
-void HeatSystemSimStage::recordComputeCommands(
+bool HeatSystemSimStage::recordComputeCommands(
     VkCommandBuffer commandBuffer,
-    uint32_t currentFrame,
     const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
     const HeatSystemDiffusionStage& diffusionStage,
-    const ContactSystemComputeStage& contactStage,
-    const std::vector<std::unique_ptr<HeatContactRuntime>>& contactRuntimes,
     bool steppingPhysics,
     bool captureFrame,
-    uint32_t numSubsteps) const {
-    if (!steppingPhysics || activeModels.empty() || numSubsteps == 0) return;
+    bool temperatureBufferAIsCurrent,
+    uint32_t diffusionSubsteps) const {
+    if (!steppingPhysics || activeModels.empty() || diffusionSubsteps == 0) {
+        return temperatureBufferAIsCurrent;
+    }
 
-    recordSim(
+    const bool finalA = recordSim(
         commandBuffer,
-        currentFrame,
         activeModels,
         diffusionStage,
-        contactStage,
-        contactRuntimes,
-        numSubsteps);
+        temperatureBufferAIsCurrent,
+        diffusionSubsteps);
 
     if (captureFrame) {
-        recordHistoryCapture(commandBuffer, activeModels, diffusionStage, numSubsteps);
+        recordHistoryCapture(commandBuffer, activeModels, !finalA);
     }
+
+    return finalA;
 }
 
-void HeatSystemSimStage::recordSim(
+bool HeatSystemSimStage::recordSim(
     VkCommandBuffer commandBuffer,
-    uint32_t currentFrame,
     const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
     const HeatSystemDiffusionStage& diffusionStage,
-    const ContactSystemComputeStage& contactStage,
-    const std::vector<std::unique_ptr<HeatContactRuntime>>& contactRuntimes,
-    uint32_t numSubsteps) const {
+    bool temperatureBufferAIsCurrent,
+    uint32_t diffusionSubsteps) const {
     const uint32_t workGroupSize = 256;
 
-
-
-    for (uint32_t substepIndex = 0; substepIndex < numSubsteps; ++substepIndex) {
-        const bool isEven = (substepIndex % 2 == 0);
-
-        if (!contactRuntimes.empty()) {
-            for (const auto& couplingPtr : contactRuntimes) {
-                if (!couplingPtr) continue;
-                const HeatContactRuntime& coupling = *couplingPtr;
-
-                const VkDescriptorSet setA = isEven ? coupling.getSetAA() : coupling.getSetAB();
-                const VkDescriptorSet setB = isEven ? coupling.getSetBA() : coupling.getSetBB();
-
-                auto dispatch = [&](uint32_t id, VkDescriptorSet set) {
-                    if (set == VK_NULL_HANDLE) return;
-                    auto it = activeModels.find(id);
-                    if (it != activeModels.end() && it->second) {
-                        uint32_t n = it->second->getSimNodeCount();
-                        contactStage.dispatchGather(commandBuffer, set, n);
-                    }
-                };
-
-                dispatch(coupling.getModelARuntimeModelId(), setA);
-                dispatch(coupling.getModelBRuntimeModelId(), setB);
-            }
-
-            // Barrier for coupling accumulator buffers
-            std::vector<VkBufferMemoryBarrier> fluxBarriers;
-            fluxBarriers.reserve(activeModels.size());
-            for (const auto& [modelId, modelPtr] : activeModels) {
-                if (!modelPtr || modelPtr->getContactAccumulatorBuffer() == VK_NULL_HANDLE) continue;
-                VkBufferMemoryBarrier barrier{};
-                barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-                barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-                barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-                barrier.buffer = modelPtr->getContactAccumulatorBuffer();
-                barrier.offset = modelPtr->getContactAccumulatorBufferOffset();
-                barrier.size = modelPtr->getSimNodeCount() * sizeof(float) * 2;
-                fluxBarriers.push_back(barrier);
-            }
-            if (!fluxBarriers.empty()) {
-                vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, static_cast<uint32_t>(fluxBarriers.size()), fluxBarriers.data(), 0, nullptr);
-            }
+    for (const auto& [_, modelPtr] : activeModels) {
+        if (modelPtr) {
+            modelPtr->uploadRuntimeLoads(commandBuffer);
         }
+    }
 
+    bool readBufferA = temperatureBufferAIsCurrent;
+
+    for (uint32_t substepIndex = 0; substepIndex < diffusionSubsteps; ++substepIndex) {
+
+        // Diffusion reads the current buffer and writes the opposite
         for (const auto& [modelId, modelPtr] : activeModels) {
             if (!modelPtr || modelPtr->getSimNodeCount() == 0) continue;
 
             heat::HeatModelPushConstant pushConstant{modelPtr->getSimNodeCount()};
-            VkDescriptorSet modelSet = isEven ? modelPtr->getVoronoiDescriptorSetA() : modelPtr->getVoronoiDescriptorSetB();
+            VkDescriptorSet modelSet =
+                readBufferA ? modelPtr->getVoronoiDescriptorSetA() : modelPtr->getVoronoiDescriptorSetB();
 
             if (modelSet != VK_NULL_HANDLE) {
                 diffusionStage.dispatchDiffusionSubstep(commandBuffer, modelSet, pushConstant, (modelPtr->getSimNodeCount() + workGroupSize - 1) / workGroupSize);
             }
         }
 
-        if (substepIndex + 1 < numSubsteps) {
+        // Flip read for the next substep
+        readBufferA = !readBufferA;
+
+        if (substepIndex + 1 < diffusionSubsteps) {
             std::vector<VkBufferMemoryBarrier> substepBarriers;
-            substepBarriers.reserve(activeModels.size() * (contactRuntimes.empty() ? 1u : 2u));
+            substepBarriers.reserve(activeModels.size());
 
             for (const auto& [modelId, modelPtr] : activeModels) {
                 if (!modelPtr || modelPtr->getSimNodeCount() == 0) continue;
@@ -111,21 +75,11 @@ void HeatSystemSimStage::recordSim(
                 tempBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
                 tempBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
                 tempBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-                tempBarrier.buffer = isEven ? modelPtr->getTempBufferB() : modelPtr->getTempBufferA();
-                tempBarrier.offset = isEven ? modelPtr->getTempBufferBOffset() : modelPtr->getTempBufferAOffset();
+                tempBarrier.buffer = readBufferA ? modelPtr->getTempBufferA() : modelPtr->getTempBufferB();
+                tempBarrier.offset = 0;
                 tempBarrier.size = modelPtr->getSimNodeCount() * sizeof(float);
                 substepBarriers.push_back(tempBarrier);
 
-                if (!contactRuntimes.empty() && modelPtr->getContactAccumulatorBuffer() != VK_NULL_HANDLE) {
-                    VkBufferMemoryBarrier contactBarrier{};
-                    contactBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-                    contactBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-                    contactBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-                    contactBarrier.buffer = modelPtr->getContactAccumulatorBuffer();
-                    contactBarrier.offset = modelPtr->getContactAccumulatorBufferOffset();
-                    contactBarrier.size = modelPtr->getSimNodeCount() * sizeof(float) * 2;
-                    substepBarriers.push_back(contactBarrier);
-                }
             }
 
             if (!substepBarriers.empty()) {
@@ -144,22 +98,32 @@ void HeatSystemSimStage::recordSim(
         }
     }
 
-    const bool finalWritesBufferB = diffusionStage.finalSubstepWritesBufferB(numSubsteps);
     for (const auto& [modelId, heatModel] : activeModels) {
         if (!heatModel || heatModel->getSimNodeCount() == 0) continue;
 
-        diffusionStage.insertFinalTemperatureBarrier(commandBuffer, numSubsteps, heatModel->getTempBufferA(), heatModel->getTempBufferAOffset(), heatModel->getTempBufferB(), heatModel->getTempBufferBOffset(), heatModel->getSimNodeCount() * sizeof(float));
-
+        VkBufferMemoryBarrier finalTempBarrier{};
+        finalTempBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        finalTempBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        finalTempBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        finalTempBarrier.buffer = readBufferA ? heatModel->getTempBufferA() : heatModel->getTempBufferB();
+        finalTempBarrier.offset = 0;
+        finalTempBarrier.size = heatModel->getSimNodeCount() * sizeof(float);
+        vkCmdPipelineBarrier(
+            commandBuffer,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            0, 0, nullptr,
+            1, &finalTempBarrier,
+            0, nullptr);
     }
 
+    return readBufferA;
 }
 
 void HeatSystemSimStage::recordHistoryCapture(
     VkCommandBuffer commandBuffer,
     const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
-    const HeatSystemDiffusionStage& diffusionStage,
-    uint32_t numSubsteps) const {
-    const bool finalWritesBufferB = diffusionStage.finalSubstepWritesBufferB(numSubsteps);
+    bool finalWritesBufferB) const {
 
     std::vector<VkBufferMemoryBarrier> snapshotBarriers;
     for (const auto& [modelId, heatModel] : activeModels) {
@@ -168,14 +132,13 @@ void HeatSystemSimStage::recordHistoryCapture(
         if (!playback) continue;
 
         VkBuffer finalBuf = finalWritesBufferB ? heatModel->getTempBufferB() : heatModel->getTempBufferA();
-        VkDeviceSize finalOff = finalWritesBufferB ? heatModel->getTempBufferBOffset() : heatModel->getTempBufferAOffset();
 
         VkBufferMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
         barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
         barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
         barrier.buffer = finalBuf;
-        barrier.offset = finalOff;
+        barrier.offset = 0;
         barrier.size = heatModel->getSimNodeCount() * sizeof(float);
         snapshotBarriers.push_back(barrier);
     }
@@ -196,7 +159,6 @@ void HeatSystemSimStage::recordHistoryCapture(
         if (!playback) continue;
 
         VkBuffer finalBuf = finalWritesBufferB ? heatModel->getTempBufferB() : heatModel->getTempBufferA();
-        VkDeviceSize finalOff = finalWritesBufferB ? heatModel->getTempBufferBOffset() : heatModel->getTempBufferAOffset();
-        playback->recordFrame(commandBuffer, finalBuf, finalOff);
+        playback->recordFrame(commandBuffer, finalBuf, 0);
     }
 }

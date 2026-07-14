@@ -82,7 +82,6 @@ private:
 
     std::vector<std::string> buildFrameTimingLines(uint32_t frameIndex);
     void updateTimingOverlay(std::vector<std::string>& timingLines, const render::RenderFlags& flags);
-    bool handleStageResult(FrameStageResult result);
 
     VulkanDevice& vulkanDevice;
 };

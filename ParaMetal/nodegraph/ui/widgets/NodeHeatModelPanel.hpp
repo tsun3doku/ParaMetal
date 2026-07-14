@@ -23,7 +23,11 @@ private:
 
     QComboBox* materialPresetCombo = nullptr;
     QComboBox* boundaryConditionCombo = nullptr;
-    QLineEdit* temperatureEdit = nullptr;
+    QLineEdit* initialTemperatureEdit = nullptr;
+    QLineEdit* boundaryTemperatureEdit = nullptr;
+    QLineEdit* heatFluxEdit = nullptr;
+    QLineEdit* heatTransferCoefficientEdit = nullptr;
+    QLineEdit* volumetricPowerDensityEdit = nullptr;
     QLineEdit* densityEdit = nullptr;
     QLineEdit* specificHeatEdit = nullptr;
     QLineEdit* conductivityEdit = nullptr;

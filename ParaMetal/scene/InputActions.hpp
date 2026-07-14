@@ -6,4 +6,5 @@ public:
 
     virtual void onWireframeToggleRequested() = 0;
     virtual void onTimingOverlayToggleRequested() = 0;
+    virtual void onGridToggleRequested() = 0;
 };

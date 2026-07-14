@@ -33,12 +33,9 @@ HashValues RuntimePackageCompiler::resolveHandleHashes(const NodePayloadRegistry
     return values;
 }
 
-ModelPackage RuntimePackageCompiler::buildModelPackage(
-    const GeometryData& geometry,
-    const HashValues& geometryHashes) const {
+ModelPackage RuntimePackageCompiler::buildModelPackage(const GeometryData& geometry, const HashValues& geometryHashes) const {
     ModelPackage package{};
     package.geometry = geometry;
-    package.localToWorld = geometry.localToWorld;
     HashPackage::seal(package, geometryHashes);
     return package;
 }
@@ -210,9 +207,12 @@ HeatPackage RuntimePackageCompiler::buildHeatPackage(
         package.resolvedDensity.push_back(heatModel->density);
         package.resolvedSpecificHeat.push_back(heatModel->specificHeat);
         package.resolvedConductivity.push_back(heatModel->conductivity);
-        package.resolvedInitialTemperature.push_back(heatModel->initialTemperature);
-        package.resolvedBoundaryConditions.push_back(static_cast<uint32_t>(heatModel->boundaryCondition));
-        package.resolvedFixedTemperatureValues.push_back(heatModel->fixedTemperatureValue);
+        package.resolvedInitialTemperaturesC.push_back(heatModel->initialTemperatureC);
+        package.resolvedBoundaryConditionTypes.push_back(static_cast<uint32_t>(heatModel->boundaryCondition.type));
+        package.resolvedBoundaryTemperaturesC.push_back(heatModel->boundaryCondition.temperatureC);
+        package.resolvedBoundaryHeatFluxes.push_back(heatModel->boundaryCondition.heatFlux);
+        package.resolvedBoundaryHeatTransferCoefficients.push_back(heatModel->boundaryCondition.heatTransferCoefficient);
+        package.resolvedVolumetricPowerDensities.push_back(heatModel->volumetricHeatSource.powerDensity);
     }
 
     if (usedHeatModelRemeshKeys.size() != heatModelByRemeshKey.size()) {
@@ -361,9 +361,9 @@ void RuntimePackageCompiler::compileMeshPoints(
             const ProductHandle remeshProductHandle = execState.productFor(upstreamKey.value, NodeProductType::Remesh);
             const RemeshProduct* product = products.resolve<RemeshProduct>(remeshProductHandle);
             if (product && product->isValid()) {
-                package.positions.reserve(product->intrinsicMesh.vertices.size());
-                for (const auto& vertex : product->intrinsicMesh.vertices) {
-                    package.positions.push_back(glm::vec4(vertex.position, 1.0f));
+                package.positions.reserve(product->surfacePositions.size());
+                for (const glm::vec3& position : product->surfacePositions) {
+                    package.positions.push_back(glm::vec4(position, 1.0f));
                 }
                 package.pointCount = static_cast<uint32_t>(package.positions.size());
                 usedRemesh = true;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "mesh/remesher/SupportingHalfedge.hpp"
+#include <glm/vec3.hpp>
 
 #include <cstdint>
 #include <memory>
@@ -19,11 +19,16 @@ public:
     ~HeatSystemRuntime() = default;
 
     void setHeatModels(
-        const std::vector<SupportingHalfedge::IntrinsicMesh>& modelIntrinsicMeshes,
+        const std::vector<std::vector<glm::vec3>>& modelSurfacePositions,
+        const std::vector<std::vector<glm::vec3>>& modelSurfaceNormals,
+        const std::vector<std::vector<uint32_t>>& modelSurfaceTriangleIndices,
         const std::vector<uint32_t>& modelRuntimeModelIds,
-        const std::unordered_map<uint32_t, float>& modelTemperatureByRuntimeId,
-        const std::unordered_map<uint32_t, uint32_t>& modelBoundaryConditions,
-        const std::unordered_map<uint32_t, float>& modelFixedTemperatureValues,
+        const std::unordered_map<uint32_t, float>& modelInitialTemperaturesCByRuntimeId,
+        const std::unordered_map<uint32_t, uint32_t>& modelBoundaryConditionTypesByRuntimeId,
+        const std::unordered_map<uint32_t, float>& modelBoundaryTemperaturesCByRuntimeId,
+        const std::unordered_map<uint32_t, float>& modelBoundaryHeatFluxesByRuntimeId,
+        const std::unordered_map<uint32_t, float>& modelBoundaryHeatTransferCoefficientsByRuntimeId,
+        const std::unordered_map<uint32_t, float>& modelVolumetricPowerDensitiesByRuntimeId,
         const std::unordered_map<uint32_t, float>& modelDensity,
         const std::unordered_map<uint32_t, float>& modelSpecificHeat,
         const std::unordered_map<uint32_t, float>& modelConductivity);
@@ -39,13 +44,18 @@ public:
     void cleanup();
 
 private:
-    float getTemperature(uint32_t modelId) const;
+    float getInitialTemperatureC(uint32_t modelId) const;
     void configureModelProperties(HeatModelRuntime* model, uint32_t modelId) const;
-    std::vector<SupportingHalfedge::IntrinsicMesh> activeModelIntrinsicMeshes;
+    std::vector<std::vector<glm::vec3>> activeModelSurfacePositions;
+    std::vector<std::vector<glm::vec3>> activeModelSurfaceNormals;
+    std::vector<std::vector<uint32_t>> activeModelSurfaceTriangleIndices;
     std::vector<uint32_t> activeModelRuntimeModelIds;
-    std::unordered_map<uint32_t, float> activeModelTemperatureByRuntimeId;
-    std::unordered_map<uint32_t, uint32_t> activeModelBoundaryConditions;
-    std::unordered_map<uint32_t, float> activeModelFixedTemperatureValues;
+    std::unordered_map<uint32_t, float> activeModelInitialTemperaturesCByRuntimeId;
+    std::unordered_map<uint32_t, uint32_t> activeModelBoundaryConditionTypesByRuntimeId;
+    std::unordered_map<uint32_t, float> activeModelBoundaryTemperaturesCByRuntimeId;
+    std::unordered_map<uint32_t, float> activeModelBoundaryHeatFluxesByRuntimeId;
+    std::unordered_map<uint32_t, float> activeModelBoundaryHeatTransferCoefficientsByRuntimeId;
+    std::unordered_map<uint32_t, float> activeModelVolumetricPowerDensitiesByRuntimeId;
     std::unordered_map<uint32_t, float> activeModelDensity;
     std::unordered_map<uint32_t, float> activeModelSpecificHeat;
     std::unordered_map<uint32_t, float> activeModelConductivity;

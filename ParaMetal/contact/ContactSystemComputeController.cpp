@@ -36,9 +36,8 @@ void ContactSystemComputeController::apply(uint64_t socketKey, const Config& con
     configuredConfigs[socketKey] = config;
 
     system->setParams(config.minNormalDot, config.contactRadius);
-    system->setModelAState(config.modelALocalToWorld, config.modelAIntrinsicMesh, config.modelARuntimeModelId);
-    system->setModelBState(config.modelBLocalToWorld, config.modelBIntrinsicMesh, config.modelBRuntimeModelId);
-    system->setModelBTriangleIndices(config.modelBTriangleIndices);
+    system->setModelAState(config.modelALocalToWorld, config.modelAMesh, config.modelARuntimeModelId);
+    system->setModelBState(config.modelBLocalToWorld, config.modelBMesh, config.modelBRuntimeModelId);
     system->ensureConfigured();
 }
 
@@ -53,9 +52,6 @@ void ContactSystemComputeController::remove(uint64_t socketKey) {
     }
 }
 
-void ContactSystemComputeController::retain(uint64_t socketKey) {
-    (void)socketKey;
-}
 
 void ContactSystemComputeController::disableAll() {
     configuredConfigs.clear();

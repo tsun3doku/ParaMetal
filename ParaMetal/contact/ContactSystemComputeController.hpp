@@ -1,7 +1,7 @@
 #pragma once
 
 #include "contact/ContactTypes.hpp"
-#include "mesh/remesher/SupportingHalfedge.hpp"
+#include "contact/ContactMapping.hpp"
 #include "runtime/RuntimeProducts.hpp"
 #include "vulkan/CommandBufferManager.hpp"
 
@@ -26,26 +26,24 @@ public:
             0.0f, 0.0f, 1.0f, 0.0f,
             0.0f, 0.0f, 0.0f, 1.0f
         };
-        SupportingHalfedge::IntrinsicMesh modelAIntrinsicMesh;
+        ContactMesh modelAMesh;
         std::array<float, 16> modelBLocalToWorld{
             1.0f, 0.0f, 0.0f, 0.0f,
             0.0f, 1.0f, 0.0f, 0.0f,
             0.0f, 0.0f, 1.0f, 0.0f,
             0.0f, 0.0f, 0.0f, 1.0f
         };
-        SupportingHalfedge::IntrinsicMesh modelBIntrinsicMesh;
+        ContactMesh modelBMesh;
         uint32_t modelARuntimeModelId = 0;
         uint32_t modelBRuntimeModelId = 0;
-        std::vector<uint32_t> modelBTriangleIndices;
         uint64_t computeHash = 0;
 
         bool isValid() const {
             return modelARuntimeModelId != 0 &&
                 modelBRuntimeModelId != 0 &&
                 modelARuntimeModelId != modelBRuntimeModelId &&
-                !modelAIntrinsicMesh.vertices.empty() &&
-                !modelBIntrinsicMesh.vertices.empty() &&
-                !modelBTriangleIndices.empty();
+                modelAMesh.isValid() &&
+                modelBMesh.isValid();
         }
     };
 
@@ -56,7 +54,6 @@ public:
     ~ContactSystemComputeController();
 
     void apply(uint64_t socketKey, const Config& config);
-    void retain(uint64_t socketKey);
     bool buildProduct(uint64_t socketKey, ContactProduct& product) const;
     void remove(uint64_t socketKey);
     void disableAll();

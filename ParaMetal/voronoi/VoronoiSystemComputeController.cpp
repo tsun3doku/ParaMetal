@@ -1,7 +1,7 @@
 #include "VoronoiSystemComputeController.hpp"
 
 #include <iostream>
-#include "VoronoiSystem.hpp"
+#include "voronoi/VoronoiSystem.hpp"
 #include "runtime/RuntimeProducts.hpp"
 #include "hash/HashProduct.hpp"
 #include "vulkan/MemoryAllocator.hpp"
@@ -61,17 +61,15 @@ void VoronoiSystemComputeController::apply(uint64_t socketKey, const Config& con
     }
 
     if (config.isPointDomain) {
-        system->clearReceiverGeometry();
+        system->clearGeometry();
         system->setPointGeometry(config.pointPositions);
     } else {
-        system->setReceiverGeometry(
-            config.receiverNodeModelId,
-            config.receiverGeometryPositions,
-            config.receiverGeometryTriangleIndices,
-            config.receiverIntrinsicMesh,
-            config.receiverSurfaceVertices,
-            config.receiverIntrinsicTriangleIndices,
-            config.receiverRuntimeModelId,
+        system->setMeshGeometry(
+            config.geometryPositions,
+            config.geometryTriangleIndices,
+            config.surfaceVertices,
+            config.surfaceTriangleIndices,
+            config.runtimeModelId,
             config.meshModelMatrix);
         system->setSeedPositions(config.pointPositions);
     }
@@ -149,47 +147,38 @@ bool VoronoiSystemComputeController::buildProduct(uint64_t socketKey, VoronoiPro
         return false;
     }
 
-    outProduct.nodeCount = voronoiSystem->getVoronoiNodeCount();
-    outProduct.simNodeCount = voronoiSystem->runtimeRef().getSimNodeCount();
+    const VoronoiNodeDomain& nodeDomain = voronoiSystem->runtimeRef().getNodeDomain();
+    outProduct.candidateNodeCount = voronoiSystem->getCandidateNodeCount();
+    outProduct.nodeCount = nodeDomain.getNodeCount();
+    outProduct.couplingCount = voronoiSystem->getBuildStage().getCouplingCount();
+    outProduct.nodes = nodeDomain.getNodes();
+    outProduct.couplings = nodeDomain.getCouplings();
+    outProduct.surfacePatchAreas = nodeDomain.getSurfacePatchAreas();
+    outProduct.nodePositions = nodeDomain.getNodeIndex().getNodePositions();
+    outProduct.surfaceNodeIds = nodeDomain.getSurfaceNodeIds();
+    outProduct.surfaceStencils = nodeDomain.getSurfaceStencils();
+    outProduct.surfaceValueWeights = nodeDomain.getSurfaceValueWeights();
+    outProduct.surfaceGradientWeights = nodeDomain.getSurfaceGradientWeights();
 
-    const VoronoiResources& resources = voronoiSystem->resourcesRef();
-    outProduct.mappedVoronoiNodes = nullptr;
-    outProduct.nodeBuffer = resources.voronoiNodeBuffer;
-    outProduct.nodeBufferOffset = resources.voronoiNodeBufferOffset;
-    outProduct.voronoiNeighborBuffer = resources.voronoiNeighborBuffer;
-    outProduct.voronoiNeighborBufferOffset = resources.voronoiNeighborBufferOffset;
-    outProduct.voronoiNeighborIndicesBuffer = resources.voronoiNeighborIndicesBuffer;
-    outProduct.voronoiNeighborIndicesBufferOffset = resources.voronoiNeighborIndicesBufferOffset;
-    outProduct.voronoiInterfaceAreasBuffer = resources.voronoiInterfaceAreasBuffer;
-    outProduct.voronoiInterfaceAreasBufferOffset = resources.voronoiInterfaceAreasBufferOffset;
-    outProduct.voronoiInterfaceNeighborIdsBuffer = resources.voronoiInterfaceNeighborIdsBuffer;
-    outProduct.voronoiInterfaceNeighborIdsBufferOffset = resources.voronoiInterfaceNeighborIdsBufferOffset;
-    outProduct.voronoiGMLSInterfaceBuffer = resources.voronoiGMLSInterfaceBuffer;
-    outProduct.voronoiGMLSInterfaceBufferOffset = resources.voronoiGMLSInterfaceBufferOffset;
-    outProduct.simNodeBuffer = voronoiSystem->runtimeRef().getSimNodeBuffer();
-    outProduct.simNodeBufferOffset = voronoiSystem->runtimeRef().getSimNodeBufferOffset();
-    outProduct.simNodeBufferSize = voronoiSystem->runtimeRef().getSimNodeBufferSize();
-    outProduct.simGMLSInterfaceBuffer = voronoiSystem->runtimeRef().getSimGMLSInterfaceBuffer();
-    outProduct.simGMLSInterfaceBufferOffset = voronoiSystem->runtimeRef().getSimGMLSInterfaceBufferOffset();
-    outProduct.simGMLSInterfaceCount = voronoiSystem->runtimeRef().getSimGMLSInterfaceCount();
-    outProduct.voronoiSeedFlagsBuffer = resources.voronoiSeedFlagsBuffer;
-    outProduct.voronoiSeedFlagsBufferOffset = resources.voronoiSeedFlagsBufferOffset;
-    outProduct.seedPositionBuffer = resources.seedPositionBuffer;
-    outProduct.seedPositionBufferOffset = resources.seedPositionBufferOffset;
-    outProduct.occupancyPointBuffer = resources.occupancyPointBuffer;
-    outProduct.occupancyPointBufferOffset = resources.occupancyPointBufferOffset;
-    outProduct.occupancyPointCount = resources.occupancyPointCount;
-    outProduct.voronoiToSim = voronoiSystem->runtimeRef().getVoronoiToSim();
-    outProduct.simToVoronoi = voronoiSystem->runtimeRef().getSimToVoronoi();
-    outProduct.simNodeVolumes = voronoiSystem->runtimeRef().getSimNodeVolumes();
+    const VoronoiSystemBuildStage& buildStage = voronoiSystem->getBuildStage();
+    outProduct.candidateNodeBuffer = buildStage.getCandidateNodeBuffer();
+    outProduct.candidateNodeBufferOffset = buildStage.getCandidateNodeBufferOffset();
+    outProduct.candidateNeighborIndicesBuffer = buildStage.getCandidateNeighborIndicesBuffer();
+    outProduct.candidateNeighborIndicesBufferOffset = buildStage.getCandidateNeighborIndicesBufferOffset();
+    outProduct.nodeBuffer = buildStage.getNodeBuffer();
+    outProduct.nodeBufferOffset = buildStage.getNodeBufferOffset();
+    outProduct.couplingBuffer = buildStage.getCouplingBuffer();
+    outProduct.couplingBufferOffset = buildStage.getCouplingBufferOffset();
+    outProduct.seedPositionBuffer = buildStage.getSeedPositionBuffer();
+    outProduct.seedPositionBufferOffset = buildStage.getSeedPositionBufferOffset();
+    outProduct.occupancyPointBuffer = buildStage.getOccupancyPointBuffer();
+    outProduct.occupancyPointBufferOffset = buildStage.getOccupancyPointBufferOffset();
+    outProduct.occupancyPointCount = buildStage.getOccupancyPointCount();
 
     const VoronoiDomainRuntime* domainRuntime = voronoiSystem->getDomainRuntime();
     if (!domainRuntime) {
         return false;
     }
-    const auto& domainSeedFlags = voronoiSystem->runtimeRef().getSeedFlags();
-    const auto& domainSeedPositions = voronoiSystem->runtimeRef().getSeedPositions();
-
     outProduct.isPointDomain = domainRuntime->isPointDomain();
     outProduct.candidateBuffer = domainRuntime->getCandidateBuffer();
     outProduct.candidateBufferOffset = domainRuntime->getCandidateBufferOffset();
@@ -207,12 +196,6 @@ bool VoronoiSystemComputeController::buildProduct(uint64_t socketKey, VoronoiPro
         outProduct.gmlsSurfaceGradientWeightCount = modelRuntime->getGMLSSurfaceGradientWeightCount();
     } else {
         outProduct.runtimeModelId = 0;
-    }
-
-    outProduct.seedFlags = domainSeedFlags;
-    outProduct.seedPositions.reserve(domainSeedPositions.size());
-    for (const glm::vec4& pos : domainSeedPositions) {
-        outProduct.seedPositions.push_back(glm::vec3(pos));
     }
 
     HashProduct::seal(outProduct);

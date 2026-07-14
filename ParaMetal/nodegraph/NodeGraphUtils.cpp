@@ -327,6 +327,9 @@ bool normalizeNodeGraphParamValue(const NodeGraphParamDefinition& definition, No
     }
 
     if (!value.enumValue.empty()) {
+        if (definition.id == nodegraphparams::heatmodel::BoundaryCondition && value.enumValue == "None") {
+            value.enumValue = "Adiabatic";
+        }
         const auto optionIt = std::find(
             definition.enumOptions.begin(),
             definition.enumOptions.end(),

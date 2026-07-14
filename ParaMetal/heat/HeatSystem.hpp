@@ -8,9 +8,9 @@
 #include "HeatSystemSimRuntime.hpp"
 #include "HeatSystemRuntime.hpp"
 #include "HeatSystemPresets.hpp"
-#include "mesh/remesher/SupportingHalfedge.hpp"
 #include "voronoi/VoronoiGpuStructs.hpp"
 
+#include <chrono>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -23,7 +23,6 @@ class CommandPool;
 class HeatSystemSimStage;
 class HeatSystemSurfaceStage;
 class HeatSystemDiffusionStage;
-class ContactSystemComputeStage;
 class HeatContactRuntime;
 
 class HeatSystem : public ComputePass {
@@ -37,20 +36,25 @@ public:
     bool setupDescriptors(const std::vector<VkBuffer>& surfaceBuffers, const std::vector<VkDeviceSize>& surfaceOffsets, const std::vector<VkBuffer>& gradientBuffers, const std::vector<VkDeviceSize>& gradientOffsets);
     void recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t currentFrame) override;
     bool createComputeCommandBuffers(uint32_t maxFramesInFlight);
-    void cleanupResources();
     void cleanup();
 
     void setActive(bool active);
     void setRewindFrame(uint32_t frame);
     void setPlaybackState(bool paused, uint32_t resetCounter);
+    void setSyntheticDirichletTestEnabled(bool enabled) { syntheticDirichletTestEnabled = enabled; }
     void setParams(float contactThermalConductance, float simulationDuration);
     void setContactCouplings(const std::vector<ContactCoupling>& contactCouplings);
     void setHeatModels(
-        const std::vector<SupportingHalfedge::IntrinsicMesh>& modelIntrinsicMeshes,
+        const std::vector<std::vector<glm::vec3>>& modelSurfacePositions,
+        const std::vector<std::vector<glm::vec3>>& modelSurfaceNormals,
+        const std::vector<std::vector<uint32_t>>& modelSurfaceTriangleIndices,
         const std::vector<uint32_t>& modelRuntimeModelIds,
-        const std::unordered_map<uint32_t, float>& modelTemperatureByRuntimeId,
-        const std::unordered_map<uint32_t, uint32_t>& modelBoundaryConditions,
-        const std::unordered_map<uint32_t, float>& modelFixedTemperatureValues,
+        const std::unordered_map<uint32_t, float>& modelInitialTemperaturesCByRuntimeId,
+        const std::unordered_map<uint32_t, uint32_t>& modelBoundaryConditionTypesByRuntimeId,
+        const std::unordered_map<uint32_t, float>& modelBoundaryTemperaturesCByRuntimeId,
+        const std::unordered_map<uint32_t, float>& modelBoundaryHeatFluxesByRuntimeId,
+        const std::unordered_map<uint32_t, float>& modelBoundaryHeatTransferCoefficientsByRuntimeId,
+        const std::unordered_map<uint32_t, float>& modelVolumetricPowerDensitiesByRuntimeId,
         const std::unordered_map<uint32_t, float>& modelDensity,
         const std::unordered_map<uint32_t, float>& modelSpecificHeat,
         const std::unordered_map<uint32_t, float>& modelConductivity);
@@ -58,17 +62,12 @@ public:
     void clearVoronoiInputs();
     void addVoronoiModelInput(
         uint32_t runtimeModelId,
-        const voronoi::Node* nodes,
-        uint32_t voronoiNodeCount,
-        VkBuffer voronoiNodeBuffer,
-        VkDeviceSize voronoiNodeBufferOffset,
         uint32_t simNodeCount,
         VkBuffer simNodeBuffer,
         VkDeviceSize simNodeBufferOffset,
-        VkDeviceSize simNodeBufferSize,
-        VkBuffer simGMLSInterfaceBuffer,
-        VkDeviceSize simGMLSInterfaceBufferOffset,
-        uint32_t simGMLSInterfaceCount,
+        VkBuffer simNodeCouplingBuffer,
+        VkDeviceSize simNodeCouplingBufferOffset,
+        uint32_t simNodeCouplingCount,
         VkBuffer gmlsSurfaceStencilBuffer,
         VkDeviceSize gmlsSurfaceStencilBufferOffset,
         VkBuffer gmlsSurfaceWeightBuffer,
@@ -77,12 +76,17 @@ public:
         VkBuffer gmlsSurfaceGradientWeightBuffer,
         VkDeviceSize gmlsSurfaceGradientWeightBufferOffset,
         size_t gmlsSurfaceGradientWeightCount,
-        const std::vector<uint32_t>& seedFlags,
-        const std::vector<glm::vec3>& seedPositions,
-        const std::vector<float>& simNodeVolumes,
-        const std::vector<uint32_t>& voronoiToSim);
+        const std::vector<glm::vec3>& nodePositions,
+        const std::vector<voronoi::Node>& nodes,
+        const std::vector<voronoi::NodeCoupling>& nodeCouplings,
+        const std::vector<uint32_t>& surfaceNodeIds,
+        const std::vector<float>& surfacePatchAreas);
 
     void resetSimulationState();
+    bool setRuntimeDirichletTemperatureC(uint32_t runtimeModelId, uint32_t regionId, float temperatureC);
+    bool setRuntimeNeumannHeatFlux(uint32_t runtimeModelId, uint32_t regionId, float heatFlux);
+    bool setRuntimeRobinState(uint32_t runtimeModelId, uint32_t regionId, float ambientTemperatureC, float heatTransferCoefficient);
+    bool setRuntimeVolumetricPowerDensity(uint32_t runtimeModelId, float powerDensity);
 
     bool getIsActive() const { return isActive; }
     bool getIsPaused() const { return timeline.isPaused(); }
@@ -98,27 +102,29 @@ public:
     uint32_t getRewindFrame() const;
 
     const std::vector<VkCommandBuffer>& getComputeCommandBuffers() const override { return computeCommandBuffers; }
+    ComputePass::Synchronization getSynchronization() const override;
     const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& getActiveModels() const { return runtime.getActiveModels(); }
     HeatModelRuntime* getModelByRuntimeId(uint32_t runtimeModelId) const { return runtime.getModelByRuntimeId(runtimeModelId); }
 
 private:
     static constexpr float TimelineFPS = 60.0f;
-    static constexpr int NumSubsteps = 3;
+    static constexpr uint32_t DefaultSubsteps = 3;
 
     uint32_t computeTimelineFrameCount() const;
     uint32_t computeHistoryFrameCapacity() const { return computeTimelineFrameCount() + 1; }
     void failInitialization(const char* stage);
     bool rebuildVoronoiRuntime();
-    bool initializeVoronoiMaterialNodes();
+    bool configureMaterialNodes();
+    bool configureModelBoundaries();
     void resetVoronoiTemperatures();
 
     void processResetTrigger();
     void forwardSim(float deltaTime);
-    void rebuildStencilKDTrees();
     void configureGMLSSurfaceWeights(bool heatVoronoiReady);
     bool recreateDescriptorPools();
     void configureModelSimResources();
-    void rebuildContactRuntimes();
+    bool rebuildContactRuntimes();
+    bool resolveModelBoundaryAreas();
 
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
@@ -131,21 +137,25 @@ private:
     std::unique_ptr<HeatSystemSimStage> simStage;
     std::unique_ptr<HeatSystemSurfaceStage> surfaceStage;
     std::unique_ptr<HeatSystemDiffusionStage> diffusionStage;
-    std::unique_ptr<ContactSystemComputeStage> contactStage;
 
     HeatSystemRuntime runtime;
     HeatSystemSimRuntime simRuntime;
-    std::vector<std::unique_ptr<HeatContactRuntime>> contactRuntimes;
+    std::unique_ptr<HeatContactRuntime> contactRuntime;
 
     std::vector<uint32_t> modelRuntimeModelIds;
     std::vector<ContactCoupling> contactCouplings;
-    std::unordered_map<uint32_t, float> initialTemps;
     float contactThermalConductance = 16000.0f;
 
     TimelineSimulation timeline;
     float simulatedTime = 0.0f;
     bool shouldStepPhysics = false;
     bool needsInitialCapture = false;
+    bool syntheticDirichletTestEnabled = false;
+    float physicsAccumulator = 0.0f;
+    // Persistent read-buffer parity across frames. true = tempBufferA holds the
+    // current temperatures at the start of the next recorded frame.
+    bool temperatureBufferAIsCurrent = true;
+    std::chrono::steady_clock::time_point lastUpdateTime = std::chrono::steady_clock::now();
 
     bool isActive = false;
     bool initialized = false;
@@ -154,19 +164,17 @@ private:
     bool contactCouplingsDirty = true;
     uint32_t processedResetCounter = 0;
 
-    std::unordered_map<uint32_t, const voronoi::Node*> modelVoronoiNodesByModelId;
-    std::unordered_map<uint32_t, VkBuffer> modelVoronoiNodeBufferByModelId;
-    std::unordered_map<uint32_t, VkDeviceSize> modelVoronoiNodeBufferOffsetByModelId;
     std::unordered_map<uint32_t, VkBuffer> modelSimNodeBufferByModelId;
     std::unordered_map<uint32_t, VkDeviceSize> modelSimNodeBufferOffsetByModelId;
-    std::unordered_map<uint32_t, VkDeviceSize> modelSimNodeBufferSizeByModelId;
-    std::unordered_map<uint32_t, VkBuffer> modelSimGMLSInterfaceBufferByModelId;
-    std::unordered_map<uint32_t, VkDeviceSize> modelSimGMLSInterfaceBufferOffsetByModelId;
-    std::unordered_map<uint32_t, uint32_t> voronoiNodeCounts;
+    std::unordered_map<uint32_t, VkBuffer> modelSimNodeCouplingBufferByModelId;
+    std::unordered_map<uint32_t, VkDeviceSize> modelSimNodeCouplingBufferOffsetByModelId;
     std::unordered_map<uint32_t, uint32_t> simNodeCounts;
-    std::unordered_map<uint32_t, uint32_t> simGMLSInterfaceCounts;
-    std::unordered_map<uint32_t, std::vector<float>> modelSimNodeVolumesByModelId;
-    std::unordered_map<uint32_t, std::vector<uint32_t>> modelVoronoiToSimByModelId;
+    std::unordered_map<uint32_t, uint32_t> simNodeCouplingCounts;
+    std::unordered_map<uint32_t, std::vector<glm::vec3>> modelNodePositionsByModelId;
+    std::unordered_map<uint32_t, std::vector<voronoi::Node>> modelNodesByModelId;
+    std::unordered_map<uint32_t, std::vector<voronoi::NodeCoupling>> modelNodeCouplingsByModelId;
+    std::unordered_map<uint32_t, std::vector<uint32_t>> modelSurfaceNodeIdsByModelId;
+    std::unordered_map<uint32_t, std::vector<float>> modelSurfacePatchAreasByModelId;
     std::unordered_map<uint32_t, VkBuffer> modelGMLSSurfaceStencilBufferByModelId;
     std::unordered_map<uint32_t, VkDeviceSize> modelGMLSSurfaceStencilBufferOffsetByModelId;
     std::unordered_map<uint32_t, VkBuffer> modelGMLSSurfaceWeightBufferByModelId;
@@ -175,6 +183,4 @@ private:
     std::unordered_map<uint32_t, VkBuffer> modelGMLSSurfaceGradientWeightBufferByModelId;
     std::unordered_map<uint32_t, VkDeviceSize> modelGMLSSurfaceGradientWeightBufferOffsetByModelId;
     std::unordered_map<uint32_t, size_t> modelGMLSSurfaceGradientWeightCountByModelId;
-    std::unordered_map<uint32_t, std::vector<uint32_t>> modelVoronoiSeedFlagsByModelId;
-    std::unordered_map<uint32_t, std::vector<glm::vec3>> modelVoronoiSeedPositionsByModelId;
 };

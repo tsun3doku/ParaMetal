@@ -1,432 +1,463 @@
 #include "HeatContactRuntime.hpp"
 
-#include "contact/ContactGpuStructs.hpp"
-#include "contact/ContactSystemComputeStage.hpp"
-
-#include "contact/ContactSampling.hpp"
+#include "contact/ContactMapping.hpp"
+#include "heat/HeatModelRuntime.hpp"
 #include "util/GMLS.hpp"
-#include "vulkan/MemoryAllocator.hpp"
-#include "vulkan/VulkanBuffer.hpp"
-#include "vulkan/VulkanDevice.hpp"
-
-#include "voronoi/VoronoiAdapters.hpp"
-#include "HeatModelRuntime.hpp"
 #include "util/GeometryUtils.hpp"
+#include "voronoi/VoronoiNodeIndex.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <limits>
-#include <memory>
 #include <unordered_map>
-
-#include <libs/nanoflann/include/nanoflann.hpp>
-
-bool HeatContactRuntime::buildPointStencil(
-    const glm::vec3& point,
-    const StencilKDTree& kdTree,
-    std::vector<contact::ContactSampleWeight>& valueWeightsOut,
-    uint32_t& valueWeightOffsetOut,
-    uint32_t& valueWeightCountOut,
-    std::vector<contact::ContactSampleWeight>& scatterWeightsOut,
-    uint32_t& scatterWeightOffsetOut,
-    uint32_t& scatterWeightCountOut) {
-    valueWeightCountOut = 0;
-    scatterWeightCountOut = 0;
-
-    if (!kdTree.isValid()) {
-        return false;
-    }
-
-    const size_t supportCount = kdTree.supportCount;
-    std::vector<size_t> retIndices(supportCount, 0);
-    std::vector<float> outDistSq(supportCount, 0.0f);
-
-    const float query[3] = { point.x, point.y, point.z };
-    nanoflann::KNNResultSet<float> resultSet(supportCount);
-    resultSet.init(retIndices.data(), outDistSq.data());
-    kdTree.index.findNeighbors(resultSet, query);
-
-    std::vector<glm::dvec3> supportPositions;
-    supportPositions.reserve(supportCount);
-    float maxDistance = 0.0f;
-    for (size_t supportIndex = 0; supportIndex < supportCount; ++supportIndex) {
-        supportPositions.push_back(glm::dvec3(kdTree.regularSeedPositions[retIndices[supportIndex]]));
-        maxDistance = std::max(maxDistance, std::sqrt(outDistSq[supportIndex]));
-    }
-
-    std::vector<double> valueWeights;
-    std::vector<glm::dvec3> gradientWeights;
-    const double kernelRadius = std::max<double>(static_cast<double>(maxDistance) * 2.0, 1e-5);
-    if (!GMLS::computeWeights(glm::dvec3(point), supportPositions, kernelRadius, valueWeights, gradientWeights)) {
-        return false;
-    }
-
-    const std::vector<float> scatterWeights = ::GMLS::buildScatterWeights(valueWeights);
-    std::vector<contact::ContactSampleWeight> localValueWeights;
-    std::vector<contact::ContactSampleWeight> localScatterWeights;
-    localValueWeights.reserve(supportCount);
-    localScatterWeights.reserve(supportCount);
-    for (size_t supportIndex = 0; supportIndex < supportCount; ++supportIndex) {
-        const uint32_t localCellIndex = kdTree.regularLocalIndices[retIndices[supportIndex]];
-        const float valueWeight = static_cast<float>(valueWeights[supportIndex]);
-        if (std::abs(valueWeight) > 1e-7f) {
-            localValueWeights.push_back({ localCellIndex, valueWeight });
-            ++valueWeightCountOut;
-        }
-
-        const float scatterWeight = scatterWeights[supportIndex];
-        if (scatterWeight > 1e-7f) {
-            localScatterWeights.push_back({ localCellIndex, scatterWeight });
-            ++scatterWeightCountOut;
-        }
-    }
-
-    valueWeightOffsetOut = static_cast<uint32_t>(valueWeightsOut.size());
-    valueWeightsOut.insert(valueWeightsOut.end(), localValueWeights.begin(), localValueWeights.end());
-    scatterWeightOffsetOut = static_cast<uint32_t>(scatterWeightsOut.size());
-    scatterWeightsOut.insert(scatterWeightsOut.end(), localScatterWeights.begin(), localScatterWeights.end());
-
-    return (valueWeightCountOut != 0 && scatterWeightCountOut != 0);
-}
-
-void HeatContactRuntime::remapWeightsToSimNodes(
-    const HeatModelRuntime& model,
-    std::vector<contact::ContactSampleWeight>& weights) {
-    std::vector<contact::ContactSampleWeight> remapped;
-    remapped.reserve(weights.size());
-    for (contact::ContactSampleWeight weight : weights) {
-        const uint32_t simNodeId = model.mapVoronoiNodeToSim(weight.cellIndex);
-        if (simNodeId == UINT32_MAX) {
-            continue;
-        }
-        weight.cellIndex = simNodeId;
-        remapped.push_back(weight);
-    }
-    weights = std::move(remapped);
-}
-
-void HeatContactRuntime::thresholdContactEdges(
-    const std::vector<BakedContact>& baked,
-    uint32_t nodeCount,
-    std::vector<contact::ContactSampleWeight>& outEdges,
-    std::vector<contact::ContactIndex>& outIndex) {
-
-    outEdges.clear();
-    outIndex.clear();
-    outIndex.resize(nodeCount);
-
-    for (uint32_t nodeId = 0; nodeId < nodeCount; ++nodeId) {
-        const auto& bakedContact = baked[nodeId];
-
-        contact::ContactIndex index{};
-        index.offset = static_cast<uint32_t>(outEdges.size());
-        index.count = 0;
-        index.contactK = bakedContact.totalConductance;
-        index._pad = 0;
-
-        if (!bakedContact.neighborWeights.empty()) {
-            for (const auto& [neighborId, w] : bakedContact.neighborWeights) {
-                if (std::abs(w) < 1e-7f) {
-                    continue;
-                }
-                outEdges.push_back({ neighborId, w });
-                ++index.count;
-            }
-        }
-
-        outIndex[nodeId] = index;
-    }
-}
+#include <unordered_set>
 
 HeatContactRuntime::~HeatContactRuntime() = default;
 
+void HeatContactRuntime::buildWendlandWeights(
+    const glm::vec3& point,
+    const VoronoiNodeIndex& nodeIndex,
+    std::vector<uint32_t>& neighborIds,
+    std::vector<float>& weights) {
+    neighborIds.clear();
+    weights.clear();
+    if (!nodeIndex.isValid()) return;
+
+    std::vector<float> distancesSquared;
+    nodeIndex.findKNearest(point, 50u, neighborIds, distancesSquared);
+    if (neighborIds.empty()) return;
+
+    float maxDistance = 0.0f;
+    for (float distanceSquared : distancesSquared) {
+        maxDistance = std::max(maxDistance, std::sqrt(distanceSquared));
+    }
+    const float radius = std::max(maxDistance * 2.0f, 1e-5f);
+    weights.resize(neighborIds.size());
+    double sum = 0.0;
+    for (size_t index = 0; index < neighborIds.size(); ++index) {
+        const double normalizedRadius = std::sqrt(distancesSquared[index]) / radius;
+        weights[index] = static_cast<float>(GMLS::wendlandC2(normalizedRadius));
+        sum += weights[index];
+    }
+    if (sum <= 1e-20) {
+        neighborIds.clear();
+        weights.clear();
+        return;
+    }
+    for (float& weight : weights) {
+        weight = static_cast<float>(weight / sum);
+    }
+}
+
 bool HeatContactRuntime::build(
     VulkanDevice& vulkanDevice,
-    MemoryAllocator& memoryAllocator,
-    const ContactCoupling& coupling,
-    const HeatModelRuntime& modelA,
-    const HeatModelRuntime& modelB,
-    float contactThermalConductance) {
-
-    cleanup(memoryAllocator);
-
-    if (coupling.contactPairs.empty() || coupling.contactPairCount == 0) {
-        std::cerr << "[HeatContactRuntime] build abort: missing contact pairs" << std::endl;
+    const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& models,
+    const std::vector<ContactCoupling>& couplings,
+    float heatTransferCoefficient) {
+    cleanup();
+    if (models.empty() || couplings.empty() || !std::isfinite(heatTransferCoefficient) || heatTransferCoefficient < 0.0f) {
         return false;
     }
 
-    modelARuntimeModelId = coupling.modelARuntimeModelId;
-    modelBRuntimeModelId = coupling.modelBRuntimeModelId;
-
-    const uint32_t modelANodeCount = modelA.getSimNodeCount();
-    const uint32_t modelBNodeCount = modelB.getSimNodeCount();
-
-    const SupportingHalfedge::IntrinsicMesh& modelAMesh = modelA.getIntrinsicMesh();
-    const SupportingHalfedge::IntrinsicMesh& modelBMesh = modelB.getIntrinsicMesh();
-
-    StencilKDTree* modelAKDTree = modelA.getStencilKDTree();
-    StencilKDTree* modelBKDTree = modelB.getStencilKDTree();
-
-    if (!modelAKDTree || !modelBKDTree || !modelAKDTree->isValid() || !modelBKDTree->isValid()) {
-        std::cerr << "[HeatContactRuntime] build abort: missing or invalid shared KD-Trees" << std::endl;
-        return false;
+    std::vector<uint32_t> runtimeModelIds;
+    for (const ContactCoupling& coupling : couplings) {
+        if (!coupling.isValid()) continue;
+        runtimeModelIds.push_back(coupling.modelARuntimeModelId);
+        runtimeModelIds.push_back(coupling.modelBRuntimeModelId);
     }
+    std::sort(runtimeModelIds.begin(), runtimeModelIds.end());
+    runtimeModelIds.erase(std::unique(runtimeModelIds.begin(), runtimeModelIds.end()), runtimeModelIds.end());
 
-    const auto& triangleIndices = coupling.modelBTriangleIndices;
-    const std::size_t triangleCount = triangleIndices.size() / 3;
-    const std::size_t contactPairCount = std::min<std::size_t>(coupling.contactPairCount, triangleCount);
-
-    std::vector<BakedContact> bakedAToB(modelANodeCount);
-    std::vector<BakedContact> bakedBToA(modelBNodeCount);
-
-    for (std::size_t triangleIndex = 0; triangleIndex < contactPairCount; ++triangleIndex) {
-        const ContactPair& contactPair = coupling.contactPairs[triangleIndex];
-        if (contactPair.contactArea <= 0.0f) {
-            continue;
-        }
-
-        const std::size_t triangleBase = triangleIndex * 3;
-        const uint32_t vertexIndices[3] = {
-            triangleIndices[triangleBase + 0],
-            triangleIndices[triangleBase + 1],
-            triangleIndices[triangleBase + 2],
-        };
-        if (vertexIndices[0] >= modelBMesh.vertices.size() ||
-            vertexIndices[1] >= modelBMesh.vertices.size() ||
-            vertexIndices[2] >= modelBMesh.vertices.size()) {
-            continue;
-        }
-
-        const glm::vec3 modelBP0 = modelBMesh.vertices[vertexIndices[0]].position;
-        const glm::vec3 modelBP1 = modelBMesh.vertices[vertexIndices[1]].position;
-        const glm::vec3 modelBP2 = modelBMesh.vertices[vertexIndices[2]].position;
-
-        for (uint32_t sampleIndex = 0; sampleIndex < Quadrature::count; ++sampleIndex) {
-            const contact::Sample& samplePoint = contactPair.samples[sampleIndex];
-            if (samplePoint.sourceTriangleIndex == std::numeric_limits<uint32_t>::max() || samplePoint.wArea <= 0.0f) {
-                continue;
-            }
-
-            const glm::vec3 modelBPoint = barycentricToPosition(
-                modelBP0, modelBP1, modelBP2,
-                Quadrature::bary[sampleIndex]);
-
-            std::vector<contact::ContactSampleWeight> bValueWeights, bScatterWeights;
-            uint32_t bValueOffset, bValueCount, bScatterOffset, bScatterCount;
-            if (!buildPointStencil(
-                    modelBPoint, *modelBKDTree,
-                    bValueWeights, bValueOffset, bValueCount,
-                    bScatterWeights, bScatterOffset, bScatterCount)) {
-                continue;
-            }
-            remapWeightsToSimNodes(modelB, bValueWeights);
-
-            if (samplePoint.sourceTriangleIndex >= modelAMesh.triangles.size()) {
-                continue;
-            }
-
-            const auto& modelATriangle = modelAMesh.triangles[samplePoint.sourceTriangleIndex];
-            const uint32_t e0 = modelATriangle.vertexIndices[0];
-            const uint32_t e1 = modelATriangle.vertexIndices[1];
-            const uint32_t e2 = modelATriangle.vertexIndices[2];
-            if (e0 >= modelAMesh.vertices.size() ||
-                e1 >= modelAMesh.vertices.size() ||
-                e2 >= modelAMesh.vertices.size()) {
-                continue;
-            }
-
-            const glm::vec3 modelABary(
-                1.0f - samplePoint.u - samplePoint.v,
-                samplePoint.u,
-                samplePoint.v);
-            const glm::vec3 modelAPoint = barycentricToPosition(
-                modelAMesh.vertices[e0].position,
-                modelAMesh.vertices[e1].position,
-                modelAMesh.vertices[e2].position,
-                modelABary);
-
-            std::vector<contact::ContactSampleWeight> aValueWeights, aScatterWeights;
-            uint32_t aValueOffset, aValueCount, aScatterOffset, aScatterCount;
-            if (!buildPointStencil(
-                    modelAPoint, *modelAKDTree,
-                    aValueWeights, aValueOffset, aValueCount,
-                    aScatterWeights, aScatterOffset, aScatterCount)) {
-                continue;
-            }
-            remapWeightsToSimNodes(modelA, aValueWeights);
-
-            const float sampleConductance = contactThermalConductance * samplePoint.wArea;
-
-            float aValueWeightSum = 0.0f;
-            for (const auto& aw : aValueWeights) {
-                if (aw.cellIndex < modelANodeCount) {
-                    aValueWeightSum += std::abs(aw.weight);
-                }
-            }
-            if (aValueWeightSum < 1e-12f) continue;
-
-            float bValueWeightSum = 0.0f;
-            for (const auto& bw : bValueWeights) {
-                if (bw.cellIndex < modelBNodeCount) {
-                    bValueWeightSum += std::abs(bw.weight);
-                }
-            }
-            if (bValueWeightSum < 1e-12f) continue;
-
-            for (const auto& aw : aValueWeights) {
-                if (aw.cellIndex >= modelANodeCount) continue;
-                float nodeConductance = sampleConductance * std::abs(aw.weight) / aValueWeightSum;
-                bakedAToB[aw.cellIndex].totalConductance += nodeConductance;
-
-                for (const auto& bw : bValueWeights) {
-                    if (bw.cellIndex >= modelBNodeCount) continue;
-                    bakedAToB[aw.cellIndex].neighborWeights[bw.cellIndex] += nodeConductance * (bw.weight / bValueWeightSum);
-                }
-            }
-
-            for (const auto& bw : bValueWeights) {
-                if (bw.cellIndex >= modelBNodeCount) continue;
-                float nodeConductance = sampleConductance * std::abs(bw.weight) / bValueWeightSum;
-                bakedBToA[bw.cellIndex].totalConductance += nodeConductance;
-
-                for (const auto& aw : aValueWeights) {
-                    if (aw.cellIndex >= modelANodeCount) continue;
-                    bakedBToA[bw.cellIndex].neighborWeights[aw.cellIndex] += nodeConductance * (aw.weight / aValueWeightSum);
-                }
-            }
-        }
+    uint32_t fullNodeCount = 0;
+    std::unordered_map<uint32_t, uint32_t> fullOffsets;
+    std::unordered_map<uint32_t, uint32_t> nodeCounts;
+    for (uint32_t runtimeModelId : runtimeModelIds) {
+        const auto modelIt = models.find(runtimeModelId);
+        if (modelIt == models.end() || !modelIt->second || modelIt->second->getSimNodeCount() == 0) continue;
+        fullOffsets[runtimeModelId] = fullNodeCount;
+        nodeCounts[runtimeModelId] = modelIt->second->getSimNodeCount();
+        fullNodeCount += modelIt->second->getSimNodeCount();
     }
+    if (fullNodeCount == 0) return false;
 
-    std::vector<contact::ContactSampleWeight> flatEdgesAToB;
-    std::vector<contact::ContactIndex> indexDataAToB;
-    thresholdContactEdges(bakedAToB, modelANodeCount, flatEdgesAToB, indexDataAToB);
+    const uint32_t InvalidNode = std::numeric_limits<uint32_t>::max();
+    auto toFullNodeId = [&](uint32_t runtimeModelId, uint32_t localNodeId) {
+        const auto offsetIt = fullOffsets.find(runtimeModelId);
+        const auto countIt = nodeCounts.find(runtimeModelId);
+        if (offsetIt == fullOffsets.end() || countIt == nodeCounts.end() || localNodeId >= countIt->second) {
+            return InvalidNode;
+        }
+        return offsetIt->second + localNodeId;
+    };
 
-    std::vector<contact::ContactSampleWeight> flatEdgesBToA;
-    std::vector<contact::ContactIndex> indexDataBToA;
-    thresholdContactEdges(bakedBToA, modelBNodeCount, flatEdgesBToA, indexDataBToA);
-
-    void* mapped = nullptr;
-    if (createStorageBuffer(
-            memoryAllocator,
-            vulkanDevice,
-            indexDataAToB.data(),
-            sizeof(contact::ContactIndex) * indexDataAToB.size(),
-            edgeIndexAToB,
-            edgeIndexAToBOffset,
-            &mapped,
-            true) != VK_SUCCESS) {
-        return false;
-    }
-
-    if (!flatEdgesAToB.empty()) {
-        if (createStorageBuffer(
-                memoryAllocator,
-                vulkanDevice,
-                flatEdgesAToB.data(),
-                sizeof(contact::ContactSampleWeight) * flatEdgesAToB.size(),
-                edgesAToB,
-                edgesAToBOffset,
-                &mapped,
-                true) != VK_SUCCESS) {
+    std::unordered_map<uint32_t, std::unique_ptr<VoronoiNodeIndex>> surfaceIndices;
+    std::unordered_map<uint32_t, std::vector<uint32_t>> surfaceNodeIdsByModelId;
+    for (uint32_t runtimeModelId : runtimeModelIds) {
+        const auto modelIt = models.find(runtimeModelId);
+        if (modelIt == models.end() || !modelIt->second) {
             return false;
         }
-        edgeCountAToB = static_cast<uint32_t>(flatEdgesAToB.size());
-    }
-
-    if (createStorageBuffer(
-            memoryAllocator,
-            vulkanDevice,
-            indexDataBToA.data(),
-            sizeof(contact::ContactIndex) * indexDataBToA.size(),
-            edgeIndexBToA,
-            edgeIndexBToAOffset,
-            &mapped,
-            true) != VK_SUCCESS) {
-        return false;
-    }
-
-    if (!flatEdgesBToA.empty()) {
-        if (createStorageBuffer(
-                memoryAllocator,
-                vulkanDevice,
-                flatEdgesBToA.data(),
-                sizeof(contact::ContactSampleWeight) * flatEdgesBToA.size(),
-                edgesBToA,
-                edgesBToAOffset,
-                &mapped,
-                true) != VK_SUCCESS) {
+        const HeatModelRuntime& model = *modelIt->second;
+        const auto& surfaceNodeIds = model.getSurfaceNodeIds();
+        const auto& patchAreas = model.getSurfacePatchAreas();
+        const auto& nodePositions = model.getNodeIndex().getNodePositions();
+        if (patchAreas.size() != model.getSimNodeCount() || nodePositions.size() != model.getSimNodeCount() ||
+            surfaceNodeIds.empty()) {
             return false;
         }
-        edgeCountBToA = static_cast<uint32_t>(flatEdgesBToA.size());
+
+        std::vector<glm::vec3> surfaceNodePositions;
+        surfaceNodePositions.reserve(surfaceNodeIds.size());
+        for (uint32_t nodeId : surfaceNodeIds) {
+            if (nodeId >= nodePositions.size() || !std::isfinite(patchAreas[nodeId]) || patchAreas[nodeId] <= 0.0f) {
+                return false;
+            }
+            surfaceNodePositions.push_back(nodePositions[nodeId]);
+        }
+        auto surfaceIndex = std::make_unique<VoronoiNodeIndex>();
+        surfaceIndex->rebuild(surfaceNodePositions);
+        if (!surfaceIndex->isValid()) {
+            return false;
+        }
+        surfaceIndices.emplace(runtimeModelId, std::move(surfaceIndex));
+        surfaceNodeIdsByModelId.emplace(runtimeModelId, surfaceNodeIds);
+        coveredAreasByModelId[runtimeModelId].assign(model.getSimNodeCount(), 0.0f);
+    }
+
+    auto addCoveredArea = [&](uint32_t runtimeModelId, const glm::vec3& point, float area) {
+        const auto indexIt = surfaceIndices.find(runtimeModelId);
+        const auto idsIt = surfaceNodeIdsByModelId.find(runtimeModelId);
+        const auto coveredIt = coveredAreasByModelId.find(runtimeModelId);
+        if (indexIt == surfaceIndices.end() || idsIt == surfaceNodeIdsByModelId.end() ||
+            coveredIt == coveredAreasByModelId.end() || !std::isfinite(area) || area <= 0.0f) {
+            return false;
+        }
+        std::vector<uint32_t> compactNodeIds;
+        std::vector<float> weights;
+        buildWendlandWeights(point, *indexIt->second, compactNodeIds, weights);
+        if (compactNodeIds.empty() || compactNodeIds.size() != weights.size()) {
+            return false;
+        }
+        for (size_t index = 0; index < compactNodeIds.size(); ++index) {
+            if (compactNodeIds[index] >= idsIt->second.size()) {
+                return false;
+            }
+            coveredIt->second[idsIt->second[compactNodeIds[index]]] += area * weights[index];
+        }
+        return true;
+    };
+
+    std::vector<uint32_t> fixedBoundaryValueIndex(fullNodeCount, InvalidNode);
+    fixedBoundaryRegions.clear();
+    for (uint32_t runtimeModelId : runtimeModelIds) {
+        const auto modelIt = models.find(runtimeModelId);
+        if (modelIt == models.end() || !modelIt->second) continue;
+        std::unordered_map<uint32_t, uint32_t> fixedValueIndexByRegionId;
+        for (uint32_t localNodeId : modelIt->second->getDirichletNodeIds()) {
+            const uint32_t fullNodeId = toFullNodeId(runtimeModelId, localNodeId);
+            if (fullNodeId != InvalidNode) {
+                const uint32_t regionId = modelIt->second->getDirichletRegionId(localNodeId);
+                auto [regionIt, inserted] = fixedValueIndexByRegionId.emplace(
+                    regionId, static_cast<uint32_t>(fixedBoundaryRegions.size()));
+                if (inserted) {
+                    float temperatureC = 0.0f;
+                    if (!modelIt->second->getBoundaryRegionTemperatureC(regionId, temperatureC)) {
+                        return false;
+                    }
+                    fixedBoundaryRegions.push_back({modelIt->second.get(), regionId});
+                }
+                fixedBoundaryValueIndex[fullNodeId] = regionIt->second;
+            }
+        }
+    }
+
+    std::vector<ContactSampleData> samples;
+    for (const ContactCoupling& coupling : couplings) {
+        if (!coupling.isValid()) continue;
+        const auto modelAIt = models.find(coupling.modelARuntimeModelId);
+        const auto modelBIt = models.find(coupling.modelBRuntimeModelId);
+        if (modelAIt == models.end() || modelBIt == models.end() ||
+            !modelAIt->second || !modelBIt->second) continue;
+
+        const HeatModelRuntime& modelA = *modelAIt->second;
+        const HeatModelRuntime& modelB = *modelBIt->second;
+        if (!modelA.getNodeIndex().isValid() || !modelB.getNodeIndex().isValid()) continue;
+
+        const auto& triangleIndices = coupling.modelBTriangleIndices;
+        const size_t pairCount = std::min<size_t>(coupling.contactPairCount, triangleIndices.size() / 3);
+        for (size_t triangleIndex = 0; triangleIndex < pairCount; ++triangleIndex) {
+            const ContactPair& pair = coupling.contactPairs[triangleIndex];
+            if (pair.contactArea <= 0.0f) continue;
+            const size_t triangleBase = triangleIndex * 3;
+            const uint32_t b0 = triangleIndices[triangleBase];
+            const uint32_t b1 = triangleIndices[triangleBase + 1];
+            const uint32_t b2 = triangleIndices[triangleBase + 2];
+            if (b0 >= modelB.getSurfacePositions().size() ||
+                b1 >= modelB.getSurfacePositions().size() ||
+                b2 >= modelB.getSurfacePositions().size()) continue;
+
+            for (uint32_t sampleIndex = 0; sampleIndex < Quadrature::count; ++sampleIndex) {
+                const contact::Sample& contactSample = pair.samples[sampleIndex];
+                const auto& modelATriangleIndices = modelA.getSurfaceTriangleIndices();
+                const size_t modelATriangleBase = static_cast<size_t>(contactSample.modelATriangleIndex) * 3;
+                if (contactSample.modelATriangleIndex == InvalidNode || contactSample.contactSampleArea <= 0.0f ||
+                    modelATriangleBase + 2 >= modelATriangleIndices.size()) continue;
+
+                const glm::vec3 modelBPoint = barycentricToPosition(
+                    modelB.getSurfacePositions()[b0],
+                    modelB.getSurfacePositions()[b1],
+                    modelB.getSurfacePositions()[b2],
+                    Quadrature::bary[sampleIndex]);
+                std::vector<uint32_t> nodesB;
+                std::vector<float> weightsB;
+                buildWendlandWeights(modelBPoint, modelB.getNodeIndex(), nodesB, weightsB);
+                if (nodesB.empty()) continue;
+
+                const uint32_t a0 = modelATriangleIndices[modelATriangleBase];
+                const uint32_t a1 = modelATriangleIndices[modelATriangleBase + 1];
+                const uint32_t a2 = modelATriangleIndices[modelATriangleBase + 2];
+                if (a0 >= modelA.getSurfacePositions().size() ||
+                    a1 >= modelA.getSurfacePositions().size() ||
+                    a2 >= modelA.getSurfacePositions().size()) continue;
+                const glm::vec3 barycentric(
+                    1.0f - contactSample.u - contactSample.v,
+                    contactSample.u,
+                    contactSample.v);
+                const glm::vec3 modelAPoint = barycentricToPosition(
+                    modelA.getSurfacePositions()[a0],
+                    modelA.getSurfacePositions()[a1],
+                    modelA.getSurfacePositions()[a2],
+                    barycentric);
+                if (!addCoveredArea(coupling.modelARuntimeModelId, modelAPoint, contactSample.contactSampleArea) ||
+                    !addCoveredArea(coupling.modelBRuntimeModelId, modelBPoint, contactSample.contactSampleArea)) {
+                    return false;
+                }
+                std::vector<uint32_t> nodesA;
+                std::vector<float> weightsA;
+                buildWendlandWeights(modelAPoint, modelA.getNodeIndex(), nodesA, weightsA);
+                if (nodesA.empty()) continue;
+
+                ContactSampleData sample{};
+                sample.conductance =
+                    static_cast<double>(heatTransferCoefficient) * contactSample.contactSampleArea;
+                sample.nodes.reserve(nodesA.size() + nodesB.size());
+                double sampleWeightSum = 0.0;
+                for (size_t index = 0; index < nodesA.size(); ++index) {
+                    const uint32_t fullNode = toFullNodeId(coupling.modelARuntimeModelId, nodesA[index]);
+                    if (fullNode == InvalidNode) continue;
+                    sample.nodes.push_back({fullNode, static_cast<double>(weightsA[index])});
+                    sampleWeightSum += weightsA[index];
+                }
+                for (size_t index = 0; index < nodesB.size(); ++index) {
+                    const uint32_t fullNode = toFullNodeId(coupling.modelBRuntimeModelId, nodesB[index]);
+                    if (fullNode == InvalidNode) continue;
+                    sample.nodes.push_back({fullNode, -static_cast<double>(weightsB[index])});
+                    sampleWeightSum -= weightsB[index];
+                }
+                if (!sample.nodes.empty() && std::abs(sampleWeightSum) <= 1e-5) {
+                    samples.push_back(std::move(sample));
+                }
+            }
+        }
+    }
+    if (heatTransferCoefficient == 0.0f) return true;
+    if (samples.empty()) return false;
+
+    std::vector<uint32_t> activeFullNodeIds;
+    for (const ContactSampleData& sample : samples) {
+        for (const SampleNode& node : sample.nodes) {
+            if (fixedBoundaryValueIndex[node.fullNodeId] == InvalidNode) {
+                activeFullNodeIds.push_back(node.fullNodeId);
+            }
+        }
+    }
+    std::sort(activeFullNodeIds.begin(), activeFullNodeIds.end());
+    activeFullNodeIds.erase(std::unique(activeFullNodeIds.begin(), activeFullNodeIds.end()), activeFullNodeIds.end());
+    if (activeFullNodeIds.empty()) return true;
+
+    const uint32_t contactNodeCount = static_cast<uint32_t>(activeFullNodeIds.size());
+    std::vector<uint32_t> fullToSolver(fullNodeCount, InvalidNode);
+    for (uint32_t solverNode = 0; solverNode < contactNodeCount; ++solverNode) {
+        fullToSolver[activeFullNodeIds[solverNode]] = solverNode;
+    }
+
+    modelNodes.clear();
+    for (uint32_t runtimeModelId : runtimeModelIds) {
+        const auto offsetIt = fullOffsets.find(runtimeModelId);
+        const auto countIt = nodeCounts.find(runtimeModelId);
+        if (offsetIt == fullOffsets.end() || countIt == nodeCounts.end()) continue;
+        SolverModelNodes modelNodesForRuntime{};
+        modelNodesForRuntime.runtimeModelId = runtimeModelId;
+        for (uint32_t localNode = 0; localNode < countIt->second; ++localNode) {
+            const uint32_t solverNode = fullToSolver[offsetIt->second + localNode];
+            if (solverNode == InvalidNode) continue;
+            if (modelNodesForRuntime.localNodeIds.empty()) {
+                modelNodesForRuntime.solverNodeOffset = solverNode;
+            }
+            modelNodesForRuntime.localNodeIds.push_back(localNode);
+        }
+        if (!modelNodesForRuntime.localNodeIds.empty()) modelNodes.push_back(std::move(modelNodesForRuntime));
+    }
+
+    std::vector<std::unordered_map<uint32_t, double>> matrixRows(contactNodeCount);
+    std::vector<std::unordered_map<uint32_t, double>> fixedRowMaps(contactNodeCount);
+ 
+    for (const ContactSampleData& sample : samples) {
+        for (const SampleNode& nodeA : sample.nodes) {
+            if (nodeA.weight <= 0.0) continue;
+            for (const SampleNode& nodeB : sample.nodes) {
+                if (nodeB.weight >= 0.0) continue;
+                const double conductance =
+                    FixedTimeStep * sample.conductance * nodeA.weight * -nodeB.weight;
+                if (conductance <= 0.0) continue;
+
+                const uint32_t solverA = fullToSolver[nodeA.fullNodeId];
+                const uint32_t solverB = fullToSolver[nodeB.fullNodeId];
+                const uint32_t fixedA = fixedBoundaryValueIndex[nodeA.fullNodeId];
+                const uint32_t fixedB = fixedBoundaryValueIndex[nodeB.fullNodeId];
+
+                if (solverA != InvalidNode && solverB != InvalidNode) {
+                    matrixRows[solverA][solverA] += conductance;
+                    matrixRows[solverB][solverB] += conductance;
+                    matrixRows[solverA][solverB] -= conductance;
+                    matrixRows[solverB][solverA] -= conductance;
+                } else if (solverA != InvalidNode && fixedB != InvalidNode) {
+                    matrixRows[solverA][solverA] += conductance;
+                    fixedRowMaps[solverA][fixedB] += conductance;
+                } else if (solverB != InvalidNode && fixedA != InvalidNode) {
+                    matrixRows[solverB][solverB] += conductance;
+                    fixedRowMaps[solverB][fixedA] += conductance;
+                }
+            }
+        }
+    }
+
+    std::vector<float> thermalMasses(contactNodeCount, 0.0f);
+    for (const SolverModelNodes& modelNodesForRuntime : modelNodes) {
+        HeatModelRuntime& model = *models.at(modelNodesForRuntime.runtimeModelId);
+        const auto& modelMasses = model.getNodalThermalMasses();
+        for (uint32_t index = 0; index < modelNodesForRuntime.localNodeIds.size(); ++index) {
+            const uint32_t localNode = modelNodesForRuntime.localNodeIds[index];
+            const uint32_t solverNode = modelNodesForRuntime.solverNodeOffset + index;
+            if (localNode >= modelMasses.size() || !std::isfinite(modelMasses[localNode]) || modelMasses[localNode] <= 0.0f) {
+                std::cerr << "[AmgXContact] invalid thermal mass at model="
+                          << modelNodesForRuntime.runtimeModelId << " node=" << localNode << std::endl;
+                return false;
+            }
+            thermalMasses[solverNode] = modelMasses[localNode];
+            matrixRows[solverNode][solverNode] += modelMasses[localNode];
+        }
+    }
+
+    std::vector<int> rowOffsets(contactNodeCount + 1, 0);
+    std::vector<int> columnIndices;
+    std::vector<float> values;
+    for (uint32_t row = 0; row < contactNodeCount; ++row) {
+        std::vector<std::pair<uint32_t, double>> sortedRow(matrixRows[row].begin(), matrixRows[row].end());
+        std::sort(sortedRow.begin(), sortedRow.end(), [](const auto& left, const auto& right) {
+            return left.first < right.first;
+        });
+        for (const auto& [column, value] : sortedRow) {
+            if (!std::isfinite(value) || std::abs(value) <= 1e-30) continue;
+            columnIndices.push_back(static_cast<int>(column));
+            values.push_back(static_cast<float>(value));
+        }
+        rowOffsets[row + 1] = static_cast<int>(columnIndices.size());
+    }
+
+    std::vector<HeatContactSolver::FixedRow> fixedRows(contactNodeCount);
+    std::vector<HeatContactSolver::FixedContribution> fixedContributions;
+    for (uint32_t row = 0; row < contactNodeCount; ++row) {
+        fixedRows[row].contributionOffset = static_cast<uint32_t>(fixedContributions.size());
+        std::vector<std::pair<uint32_t, double>> sorted(fixedRowMaps[row].begin(), fixedRowMaps[row].end());
+        std::sort(sorted.begin(), sorted.end());
+        for (const auto& [boundaryIndex, coefficient] : sorted) {
+            if (std::abs(coefficient) <= 1e-30) continue;
+            fixedContributions.push_back({boundaryIndex, static_cast<float>(coefficient)});
+        }
+        fixedRows[row].contributionCount =
+            static_cast<uint32_t>(fixedContributions.size()) - fixedRows[row].contributionOffset;
+    }
+
+    std::vector<HeatContactSolver::ModelNodes> solverModels;
+    solverModels.reserve(modelNodes.size());
+    for (const SolverModelNodes& modelNodesForRuntime : modelNodes) {
+        HeatModelRuntime& model = *models.at(modelNodesForRuntime.runtimeModelId);
+        solverModels.push_back({
+            modelNodesForRuntime.solverNodeOffset,
+            modelNodesForRuntime.localNodeIds,
+            &model.getExternalTempBufferA(),
+            &model.getExternalTempBufferB(),
+            &model.getCudaTempBufferA(),
+            &model.getCudaTempBufferB()});
+    }
+
+    solver = std::make_unique<HeatContactSolver>();
+    if (!solver->initialize(
+            vulkanDevice, rowOffsets, columnIndices, values, thermalMasses,
+            solverModels, fixedRows, fixedContributions,
+            static_cast<uint32_t>(fixedBoundaryRegions.size()))) {
+        solver.reset();
+        return false;
     }
 
     return true;
 }
 
-bool HeatContactRuntime::createDescriptorSets(const ContactSystemComputeStage& contactStage, const HeatModelRuntime& modelA, const HeatModelRuntime& modelB) {
-    setAA = VK_NULL_HANDLE;
-    setAB = VK_NULL_HANDLE;
-    setBA = VK_NULL_HANDLE;
-    setBB = VK_NULL_HANDLE;
+bool HeatContactRuntime::solve(bool temperatureBufferAIsCurrent) {
+    clearSynchronization();
+    if (!hasGraph()) return true;
 
-    const uint32_t countA = modelA.getSimNodeCount();
-    const uint32_t countB = modelB.getSimNodeCount();
-
-    if (countA == 0 || countB == 0) {
-        return true;
+    std::vector<float> boundaryTemperatures;
+    boundaryTemperatures.reserve(fixedBoundaryRegions.size());
+    for (const FixedBoundaryRegion& boundaryRegion : fixedBoundaryRegions) {
+        float temperatureC = 0.0f;
+        if (!boundaryRegion.model) {
+            return false;
+        }
+        if (!boundaryRegion.model->getBoundaryRegionTemperatureC(boundaryRegion.regionId, temperatureC)) {
+            return false;
+        }
+        boundaryTemperatures.push_back(temperatureC);
     }
 
-    bool success = true;
-
-    if (edgesAToB != VK_NULL_HANDLE && edgeIndexAToB != VK_NULL_HANDLE && edgeCountAToB > 0) {
-        success = success && contactStage.createGatherDescriptorSet(
-            modelB.getTempBufferA(), modelB.getTempBufferAOffset(), countB,
-            modelA.getContactAccumulatorBuffer(), modelA.getContactAccumulatorBufferOffset(), countA,
-            edgesAToB, edgesAToBOffset, edgeCountAToB,
-            edgeIndexAToB, edgeIndexAToBOffset, countA,
-            setAA);
-
-        success = success && contactStage.createGatherDescriptorSet(
-            modelB.getTempBufferB(), modelB.getTempBufferBOffset(), countB,
-            modelA.getContactAccumulatorBuffer(), modelA.getContactAccumulatorBufferOffset(), countA,
-            edgesAToB, edgesAToBOffset, edgeCountAToB,
-            edgeIndexAToB, edgeIndexAToBOffset, countA,
-            setAB);
+    const uint64_t cudaDoneValue = ++timelineValue;
+    const uint64_t vulkanDoneValue = ++timelineValue;
+    if (!solver->solve(
+            temperatureBufferAIsCurrent, boundaryTemperatures,
+            previousVulkanValue, cudaDoneValue)) {
+        return false;
     }
 
-    if (edgesBToA != VK_NULL_HANDLE && edgeIndexBToA != VK_NULL_HANDLE && edgeCountBToA > 0) {
-        success = success && contactStage.createGatherDescriptorSet(
-            modelA.getTempBufferA(), modelA.getTempBufferAOffset(), countA,
-            modelB.getContactAccumulatorBuffer(), modelB.getContactAccumulatorBufferOffset(), countB,
-            edgesBToA, edgesBToAOffset, edgeCountBToA,
-            edgeIndexBToA, edgeIndexBToAOffset, countB,
-            setBA);
-
-        success = success && contactStage.createGatherDescriptorSet(
-            modelA.getTempBufferB(), modelA.getTempBufferBOffset(), countA,
-            modelB.getContactAccumulatorBuffer(), modelB.getContactAccumulatorBufferOffset(), countB,
-            edgesBToA, edgesBToAOffset, edgeCountBToA,
-            edgeIndexBToA, edgeIndexBToAOffset, countB,
-            setBB);
-    }
-
-    return success;
+    synchronization.waitSemaphore = solver->getTimelineSemaphore();
+    synchronization.waitValue = cudaDoneValue;
+    synchronization.signalSemaphore = solver->getTimelineSemaphore();
+    synchronization.signalValue = vulkanDoneValue;
+    previousVulkanValue = vulkanDoneValue;
+    return true;
 }
 
-void HeatContactRuntime::cleanup(MemoryAllocator& memoryAllocator) {
-    freeBuffer(memoryAllocator, edgesAToB, edgesAToBOffset);
-    freeBuffer(memoryAllocator, edgeIndexAToB, edgeIndexAToBOffset);
-    freeBuffer(memoryAllocator, edgesBToA, edgesBToAOffset);
-    freeBuffer(memoryAllocator, edgeIndexBToA, edgeIndexBToAOffset);
+const std::vector<float>* HeatContactRuntime::findCoveredAreas(uint32_t runtimeModelId) const {
+    const auto it = coveredAreasByModelId.find(runtimeModelId);
+    return it != coveredAreasByModelId.end() ? &it->second : nullptr;
+}
 
-    edgeCountAToB = 0;
-    edgeCountBToA = 0;
+ComputePass::Synchronization HeatContactRuntime::getSynchronization() const {
+    return synchronization;
+}
 
-    setAA = VK_NULL_HANDLE;
-    setAB = VK_NULL_HANDLE;
-    setBA = VK_NULL_HANDLE;
-    setBB = VK_NULL_HANDLE;
+void HeatContactRuntime::clearSynchronization() {
+    synchronization = {};
+}
 
-    modelARuntimeModelId = 0;
-    modelBRuntimeModelId = 0;
+void HeatContactRuntime::cleanup() {
+    if (solver) solver->cleanup();
+    solver.reset();
+    modelNodes.clear();
+    fixedBoundaryRegions.clear();
+    coveredAreasByModelId.clear();
+    synchronization = {};
+    timelineValue = 0;
+    previousVulkanValue = 0;
 }

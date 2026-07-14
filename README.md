@@ -16,57 +16,45 @@ The major pre-processing methods include an intrinsic remeshing operation that p
 This project is a work in progress. Functionality, performance and physical accuracy will be continuously updated.
 
 ## Quick Start
-1. Download the latest demo release from the [Releases](https://github.com/tsun3doku/ParaMetal/releases) page
+1. Download the latest release from the [Releases](https://github.com/tsun3doku/ParaMetal/releases) page
 2. Extract the zip file
 3. Run parametal.exe
 
-### Hardware Requirements
-- GPU with Vulkan 1.3 or higher support ([Check GPU compatibility](https://vulkan.gpuinfo.org/))
+### System Requirements
+- 64-bit Windows 10 or Windows 11
+- NVIDIA GPU with CUDA compute capability 7.5 or newer
+- Vulkan 1.3 or higher support ([Check GPU compatibility](https://vulkan.gpuinfo.org/))
 
-### Prerequisites
-- [CMake](https://cmake.org/download/) 
-- [Qt 6](https://www.qt.io/download) (Core, Gui, Widgets components)
+The downloadable release includes the required CUDA and AMGX runtime libraries. Building ParaMetal from source additionally requires the development tools below.
+
+### Source Build Prerequisites
+- [CMake](https://cmake.org/download/)
+- [Microsoft Visual C++ (MSVC) Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with Desktop development with C++
+- [Qt 6](https://www.qt.io/download) for MSVC (Core, Gui, Widgets components)
 - [Vulkan SDK](https://vulkan.lunarg.com/) 1.3 or higher
+- [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) 12.0 or higher
 - [Python 3](https://www.python.org/downloads/) (Development headers required)
-- [Pybind11](https://github.com/pybind/pybind11)
 
-### Build Steps For Windows
+Eigen, AMGX, Pybind11 and the remaining dependencies are included as Git submodules.
+
+### Build From Source
 
 1. Clone the repository with submodules:
-   ```bash
+   ```powershell
    git clone --recursive https://github.com/tsun3doku/ParaMetal.git
    cd ParaMetal
    ```
 
-2. Configure and build:
-   ```bash
-   mkdir build && cd build
-   cmake .. -DCMAKE_PREFIX_PATH="/YOURPATH/TO/Qt/6.x.x/msvc2022_64"
-   cmake --build . --config Release
-   ```
-   
-3. Run the program within build/release 
-
-### Build Steps for Linux (RHEL/CentOS/Fedora)
-
-1. Required packages:
-   ```bash
-   sudo dnf install cmake gcc-c++ qt6-qtbase-devel vulkan-loader-devel vulkan-headers
-   python3-devel pybind11-devel
-   ```
-2. Clone the repository with submodules:
-   ```bash
-   git clone --recursive https://github.com/tsun3doku/ParaMetal.git
-   cd ParaMetal
+2. Build AMGX:
+   ```powershell
+   cmake -S ParaMetal/libs/amgx -B ParaMetal/libs/amgx/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=75 -DCMAKE_NO_MPI=ON
+   cmake --build ParaMetal/libs/amgx/build --config Release --parallel
    ```
 
-3. Build:
-   ```bash
-   mkdir build && cd build
-   cmake ..
-   cmake --build . -j$(nproc)
+3. Configure and build ParaMetal, replacing the Qt path with your MSVC Qt kit:
+   ```powershell
+   cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="C:/path/to/Qt/6.x.x/msvc2022_64"
+   cmake --build build --config Release --parallel
    ```
-   Run:
-   ```bash
-   ./parametal
-   ```
+
+4. Run `parametal.exe` from `build/Release` when using a multi-configuration generator, or from `build` when using a single-configuration generator.

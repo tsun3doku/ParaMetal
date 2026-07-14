@@ -1,9 +1,9 @@
 struct SurfacePoint
 {
     float3 position;
-    float  temperature;
+    float  temperatureC;
     float3 normal;
-    float  area;
+    float  vertexArea;
     float4 color;
 };
 

@@ -7,11 +7,8 @@
 #include <vulkan/vulkan.h>
 #include <memory>
 
-#include "mesh/remesher/SupportingHalfedge.hpp"
 #include "voronoi/VoronoiDomainRuntime.hpp"
 #include "voronoi/VoronoiGpuStructs.hpp"
-
-struct StencilKDTree;
 
 class VulkanDevice;
 class MemoryAllocator;
@@ -19,26 +16,15 @@ class CommandPool;
 
 class VoronoiModelRuntime : public VoronoiDomainRuntime {
 public:
-    struct SurfaceVertex {
-        glm::vec4 position{0.0f, 0.0f, 0.0f, 1.0f};
-        glm::vec4 normal{0.0f, 0.0f, 1.0f, 0.0f};
-    };
-
-    struct CpuData {
-        uint32_t nodeModelId = 0;
-        SupportingHalfedge::IntrinsicMesh intrinsicMesh;
-        std::vector<glm::vec3> geometryPositions;
-        std::vector<uint32_t> geometryTriangleIndices;
-        std::vector<SurfaceVertex> surfaceVertices;
-        std::vector<uint32_t> intrinsicTriangleIndices;
-    };
-
     VoronoiModelRuntime(
         VulkanDevice& vulkanDevice,
         MemoryAllocator& memoryAllocator,
         uint32_t runtimeModelId,
         const glm::mat4& modelMatrix,
-        CpuData cpuData,
+        const std::vector<glm::vec3>& geometryPositions,
+        const std::vector<uint32_t>& geometryTriangleIndices,
+        const std::vector<voronoi::SurfaceVertex>& surfaceVertices,
+        const std::vector<uint32_t>& surfaceTriangleIndices,
         CommandPool& renderCommandPool);
     ~VoronoiModelRuntime();
 
@@ -53,21 +39,16 @@ public:
         const std::vector<voronoi::GMLSSurfaceGradientWeight>& gradientWeights);
     void cleanup() override;
 
-    void setStencilKDTree(std::unique_ptr<StencilKDTree> kdTree);
-    StencilKDTree* getStencilKDTree() const { return stencilKDTree.get(); }
-
-    uint32_t getNodeModelId() const override { return nodeModelId; }
     uint32_t getRuntimeModelId() const override { return runtimeModelId; }
     const glm::mat4& getModelMatrix() const { return modelMatrix; }
 
-    size_t getIntrinsicVertexCount() const { return intrinsicVertexCount; }
-    size_t getIntrinsicTriangleCount() const { return intrinsicTriangleCount; }
-    const SupportingHalfedge::IntrinsicMesh& getIntrinsicMesh() const { return intrinsicMesh; }
+    size_t getSurfaceVertexCount() const { return surfaceVertices.size(); }
+    size_t getSurfaceTriangleCount() const { return surfaceTriangleIndices.size() / 3; }
     const std::vector<glm::vec3>& getGeometryPositions() const { return geometryPositions; }
     const std::vector<uint32_t>& getGeometryTriangleIndices() const { return geometryTriangleIndices; }
-    const std::vector<SurfaceVertex>& getSurfaceVertices() const { return surfaceVertices; }
-    std::vector<glm::vec3> getIntrinsicSurfacePositions() const;
-    const std::vector<uint32_t>& getIntrinsicTriangleIndices() const { return intrinsicTriangleIndices; }
+    const std::vector<voronoi::SurfaceVertex>& getSurfaceVertices() const { return surfaceVertices; }
+    const std::vector<uint32_t>& getSurfaceTriangleIndices() const { return surfaceTriangleIndices; }
+    std::vector<glm::vec3> getSurfacePositions() const;
     VkBuffer getTriangleIndicesBuffer() const override { return triangleIndicesBuffer; }
     VkDeviceSize getTriangleIndicesBufferOffset() const override { return triangleIndicesBufferOffset; }
     VkBuffer getCandidateBuffer() const override { return voronoiCandidateBuffer; }
@@ -86,20 +67,16 @@ public:
 private:
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
-    uint32_t nodeModelId = 0;
     uint32_t runtimeModelId = 0;
     glm::mat4 modelMatrix{1.0f};
-    SupportingHalfedge::IntrinsicMesh intrinsicMesh;
     std::vector<glm::vec3> geometryPositions;
     std::vector<uint32_t> geometryTriangleIndices;
-    std::vector<SurfaceVertex> surfaceVertices;
+    std::vector<voronoi::SurfaceVertex> surfaceVertices;
+    std::vector<uint32_t> surfaceTriangleIndices;
     CommandPool& renderCommandPool;
 
-    size_t intrinsicVertexCount = 0;
-    size_t intrinsicTriangleCount = 0;
     size_t valueWeightCount = 0;
     size_t gradientWeightCount = 0;
-    std::vector<uint32_t> intrinsicTriangleIndices;
 
     VkBuffer triangleIndicesBuffer = VK_NULL_HANDLE;
     VkDeviceSize triangleIndicesBufferOffset = 0;
@@ -118,6 +95,4 @@ private:
 
     VkBuffer surfaceBuffer = VK_NULL_HANDLE;
     VkDeviceSize surfaceBufferOffset = 0;
-
-    std::unique_ptr<StencilKDTree> stencilKDTree;
 };

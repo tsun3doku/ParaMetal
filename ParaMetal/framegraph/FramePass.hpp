@@ -20,6 +20,7 @@ struct FrameContext {
 struct RenderFlags {
     int wireframeMode = 0;
     bool drawTimingOverlay = false;
+    bool drawGrid = false;
 };
 
 struct RenderServices {

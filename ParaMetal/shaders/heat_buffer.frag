@@ -36,9 +36,9 @@ layout(set = 0, binding = 10) uniform samplerBuffer L_input;
 
 struct SurfacePoint {
     vec3 position;
-    float temperature;
+    float temperatureC;
     vec3 normal;
-    float area;
+    float vertexArea;
     vec4 color;
 };
 
@@ -70,15 +70,16 @@ vec3 heatColorFromTemperature(float temperature) {
 }
 
 float heatContourMask(float temperature) {
-    float d = mod(temperature, HEAT_CONTOUR_SPACING);
-    float distToContour = min(d, HEAT_CONTOUR_SPACING - d);
-    float pixelGrad = length(vec2(dFdx(temperature), dFdy(temperature)));
-    if (pixelGrad <= 1e-3) {
+    const float flatFieldTolerance = 1e-4;
+    float pixelGradient = fwidth(temperature);
+    if (pixelGradient <= flatFieldTolerance) {
         return 1.0;
     }
 
-    float contourHalfWidth = pixelGrad * 1.5;
-    return smoothstep(0.0, contourHalfWidth, distToContour);
+    float contourPhase = temperature / HEAT_CONTOUR_SPACING;
+    float distanceToContour = abs(fract(contourPhase + 0.5) - 0.5) * HEAT_CONTOUR_SPACING;
+    float contourHalfWidth = max(pixelGradient * 1.5, flatFieldTolerance);
+    return smoothstep(0.0, contourHalfWidth, distanceToContour);
 }
 
 vec3 heatAlbedo(float temperature) {
@@ -296,9 +297,9 @@ void main() {
         return;
     }
     
-    float temp0 = heatColors.surfacePoints[v0].temperature;
-    float temp1 = heatColors.surfacePoints[v1].temperature;
-    float temp2 = heatColors.surfacePoints[v2].temperature;
+    float temp0 = heatColors.surfacePoints[v0].temperatureC;
+    float temp1 = heatColors.surfacePoints[v1].temperatureC;
+    float temp2 = heatColors.surfacePoints[v2].temperatureC;
 
     float interpolatedTemp = baryCoords.x * temp0 + baryCoords.y * temp1 + baryCoords.z * temp2;
     writeHeatSurface(heatAlbedo(interpolatedTemp));

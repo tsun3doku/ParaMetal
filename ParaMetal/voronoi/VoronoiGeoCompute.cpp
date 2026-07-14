@@ -42,7 +42,7 @@ void VoronoiGeoCompute::updateDescriptors(const Bindings& bindings) {
         return;
     }
 
-    VkDeviceSize nodeRange = currentBindings.voronoiNodeBufferRange;
+    VkDeviceSize nodeRange = currentBindings.candidateNodeBufferRange;
     if (nodeRange == 0) {
         nodeRange = VK_WHOLE_SIZE;
     }
@@ -58,23 +58,24 @@ void VoronoiGeoCompute::updateDescriptors(const Bindings& bindings) {
         VkDescriptorBufferInfo info;
     };
 
-    std::array<BindingWrite, 13> bindingWrites = {
-        BindingWrite{0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.voronoiNodeBuffer, currentBindings.voronoiNodeBufferOffset, nodeRange}},
+    std::array<BindingWrite, 14> bindingWrites = {
+        BindingWrite{0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.candidateNodeBuffer, currentBindings.candidateNodeBufferOffset, nodeRange}},
         BindingWrite{1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.meshTriangleBuffer, currentBindings.meshTriangleBufferOffset, VK_WHOLE_SIZE}},
         BindingWrite{2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.seedPositionBuffer, currentBindings.seedPositionBufferOffset, VK_WHOLE_SIZE}},
         BindingWrite{5, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VkDescriptorBufferInfo{currentBindings.voxelGridParamsBuffer, currentBindings.voxelGridParamsBufferOffset, voxelParamsRange}},
         BindingWrite{6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.voxelOccupancyBuffer, currentBindings.voxelOccupancyBufferOffset, VK_WHOLE_SIZE}},
         BindingWrite{9, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.voxelTrianglesListBuffer, currentBindings.voxelTrianglesListBufferOffset, VK_WHOLE_SIZE}},
         BindingWrite{10, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.voxelOffsetsBuffer, currentBindings.voxelOffsetsBufferOffset, VK_WHOLE_SIZE}},
-        BindingWrite{11, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.voronoiNeighborIndicesBuffer, currentBindings.voronoiNeighborIndicesBufferOffset, VK_WHOLE_SIZE}},
-        BindingWrite{12, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.voronoiInterfaceAreasBuffer, currentBindings.voronoiInterfaceAreasBufferOffset, VK_WHOLE_SIZE}},
-        BindingWrite{13, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.voronoiInterfaceNeighborIdsBuffer, currentBindings.voronoiInterfaceNeighborIdsBufferOffset, VK_WHOLE_SIZE}},
+        BindingWrite{11, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.candidateNeighborIndicesBuffer, currentBindings.candidateNeighborIndicesBufferOffset, VK_WHOLE_SIZE}},
+        BindingWrite{12, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.candidateInterfaceAreasBuffer, currentBindings.candidateInterfaceAreasBufferOffset, VK_WHOLE_SIZE}},
+        BindingWrite{13, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.candidateInterfaceNeighborIdsBuffer, currentBindings.candidateInterfaceNeighborIdsBufferOffset, VK_WHOLE_SIZE}},
         BindingWrite{14, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.debugCellGeometryBuffer, currentBindings.debugCellGeometryBufferOffset, VK_WHOLE_SIZE}},
-        BindingWrite{15, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.voronoiSeedFlagsBuffer, currentBindings.voronoiSeedFlagsBufferOffset, VK_WHOLE_SIZE}},
+        BindingWrite{15, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.nodeFlagsBuffer, currentBindings.nodeFlagsBufferOffset, VK_WHOLE_SIZE}},
         BindingWrite{16, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.voronoiDumpBuffer, currentBindings.voronoiDumpBufferOffset, VK_WHOLE_SIZE}},
+        BindingWrite{17, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{currentBindings.surfacePatchAreasBuffer, currentBindings.surfacePatchAreasBufferOffset, VK_WHOLE_SIZE}},
     };
 
-    std::array<VkWriteDescriptorSet, 13> writes{};
+    std::array<VkWriteDescriptorSet, 14> writes{};
     for (size_t i = 0; i < bindingWrites.size(); i++) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstSet = descriptorSet;
@@ -88,12 +89,12 @@ void VoronoiGeoCompute::updateDescriptors(const Bindings& bindings) {
     vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
-void VoronoiGeoCompute::dispatch(const PushConstants& pushConstants) {
+bool VoronoiGeoCompute::dispatch(const PushConstants& pushConstants) {
     if (!initialized || nodeCount == 0 || descriptorSet == VK_NULL_HANDLE) {
         std::cerr << "[VoronoiGeoCompute] dispatch skipped: initialized=" << initialized
                   << " nodeCount=" << nodeCount
                   << " descriptorSet=" << descriptorSet << std::endl;
-        return;
+        return false;
     }
 
     VkCommandBufferAllocateInfo allocInfo{};
@@ -105,7 +106,7 @@ void VoronoiGeoCompute::dispatch(const PushConstants& pushConstants) {
     VkCommandBuffer cmd;
     if (vkAllocateCommandBuffers(vulkanDevice.getDevice(), &allocInfo, &cmd) != VK_SUCCESS) {
         std::cerr << "VoronoiGeoCompute: Failed to allocate command buffer" << std::endl;
-        return;
+        return false;
     }
 
     VkCommandBufferBeginInfo beginInfo{};
@@ -115,7 +116,7 @@ void VoronoiGeoCompute::dispatch(const PushConstants& pushConstants) {
     if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
         std::cerr << "VoronoiGeoCompute: Failed to begin command buffer" << std::endl;
         vkFreeCommandBuffers(vulkanDevice.getDevice(), commandPool.getHandle(), 1, &cmd);
-        return;
+        return false;
     }
 
     VkMemoryBarrier uploadBarrier{};
@@ -140,17 +141,17 @@ void VoronoiGeoCompute::dispatch(const PushConstants& pushConstants) {
     VkMemoryBarrier memBarrier{};
     memBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     memBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    memBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    memBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 
     vkCmdPipelineBarrier(cmd,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
         0, 1, &memBarrier, 0, nullptr, 0, nullptr);
 
     if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
         std::cerr << "VoronoiGeoCompute: Failed to end command buffer" << std::endl;
         vkFreeCommandBuffers(vulkanDevice.getDevice(), commandPool.getHandle(), 1, &cmd);
-        return;
+        return false;
     }
 
     VkSubmitInfo submitInfo{};
@@ -165,7 +166,7 @@ void VoronoiGeoCompute::dispatch(const PushConstants& pushConstants) {
     if (vkCreateFence(vulkanDevice.getDevice(), &fenceInfo, nullptr, &fence) != VK_SUCCESS) {
         vkFreeCommandBuffers(vulkanDevice.getDevice(), commandPool.getHandle(), 1, &cmd);
         std::cerr << "VoronoiGeoCompute: Failed to create fence" << std::endl;
-        return;
+        return false;
     }
 
     VkQueue computeQueue = vulkanDevice.getComputeQueue();
@@ -180,15 +181,16 @@ void VoronoiGeoCompute::dispatch(const PushConstants& pushConstants) {
         vkDestroyFence(vulkanDevice.getDevice(), fence, nullptr);
         std::cerr << "[FREE-CMD] VoronoiGeoCompute::dispatch(submitFail) cmd=" << cmd << std::endl;
         vkFreeCommandBuffers(vulkanDevice.getDevice(), commandPool.getHandle(), 1, &cmd);
-        return;
+        return false;
     }
     if (vkWaitForFences(vulkanDevice.getDevice(), 1, &fence, VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
         std::cerr << "VoronoiGeoCompute: Failed while waiting for fence" << std::endl;
-        return;
+        return false;
     }
 
     vkDestroyFence(vulkanDevice.getDevice(), fence, nullptr);
     vkFreeCommandBuffers(vulkanDevice.getDevice(), commandPool.getHandle(), 1, &cmd);
+    return true;
 }
 
 void VoronoiGeoCompute::cleanupResources() {
@@ -233,6 +235,7 @@ bool VoronoiGeoCompute::createDescriptorSetLayout() {
         {14, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
         {15, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
         {16, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+        {17, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
     };
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
@@ -252,7 +255,7 @@ bool VoronoiGeoCompute::createDescriptorPool() {
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
 
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[0].descriptorCount = 12;
+    poolSizes[0].descriptorCount = 13;
 
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[1].descriptorCount = 1;
@@ -288,7 +291,7 @@ bool VoronoiGeoCompute::createDescriptorSet() {
 
 bool VoronoiGeoCompute::createPipeline() {
     std::vector<char> computeShaderCode;
-    if (!readFile("shaders/heat_geometry_comp.spv", computeShaderCode)) {
+    if (!readFile("shaders/voronoi_geometry_comp.spv", computeShaderCode)) {
         std::cerr << "VoronoiGeoCompute: Failed to read shader file" << std::endl;
         return false;
     }

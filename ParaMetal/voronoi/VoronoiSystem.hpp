@@ -1,6 +1,6 @@
 #pragma once
 
-#include "VoronoiSystemRuntime.hpp"
+#include "voronoi/VoronoiSystemRuntime.hpp"
 #include "voronoi/VoronoiSystemBuildStage.hpp"
 
 #include <cstdint>
@@ -30,26 +30,22 @@ public:
     bool isInitialized() const { return initialized; }
     bool isReady() const { return runtime.isReady(); }
 
-    void setReceiverGeometry(
-        uint32_t receiverNodeModelId,
-        const std::vector<glm::vec3>& receiverGeometryPositions,
-        const std::vector<uint32_t>& receiverGeometryTriangleIndices,
-        const SupportingHalfedge::IntrinsicMesh& receiverIntrinsicMesh,
-        const std::vector<VoronoiModelRuntime::SurfaceVertex>& receiverSurfaceVertices,
-        const std::vector<uint32_t>& receiverIntrinsicTriangleIndices,
-        uint32_t receiverModelId,
+    void setMeshGeometry(
+        const std::vector<glm::vec3>& geometryPositions,
+        const std::vector<uint32_t>& geometryTriangleIndices,
+        const std::vector<voronoi::SurfaceVertex>& surfaceVertices,
+        const std::vector<uint32_t>& surfaceTriangleIndices,
+        uint32_t runtimeModelId,
         const glm::mat4& meshModelMatrix);
     void setPointGeometry(const std::vector<glm::vec4>& positions);
     void setSeedPositions(const std::vector<glm::vec4>& positions);
-    void clearReceiverGeometry();
+    void clearGeometry();
     void setParams(float cellSize, int voxelResolution);
     bool ensureConfigured();
 
     VoronoiDomainRuntime* getDomainRuntime() const { return runtime.getDomainRuntime(); }
-    uint32_t getVoronoiNodeCount() const { return runtime.getVoronoiNodeCount(); }
-
-    VoronoiResources& resourcesRef() { return runtime.resourcesRef(); }
-    const VoronoiResources& resourcesRef() const { return runtime.resourcesRef(); }
+    uint32_t getCandidateNodeCount() const { return voronoiSystemBuildStage->getCandidateNodeCount(); }
+    const VoronoiSystemBuildStage& getBuildStage() const { return *voronoiSystemBuildStage; }
     VoronoiSystemRuntime& runtimeRef() { return runtime; }
     const VoronoiSystemRuntime& runtimeRef() const { return runtime; }
 

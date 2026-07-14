@@ -1,105 +1,76 @@
 #pragma once
 
-#include "contact/ContactGpuStructs.hpp"
+#include "heat/HeatContactSolver.hpp"
 #include "contact/ContactTypes.hpp"
+#include "framegraph/ComputePass.hpp"
 
 #include <cstdint>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
 #include <glm/glm.hpp>
-#include <vulkan/vulkan.h>
 
 class VulkanDevice;
-class MemoryAllocator;
 class HeatModelRuntime;
-class ContactSystemComputeStage;
-struct StencilKDTree;
+class VoronoiNodeIndex;
 
 class HeatContactRuntime {
 public:
+    static constexpr float FixedTimeStep = 1.0f / 60.0f;
+
     HeatContactRuntime() = default;
     ~HeatContactRuntime();
 
     HeatContactRuntime(const HeatContactRuntime&) = delete;
     HeatContactRuntime& operator=(const HeatContactRuntime&) = delete;
 
-    uint32_t getModelARuntimeModelId() const { return modelARuntimeModelId; }
-    uint32_t getModelBRuntimeModelId() const { return modelBRuntimeModelId; }
-
-    VkDescriptorSet getSetAA() const { return setAA; }
-    VkDescriptorSet getSetAB() const { return setAB; }
-    VkDescriptorSet getSetBA() const { return setBA; }
-    VkDescriptorSet getSetBB() const { return setBB; }
-    VkBuffer getEdgesAToB() const { return edgesAToB; }
-    VkDeviceSize getEdgesAToBOffset() const { return edgesAToBOffset; }
-    uint32_t getEdgeCountAToB() const { return edgeCountAToB; }
-    VkBuffer getEdgeIndexAToB() const { return edgeIndexAToB; }
-    VkDeviceSize getEdgeIndexAToBOffset() const { return edgeIndexAToBOffset; }
-    VkBuffer getEdgesBToA() const { return edgesBToA; }
-    VkDeviceSize getEdgesBToAOffset() const { return edgesBToAOffset; }
-    uint32_t getEdgeCountBToA() const { return edgeCountBToA; }
-    VkBuffer getEdgeIndexBToA() const { return edgeIndexBToA; }
-    VkDeviceSize getEdgeIndexBToAOffset() const { return edgeIndexBToAOffset; }
-
+    bool hasGraph() const { return solver && solver->isInitialized(); }
     bool build(
         VulkanDevice& vulkanDevice,
-        MemoryAllocator& memoryAllocator,
-        const ContactCoupling& coupling,
-        const HeatModelRuntime& modelA,
-        const HeatModelRuntime& modelB,
-        float contactThermalConductance);
+        const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& models,
+        const std::vector<ContactCoupling>& couplings,
+        float heatTransferCoefficient);
 
-    bool createDescriptorSets(
-        const ContactSystemComputeStage& contactStage,
-        const HeatModelRuntime& modelA,
-        const HeatModelRuntime& modelB);
-
-    void cleanup(MemoryAllocator& memoryAllocator);
+    bool solve(bool temperatureBufferAIsCurrent);
+    const std::vector<float>* findCoveredAreas(uint32_t runtimeModelId) const;
+    ComputePass::Synchronization getSynchronization() const;
+    void clearSynchronization();
+    void cleanup();
 
 private:
-    struct BakedContact {
-        float totalConductance = 0.0f;
-        std::unordered_map<uint32_t, float> neighborWeights;
+    struct SolverModelNodes {
+        uint32_t runtimeModelId = 0;
+        uint32_t solverNodeOffset = 0;
+        std::vector<uint32_t> localNodeIds;
     };
 
-    static bool buildPointStencil(
+    struct SampleNode {
+        uint32_t fullNodeId = 0;
+        double weight = 0.0;
+    };
+
+    struct ContactSampleData {
+        double conductance = 0.0;
+        std::vector<SampleNode> nodes;
+    };
+
+    struct FixedBoundaryRegion {
+        HeatModelRuntime* model = nullptr;
+        uint32_t regionId = 0;
+    };
+
+    static void buildWendlandWeights(
         const glm::vec3& point,
-        const StencilKDTree& kdTree,
-        std::vector<contact::ContactSampleWeight>& valueWeightsOut,
-        uint32_t& valueWeightOffsetOut,
-        uint32_t& valueWeightCountOut,
-        std::vector<contact::ContactSampleWeight>& scatterWeightsOut,
-        uint32_t& scatterWeightOffsetOut,
-        uint32_t& scatterWeightCountOut);
+        const VoronoiNodeIndex& nodeIndex,
+        std::vector<uint32_t>& neighborIds,
+        std::vector<float>& weights);
 
-    static void remapWeightsToSimNodes(
-        const HeatModelRuntime& model,
-        std::vector<contact::ContactSampleWeight>& weights);
-
-    static void thresholdContactEdges(
-        const std::vector<BakedContact>& baked,
-        uint32_t nodeCount,
-        std::vector<contact::ContactSampleWeight>& outEdges,
-        std::vector<contact::ContactIndex>& outIndex);
-
-    uint32_t modelARuntimeModelId = 0;
-    uint32_t modelBRuntimeModelId = 0;
-
-    VkBuffer edgesAToB = VK_NULL_HANDLE;
-    VkDeviceSize edgesAToBOffset = 0;
-    uint32_t edgeCountAToB = 0;
-    VkBuffer edgeIndexAToB = VK_NULL_HANDLE;
-    VkDeviceSize edgeIndexAToBOffset = 0;
-
-    VkBuffer edgesBToA = VK_NULL_HANDLE;
-    VkDeviceSize edgesBToAOffset = 0;
-    uint32_t edgeCountBToA = 0;
-    VkBuffer edgeIndexBToA = VK_NULL_HANDLE;
-    VkDeviceSize edgeIndexBToAOffset = 0;
-
-    VkDescriptorSet setAA = VK_NULL_HANDLE;
-    VkDescriptorSet setAB = VK_NULL_HANDLE;
-    VkDescriptorSet setBA = VK_NULL_HANDLE;
-    VkDescriptorSet setBB = VK_NULL_HANDLE;
+    std::unique_ptr<HeatContactSolver> solver;
+    std::vector<SolverModelNodes> modelNodes;
+    std::vector<FixedBoundaryRegion> fixedBoundaryRegions;
+    std::unordered_map<uint32_t, std::vector<float>> coveredAreasByModelId;
+    ComputePass::Synchronization synchronization{};
+    uint64_t timelineValue = 0;
+    uint64_t previousVulkanValue = 0;
 };

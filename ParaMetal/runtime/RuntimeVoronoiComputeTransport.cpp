@@ -33,19 +33,17 @@ ProductHandle RuntimeVoronoiComputeTransport::apply(uint64_t socketKey, const Vo
             return {};
         }
 
-        config.receiverRuntimeModelId = remeshProduct->runtimeModelId;
-        config.receiverNodeModelId = 0;
-        config.receiverGeometryPositions = remeshProduct->geometryPositions;
-        config.receiverGeometryTriangleIndices = remeshProduct->geometryTriangleIndices;
-        config.receiverIntrinsicMesh = remeshProduct->intrinsicMesh;
-        config.receiverIntrinsicTriangleIndices = remeshProduct->intrinsicMesh.indices;
-        config.receiverSurfaceVertices.reserve(remeshProduct->intrinsicMesh.vertices.size());
-        for (const SupportingHalfedge::IntrinsicVertex& intrinsicVertex : remeshProduct->intrinsicMesh.vertices) {
-            VoronoiModelRuntime::SurfaceVertex vertex{};
-            vertex.position = glm::vec4(intrinsicVertex.position, 1.0f);
-            vertex.normal = glm::vec4(intrinsicVertex.normal, 0.0f);
-            config.receiverSurfaceVertices.push_back(vertex);
+        config.runtimeModelId = remeshProduct->runtimeModelId;
+        config.geometryPositions = remeshProduct->geometryPositions;
+        config.geometryTriangleIndices = remeshProduct->geometryTriangleIndices;
+        config.surfaceVertices.reserve(remeshProduct->surfacePositions.size());
+        for (size_t vertexId = 0; vertexId < remeshProduct->surfacePositions.size(); ++vertexId) {
+            voronoi::SurfaceVertex vertex{};
+            vertex.position = glm::vec4(remeshProduct->surfacePositions[vertexId], 1.0f);
+            vertex.normal = glm::vec4(remeshProduct->surfaceNormals[vertexId], 0.0f);
+            config.surfaceVertices.push_back(vertex);
         }
+        config.surfaceTriangleIndices = remeshProduct->surfaceTriangleIndices;
         config.meshModelMatrix = toMat4(package.modelLocalToWorld);
         config.pointPositions = package.pointPositions;
     } else if (package.domainType == DomainType::Points) {

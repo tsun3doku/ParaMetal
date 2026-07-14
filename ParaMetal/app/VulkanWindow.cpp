@@ -19,8 +19,12 @@
 #include <iostream>
 #include <vector>
 
-static constexpr std::array<const char*, 1> kDeviceExtensions = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME
+static constexpr std::array<const char*, 5> kDeviceExtensions = {
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+    VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,
+    "VK_KHR_external_memory_win32",
+    VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME,
+    "VK_KHR_external_semaphore_win32",
 };
 
 VulkanWindow::VulkanWindow(QWindow* parent)
@@ -101,6 +105,7 @@ void VulkanWindow::keyPressEvent(QKeyEvent* event) {
     inputEvent.type = WindowInputEventType::Key;
     inputEvent.key = static_cast<int>(key);
     inputEvent.pressed = true;
+    inputEvent.ctrlPressed = (event->modifiers() & Qt::ControlModifier) != 0;
     runtimeState.pushInputEvent(inputEvent);
     QWindow::keyPressEvent(event);
 }
@@ -120,6 +125,7 @@ void VulkanWindow::keyReleaseEvent(QKeyEvent* event) {
     inputEvent.type = WindowInputEventType::Key;
     inputEvent.key = static_cast<int>(key);
     inputEvent.pressed = false;
+    inputEvent.ctrlPressed = (event->modifiers() & Qt::ControlModifier) != 0;
     runtimeState.pushInputEvent(inputEvent);
     QWindow::keyReleaseEvent(event);
 }

@@ -16,9 +16,9 @@ public:
     };
 
     struct Bindings {
-        VkBuffer voronoiNodeBuffer = VK_NULL_HANDLE;
-        VkDeviceSize voronoiNodeBufferOffset = 0;
-        VkDeviceSize voronoiNodeBufferRange = 0;
+        VkBuffer candidateNodeBuffer = VK_NULL_HANDLE;
+        VkDeviceSize candidateNodeBufferOffset = 0;
+        VkDeviceSize candidateNodeBufferRange = 0;
 
         VkBuffer meshTriangleBuffer = VK_NULL_HANDLE;
         VkDeviceSize meshTriangleBufferOffset = 0;
@@ -39,23 +39,26 @@ public:
         VkBuffer voxelOffsetsBuffer = VK_NULL_HANDLE;
         VkDeviceSize voxelOffsetsBufferOffset = 0;
 
-        VkBuffer voronoiNeighborIndicesBuffer = VK_NULL_HANDLE;
-        VkDeviceSize voronoiNeighborIndicesBufferOffset = 0;
+        VkBuffer candidateNeighborIndicesBuffer = VK_NULL_HANDLE;
+        VkDeviceSize candidateNeighborIndicesBufferOffset = 0;
 
-        VkBuffer voronoiInterfaceAreasBuffer = VK_NULL_HANDLE;
-        VkDeviceSize voronoiInterfaceAreasBufferOffset = 0;
+        VkBuffer candidateInterfaceAreasBuffer = VK_NULL_HANDLE;
+        VkDeviceSize candidateInterfaceAreasBufferOffset = 0;
 
-        VkBuffer voronoiInterfaceNeighborIdsBuffer = VK_NULL_HANDLE;
-        VkDeviceSize voronoiInterfaceNeighborIdsBufferOffset = 0;
+        VkBuffer candidateInterfaceNeighborIdsBuffer = VK_NULL_HANDLE;
+        VkDeviceSize candidateInterfaceNeighborIdsBufferOffset = 0;
 
         VkBuffer debugCellGeometryBuffer = VK_NULL_HANDLE;
         VkDeviceSize debugCellGeometryBufferOffset = 0;
 
-        VkBuffer voronoiSeedFlagsBuffer = VK_NULL_HANDLE;
-        VkDeviceSize voronoiSeedFlagsBufferOffset = 0;
+        VkBuffer nodeFlagsBuffer = VK_NULL_HANDLE;
+        VkDeviceSize nodeFlagsBufferOffset = 0;
 
         VkBuffer voronoiDumpBuffer = VK_NULL_HANDLE;
         VkDeviceSize voronoiDumpBufferOffset = 0;
+
+        VkBuffer surfacePatchAreasBuffer = VK_NULL_HANDLE;
+        VkDeviceSize surfacePatchAreasBufferOffset = 0;
     };
 
     VoronoiGeoCompute(VulkanDevice& vulkanDevice, CommandPool& commandPool);
@@ -63,7 +66,7 @@ public:
 
     void initialize(uint32_t nodeCount);
     void updateDescriptors(const Bindings& bindings);
-    void dispatch(const PushConstants& pushConstants);
+    bool dispatch(const PushConstants& pushConstants);
 
     void cleanupResources();
     void cleanup();

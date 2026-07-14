@@ -1,10 +1,7 @@
 #pragma once
 
-#include "HeatSystemPresets.hpp"
-#include "heat/VoronoiSystem.hpp"
-#include "mesh/remesher/SupportingHalfedge.hpp"
+#include "voronoi/VoronoiSystem.hpp"
 #include "runtime/RuntimeProducts.hpp"
-#include "voronoi/VoronoiModelRuntime.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -30,18 +27,12 @@ public:
         std::vector<glm::vec4> pointPositions;
 
         // Mesh path
-        uint32_t receiverNodeModelId = 0;
-        std::vector<glm::vec3> receiverGeometryPositions;
-        std::vector<uint32_t> receiverGeometryTriangleIndices;
-        SupportingHalfedge::IntrinsicMesh receiverIntrinsicMesh;
-        std::vector<VoronoiModelRuntime::SurfaceVertex> receiverSurfaceVertices;
-        std::vector<uint32_t> receiverIntrinsicTriangleIndices;
-        uint32_t receiverRuntimeModelId = 0;
+        std::vector<glm::vec3> geometryPositions;
+        std::vector<uint32_t> geometryTriangleIndices;
+        std::vector<voronoi::SurfaceVertex> surfaceVertices;
+        std::vector<uint32_t> surfaceTriangleIndices;
+        uint32_t runtimeModelId = 0;
         glm::mat4 meshModelMatrix{1.0f};
-        std::vector<VkBuffer> receiverSurfaceBuffers;
-        std::vector<VkDeviceSize> receiverSurfaceBufferOffsets;
-        std::vector<VkBuffer> receiverSurfaceGradientBuffers;
-        std::vector<VkDeviceSize> receiverSurfaceGradientBufferOffsets;
         uint64_t computeHash = 0;
     };
 

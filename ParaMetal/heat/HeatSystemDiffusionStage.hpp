@@ -21,15 +21,7 @@ public:
         VkDescriptorSet descriptorSet,
         const heat::HeatModelPushConstant& pushConstant,
         uint32_t workGroupCount) const;
-    void insertFinalTemperatureBarrier(
-        VkCommandBuffer commandBuffer,
-        uint32_t numSubsteps,
-        VkBuffer bufferA,
-        VkDeviceSize offsetA,
-        VkBuffer bufferB,
-        VkDeviceSize offsetB,
-        VkDeviceSize bufferSize) const;
-    bool finalSubstepWritesBufferB(uint32_t numSubsteps) const;
+
     bool createDescriptorPool(uint32_t numModels);
     bool createDescriptorSetLayout();
     bool createPipeline();

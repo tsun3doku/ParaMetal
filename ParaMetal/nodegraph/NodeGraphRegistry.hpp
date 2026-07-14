@@ -100,10 +100,13 @@ namespace heatmodel {
 constexpr uint32_t Density = 1;
 constexpr uint32_t SpecificHeat = 2;
 constexpr uint32_t Conductivity = 3;
-constexpr uint32_t InitialTemperature = 4;
+constexpr uint32_t InitialTemperatureC = 4;
 constexpr uint32_t BoundaryCondition = 5;
-constexpr uint32_t FixedTemperatureValue = 6;
+constexpr uint32_t DirichletTemperatureC = 6;
 constexpr uint32_t MaterialPreset = 7;
+constexpr uint32_t HeatFlux = 8;
+constexpr uint32_t HeatTransferCoefficient = 9;
+constexpr uint32_t VolumetricPowerDensity = 10;
 }
 
 namespace points {

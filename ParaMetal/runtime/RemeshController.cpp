@@ -62,7 +62,14 @@ bool RemeshController::buildProduct(uint64_t socketKey, RemeshProduct& product) 
     product.runtimeModelId = system.runtimeModelId();
     product.geometryPositions = toVec3Array(system.sourcePositions());
     product.geometryTriangleIndices = system.sourceTriangles();
-    product.intrinsicMesh = system.intrinsicMesh();
+    const SupportingHalfedge::IntrinsicMesh& mesh = system.intrinsicMesh();
+    product.surfacePositions.reserve(mesh.vertices.size());
+    product.surfaceNormals.reserve(mesh.vertices.size());
+    for (const SupportingHalfedge::IntrinsicVertex& vertex : mesh.vertices) {
+        product.surfacePositions.push_back(vertex.position);
+        product.surfaceNormals.push_back(vertex.normal);
+    }
+    product.surfaceTriangleIndices = mesh.indices;
 
     // GPU resources
     const SupportingHalfedge::GPUResources gpu = system.takeIntrinsicGpuResources();

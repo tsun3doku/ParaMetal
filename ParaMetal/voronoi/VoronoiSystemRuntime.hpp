@@ -1,11 +1,10 @@
 #pragma once
 
-#include "mesh/remesher/SupportingHalfedge.hpp"
 #include "voronoi/VoronoiDomainRuntime.hpp"
 #include "voronoi/VoronoiModelRuntime.hpp"
-#include "voronoi/VoronoiResources.hpp"
 #include "voronoi/VoronoiMeshGrid.hpp"
 #include "voronoi/VoronoiIntegrator.hpp"
+#include "voronoi/VoronoiNodeDomain.hpp"
 #include "spatial/SpatialOrder.hpp"
 #include "spatial/VoxelGrid.hpp"
 
@@ -30,22 +29,10 @@ public:
 
     VoronoiDomainRuntime* getDomainRuntime() const { return domainRuntime.get(); }
 
-    uint32_t getVoronoiNodeCount() const { return resources.voronoiNodeCount; }
-    uint32_t getSimNodeCount() const { return simNodeCount; }
-    VkBuffer getSimNodeBuffer() const { return simNodeBuffer; }
-    VkDeviceSize getSimNodeBufferOffset() const { return simNodeBufferOffset; }
-    VkDeviceSize getSimNodeBufferSize() const { return simNodeBufferSize; }
-    VkBuffer getSimGMLSInterfaceBuffer() const { return simGMLSInterfaceBuffer; }
-    VkDeviceSize getSimGMLSInterfaceBufferOffset() const { return simGMLSInterfaceBufferOffset; }
-    uint32_t getSimGMLSInterfaceCount() const { return simGMLSInterfaceCount; }
-    const std::vector<uint32_t>& getVoronoiToSim() const { return voronoiToSim; }
-    const std::vector<uint32_t>& getSimToVoronoi() const { return simToVoronoi; }
-    const std::vector<float>& getSimNodeVolumes() const { return simNodeVolumes; }
+    uint32_t getNodeCount() const { return nodeDomain.getNodeCount(); }
+    VoronoiNodeDomain& getNodeDomain() { return nodeDomain; }
+    const VoronoiNodeDomain& getNodeDomain() const { return nodeDomain; }
 
-    VoronoiResources& resourcesRef() { return resources; }
-    const VoronoiResources& resourcesRef() const { return resources; }
-
-    // VoronoiDomain fields moved here
     VoronoiMeshGrid* getMeshGrid() const { return meshGrid.get(); }
     VoronoiIntegrator* getIntegrator() const { return integrator.get(); }
     void resetMeshGrid() { meshGrid = std::make_unique<VoronoiMeshGrid>(); }
@@ -65,20 +52,15 @@ public:
     const std::vector<std::array<glm::vec4, 3>>& getMeshTriangles() const { return meshTriangles; }
 
     void reorderNodes();
-    void buildSimSpaceMapping();
-    bool buildSimBuffers(MemoryAllocator& memoryAllocator, CommandPool& renderCommandPool);
-
-    void setReceiverGeometry(
+    void setMeshGeometry(
         VulkanDevice& vulkanDevice,
         MemoryAllocator& memoryAllocator,
         CommandPool& renderCommandPool,
-        uint32_t receiverNodeModelId,
-        const std::vector<glm::vec3>& receiverGeometryPositions,
-        const std::vector<uint32_t>& receiverGeometryTriangleIndices,
-        const SupportingHalfedge::IntrinsicMesh& receiverIntrinsicMesh,
-        const std::vector<VoronoiModelRuntime::SurfaceVertex>& receiverSurfaceVertices,
-        const std::vector<uint32_t>& receiverIntrinsicTriangleIndices,
-        uint32_t receiverModelId,
+        const std::vector<glm::vec3>& geometryPositions,
+        const std::vector<uint32_t>& geometryTriangleIndices,
+        const std::vector<voronoi::SurfaceVertex>& surfaceVertices,
+        const std::vector<uint32_t>& surfaceTriangleIndices,
+        uint32_t runtimeModelId,
         const glm::mat4& meshModelMatrix);
     void setPointGeometry(
         VulkanDevice& vulkanDevice,
@@ -86,7 +68,7 @@ public:
         CommandPool& renderCommandPool,
         uint64_t domainKey,
         const std::vector<glm::vec4>& positions);
-    void clearReceiverGeometry();
+    void clearGeometry();
     void setParams(float cellSize, int voxelResolution);
     float getCellSize() const { return cellSize; }
     int getVoxelResolution() const { return voxelResolution; }
@@ -95,7 +77,6 @@ public:
 
     void setSeedPositions(const std::vector<glm::vec4>& positions);
 
-    void cleanupResources(VulkanDevice& vulkanDevice);
     void cleanup(MemoryAllocator& memoryAllocator);
 
 private:
@@ -105,7 +86,6 @@ private:
     float cellSize = 0.005f;
     int voxelResolution = 128;
 
-    // VoronoiDomain fields moved here
     std::unique_ptr<VoronoiMeshGrid> meshGrid;
     std::unique_ptr<VoronoiIntegrator> integrator;
     VoxelGrid voxelGrid;
@@ -114,19 +94,8 @@ private:
     std::vector<glm::vec4> seedPositions;
     std::vector<uint32_t> neighborIndices;
     std::vector<std::array<glm::vec4, 3>> meshTriangles;
-    std::vector<uint32_t> voronoiToSim;
-    std::vector<uint32_t> simToVoronoi;
-    std::vector<float> simNodeVolumes;
-    uint32_t simNodeCount = 0;
-    VkBuffer simNodeBuffer = VK_NULL_HANDLE;
-    VkDeviceSize simNodeBufferOffset = 0;
-    VkDeviceSize simNodeBufferSize = 0;
-    VkBuffer simGMLSInterfaceBuffer = VK_NULL_HANDLE;
-    VkDeviceSize simGMLSInterfaceBufferOffset = 0;
-    uint32_t simGMLSInterfaceCount = 0;
+    VoronoiNodeDomain nodeDomain;
 
-    VoronoiResources resources;
     bool voronoiMeshGridReady = false;
     bool voronoiReady = false;
-    static constexpr float AMBIENT_TEMPERATURE = 1.0f;
 };

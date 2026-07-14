@@ -21,7 +21,7 @@ void RuntimeInputController::tick(float deltaTime) {
             inputController.handleScrollInput(inputEvent.xOffset, inputEvent.yOffset);
             break;
         case WindowInputEventType::Key:
-            inputController.handleKeyInput(static_cast<Qt::Key>(inputEvent.key), inputEvent.pressed);
+            inputController.handleKeyInput(static_cast<Qt::Key>(inputEvent.key), inputEvent.pressed, inputEvent.ctrlPressed);
             break;
         case WindowInputEventType::MousePress:
             inputController.handleMouseButton(

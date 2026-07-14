@@ -2,6 +2,9 @@ static const uint K_MAX_NEIGHBORS = 50;
 static const uint P_MAX = 50;
 static const uint V_MAX = 50;
 static const uint END_OF_LIST = 255;
+static const uint NodeGhost = 1u << 0u;
+static const uint NodeSurface = 1u << 1u;
+static const uint NodeTriangleOverflow = 1u << 2u;
 
 static const uint DEBUG_MAX_PLANE_AREAS = 50;
 static const uint DEBUG_DUMP_CELL_COUNT = 8;
@@ -87,8 +90,10 @@ static const uint DEBUG_CELL_IDS[DEBUG_DUMP_CELL_COUNT] = { 59903, 0, 0, 0, 0, 0
 
 [[vk::binding(14)]] RWStructuredBuffer<DebugCellGeometry> debugCells;
 
-[[vk::binding(15)]] StructuredBuffer<uint>          seedFlags;
+[[vk::binding(15)]] RWStructuredBuffer<uint>        nodeFlags;
 [[vk::binding(16)]] RWStructuredBuffer<DumpInfo> dumpInfo;
+[[vk::binding(17)]] RWStructuredBuffer<float>       surfacePatchAreas;
+static const uint MAX_SURFACE_TRIANGLES = 128u;
 
 struct GeometryDebugPushConstants
 {
@@ -466,7 +471,8 @@ static inline uint CCComputeBoundary(inout ConvexCell cell, uint nbRemoved)
     return firstBoundary;
 }
 
-static inline void CCClipByPlane(inout ConvexCell cell, uint newPlaneIdx)
+// Returns true when the retained polyhedron changed.
+static inline bool CCClipByPlane(inout ConvexCell cell, uint newPlaneIdx)
 {
     float4 eqn = CCPlane(cell, newPlaneIdx);
 
@@ -489,16 +495,16 @@ static inline void CCClipByPlane(inout ConvexCell cell, uint newPlaneIdx)
         }
     }
 
-    if (cell.vertexCount < 1) return;
+    if (cell.vertexCount < 1) return true;
 
     if (nbRemoved == 0)
     {
         cell.planeCount--;
-        return;
+        return false;
     }
 
     uint firstBoundary = CCComputeBoundary(cell, nbRemoved);
-    if (firstBoundary == END_OF_LIST) return;
+    if (firstBoundary == END_OF_LIST) return true;
 
     uint cir = firstBoundary;
     uint safety = 0;
@@ -509,9 +515,10 @@ static inline void CCClipByPlane(inout ConvexCell cell, uint newPlaneIdx)
         CCNewVertex(cell, newPlaneIdx, cir, newCir);
         cir = newCir;
     } while (cir != firstBoundary);
+    return true;
 }
 
-static inline bool CCIsSecurityRadiusReached(in ConvexCell cell, float4 lastNeig, float3 seed)
+static inline float CCMaximumVertexDistanceSquared(in ConvexCell cell, float3 seed)
 {
     float vDist = 0.0f;
     for (uint i = 0; i < cell.vertexCount; i++)
@@ -522,12 +529,22 @@ static inline bool CCIsSecurityRadiusReached(in ConvexCell cell, float4 lastNeig
         vDist = max(vDist, d2);
     }
 
-    float3 dn = lastNeig.xyz - seed;
-    float d2n = dot(dn, dn);
-    return d2n > 4.0f * vDist;
+    return vDist;
 }
 
-static inline float4 CCExportBaryVolume(in ConvexCell cell, float3 seed)
+static inline bool CCIsSecurityRadiusReached(float maximumVertexDistanceSquared, float4 lastNeig, float3 seed)
+{
+    float3 dn = lastNeig.xyz - seed;
+    float d2n = dot(dn, dn);
+    return d2n > 4.0f * maximumVertexDistanceSquared;
+}
+
+static inline float4 CCExportBaryVolumeAndArea(
+    in ConvexCell cell,
+    float3 seed,
+    uint staticPlaneCount,
+    inout float surfIntr[P_MAX],
+    float factor)
 {
     float4 bary = float4(0.0f, 0.0f, 0.0f, 0.0f);
     float4 C = float4(seed, 1.0f);
@@ -580,60 +597,7 @@ static inline float4 CCExportBaryVolume(in ConvexCell cell, float3 seed)
                 bary.x += w * (A.x + 0.25f * sum.x);
                 bary.y += w * (A.y + 0.25f * sum.y);
                 bary.z += w * (A.z + 0.25f * sum.z);
-            }
-        }
-    }
 
-    return bary;
-}
-
-static inline void CCExportArea(
-    in ConvexCell cell,
-    float3 seed,
-    uint staticPlaneCount,
-    inout float surfIntr[P_MAX],
-    float factor)
-{
-    float4 C = float4(seed, 1.0f);
-
-    for (uint ve = 0; ve < cell.vertexCount; ve++)
-    {
-        float3 A3 = computeVertex(cell.vertices[ve], cell);
-        float4 A = float4(A3, 1.0f);
-        float4 AC = C - A;
-
-        uint3 planesId = cell.vertices[ve];
-        float4 planes[3] = { CCPlane(cell, planesId.x), CCPlane(cell, planesId.y), CCPlane(cell, planesId.z) };
-
-        float4 APlaneI[3];
-        for (int i = 0; i < 3; i++)
-        {
-            float3 ni = planes[i].xyz;
-            float dotACni = dot(AC.xyz, ni);
-            float dotnini = dot(ni, ni);
-            if (dotnini < 1e-30f) APlaneI[i] = float4(0.0f, 0.0f, 0.0f, 0.0f);
-            else
-            {
-                float3 normalComp = (dotACni / dotnini) * ni;
-                APlaneI[i] = AC - float4(normalComp, 0.0f);
-            }
-        }
-
-        float4 ALineII1[3];
-        for (int i = 0; i < 3; i++)
-        {
-            float3 ninj = cross(planes[i].xyz, planes[(i + 1) % 3].xyz);
-            float ninj2 = dot(ninj, ninj);
-            float lhs = VOLUME_EPSILON2 * dot(planes[i].xyz, planes[i].xyz) * dot(planes[(i + 1) % 3].xyz, planes[(i + 1) % 3].xyz);
-            if (ninj2 < lhs) ALineII1[i] = float4(0.0f, 0.0f, 0.0f, 0.0f);
-            else ALineII1[i] = (dot(AC.xyz, ninj) / ninj2) * float4(ninj, 0.0f);
-        }
-
-        for (int i = 0; i < 3; i++)
-        {
-            for (int st = 0; st < 2; st++)
-            {
-                int j = (i + 3 - st) % 3;
                 uint planeId = (i == 0) ? planesId.x : ((i == 1) ? planesId.y : planesId.z);
                 
                 if (planeId >= 6 && planeId < staticPlaneCount && planeId < P_MAX)
@@ -650,6 +614,7 @@ static inline void CCExportArea(
             }
         }
     }
+    return bary;
 }
 
 static inline bool intersectSegmentTriangle(
@@ -718,8 +683,71 @@ static inline bool isPointInsideMeshFallback(float3 queryPoint, float3 bboxMinW,
     return insideVotes >= 2u;
 }
 
-static float computeRestrictedVolume(uint cellID, float3 seed)
+static inline float clippedTriangleArea(
+    MeshTriangle triangle,
+    in ConvexCell cell,
+    uint staticPlaneCount)
 {
+    float3 polygon[64];
+    float3 clipped[64];
+    polygon[0] = triangle.v0.xyz;
+    polygon[1] = triangle.v1.xyz;
+    polygon[2] = triangle.v2.xyz;
+    uint polygonCount = 3u;
+
+    for (uint planeIndex = 0u; planeIndex < staticPlaneCount && polygonCount >= 3u; planeIndex++)
+    {
+        float4 plane = CCPlane(cell, planeIndex);
+        uint clippedCount = 0u;
+        float3 previous = polygon[polygonCount - 1u];
+        float previousEval = dot(plane.xyz, previous) + plane.w;
+        bool previousInside = previousEval >= -1e-6f;
+
+        for (uint vertexIndex = 0u; vertexIndex < polygonCount; vertexIndex++)
+        {
+            float3 current = polygon[vertexIndex];
+            float currentEval = dot(plane.xyz, current) + plane.w;
+            bool currentInside = currentEval >= -1e-6f;
+
+            if (currentInside != previousInside && clippedCount < 64u)
+            {
+                float denominator = previousEval - currentEval;
+                float t = abs(denominator) > 1e-12f ? previousEval / denominator : 0.0f;
+                clipped[clippedCount++] = lerp(previous, current, saturate(t));
+            }
+            if (currentInside && clippedCount < 64u)
+            {
+                clipped[clippedCount++] = current;
+            }
+
+            previous = current;
+            previousEval = currentEval;
+            previousInside = currentInside;
+        }
+
+        polygonCount = clippedCount;
+        for (uint index = 0u; index < polygonCount; index++) polygon[index] = clipped[index];
+    }
+
+    if (polygonCount < 3u) return 0.0f;
+
+    float doubleArea = 0.0f;
+    float3 origin = polygon[0];
+    for (uint index = 1u; index + 1u < polygonCount; index++)
+    {
+        doubleArea += length(cross(polygon[index] - origin, polygon[index + 1u] - origin));
+    }
+    return 0.5f * doubleArea;
+}
+
+static float computeRestrictedVolume(
+    uint cellID,
+    float3 seed,
+    out float surfacePatchArea,
+    out bool triangleOverflow)
+{
+    surfacePatchArea = 0.0f;
+    triangleOverflow = false;
     int debugSlot = -1;
     bool debugThisCell = false;
     if (pushConstants.debugEnable != 0u)
@@ -770,6 +798,7 @@ static float computeRestrictedVolume(uint cellID, float3 seed)
     for (uint i = 0; i < P_MAX; i++) planeNeighborIDs[i] = -1;
 
     uint baseIdx = cellID * K_MAX_NEIGHBORS;
+    float maximumVertexDistanceSquared = CCMaximumVertexDistanceSquared(cell, seed);
 
     for (uint i = 0; i < K_MAX_NEIGHBORS; i++)
     {
@@ -793,10 +822,13 @@ static float computeRestrictedVolume(uint cellID, float3 seed)
         planeNeighborIDs[planeIdx] = (int)neigh;
         cell.planeCount++;
 
-        CCClipByPlane(cell, planeIdx);
+        bool cellChanged = CCClipByPlane(cell, planeIdx);
         if (cell.vertexCount < 1) break;
 
-        if (CCIsSecurityRadiusReached(cell, seedPositions[neigh], seed)) break;
+        if (cellChanged)
+            maximumVertexDistanceSquared = CCMaximumVertexDistanceSquared(cell, seed);
+
+        if (CCIsSecurityRadiusReached(maximumVertexDistanceSquared, seedPositions[neigh], seed)) break;
 
     }
 
@@ -960,8 +992,8 @@ static float computeRestrictedVolume(uint cellID, float3 seed)
 
     bool addVolume = (inDomain == 2u);
 
-    uint flags = seedFlags[cellID];
-    bool isGhost = (flags & 1u) != 0u;
+    uint flags = nodeFlags[cellID];
+    bool isGhost = (flags & NodeGhost) != 0u;
 
     float4 volBary = float4(0.0f, 0.0f, 0.0f, 0.0f);
     float unrestrictedVolume = 0.0f;
@@ -973,7 +1005,7 @@ static float computeRestrictedVolume(uint cellID, float3 seed)
 
     if (!isGhost)
     {
-        float4 un = CCExportBaryVolume(cell, seed);
+        float4 un = CCExportBaryVolumeAndArea(cell, seed, staticPlaneCount, planeAreas, 1.0f);
         unrestrictedVolume = un.w / 6.0f;
         if (abs(un.w) > 1e-20f)
         {
@@ -982,33 +1014,35 @@ static float computeRestrictedVolume(uint cellID, float3 seed)
         }
         if (addVolume) volBary = un / 6.0f;
         
-        CCExportArea(cell, seed, staticPlaneCount, planeAreas, 1.0f);
-
         if (pushConstants.debugEnable != 0u)
         {
             exportUnrestrictedCell(cellID, cell, unrestrictedVolume);
         }
     }
 
-    const int MAX_TRI = 128;
+    const int MAX_TRI = int(MAX_SURFACE_TRIANGLES);
     int uniqueTri[MAX_TRI];
     uint uniqueCount = 0;
 
-    for (int z = voxelMin.z; z <= voxelMax.z && uniqueCount < MAX_TRI; z++)
+    for (int z = voxelMin.z; z <= voxelMax.z; z++)
     {
-        for (int y = voxelMin.y; y <= voxelMax.y && uniqueCount < MAX_TRI; y++)
+        for (int y = voxelMin.y; y <= voxelMax.y; y++)
         {
-            for (int x = voxelMin.x; x <= voxelMax.x && uniqueCount < MAX_TRI; x++)
+            for (int x = voxelMin.x; x <= voxelMax.x; x++)
             {
                 int vIdx = voxelIndex(int3(x, y, z));
                 int minOff = voxelOffsets[vIdx];
                 int maxOff = voxelOffsets[vIdx + 1];
-                for (int i = minOff; i < maxOff && uniqueCount < MAX_TRI; i++)
+                for (int i = minOff; i < maxOff; i++)
                 {
                     int triId = voxelTrianglesList[i];
                     bool found = false;
                     for (uint j = 0; j < uniqueCount; j++) { if (uniqueTri[j] == triId) { found = true; break; } }
-                    if (!found) uniqueTri[uniqueCount++] = triId;
+                    if (!found)
+                    {
+                        if (uniqueCount < MAX_TRI) uniqueTri[uniqueCount++] = triId;
+                        else triangleOverflow = true;
+                    }
                 }
             }
         }
@@ -1052,6 +1086,7 @@ static float computeRestrictedVolume(uint cellID, float3 seed)
     {
         int triIdx = uniqueTri[i];
         MeshTriangle tri = meshTriangles[triIdx];
+        surfacePatchArea += clippedTriangleArea(tri, cell, staticPlaneCount);
 
         float3 v0 = tri.v0.xyz;
         float3 v1 = tri.v1.xyz;
@@ -1071,33 +1106,32 @@ static float computeRestrictedVolume(uint cellID, float3 seed)
             v1 = tmp;
         }
 
-        if (cell.planeCount + 4 >= P_MAX) { CCBURestore(backup, cell); cell.planeCount = staticPlaneCount; continue; }
+        if (cell.planeCount + 4 >= P_MAX) { CCBURestore(backup, cell); continue; }
 
         CCSetPlane(cell, cell.planeCount++, getPlaneFromPoints(origin, v0, v1));
         CCClipByPlane(cell, cell.planeCount - 1);
-        if (cell.vertexCount < 1) { CCBURestore(backup, cell); cell.planeCount = staticPlaneCount; continue; }
+        if (cell.vertexCount < 1) { CCBURestore(backup, cell); continue; }
 
         CCSetPlane(cell, cell.planeCount++, getPlaneFromPoints(origin, v2, v0));
         CCClipByPlane(cell, cell.planeCount - 1);
-        if (cell.vertexCount < 1) { CCBURestore(backup, cell); cell.planeCount = staticPlaneCount; continue; }
+        if (cell.vertexCount < 1) { CCBURestore(backup, cell); continue; }
 
         CCSetPlane(cell, cell.planeCount++, getPlaneFromPoints(origin, v1, v2));
         CCClipByPlane(cell, cell.planeCount - 1);
-        if (cell.vertexCount < 1) { CCBURestore(backup, cell); cell.planeCount = staticPlaneCount; continue; }
+        if (cell.vertexCount < 1) { CCBURestore(backup, cell); continue; }
 
         CCSetPlane(cell, cell.planeCount++, getPlaneFromPoints(v1, v2, v0));
         CCClipByPlane(cell, cell.planeCount - 1);
-        if (cell.vertexCount < 1) { CCBURestore(backup, cell); cell.planeCount = staticPlaneCount; continue; }
+        if (cell.vertexCount < 1) { CCBURestore(backup, cell); continue; }
 
         float factor = (inDomain == 2u) ? (goOut ? -1.0f : 1.0f) : (goOut ? 1.0f : -1.0f);
 
-        float4 chunkBary = CCExportBaryVolume(cell, seed) * (factor / 6.0f);
-        CCExportArea(cell, seed, staticPlaneCount, planeAreas, factor);
+        float4 chunkBary = CCExportBaryVolumeAndArea(
+            cell, seed, staticPlaneCount, planeAreas, factor) * (factor / 6.0f);
 
         volBary += chunkBary;
 
         CCBURestore(backup, cell);
-        cell.planeCount = staticPlaneCount;
     }
 
     float restrictedVolume = volBary.w;
@@ -1155,11 +1189,23 @@ void main(uint3 dtid : SV_DispatchThreadID)
     uint nodeID = pushConstants.nodeOffset + localNodeID;
 
     float3 seed = seedPositions[nodeID].xyz;
-    float vol = computeRestrictedVolume(nodeID, seed);
+    uint flags = nodeFlags[nodeID];
+    flags &= ~(NodeSurface | NodeTriangleOverflow);
+    float surfacePatchArea = 0.0f;
+    bool triangleOverflow = false;
+    float vol = computeRestrictedVolume(nodeID, seed, surfacePatchArea, triangleOverflow);
 
-    uint flags = seedFlags[nodeID];
-    bool isGhost = (flags & 1u) != 0u;
+    const float minimumSurfacePatchArea = 5e-11f;
+    bool isGhost = (flags & NodeGhost) != 0u;
+    if (!isGhost && surfacePatchArea > minimumSurfacePatchArea) {
+        flags |= NodeSurface;
+    } else {
+        surfacePatchArea = 0.0f;
+    }
+    if (triangleOverflow) flags |= NodeTriangleOverflow;
 
     if (!isGhost) nodes[nodeID].volume = vol;
     else nodes[nodeID].volume = 0.0f;
+    surfacePatchAreas[nodeID] = surfacePatchArea;
+    nodeFlags[nodeID] = flags;
 }

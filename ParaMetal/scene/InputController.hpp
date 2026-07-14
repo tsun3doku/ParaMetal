@@ -29,7 +29,7 @@ public:
     ~InputController() = default;
 
     void handleScrollInput(double xOffset, double yOffset);
-    void handleKeyInput(Qt::Key key, bool pressed);
+    void handleKeyInput(Qt::Key key, bool pressed, bool ctrlPressed);
     void handleMouseMove(float mouseX, float mouseY);
     void handleMouseRelease(int button, float mouseX, float mouseY);
     void handleMouseButton(int button, float mouseX, float mouseY, bool shiftPressed);

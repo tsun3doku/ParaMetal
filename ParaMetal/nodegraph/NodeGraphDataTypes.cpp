@@ -53,15 +53,17 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodeGraphTypeRegistry* typ
     if (dataBlock.dataType == payloadtypes::HeatModel) {
         const HeatModelData* heatModel = registry ? registry->get<HeatModelData>(dataBlock.payloadHandle) : nullptr;
         dataBlock.metadata["heat_model.boundary_condition"] =
-            heatModel ? std::to_string(static_cast<uint32_t>(heatModel->boundaryCondition)) : std::string();
-        dataBlock.metadata["heat_model.fixed_temperature"] =
-            heatModel ? std::to_string(heatModel->fixedTemperatureValue) : std::string();
-        dataBlock.metadata["heat_model.initial_temperature"] =
-            heatModel ? std::to_string(heatModel->initialTemperature) : std::string();
+            heatModel ? std::to_string(static_cast<uint32_t>(heatModel->boundaryCondition.type)) : std::string();
+        dataBlock.metadata["heat_model.dirichlet_temperature_c"] =
+            heatModel ? std::to_string(heatModel->boundaryCondition.temperatureC) : std::string();
+        dataBlock.metadata["heat_model.initial_temperature_c"] =
+            heatModel ? std::to_string(heatModel->initialTemperatureC) : std::string();
     } else {
         dataBlock.metadata.erase("heat_model.boundary_condition");
         dataBlock.metadata.erase("heat_model.fixed_temperature");
         dataBlock.metadata.erase("heat_model.initial_temperature");
+        dataBlock.metadata.erase("heat_model.dirichlet_temperature_c");
+        dataBlock.metadata.erase("heat_model.initial_temperature_c");
     }
 
     if (dataBlock.dataType == payloadtypes::Heat) {

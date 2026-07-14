@@ -74,11 +74,11 @@ private:
             return false;
         }
         if (!computeProduct->isValid()) {
-            std::cerr << "[VoronoiDisplayTransport] computeProduct invalid: nodeCount=" << computeProduct->nodeCount
-                      << " simNodeCount=" << computeProduct->simNodeCount
+            std::cerr << "[VoronoiDisplayTransport] computeProduct invalid: candidateNodeCount=" << computeProduct->candidateNodeCount
+                      << " nodeCount=" << computeProduct->nodeCount
+                      << " candidateNodeBuffer=" << computeProduct->candidateNodeBuffer
                       << " nodeBuffer=" << computeProduct->nodeBuffer
-                      << " simNodeBuffer=" << computeProduct->simNodeBuffer
-                      << " neighborIndicesBuffer=" << computeProduct->voronoiNeighborIndicesBuffer
+                      << " neighborIndicesBuffer=" << computeProduct->candidateNeighborIndicesBuffer
                       << " seedPositionBuffer=" << computeProduct->seedPositionBuffer
                       << " candidateBuffer=" << computeProduct->candidateBuffer
                       << " isPointDomain=" << computeProduct->isPointDomain
@@ -89,14 +89,14 @@ private:
         outConfig = {};
         outConfig.showVoronoi = package.display.showVoronoi && package.domainType != DomainType::Points;
         outConfig.showPoints = package.display.showPoints;
-        outConfig.nodeCount = computeProduct->nodeCount;
-        outConfig.mappedVoronoiNodes = nullptr;
-        outConfig.nodeBuffer = computeProduct->nodeBuffer;
-        outConfig.nodeBufferOffset = computeProduct->nodeBufferOffset;
+        outConfig.candidateNodeCount = computeProduct->candidateNodeCount;
+        outConfig.mappedCandidateNodes = nullptr;
+        outConfig.candidateNodeBuffer = computeProduct->candidateNodeBuffer;
+        outConfig.candidateNodeBufferOffset = computeProduct->candidateNodeBufferOffset;
         outConfig.seedPositionBuffer = computeProduct->seedPositionBuffer;
         outConfig.seedPositionBufferOffset = computeProduct->seedPositionBufferOffset;
-        outConfig.neighborIndicesBuffer = computeProduct->voronoiNeighborIndicesBuffer;
-        outConfig.neighborIndicesBufferOffset = computeProduct->voronoiNeighborIndicesBufferOffset;
+        outConfig.candidateNeighborIndicesBuffer = computeProduct->candidateNeighborIndicesBuffer;
+        outConfig.candidateNeighborIndicesBufferOffset = computeProduct->candidateNeighborIndicesBufferOffset;
         outConfig.occupancyPointBuffer = computeProduct->occupancyPointBuffer;
         outConfig.occupancyPointBufferOffset = computeProduct->occupancyPointBufferOffset;
         outConfig.occupancyPointCount = computeProduct->occupancyPointCount;

@@ -231,7 +231,7 @@ void OverlayPass::record(const FrameContext& context, const SceneView& view, con
         outlineRenderer->render(commandBuffer, currentFrame, modelSelection);
     }
 
-    if (gridRenderer && currentFrame < gridRenderer->getGridDescriptorSets().size()) {
+    if (flags.drawGrid && gridRenderer && currentFrame < gridRenderer->getGridDescriptorSets().size()) {
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, gridRenderer->getGridPipeline());
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, gridRenderer->getGridPipelineLayout(), 0, 1, &gridRenderer->getGridDescriptorSets()[currentFrame], 0, nullptr);
         vkCmdDraw(commandBuffer, gridRenderer->vertexCount, 1, 0, 0);

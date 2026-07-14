@@ -31,16 +31,21 @@ HeatModelNodeParams readHeatModelNodeParams(const NodeGraphNode& node) {
         node,
         nodegraphparams::heatmodel::Conductivity,
         HeatSimDefaults::conductivity);
-    params.initialTemperature = NodePanelUtils::readFloatParam(
+    params.initialTemperatureC = NodePanelUtils::readFloatParam(
         node,
-        nodegraphparams::heatmodel::InitialTemperature,
-        HeatSimDefaults::ambientTemperature);
-    params.boundaryCondition = static_cast<HeatBoundaryCondition>(
+        nodegraphparams::heatmodel::InitialTemperatureC,
+        HeatSimDefaults::ambientTemperatureC);
+    params.boundaryConditionType = static_cast<BoundaryCondition::Type>(
         NodePanelUtils::readEnumParam(node, nodegraphparams::heatmodel::BoundaryCondition, 0));
-    params.fixedTemperatureValue = NodePanelUtils::readFloatParam(
+    params.boundaryTemperatureC = NodePanelUtils::readFloatParam(
         node,
-        nodegraphparams::heatmodel::FixedTemperatureValue,
-        HeatSimDefaults::ambientTemperature);
+        nodegraphparams::heatmodel::DirichletTemperatureC,
+        HeatSimDefaults::ambientTemperatureC);
+    params.heatFlux = NodePanelUtils::readFloatParam(node, nodegraphparams::heatmodel::HeatFlux, 0.0);
+    params.heatTransferCoefficient = NodePanelUtils::readFloatParam(
+        node, nodegraphparams::heatmodel::HeatTransferCoefficient, 0.0);
+    params.volumetricPowerDensity = NodePanelUtils::readFloatParam(
+        node, nodegraphparams::heatmodel::VolumetricPowerDensity, 0.0);
     return params;
 }
 
@@ -80,21 +85,30 @@ bool writeHeatModelNodeParams(
     ok &= editor.setNodeParameter(
         nodeId,
         NodeGraphParamValue{
-            nodegraphparams::heatmodel::InitialTemperature,
+            nodegraphparams::heatmodel::InitialTemperatureC,
             NodeGraphParamType::Float,
-            params.initialTemperature});
+            params.initialTemperatureC});
     ok &= editor.setNodeParameter(
         nodeId,
         NodeGraphParamValue{
             nodegraphparams::heatmodel::BoundaryCondition,
             NodeGraphParamType::Enum,
             0.0,
-            static_cast<int64_t>(params.boundaryCondition)});
+            static_cast<int64_t>(params.boundaryConditionType)});
     ok &= editor.setNodeParameter(
         nodeId,
         NodeGraphParamValue{
-            nodegraphparams::heatmodel::FixedTemperatureValue,
+            nodegraphparams::heatmodel::DirichletTemperatureC,
             NodeGraphParamType::Float,
-            params.fixedTemperatureValue});
+            params.boundaryTemperatureC});
+    ok &= editor.setNodeParameter(
+        nodeId,
+        NodeGraphParamValue{nodegraphparams::heatmodel::HeatFlux, NodeGraphParamType::Float, params.heatFlux});
+    ok &= editor.setNodeParameter(
+        nodeId,
+        NodeGraphParamValue{nodegraphparams::heatmodel::HeatTransferCoefficient, NodeGraphParamType::Float, params.heatTransferCoefficient});
+    ok &= editor.setNodeParameter(
+        nodeId,
+        NodeGraphParamValue{nodegraphparams::heatmodel::VolumetricPowerDensity, NodeGraphParamType::Float, params.volumetricPowerDensity});
     return ok;
 }

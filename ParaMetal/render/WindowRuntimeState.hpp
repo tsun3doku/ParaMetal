@@ -19,6 +19,7 @@ struct WindowInputEvent {
     bool pressed = false;
     int button = 0;
     bool shiftPressed = false;
+    bool ctrlPressed = false;
     float x = 0.0f;
     float y = 0.0f;
     double xOffset = 0.0;

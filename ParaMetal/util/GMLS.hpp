@@ -1,145 +1,155 @@
 #pragma once
 
 #include <algorithm>
-#include <array>
-#include <cstddef>
+#include <cmath>
 #include <vector>
 
+#include <Eigen/Core>
+#include <Eigen/SVD>
 #include <glm/glm.hpp>
-#include <glm/gtc/epsilon.hpp>
-#include <glm/gtc/matrix_inverse.hpp>
 
 namespace GMLS {
 
-struct LinearPolynomialBasis {
-    static constexpr std::size_t kFunctionCount = 4;
-
-    static glm::dvec4 evaluate(const glm::dvec3& delta) {
-        return glm::dvec4(1.0, delta.x, delta.y, delta.z);
-    }
-};
+inline constexpr double RankTolerance = 1e-12;
+inline constexpr double ReproductionTolerance = 1e-9;
 
 inline double wendlandC2(double normalizedRadius) {
     if (normalizedRadius >= 1.0) {
         return 0.0;
     }
-
     const double oneMinusRadius = 1.0 - std::max(0.0, normalizedRadius);
     return oneMinusRadius * oneMinusRadius * oneMinusRadius * oneMinusRadius *
         ((4.0 * normalizedRadius) + 1.0);
 }
 
-template <typename Basis = LinearPolynomialBasis>
-bool computeWeights(
-    const glm::dvec3& targetPos,
-    const std::vector<glm::dvec3>& sourcePositions,
-    double kernelRadius,
-    std::vector<double>& outValueWeights,
-    std::vector<glm::dvec3>& outGradientWeights) {
-    outValueWeights.clear();
-    outGradientWeights.clear();
-
-    if (kernelRadius <= 0.0 || sourcePositions.empty()) {
+inline bool solveWeights(
+    const Eigen::MatrixXd& basis,
+    const Eigen::VectorXd& kernelWeights,
+    const std::vector<Eigen::VectorXd>& functionals,
+    std::vector<Eigen::VectorXd>& weights) {
+    if (basis.rows() == 0 || basis.rows() != kernelWeights.size()) {
         return false;
     }
 
-    constexpr std::size_t kBasisCount = Basis::kFunctionCount;
-    static_assert(kBasisCount == 4, "Current GMLS implementation assumes a linear 3D basis.");
+    Eigen::MatrixXd weightedBasis = basis;
+    for (Eigen::Index row = 0; row < weightedBasis.rows(); ++row) {
+        weightedBasis.row(row) *= std::sqrt(kernelWeights(row));
+    }
 
-    outValueWeights.resize(sourcePositions.size(), 0.0);
-    outGradientWeights.resize(sourcePositions.size(), glm::dvec3(0.0));
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(weightedBasis, Eigen::ComputeThinU | Eigen::ComputeThinV);
+    svd.setThreshold(RankTolerance);
+    if (svd.rank() != basis.cols()) {
+        return false;
+    }
 
-    glm::dmat4 moment(0.0);
-    thread_local std::vector<glm::dvec4> basisValues;
-    thread_local std::vector<double>     kernelWeights;
-    basisValues.assign(sourcePositions.size(), glm::dvec4(0.0));
-    kernelWeights.assign(sourcePositions.size(), 0.0);
-
-    for (std::size_t index = 0; index < sourcePositions.size(); ++index) {
-        const glm::dvec3 delta = sourcePositions[index] - targetPos;
-        const double normalizedRadius = glm::length(delta) / kernelRadius;
-        const double weight = wendlandC2(normalizedRadius);
-        if (weight <= 0.0) {
-            continue;
+    const Eigen::VectorXd singularValues = svd.singularValues();
+    weights.clear();
+    for (const Eigen::VectorXd& functional : functionals) {
+        Eigen::VectorXd spectral = svd.matrixV().transpose() * functional;
+        for (Eigen::Index index = 0; index < spectral.size(); ++index) {
+            spectral(index) /= singularValues(index);
         }
 
-        const glm::dvec4 basis = Basis::evaluate(delta);
-        basisValues[index] = basis;
-        kernelWeights[index] = weight;
-        moment += weight * glm::outerProduct(basis, basis);
-    }
-
-    const glm::dmat4 inverseMoment = glm::inverse(moment);
-    if (!std::isfinite(inverseMoment[0][0]) || !std::isfinite(inverseMoment[1][1]) ||
-        !std::isfinite(inverseMoment[2][2]) || !std::isfinite(inverseMoment[3][3])) {
-        outValueWeights.clear();
-        outGradientWeights.clear();
-        return false;
-    }
-    const glm::dvec4 valueFunctional(1.0, 0.0, 0.0, 0.0);
-    const glm::dvec4 gradientFunctionalX(0.0, 1.0, 0.0, 0.0);
-    const glm::dvec4 gradientFunctionalY(0.0, 0.0, 1.0, 0.0);
-    const glm::dvec4 gradientFunctionalZ(0.0, 0.0, 0.0, 1.0);
-
-    const glm::dvec4 alphaValue = inverseMoment * valueFunctional;
-    const glm::dvec4 alphaDx = inverseMoment * gradientFunctionalX;
-    const glm::dvec4 alphaDy = inverseMoment * gradientFunctionalY;
-    const glm::dvec4 alphaDz = inverseMoment * gradientFunctionalZ;
-
-    bool hasSupport = false;
-    for (std::size_t index = 0; index < sourcePositions.size(); ++index) {
-        const double kernelWeight = kernelWeights[index];
-        if (kernelWeight <= 0.0) {
-            continue;
+        Eigen::VectorXd result = svd.matrixU() * spectral;
+        for (Eigen::Index row = 0; row < result.size(); ++row) {
+            result(row) *= std::sqrt(kernelWeights(row));
         }
-
-        hasSupport = true;
-        const glm::dvec4& basis = basisValues[index];
-        outValueWeights[index] = kernelWeight * glm::dot(basis, alphaValue);
-        outGradientWeights[index] = glm::dvec3(
-            kernelWeight * glm::dot(basis, alphaDx),
-            kernelWeight * glm::dot(basis, alphaDy),
-            kernelWeight * glm::dot(basis, alphaDz));
+        if (!result.allFinite() ||
+            (basis.transpose() * result - functional).cwiseAbs().maxCoeff() > ReproductionTolerance) {
+            return false;
+        }
+        weights.push_back(std::move(result));
     }
-
-    if (!hasSupport) {
-        outValueWeights.clear();
-        outGradientWeights.clear();
-        return false;
-    }
-
     return true;
 }
 
-inline std::vector<float> buildScatterWeights(const std::vector<double>& valueWeights) {
-    std::vector<float> scatterWeights(valueWeights.size(), 0.0f);
-    double positiveSum = 0.0;
-    for (size_t i = 0; i < valueWeights.size(); ++i) {
-        const double positiveWeight = std::max(0.0, valueWeights[i]);
-        scatterWeights[i] = static_cast<float>(positiveWeight);
-        positiveSum += positiveWeight;
+inline bool computeSurfaceWeights(
+    const glm::dvec3& targetPosition,
+    const glm::dvec3& targetNormal,
+    const std::vector<glm::dvec3>& sourcePositions,
+    double kernelRadius,
+    std::vector<double>& valueWeights,
+    std::vector<glm::dvec3>& gradientWeights) {
+    valueWeights.clear();
+    gradientWeights.clear();
+    if (sourcePositions.size() < 3 || kernelRadius <= 0.0) {
+        return false;
     }
-    if (positiveSum > 1e-12) {
-        const float invSum = static_cast<float>(1.0 / positiveSum);
-        for (float& weight : scatterWeights) weight *= invSum;
-        return scatterWeights;
+
+    const double normalLength = glm::length(targetNormal);
+    if (!std::isfinite(normalLength) || normalLength <= 1e-12) {
+        return false;
     }
-    double absSum = 0.0;
-    for (size_t i = 0; i < valueWeights.size(); ++i) {
-        const double absWeight = std::abs(valueWeights[i]);
-        scatterWeights[i] = static_cast<float>(absWeight);
-        absSum += absWeight;
+    const glm::dvec3 normal = targetNormal / normalLength;
+    glm::dvec3 referenceAxis;
+    if (std::abs(normal.x) <= std::abs(normal.y) && std::abs(normal.x) <= std::abs(normal.z)) {
+        referenceAxis = glm::dvec3(1.0, 0.0, 0.0);
+    } else if (std::abs(normal.y) <= std::abs(normal.z)) {
+        referenceAxis = glm::dvec3(0.0, 1.0, 0.0);
+    } else {
+        referenceAxis = glm::dvec3(0.0, 0.0, 1.0);
     }
-    if (absSum > 1e-12) {
-        const float invSum = static_cast<float>(1.0 / absSum);
-        for (float& weight : scatterWeights) weight *= invSum;
-        return scatterWeights;
+    const glm::dvec3 tangentU = glm::normalize(glm::cross(normal, referenceAxis));
+    const glm::dvec3 tangentV = glm::cross(normal, tangentU);
+
+    Eigen::MatrixXd basis(sourcePositions.size(), 3);
+    Eigen::VectorXd kernelWeights(sourcePositions.size());
+    for (size_t index = 0; index < sourcePositions.size(); ++index) {
+        const glm::dvec3 delta = sourcePositions[index] - targetPosition;
+        const double u = glm::dot(delta, tangentU) / kernelRadius;
+        const double v = glm::dot(delta, tangentV) / kernelRadius;
+        basis.row(index) << 1.0, u, v;
+        kernelWeights(index) = wendlandC2(std::sqrt(u * u + v * v));
     }
-    if (!scatterWeights.empty()) {
-        const float uniformWeight = 1.0f / static_cast<float>(scatterWeights.size());
-        for (float& weight : scatterWeights) weight = uniformWeight;
+
+    std::vector<Eigen::VectorXd> functionals(3, Eigen::VectorXd::Zero(3));
+    functionals[0](0) = 1.0;
+    functionals[1](1) = 1.0;
+    functionals[2](2) = 1.0;
+    std::vector<Eigen::VectorXd> solvedWeights;
+    if (!solveWeights(basis, kernelWeights, functionals, solvedWeights)) {
+        return false;
     }
-    return scatterWeights;
+
+    valueWeights.resize(sourcePositions.size());
+    gradientWeights.resize(sourcePositions.size());
+    for (size_t index = 0; index < sourcePositions.size(); ++index) {
+        valueWeights[index] = solvedWeights[0](index);
+        gradientWeights[index] =
+            (solvedWeights[1](index) * tangentU + solvedWeights[2](index) * tangentV) / kernelRadius;
+    }
+    return true;
+}
+
+inline bool computeContactValueWeights(
+    const glm::dvec3& targetPosition,
+    const std::vector<glm::dvec3>& sourcePositions,
+    double kernelRadius,
+    std::vector<double>& valueWeights) {
+    valueWeights.clear();
+    if (sourcePositions.size() < 4 || kernelRadius <= 0.0) {
+        return false;
+    }
+
+    Eigen::MatrixXd basis(sourcePositions.size(), 4);
+    Eigen::VectorXd kernelWeights(sourcePositions.size());
+    for (size_t index = 0; index < sourcePositions.size(); ++index) {
+        const glm::dvec3 delta = (sourcePositions[index] - targetPosition) / kernelRadius;
+        basis.row(index) << 1.0, delta.x, delta.y, delta.z;
+        kernelWeights(index) = wendlandC2(glm::length(delta));
+    }
+
+    std::vector<Eigen::VectorXd> functionals(1, Eigen::VectorXd::Zero(4));
+    functionals[0](0) = 1.0;
+    std::vector<Eigen::VectorXd> solvedWeights;
+    if (!solveWeights(basis, kernelWeights, functionals, solvedWeights)) {
+        return false;
+    }
+    valueWeights.resize(sourcePositions.size());
+    for (size_t index = 0; index < sourcePositions.size(); ++index) {
+        valueWeights[index] = solvedWeights[0](index);
+    }
+    return true;
 }
 
 } // namespace GMLS

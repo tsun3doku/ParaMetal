@@ -4,9 +4,9 @@ layout(location = 0) in vec3 localPos;
 
 struct SurfacePoint {
     vec3 position;
-    float temperature;
+    float temperatureC;
     vec3 normal;
-    float area;
+    float vertexArea;
     vec4 color;
 };
 

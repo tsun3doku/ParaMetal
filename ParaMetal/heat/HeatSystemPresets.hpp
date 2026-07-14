@@ -24,7 +24,7 @@ const char* heatMaterialPresetName(HeatMaterialPresetId id);
 
 struct HeatSimDefaults {
     // Physical Constants
-    static constexpr float ambientTemperature = 1.0f;
+    static constexpr float ambientTemperatureC = 5.0f;
     
     // Default Material Properties
     static constexpr float density = 1000.0f;       

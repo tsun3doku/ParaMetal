@@ -5,7 +5,7 @@ struct SurfacePoint {
     vec3 position;
     float temperature;
     vec3 normal;
-    float area;
+    float vertexArea;
     vec4 color;
 };
 
@@ -138,5 +138,5 @@ void main() {
     // Grid is in model space
     SurfacePoint sp = sourceBuffer.sources[idx];
     vec3 modelPos = sp.position;
-    insertPoint(modelPos, sp.normal, sp.temperature, sp.area, idx);
+    insertPoint(modelPos, sp.normal, sp.temperature, sp.vertexArea, idx);
 }

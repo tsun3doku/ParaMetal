@@ -204,21 +204,21 @@ void NodeGraphEditor::resetToDefaultGraph() {
     sourceModelPath.stringValue = "models/heatsource_torus.obj";
     setNodeParameter(sourceModel.id, sourceModelPath);
 
-    // Set receiver heat model to None BC 
+    // Set receiver heat model to an adiabatic boundary.
     NodeGraphParamValue receiverHeatModelBC{};
     receiverHeatModelBC.id = nodegraphparams::heatmodel::BoundaryCondition;
     receiverHeatModelBC.type = NodeGraphParamType::Enum;
-    receiverHeatModelBC.enumValue = "None";
+    receiverHeatModelBC.enumValue = "Adiabatic";
     setNodeParameter(receiverHeatModel.id, receiverHeatModelBC);
 
-    // Set source heat model to Fixed Temperature BC
+    // Set source heat model to a Dirichlet temperature boundary condition.
     NodeGraphParamValue sourceHeatModelBC{};
     sourceHeatModelBC.id = nodegraphparams::heatmodel::BoundaryCondition;
     sourceHeatModelBC.type = NodeGraphParamType::Enum;
-    sourceHeatModelBC.enumValue = "Fixed Temperature";
+    sourceHeatModelBC.enumValue = "Dirichlet Temperature";
     setNodeParameter(sourceHeatModel.id, sourceHeatModelBC);
     NodeGraphParamValue sourceHeatModelTemp{};
-    sourceHeatModelTemp.id = nodegraphparams::heatmodel::FixedTemperatureValue;
+    sourceHeatModelTemp.id = nodegraphparams::heatmodel::DirichletTemperatureC;
     sourceHeatModelTemp.type = NodeGraphParamType::Float;
     sourceHeatModelTemp.floatValue = 100.0;
     setNodeParameter(sourceHeatModel.id, sourceHeatModelTemp);

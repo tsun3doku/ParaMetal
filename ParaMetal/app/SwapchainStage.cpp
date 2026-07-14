@@ -106,21 +106,24 @@ bool SwapchainStage::recreateSwapChain() {
 FrameStageResult SwapchainStage::acquireFrameImage(uint32_t& imageIndex) {
     const VkResult result = frameSync.acquireNextImage(swapchainManager.getSwapChain(), imageIndex);
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+    if (result == VK_SUCCESS) {
+        return FrameStageResult::Continue;
+    }
+
+    if (result != VK_ERROR_DEVICE_LOST) {
         return FrameStageResult::RecreateSwapchain;
     }
 
-    if (result != VK_SUCCESS) {
-        return FrameStageResult::Fatal;
-    }
-
-    return FrameStageResult::Continue;
+    return FrameStageResult::Fatal;
 }
 
 FrameStageResult SwapchainStage::presentFrame(uint32_t imageIndex) {
     const VkResult result = frameSync.present(vulkanDevice.getPresentQueue(), swapchainManager.getSwapChain(), imageIndex);
     if (result == VK_SUCCESS) {
         return FrameStageResult::Continue;
+    }
+    if (result == VK_ERROR_DEVICE_LOST) {
+        return FrameStageResult::Fatal;
     }
     return FrameStageResult::RecreateSwapchain;
 }

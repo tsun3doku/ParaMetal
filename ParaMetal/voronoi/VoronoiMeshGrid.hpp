@@ -3,7 +3,6 @@
 #include <vector>
 #include <string>
 #include <glm/glm.hpp>
-#include "mesh/remesher/SupportingHalfedge.hpp"
 #include "spatial/TriangleHashGrid.hpp"
 #include "spatial/VoxelGrid.hpp"
 #include "util/GeometryUtils.hpp"
@@ -15,7 +14,6 @@ public:
     ~VoronoiMeshGrid();
 
     void buildGrids(
-        const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
         const std::vector<glm::vec3>& positions,
         const std::vector<uint32_t>& indices,
         float targetCellSize,

@@ -10,23 +10,23 @@
 #include <iomanip>
 #include <iostream>
 
-void HeatSystemDebugStage::exportDebugArtifacts(bool debugEnable, uint32_t voronoiNodeCount,
+void HeatSystemDebugStage::exportDebugArtifacts(bool debugEnable, uint32_t candidateNodeCount,
     VkBuffer debugCellGeometryBuffer, VkDeviceSize debugCellGeometryBufferOffset,
-    VkBuffer voronoiNodeBuffer, VkDeviceSize voronoiNodeBufferOffset,
+    VkBuffer candidateNodeBuffer, VkDeviceSize candidateNodeBufferOffset,
     VkBuffer voronoiDumpBuffer, VkDeviceSize voronoiDumpBufferOffset,
     MemoryAllocator& memoryAllocator, CommandPool& renderCommandPool) {
     if (!debugEnable) return;
 
-    exportDebugCellsToOBJ(debugEnable, voronoiNodeCount,
+    exportDebugCellsToOBJ(debugEnable, candidateNodeCount,
         debugCellGeometryBuffer, debugCellGeometryBufferOffset, memoryAllocator, renderCommandPool);
-    exportCellVolumes(debugEnable, voronoiNodeCount,
-        voronoiNodeBuffer, voronoiNodeBufferOffset, memoryAllocator, renderCommandPool);
-    exportVoronoiDumpInfo(debugEnable, voronoiNodeCount,
-        voronoiNodeBuffer, voronoiNodeBufferOffset,
+    exportCellVolumes(debugEnable, candidateNodeCount,
+        candidateNodeBuffer, candidateNodeBufferOffset, memoryAllocator, renderCommandPool);
+    exportVoronoiDumpInfo(debugEnable, candidateNodeCount,
+        candidateNodeBuffer, candidateNodeBufferOffset,
         voronoiDumpBuffer, voronoiDumpBufferOffset, memoryAllocator, renderCommandPool);
 }
 
-void HeatSystemDebugStage::exportDebugCellsToOBJ(bool debugEnable, uint32_t voronoiNodeCount,
+void HeatSystemDebugStage::exportDebugCellsToOBJ(bool debugEnable, uint32_t candidateNodeCount,
     VkBuffer debugCellGeometryBuffer, VkDeviceSize debugCellGeometryBufferOffset,
     MemoryAllocator& memoryAllocator, CommandPool& renderCommandPool) {
     if (!debugEnable) {
@@ -37,7 +37,7 @@ void HeatSystemDebugStage::exportDebugCellsToOBJ(bool debugEnable, uint32_t voro
         return;
     }
 
-    VkDeviceSize bufferSize = sizeof(voronoi::DebugCellGeometry) * voronoiNodeCount;
+    VkDeviceSize bufferSize = sizeof(voronoi::DebugCellGeometry) * candidateNodeCount;
     VkBuffer stagingBuf = VK_NULL_HANDLE;
     VkDeviceSize stagingOff = 0;
     void* stagingMapped = nullptr;
@@ -66,7 +66,7 @@ void HeatSystemDebugStage::exportDebugCellsToOBJ(bool debugEnable, uint32_t voro
     uint32_t offset = 1;
     uint32_t exportCount = 0;
 
-    for (uint32_t i = 0; i < voronoiNodeCount; i++) {
+    for (uint32_t i = 0; i < candidateNodeCount; i++) {
         if (cells[i].vertexCount == 0) {
             continue;
         }
@@ -87,19 +87,19 @@ void HeatSystemDebugStage::exportDebugCellsToOBJ(bool debugEnable, uint32_t voro
     memoryAllocator.free(stagingBuf, stagingOff);
 }
 
-void HeatSystemDebugStage::exportCellVolumes(bool debugEnable, uint32_t voronoiNodeCount,
-    VkBuffer voronoiNodeBuffer, VkDeviceSize voronoiNodeBufferOffset,
+void HeatSystemDebugStage::exportCellVolumes(bool debugEnable, uint32_t candidateNodeCount,
+    VkBuffer candidateNodeBuffer, VkDeviceSize candidateNodeBufferOffset,
     MemoryAllocator& memoryAllocator, CommandPool& renderCommandPool) {
     if (!debugEnable) {
         return;
     }
 
-    if (!voronoiNodeBuffer) {
+    if (!candidateNodeBuffer) {
         std::cerr << "[HeatSystem] Error: voronoi::Node buffer not available" << std::endl;
         return;
     }
 
-    VkDeviceSize bufferSize = sizeof(voronoi::Node) * voronoiNodeCount;
+    VkDeviceSize bufferSize = sizeof(voronoi::Node) * candidateNodeCount;
     VkBuffer stagingBuf = VK_NULL_HANDLE;
     VkDeviceSize stagingOff = 0;
     void* stagingMapped = nullptr;
@@ -108,16 +108,16 @@ void HeatSystemDebugStage::exportCellVolumes(bool debugEnable, uint32_t voronoiN
     }
 
     VkCommandBuffer cmd = renderCommandPool.beginCommands();
-    VkBufferCopy region{voronoiNodeBufferOffset, stagingOff, bufferSize};
-    vkCmdCopyBuffer(cmd, voronoiNodeBuffer, stagingBuf, 1, &region);
+    VkBufferCopy region{candidateNodeBufferOffset, stagingOff, bufferSize};
+    vkCmdCopyBuffer(cmd, candidateNodeBuffer, stagingBuf, 1, &region);
     renderCommandPool.endCommands(cmd);
 
     voronoi::Node* nodes = static_cast<voronoi::Node*>(stagingMapped);
 
     std::ofstream volumeFile("cell_volumes.txt");
     volumeFile << "# Cell Index -> Restricted Volume\n";
-    volumeFile << "# NOTE: Using GPU filtered seed positions (cells.size() = " << voronoiNodeCount << ")\n";
-    for (uint32_t i = 0; i < voronoiNodeCount; i++) {
+    volumeFile << "# NOTE: Using GPU filtered seed positions (cells.size() = " << candidateNodeCount << ")\n";
+    for (uint32_t i = 0; i < candidateNodeCount; i++) {
         volumeFile << "Cell " << i << " -> Volume: " << nodes[i].volume << "\n";
     }
 
@@ -125,8 +125,8 @@ void HeatSystemDebugStage::exportCellVolumes(bool debugEnable, uint32_t voronoiN
     memoryAllocator.free(stagingBuf, stagingOff);
 }
 
-void HeatSystemDebugStage::exportVoronoiDumpInfo(bool debugEnable, uint32_t voronoiNodeCount,
-    VkBuffer voronoiNodeBuffer, VkDeviceSize voronoiNodeBufferOffset,
+void HeatSystemDebugStage::exportVoronoiDumpInfo(bool debugEnable, uint32_t candidateNodeCount,
+    VkBuffer candidateNodeBuffer, VkDeviceSize candidateNodeBufferOffset,
     VkBuffer voronoiDumpBuffer, VkDeviceSize voronoiDumpBufferOffset,
     MemoryAllocator& memoryAllocator, CommandPool& renderCommandPool) {
     if (!debugEnable) {
@@ -146,11 +146,11 @@ void HeatSystemDebugStage::exportVoronoiDumpInfo(bool debugEnable, uint32_t voro
         return;
     }
 
-    VkDeviceSize nodeBufferSize = sizeof(voronoi::Node) * voronoiNodeCount;
+    VkDeviceSize nodeBufferSize = sizeof(voronoi::Node) * candidateNodeCount;
     VkBuffer nodeStagingBuf = VK_NULL_HANDLE;
     VkDeviceSize nodeStagingOff = 0;
     void* nodeStagingMapped = nullptr;
-    if (voronoiNodeBuffer && createDownloadStagingBuffer(memoryAllocator, nodeBufferSize, nodeStagingBuf, nodeStagingOff, &nodeStagingMapped) != VK_SUCCESS) {
+    if (candidateNodeBuffer && createDownloadStagingBuffer(memoryAllocator, nodeBufferSize, nodeStagingBuf, nodeStagingOff, &nodeStagingMapped) != VK_SUCCESS) {
         memoryAllocator.free(dumpStagingBuf, dumpStagingOff);
         return;
     }
@@ -158,9 +158,9 @@ void HeatSystemDebugStage::exportVoronoiDumpInfo(bool debugEnable, uint32_t voro
     VkCommandBuffer cmd = renderCommandPool.beginCommands();
     VkBufferCopy dumpRegion{voronoiDumpBufferOffset, dumpStagingOff, dumpBufferSize};
     vkCmdCopyBuffer(cmd, voronoiDumpBuffer, dumpStagingBuf, 1, &dumpRegion);
-    if (voronoiNodeBuffer && nodeStagingBuf) {
-        VkBufferCopy nodeRegion{voronoiNodeBufferOffset, nodeStagingOff, nodeBufferSize};
-        vkCmdCopyBuffer(cmd, voronoiNodeBuffer, nodeStagingBuf, 1, &nodeRegion);
+    if (candidateNodeBuffer && nodeStagingBuf) {
+        VkBufferCopy nodeRegion{candidateNodeBufferOffset, nodeStagingOff, nodeBufferSize};
+        vkCmdCopyBuffer(cmd, candidateNodeBuffer, nodeStagingBuf, 1, &nodeRegion);
     }
     renderCommandPool.endCommands(cmd);
 
@@ -171,7 +171,7 @@ void HeatSystemDebugStage::exportVoronoiDumpInfo(bool debugEnable, uint32_t voro
     uint32_t negativeVolumeCount = 0;
     if (nodeStagingMapped) {
         const voronoi::Node* nodes = static_cast<const voronoi::Node*>(nodeStagingMapped);
-        for (uint32_t i = 0; i < voronoiNodeCount; i++) {
+        for (uint32_t i = 0; i < candidateNodeCount; i++) {
             const double v = (double)nodes[i].volume;
             if (v > 0.0) {
                 totalRestrictedVolumePos += v;

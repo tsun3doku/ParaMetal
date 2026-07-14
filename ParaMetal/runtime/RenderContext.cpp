@@ -9,7 +9,7 @@
 #include "contact/ContactSystemComputeController.hpp"
 #include "heat/HeatSystem.hpp"
 #include "heat/HeatSystemComputeController.hpp"
-#include "heat/VoronoiSystemComputeController.hpp"
+#include "voronoi/VoronoiSystemComputeController.hpp"
 #include "nodegraph/NodeGraph.hpp"
 #include "nodegraph/NodeGraphController.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"

@@ -11,9 +11,12 @@ struct HeatModelNodeParams {
     double density = 1000.0;
     double specificHeat = 1000.0;
     double conductivity = 1.0;
-    double initialTemperature = 293.15;
-    HeatBoundaryCondition boundaryCondition = HeatBoundaryCondition::None;
-    double fixedTemperatureValue = 293.15;
+    double initialTemperatureC = HeatSimDefaults::ambientTemperatureC;
+    BoundaryCondition::Type boundaryConditionType = BoundaryCondition::Type::Adiabatic;
+    double boundaryTemperatureC = HeatSimDefaults::ambientTemperatureC;
+    double heatFlux = 0.0;
+    double heatTransferCoefficient = 0.0;
+    double volumetricPowerDensity = 0.0;
 };
 
 HeatModelNodeParams readHeatModelNodeParams(const NodeGraphNode& node);

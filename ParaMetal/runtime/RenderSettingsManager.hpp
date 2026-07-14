@@ -11,12 +11,14 @@ public:
 
     void toggleWireframeMode();
     void toggleTimingOverlay();
+    void toggleGrid();
 
     app::RenderSettings getSnapshot() const;
 
 private:
     void onWireframeToggleRequested() override;
     void onTimingOverlayToggleRequested() override;
+    void onGridToggleRequested() override;
 
     mutable std::mutex mutex;
     app::RenderSettings settings;

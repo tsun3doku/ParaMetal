@@ -41,13 +41,10 @@ FrameComputeCollection FrameComputeStage::collect(uint32_t frameIndex, const std
             vkResetCommandBuffer(computeCommandBuffer, VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT);
             computePass->recordComputeCommands(computeCommandBuffer, frameIndex);
             submitCommandBuffers.push_back(computeCommandBuffer);
+            collection.synchronization = computePass->getSynchronization();
         }
     }
 
-    // Multiple compute passes would need their command buffers joined. Today
-    // there is at most one (HeatSystem) per frame, so we take the first. If the
-    // set ever grows, this is the place to allocate a single primary buffer and
-    // execute the secondaries.
     if (!submitCommandBuffers.empty()) {
         collection.commandBuffer = submitCommandBuffers.front();
     }

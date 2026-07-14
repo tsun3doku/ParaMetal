@@ -29,5 +29,4 @@ public:
     virtual VkDeviceSize getGMLSSurfaceGradientWeightBufferOffset() const { return 0; }
     virtual size_t getGMLSSurfaceGradientWeightCount() const { return 0; }
     virtual uint32_t getRuntimeModelId() const { return 0; }
-    virtual uint32_t getNodeModelId() const { return 0; }
 };

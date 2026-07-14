@@ -150,6 +150,11 @@ void VulkanDevice::createLogicalDevice(VkSurfaceKHR surface) {
     vulkan12Features.descriptorBindingUniformBufferUpdateAfterBind = supportedVulkan12Features.descriptorBindingUniformBufferUpdateAfterBind;
     vulkan12Features.descriptorBindingStorageBufferUpdateAfterBind = supportedVulkan12Features.descriptorBindingStorageBufferUpdateAfterBind;
     vulkan12Features.descriptorBindingUpdateUnusedWhilePending = supportedVulkan12Features.descriptorBindingUpdateUnusedWhilePending;
+    vulkan12Features.timelineSemaphore = supportedVulkan12Features.timelineSemaphore;
+
+    if (!supportedVulkan12Features.timelineSemaphore) {
+        throw std::runtime_error("Vulkan timeline semaphores are required for CUDA interop");
+    }
 
     VkPhysicalDeviceFeatures deviceFeatures{};
     deviceFeatures.sampleRateShading = supportedFeatures2.features.sampleRateShading;

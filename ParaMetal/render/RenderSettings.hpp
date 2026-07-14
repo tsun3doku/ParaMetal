@@ -11,6 +11,7 @@ enum class WireframeMode {
 struct RenderSettings {
     WireframeMode wireframeMode = WireframeMode::Off;
     bool gpuTimingOverlayEnabled = false;
+    bool gridEnabled = false;
 };
 
 } 

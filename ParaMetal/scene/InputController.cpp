@@ -44,7 +44,7 @@ void InputController::handleScrollInput(double xOffset, double yOffset) {
     camera.processMouseScroll(xOffset, yOffset);
 }
 
-void InputController::handleKeyInput(Qt::Key key, bool pressed) {
+void InputController::handleKeyInput(Qt::Key key, bool pressed, bool ctrlPressed) {
     if (!pressed) {
         return;
     }
@@ -65,8 +65,12 @@ void InputController::handleKeyInput(Qt::Key key, bool pressed) {
         }
     }
     else if (key == Qt::Key_G) {
-        camera.setLookAt(glm::vec3(0.0f));
-        camera.resetRadius();
+        if (ctrlPressed) {
+            camera.setLookAt(glm::vec3(0.0f));
+            camera.resetRadius();
+        } else {
+            actionHandler.onGridToggleRequested();
+        }
     }
 }
 

@@ -5,7 +5,6 @@
 #include <vector>
 
 #include "contact/ContactTypes.hpp"
-#include "mesh/remesher/SupportingHalfedge.hpp"
 
 struct Quadrature {
     static constexpr uint32_t count = 7u;
@@ -29,18 +28,38 @@ struct Quadrature {
     };
 };
 
-struct ContactCellWeight {
-    uint32_t cellIndex = 0;
-    uint32_t sampleIndex = 0;
-    float weight = 0.0f;
+struct ContactVertex {
+    glm::vec3 position{0.0f};
+    glm::vec3 normal{0.0f};
 };
 
-void mapSurfacePoints(
-    const SupportingHalfedge::IntrinsicMesh& sourceIntrinsicMesh,
-    const std::array<float, 16>& sourceLocalToWorld,
-    const std::vector<const SupportingHalfedge::IntrinsicMesh*>& receiverIntrinsicMeshes,
-    const std::vector<std::array<float, 16>>& receiverLocalToWorld,
-    std::vector<std::vector<ContactPair>>& receiverContactPairs,
+struct ContactTriangle {
+    glm::vec3 normal{0.0f};
+    float area = 0.0f;
+    uint32_t vertexIndices[3]{};
+};
+
+struct ContactMesh {
+    std::vector<ContactVertex> vertices;
+    std::vector<uint32_t> indices;
+    std::vector<ContactTriangle> triangles;
+
+    bool isValid() const {
+        return !vertices.empty() && !indices.empty() && !triangles.empty();
+    }
+};
+
+ContactMesh buildContactMesh(
+    const std::vector<glm::vec3>& positions,
+    const std::vector<glm::vec3>& normals,
+    const std::vector<uint32_t>& indices);
+
+void buildContactPairs(
+    const ContactMesh& modelAMesh,
+    const std::array<float, 16>& modelALocalToWorld,
+    const ContactMesh& modelBMesh,
+    const std::array<float, 16>& modelBLocalToWorld,
+    std::vector<ContactPair>& contactPairs,
     std::vector<ContactLineVertex>& outOutlineVertices,
     std::vector<ContactLineVertex>& outCorrespondenceVertices,
     float contactRadius,

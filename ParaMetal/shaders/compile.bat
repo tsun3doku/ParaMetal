@@ -70,11 +70,10 @@ C:/VulkanSDK/1.3.283.0/Bin/glslc.exe --target-env=vulkan1.3 hash_grid_build.comp
 
 slangc heat_surface_temp.slang -target spirv -o heat_surface_temp_comp.spv
 slangc heat_surface_gradient.slang -target spirv -o heat_surface_gradient_comp.spv
-slangc contact.slang -target spirv -o contact_comp.spv
 
 slangc heat_diffusion.slang -target spirv -o heat_diffusion_comp.spv
 
-slangc heat_geometry.slang -target spirv -o heat_geometry_comp.spv
+slangc voronoi_geometry.slang -target spirv -o voronoi_geometry_comp.spv
 slangc voronoi_candidates.slang -target spirv -o voronoi_candidates_comp.spv
 slangc lloyd_accumulate.slang -target spirv -o lloyd_accumulate_comp.spv
 slangc lloyd_update.slang -target spirv -o lloyd_update_comp.spv

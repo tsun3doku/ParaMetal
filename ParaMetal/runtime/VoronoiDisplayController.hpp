@@ -17,14 +17,14 @@ public:
     struct Config {
         bool showVoronoi = false;
         bool showPoints = false;
-        uint32_t nodeCount = 0;
-        const voronoi::Node* mappedVoronoiNodes = nullptr;
-        VkBuffer nodeBuffer = VK_NULL_HANDLE;
-        VkDeviceSize nodeBufferOffset = 0;
+        uint32_t candidateNodeCount = 0;
+        const voronoi::Node* mappedCandidateNodes = nullptr;
+        VkBuffer candidateNodeBuffer = VK_NULL_HANDLE;
+        VkDeviceSize candidateNodeBufferOffset = 0;
         VkBuffer seedPositionBuffer = VK_NULL_HANDLE;
         VkDeviceSize seedPositionBufferOffset = 0;
-        VkBuffer neighborIndicesBuffer = VK_NULL_HANDLE;
-        VkDeviceSize neighborIndicesBufferOffset = 0;
+        VkBuffer candidateNeighborIndicesBuffer = VK_NULL_HANDLE;
+        VkDeviceSize candidateNeighborIndicesBufferOffset = 0;
         VkBuffer occupancyPointBuffer = VK_NULL_HANDLE;
         VkDeviceSize occupancyPointBufferOffset = 0;
         uint32_t occupancyPointCount = 0;
@@ -60,10 +60,10 @@ public:
         }
 
         bool isValid() const {
-            return nodeCount != 0 &&
-                nodeBuffer != VK_NULL_HANDLE &&
+            return candidateNodeCount != 0 &&
+                candidateNodeBuffer != VK_NULL_HANDLE &&
                 seedPositionBuffer != VK_NULL_HANDLE &&
-                neighborIndicesBuffer != VK_NULL_HANDLE &&
+                candidateNeighborIndicesBuffer != VK_NULL_HANDLE &&
                 runtimeModelId != 0;
         }
 

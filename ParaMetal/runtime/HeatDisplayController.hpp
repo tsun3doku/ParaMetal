@@ -26,9 +26,9 @@ public:
         bool active = false;
         bool paused = false;
         std::vector<ModelProduct> models;
-        std::vector<float> modelTemperatures;
-        std::vector<float> modelFixedTemperatures;
-        std::vector<HeatBoundaryCondition> modelBoundaryConditions;
+        std::vector<float> modelInitialTemperaturesC;
+        std::vector<float> modelBoundaryTemperaturesC;
+        std::vector<uint32_t> modelBoundaryConditionTypes;
         std::vector<VkBuffer> modelSurfaceBuffers;
         std::vector<VkDeviceSize> modelSurfaceBufferOffsets;
         std::vector<uint32_t> modelSurfacePointCounts;
@@ -43,9 +43,9 @@ public:
 
         bool isValid() const {
             return !models.empty() &&
-                models.size() == modelTemperatures.size() &&
-                models.size() == modelFixedTemperatures.size() &&
-                models.size() == modelBoundaryConditions.size() &&
+                models.size() == modelInitialTemperaturesC.size() &&
+                models.size() == modelBoundaryTemperaturesC.size() &&
+                models.size() == modelBoundaryConditionTypes.size() &&
                 models.size() == modelSurfaceBuffers.size() &&
                 models.size() == modelSurfaceBufferOffsets.size() &&
                 models.size() == modelSurfacePointCounts.size() &&

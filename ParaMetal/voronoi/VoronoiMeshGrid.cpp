@@ -12,7 +12,6 @@ VoronoiMeshGrid::~VoronoiMeshGrid() {
 }
 
 void VoronoiMeshGrid::buildGrids(
-    const SupportingHalfedge::IntrinsicMesh& intrinsicMesh,
     const std::vector<glm::vec3>& positions,
     const std::vector<uint32_t>& indices,
     float targetCellSize,
@@ -20,8 +19,8 @@ void VoronoiMeshGrid::buildGrids(
     int voxelResolution) {
     cellSize = targetCellSize;
 
-    if (intrinsicMesh.vertices.empty() || intrinsicMesh.triangles.empty() || positions.empty() || indices.empty()) {
-        std::cerr << "[VoronoiMeshGrid] Empty intrinsic mesh" << std::endl;
+    if (positions.empty() || indices.empty()) {
+        std::cerr << "[VoronoiMeshGrid] Empty mesh" << std::endl;
         return;
     }
 

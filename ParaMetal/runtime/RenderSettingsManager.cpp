@@ -16,12 +16,21 @@ void RenderSettingsManager::toggleTimingOverlay() {
     settings.gpuTimingOverlayEnabled = !settings.gpuTimingOverlayEnabled;
 }
 
+void RenderSettingsManager::toggleGrid() {
+    std::lock_guard<std::mutex> lock(mutex);
+    settings.gridEnabled = !settings.gridEnabled;
+}
+
 void RenderSettingsManager::onWireframeToggleRequested() {
     toggleWireframeMode();
 }
 
 void RenderSettingsManager::onTimingOverlayToggleRequested() {
     toggleTimingOverlay();
+}
+
+void RenderSettingsManager::onGridToggleRequested() {
+    toggleGrid();
 }
 
 app::RenderSettings RenderSettingsManager::getSnapshot() const {

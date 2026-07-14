@@ -12,7 +12,7 @@ static void combineHandleHash(uint64_t& hash, const ProductHandle& handle, HashD
 void HashPackage::seal(ModelPackage& pkg, const HashValues& geometryHashes) {
     uint64_t geometryHash = HashBuilder::start();
     HashBuilder::combine(geometryHash, geometryHashes.full);
-    HashBuilder::combinePod(geometryHash, pkg.localToWorld);
+    HashBuilder::combinePod(geometryHash, pkg.geometry.localToWorld);
 
     pkg.hashes.geometry = geometryHash;
     pkg.hashes.simulation = geometryHash;
@@ -104,9 +104,12 @@ void HashPackage::seal(HeatPackage& pkg, const HashValues& authoredHashes) {
         HashBuilder::combineFloat(simulationHash, pkg.resolvedDensity[i]);
         HashBuilder::combineFloat(simulationHash, pkg.resolvedSpecificHeat[i]);
         HashBuilder::combineFloat(simulationHash, pkg.resolvedConductivity[i]);
-        HashBuilder::combineFloat(simulationHash, pkg.resolvedInitialTemperature[i]);
-        HashBuilder::combine(simulationHash, static_cast<uint64_t>(pkg.resolvedBoundaryConditions[i]));
-        HashBuilder::combineFloat(simulationHash, pkg.resolvedFixedTemperatureValues[i]);
+        HashBuilder::combineFloat(simulationHash, pkg.resolvedInitialTemperaturesC[i]);
+        HashBuilder::combine(simulationHash, static_cast<uint64_t>(pkg.resolvedBoundaryConditionTypes[i]));
+        HashBuilder::combineFloat(simulationHash, pkg.resolvedBoundaryTemperaturesC[i]);
+        HashBuilder::combineFloat(simulationHash, pkg.resolvedBoundaryHeatFluxes[i]);
+        HashBuilder::combineFloat(simulationHash, pkg.resolvedBoundaryHeatTransferCoefficients[i]);
+        HashBuilder::combineFloat(simulationHash, pkg.resolvedVolumetricPowerDensities[i]);
     }
     HashBuilder::combine(simulationHash, static_cast<uint64_t>(pkg.voronoiProducts.size()));
     for (const ProductHandle& handle : pkg.voronoiProducts) {

@@ -8,7 +8,6 @@
 #include <vulkan/vulkan.h>
 
 #include "heat/HeatGpuStructs.hpp"
-#include "mesh/remesher/SupportingHalfedge.hpp"
 #include "hash/HashValues.hpp"
 #include "contact/ContactTypes.hpp"
 #include "voronoi/VoronoiGpuStructs.hpp"
@@ -44,7 +43,9 @@ struct RemeshProduct {
     uint32_t runtimeModelId = 0;
     std::vector<glm::vec3> geometryPositions;
     std::vector<uint32_t> geometryTriangleIndices;
-    SupportingHalfedge::IntrinsicMesh intrinsicMesh;
+    std::vector<glm::vec3> surfacePositions;
+    std::vector<glm::vec3> surfaceNormals;
+    std::vector<uint32_t> surfaceTriangleIndices;
     VkBuffer intrinsicTriangleBuffer = VK_NULL_HANDLE;
     VkDeviceSize intrinsicTriangleBufferOffset = 0;
     VkBuffer intrinsicVertexBuffer = VK_NULL_HANDLE;
@@ -98,8 +99,9 @@ struct RemeshProduct {
     bool isValid() const {
         return !geometryPositions.empty() &&
             !geometryTriangleIndices.empty() &&
-            !intrinsicMesh.vertices.empty() &&
-            !intrinsicMesh.indices.empty() &&
+            !surfacePositions.empty() &&
+            surfaceNormals.size() == surfacePositions.size() &&
+            !surfaceTriangleIndices.empty() &&
             intrinsicTriangleBuffer != VK_NULL_HANDLE &&
             intrinsicVertexBuffer != VK_NULL_HANDLE &&
             supportingHalfedgeBuffer != VK_NULL_HANDLE &&
@@ -127,35 +129,30 @@ struct RemeshProduct {
 };
 
 struct VoronoiProduct {
+    uint32_t candidateNodeCount = 0;
     uint32_t nodeCount = 0;
-    uint32_t simNodeCount = 0;
-    const voronoi::Node* mappedVoronoiNodes = nullptr;
+    uint32_t couplingCount = 0;
+
+    std::vector<voronoi::Node> nodes;
+    std::vector<voronoi::NodeCoupling> couplings;
+    std::vector<float> surfacePatchAreas;
+    std::vector<glm::vec3> nodePositions;
+    std::vector<uint32_t> surfaceNodeIds;
+    std::vector<voronoi::GMLSSurfaceStencil> surfaceStencils;
+    std::vector<voronoi::GMLSSurfaceWeight> surfaceValueWeights;
+    std::vector<voronoi::GMLSSurfaceGradientWeight> surfaceGradientWeights;
+
+    VkBuffer candidateNodeBuffer = VK_NULL_HANDLE;
+    VkDeviceSize candidateNodeBufferOffset = 0;
+
+    VkBuffer candidateNeighborIndicesBuffer = VK_NULL_HANDLE;
+    VkDeviceSize candidateNeighborIndicesBufferOffset = 0;
 
     VkBuffer nodeBuffer = VK_NULL_HANDLE;
     VkDeviceSize nodeBufferOffset = 0;
+    VkBuffer couplingBuffer = VK_NULL_HANDLE;
+    VkDeviceSize couplingBufferOffset = 0;
 
-    VkBuffer voronoiNeighborBuffer = VK_NULL_HANDLE;
-    VkDeviceSize voronoiNeighborBufferOffset = 0;
-
-    VkBuffer voronoiNeighborIndicesBuffer = VK_NULL_HANDLE;
-    VkDeviceSize voronoiNeighborIndicesBufferOffset = 0;
-
-    VkBuffer voronoiInterfaceAreasBuffer = VK_NULL_HANDLE;
-    VkDeviceSize voronoiInterfaceAreasBufferOffset = 0;
-
-    VkBuffer voronoiInterfaceNeighborIdsBuffer = VK_NULL_HANDLE;
-    VkDeviceSize voronoiInterfaceNeighborIdsBufferOffset = 0;
-    VkBuffer voronoiGMLSInterfaceBuffer = VK_NULL_HANDLE;
-    VkDeviceSize voronoiGMLSInterfaceBufferOffset = 0;
-    VkBuffer simNodeBuffer = VK_NULL_HANDLE;
-    VkDeviceSize simNodeBufferOffset = 0;
-    VkDeviceSize simNodeBufferSize = 0;
-    VkBuffer simGMLSInterfaceBuffer = VK_NULL_HANDLE;
-    VkDeviceSize simGMLSInterfaceBufferOffset = 0;
-    uint32_t simGMLSInterfaceCount = 0;
-
-    VkBuffer voronoiSeedFlagsBuffer = VK_NULL_HANDLE;
-    VkDeviceSize voronoiSeedFlagsBufferOffset = 0;
     VkBuffer seedPositionBuffer = VK_NULL_HANDLE;
     VkDeviceSize seedPositionBufferOffset = 0;
     VkBuffer occupancyPointBuffer = VK_NULL_HANDLE;
@@ -174,27 +171,32 @@ struct VoronoiProduct {
     VkBuffer gmlsSurfaceGradientWeightBuffer = VK_NULL_HANDLE;
     VkDeviceSize gmlsSurfaceGradientWeightBufferOffset = 0;
     size_t gmlsSurfaceGradientWeightCount = 0;
-    std::vector<uint32_t> seedFlags;
-    std::vector<glm::vec3> seedPositions;
-    std::vector<uint32_t> voronoiToSim;
-    std::vector<uint32_t> simToVoronoi;
-    std::vector<float> simNodeVolumes;
-
     HashValues hashes{};
 
     bool isValid() const {
-        return nodeCount != 0 &&
-            simNodeCount != 0 &&
+        const bool resourcesValid = candidateNodeCount != 0 &&
+            nodeCount != 0 &&
+            couplingCount != 0 &&
+            nodes.size() == nodeCount &&
+            couplings.size() == couplingCount &&
+            surfacePatchAreas.size() == nodeCount &&
+            nodePositions.size() == nodeCount &&
+            candidateNodeBuffer != VK_NULL_HANDLE &&
             nodeBuffer != VK_NULL_HANDLE &&
-            simNodeBuffer != VK_NULL_HANDLE &&
-            simNodeBufferSize != 0 &&
-            simNodeVolumes.size() == simNodeCount &&
-            simGMLSInterfaceBuffer != VK_NULL_HANDLE &&
-            simGMLSInterfaceCount != 0 &&
-            voronoiNeighborIndicesBuffer != VK_NULL_HANDLE &&
+            couplingBuffer != VK_NULL_HANDLE &&
+            candidateNeighborIndicesBuffer != VK_NULL_HANDLE &&
             seedPositionBuffer != VK_NULL_HANDLE &&
             candidateBuffer != VK_NULL_HANDLE &&
             (isPointDomain || runtimeModelId != 0);
+        if (!resourcesValid) {
+            return false;
+        }
+        for (uint32_t nodeId : surfaceNodeIds) {
+            if (nodeId >= nodeCount) {
+                return false;
+            }
+        }
+        return true;
     }
 
 };

@@ -75,19 +75,11 @@ bool HeatSystemSurfaceStage::createDescriptorSetLayout() {
     std::vector<VkDescriptorSetLayoutBinding> tempBindings = {
         {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
         {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+        {8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+        {9, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
         {10, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
         {11, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
     };
-
-    VkDescriptorSetLayoutBindingFlagsCreateInfo tempBindingFlags{};
-    tempBindingFlags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-
-    std::vector<VkDescriptorBindingFlags> tempFlags(tempBindings.size(),
-        VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
-        VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT);
-
-    tempBindingFlags.bindingCount = 0;
-    tempBindingFlags.pBindingFlags = nullptr;
 
     VkDescriptorSetLayoutCreateInfo tempLayoutInfo{};
     tempLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -109,16 +101,6 @@ bool HeatSystemSurfaceStage::createDescriptorSetLayout() {
         {10, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
         {12, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
     };
-
-    VkDescriptorSetLayoutBindingFlagsCreateInfo gradientBindingFlags{};
-    gradientBindingFlags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-
-    std::vector<VkDescriptorBindingFlags> gradientFlags(gradientBindings.size(),
-        VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
-        VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT);
-
-    gradientBindingFlags.bindingCount = 0;
-    gradientBindingFlags.pBindingFlags = nullptr;
 
     VkDescriptorSetLayoutCreateInfo gradientLayoutInfo{};
     gradientLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -272,7 +254,7 @@ void HeatSystemSurfaceStage::dispatchSurfacePass(
     const bool useB = (currentFrame % 2) == 1;
 
     for (const auto& [runtimeModelId, heatModel] : activeModels) {
-        if (!heatModel || heatModel->getIntrinsicVertexCount() == 0) {
+        if (!heatModel || heatModel->getSurfaceVertexCount() == 0) {
             continue;
         }
 
@@ -288,7 +270,7 @@ void HeatSystemSurfaceStage::dispatchSurfacePass(
         }
 
         if (set != VK_NULL_HANDLE) {
-            const uint32_t vertexCount = static_cast<uint32_t>(heatModel->getIntrinsicVertexCount());
+            const uint32_t vertexCount = static_cast<uint32_t>(heatModel->getSurfaceVertexCount());
             const uint32_t workGroupCount = (vertexCount + 255) / 256;
 
             surfacePushConstant.elementCount = vertexCount;

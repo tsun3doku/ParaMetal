@@ -240,13 +240,13 @@
     <ClCompile Include="heat\HeatSystemComputeController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="heat\VoronoiSystem.cpp">
+    <ClCompile Include="voronoi\VoronoiSystem.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="heat\VoronoiSystemRuntime.cpp">
+    <ClCompile Include="voronoi\VoronoiSystemRuntime.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="heat\VoronoiSystemComputeController.cpp">
+    <ClCompile Include="voronoi\VoronoiSystemComputeController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="vulkan\MemoryAllocator.cpp">
@@ -324,6 +324,9 @@
     <ClCompile Include="vulkan\VulkanBuffer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="vulkan\VulkanExternalBuffer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="spatial\HashGrid.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -384,9 +387,15 @@
     <ClCompile Include="voronoi\VoronoiGeoCompute.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="contact\ContactSampling.cpp">
+    <ClCompile Include="contact\ContactMapping.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <CudaCompile Include="heat\HeatContactSolver.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
+    <CudaCompile Include="cuda\CudaExternalBuffer.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
     <ClCompile Include="contact\ContactSystemComputeController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -612,10 +621,16 @@
     <ClCompile Include="heat\HeatModelRuntime.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="contact\ContactSystemComputeStage.cpp">
+    <ClCompile Include="heat\HeatContactRuntime.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="heat\HeatContactRuntime.cpp">
+    <ClCompile Include="heat\HeatBoundaryRuntime.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="voronoi\VoronoiNodeIndex.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="voronoi\VoronoiNodeDomain.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="nodegraph\NodeGraphTypeRegistry.cpp">
@@ -845,7 +860,7 @@
     <None Include="shaders\voronoi_surface.vert">
       <Filter>Shaders</Filter>
     </None>
-    <None Include="shaders\heat_geometry.slang">
+    <None Include="shaders\voronoi_geometry.slang">
       <Filter>Shaders</Filter>
     </None>
     <None Include="shaders\point_cloud.frag">
@@ -860,7 +875,6 @@
       <Filter>Shaders</Filter>
     </None>
     <None Include="shaders\voronoi_candidates_intrinsic.slang" />
-    <None Include="shaders\contact.slang" />
     <None Include="shaders\heat_surface_gradient.slang">
       <Filter>Shaders</Filter>
     </None>
@@ -1049,6 +1063,15 @@
     <ClInclude Include="heat\HeatSystemComputeController.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="heat\HeatBoundaryRuntime.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="voronoi\VoronoiNodeIndex.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="voronoi\VoronoiNodeDomain.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="heat\HeatGpuStructs.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1058,13 +1081,13 @@
     <ClInclude Include="heat\TimelineSimulation.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="heat\VoronoiSystem.hpp">
+    <ClInclude Include="voronoi\VoronoiSystem.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="heat\VoronoiSystemRuntime.hpp">
+    <ClInclude Include="voronoi\VoronoiSystemRuntime.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="heat\VoronoiSystemComputeController.hpp">
+    <ClInclude Include="voronoi\VoronoiSystemComputeController.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="voronoi\LloydCompute.hpp">
@@ -1169,9 +1192,6 @@
     <ClInclude Include="voronoi\VoronoiGpuStructs.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="voronoi\VoronoiResources.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="heat\HeatSystemPresets.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1204,9 +1224,6 @@
     </ClInclude>
     <ClInclude Include="libs\nanoflann\include\nanoflann.hpp">
       <Filter>Libs</Filter>
-    </ClInclude>
-    <ClInclude Include="voronoi\VoronoiAdapters.hpp">
-      <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="voronoi\VoronoiIntegrator.hpp">
       <Filter>Header Files</Filter>
@@ -1421,13 +1438,19 @@
     <ClInclude Include="contact\ContactGpuStructs.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="heat\HeatContactSolver.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="cuda\CudaExternalBuffer.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="domain\ContactData.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\NodeGraphPayloadTypes.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="contact\ContactSampling.hpp">
+    <ClInclude Include="contact\ContactMapping.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="domain\VoronoiData.hpp">
@@ -1523,13 +1546,13 @@
     <ClInclude Include="heat\HeatModelRuntime.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="contact\ContactSystemComputeStage.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="heat\HeatContactRuntime.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="vulkan\VulkanBuffer.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vulkan\VulkanExternalBuffer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\NodeGraphTypeRegistry.hpp">

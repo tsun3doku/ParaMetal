@@ -5,8 +5,10 @@
 #include "hash/HashProduct.hpp"
 #include "heat/HeatModelRuntime.hpp"
 #include "runtime/RuntimeProducts.hpp"
+#include "util/GeometryUtils.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/ModelRegistry.hpp"
+#include "vulkan/VulkanBuffer.hpp"
 #include "vulkan/VulkanDevice.hpp"
 
 HeatSystemComputeController::HeatSystemComputeController(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, ModelRegistry& resourceManager,
@@ -25,18 +27,11 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
     system.clearVoronoiInputs();
     if (!config.simNodeCounts.empty()) {
         for (const auto& [runtimeModelId, simNodeCount] : config.simNodeCounts) {
-            (void)simNodeCount;
-            const auto nodesIt = config.modelVoronoiNodesByModelId.find(runtimeModelId);
-            const auto voronoiNodeBufferIt = config.modelVoronoiNodeBufferByModelId.find(runtimeModelId);
-            const auto voronoiNodeBufferOffsetIt = config.modelVoronoiNodeBufferOffsetByModelId.find(runtimeModelId);
             const auto simNodeBufferIt = config.modelSimNodeBufferByModelId.find(runtimeModelId);
             const auto simNodeBufferOffsetIt = config.modelSimNodeBufferOffsetByModelId.find(runtimeModelId);
-            const auto simNodeBufferSizeIt = config.modelSimNodeBufferSizeByModelId.find(runtimeModelId);
-            const auto simGmlsInterfaceIt = config.modelSimGMLSInterfaceBufferByModelId.find(runtimeModelId);
-            const auto simGmlsInterfaceOffsetIt = config.modelSimGMLSInterfaceBufferOffsetByModelId.find(runtimeModelId);
-            const auto simGmlsInterfaceCountIt = config.simGMLSInterfaceCounts.find(runtimeModelId);
-            const auto voronoiCountIt = config.voronoiNodeCounts.find(runtimeModelId);
-            const auto simCountIt = config.simNodeCounts.find(runtimeModelId);
+            const auto simNodeCouplingIt = config.modelSimNodeCouplingBufferByModelId.find(runtimeModelId);
+            const auto simNodeCouplingOffsetIt = config.modelSimNodeCouplingBufferOffsetByModelId.find(runtimeModelId);
+            const auto simNodeCouplingCountIt = config.simNodeCouplingCounts.find(runtimeModelId);
             const auto gmlsStencilIt = config.modelGMLSSurfaceStencilBufferByModelId.find(runtimeModelId);
             const auto gmlsStencilOffsetIt = config.modelGMLSSurfaceStencilBufferOffsetByModelId.find(runtimeModelId);
             const auto gmlsWeightIt = config.modelGMLSSurfaceWeightBufferByModelId.find(runtimeModelId);
@@ -45,41 +40,33 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
             const auto gmlsGradientIt = config.modelGMLSSurfaceGradientWeightBufferByModelId.find(runtimeModelId);
             const auto gmlsGradientOffsetIt = config.modelGMLSSurfaceGradientWeightBufferOffsetByModelId.find(runtimeModelId);
             const auto gmlsGradientCountIt = config.modelGMLSSurfaceGradientWeightCountByModelId.find(runtimeModelId);
-            const auto seedFlagsIt = config.modelVoronoiSeedFlagsByModelId.find(runtimeModelId);
-            const auto seedPositionsIt = config.modelVoronoiSeedPositionsByModelId.find(runtimeModelId);
-            const auto simVolumesIt = config.modelSimNodeVolumesByModelId.find(runtimeModelId);
-            const auto voronoiToSimIt = config.modelVoronoiToSimByModelId.find(runtimeModelId);
+            const auto nodePositionsIt = config.modelNodePositionsByModelId.find(runtimeModelId);
+            const auto nodesIt = config.modelNodesByModelId.find(runtimeModelId);
+            const auto nodeCouplingsIt = config.modelNodeCouplingsByModelId.find(runtimeModelId);
+            const auto surfaceNodeIdsIt = config.modelSurfaceNodeIdsByModelId.find(runtimeModelId);
+            const auto surfacePatchAreasIt = config.modelSurfacePatchAreasByModelId.find(runtimeModelId);
             
-            if (voronoiCountIt == config.voronoiNodeCounts.end() ||
-                simCountIt == config.simNodeCounts.end() ||
-                voronoiNodeBufferIt == config.modelVoronoiNodeBufferByModelId.end() ||
-                voronoiNodeBufferOffsetIt == config.modelVoronoiNodeBufferOffsetByModelId.end() ||
-                simNodeBufferIt == config.modelSimNodeBufferByModelId.end() ||
+            if (simNodeBufferIt == config.modelSimNodeBufferByModelId.end() ||
                 simNodeBufferOffsetIt == config.modelSimNodeBufferOffsetByModelId.end() ||
-                simNodeBufferSizeIt == config.modelSimNodeBufferSizeByModelId.end() ||
-                simGmlsInterfaceIt == config.modelSimGMLSInterfaceBufferByModelId.end() ||
-                simGmlsInterfaceOffsetIt == config.modelSimGMLSInterfaceBufferOffsetByModelId.end() ||
-                simGmlsInterfaceCountIt == config.simGMLSInterfaceCounts.end() ||
-                seedFlagsIt == config.modelVoronoiSeedFlagsByModelId.end() ||
-                seedPositionsIt == config.modelVoronoiSeedPositionsByModelId.end() ||
-                simVolumesIt == config.modelSimNodeVolumesByModelId.end() ||
-                voronoiToSimIt == config.modelVoronoiToSimByModelId.end()) {
+                simNodeCouplingIt == config.modelSimNodeCouplingBufferByModelId.end() ||
+                simNodeCouplingOffsetIt == config.modelSimNodeCouplingBufferOffsetByModelId.end() ||
+                simNodeCouplingCountIt == config.simNodeCouplingCounts.end() ||
+                nodePositionsIt == config.modelNodePositionsByModelId.end() ||
+                nodesIt == config.modelNodesByModelId.end() ||
+                nodeCouplingsIt == config.modelNodeCouplingsByModelId.end() ||
+                surfaceNodeIdsIt == config.modelSurfaceNodeIdsByModelId.end() ||
+                surfacePatchAreasIt == config.modelSurfacePatchAreasByModelId.end()) {
                 continue;
             }
 
             system.addVoronoiModelInput(
                 runtimeModelId,
-                nodesIt->second,
-                voronoiCountIt->second,
-                voronoiNodeBufferIt->second,
-                voronoiNodeBufferOffsetIt->second,
-                simCountIt->second,
+                simNodeCount,
                 simNodeBufferIt->second,
                 simNodeBufferOffsetIt->second,
-                simNodeBufferSizeIt->second,
-                simGmlsInterfaceIt->second,
-                simGmlsInterfaceOffsetIt->second,
-                simGmlsInterfaceCountIt->second,
+                simNodeCouplingIt->second,
+                simNodeCouplingOffsetIt->second,
+                simNodeCouplingCountIt->second,
                 (gmlsStencilIt != config.modelGMLSSurfaceStencilBufferByModelId.end()) ? gmlsStencilIt->second : VK_NULL_HANDLE,
                 (gmlsStencilOffsetIt != config.modelGMLSSurfaceStencilBufferOffsetByModelId.end()) ? gmlsStencilOffsetIt->second : 0,
                 (gmlsWeightIt != config.modelGMLSSurfaceWeightBufferByModelId.end()) ? gmlsWeightIt->second : VK_NULL_HANDLE,
@@ -88,18 +75,24 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
                 (gmlsGradientIt != config.modelGMLSSurfaceGradientWeightBufferByModelId.end()) ? gmlsGradientIt->second : VK_NULL_HANDLE,
                 (gmlsGradientOffsetIt != config.modelGMLSSurfaceGradientWeightBufferOffsetByModelId.end()) ? gmlsGradientOffsetIt->second : 0,
                 (gmlsGradientCountIt != config.modelGMLSSurfaceGradientWeightCountByModelId.end()) ? gmlsGradientCountIt->second : 0,
-                seedFlagsIt->second,
-                seedPositionsIt->second,
-                simVolumesIt->second,
-                voronoiToSimIt->second);
+                nodePositionsIt->second,
+                nodesIt->second,
+                nodeCouplingsIt->second,
+                surfaceNodeIdsIt->second,
+                surfacePatchAreasIt->second);
         }
     }
     system.setHeatModels(
-        config.modelIntrinsicMeshes,
+        config.modelSurfacePositions,
+        config.modelSurfaceNormals,
+        config.modelSurfaceTriangleIndices,
         config.modelRuntimeModelIds,
-        config.modelTemperatureByRuntimeId,
-        config.modelBoundaryConditions,
-        config.modelFixedTemperatureValues,
+        config.modelInitialTemperaturesCByRuntimeId,
+        config.modelBoundaryConditionTypesByRuntimeId,
+        config.modelBoundaryTemperaturesCByRuntimeId,
+        config.modelBoundaryHeatFluxesByRuntimeId,
+        config.modelBoundaryHeatTransferCoefficientsByRuntimeId,
+        config.modelVolumetricPowerDensitiesByRuntimeId,
         config.modelDensity,
         config.modelSpecificHeat,
         config.modelConductivity);
@@ -109,6 +102,7 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
 
 void HeatSystemComputeController::applyRuntimeState(HeatSystem& system, const Config& config) {
     system.setActive(config.active);
+    system.setSyntheticDirichletTestEnabled(config.syntheticDirichletTestEnabled);
     system.setPlaybackState(config.paused, config.resetCounter);
     system.setRewindFrame(config.rewindFrame);
 }
@@ -133,6 +127,35 @@ void HeatSystemComputeController::apply(uint64_t socketKey, const Config& config
     if (configIt != configuredConfigs.end() && configIt->second.computeHash == config.computeHash) {
         applyRuntimeState(*system, config);
         return;
+    }
+
+    if (configIt != configuredConfigs.end() && config.structuralHash != 0 &&
+        configIt->second.structuralHash == config.structuralHash) {
+        bool updated = true;
+        for (uint32_t runtimeModelId : config.modelRuntimeModelIds) {
+            const uint32_t conditionType = config.modelBoundaryConditionTypesByRuntimeId.at(runtimeModelId);
+            if (conditionType == 1u) {
+                updated = system->setRuntimeDirichletTemperatureC(
+                    runtimeModelId, 0u,
+                    config.modelBoundaryTemperaturesCByRuntimeId.at(runtimeModelId)) && updated;
+            } else if (conditionType == 2u) {
+                updated = system->setRuntimeNeumannHeatFlux(
+                    runtimeModelId, 0u, config.modelBoundaryHeatFluxesByRuntimeId.at(runtimeModelId)) && updated;
+            } else if (conditionType == 3u) {
+                updated = system->setRuntimeRobinState(
+                    runtimeModelId, 0u,
+                    config.modelBoundaryTemperaturesCByRuntimeId.at(runtimeModelId),
+                    config.modelBoundaryHeatTransferCoefficientsByRuntimeId.at(runtimeModelId)) && updated;
+            }
+            updated = system->setRuntimeVolumetricPowerDensity(
+                runtimeModelId, config.modelVolumetricPowerDensitiesByRuntimeId.at(runtimeModelId)) && updated;
+        }
+        if (updated) {
+            configuredConfigs[socketKey] = config;
+            system->resetSimulationState();
+            applyRuntimeState(*system, config);
+            return;
+        }
     }
 
     configureHeatSystem(*system, config);
@@ -258,13 +281,70 @@ bool HeatSystemComputeController::buildProduct(uint64_t socketKey, HeatProduct& 
 
     for (uint32_t runtimeModelId : config->modelRuntimeModelIds) {
         HeatModelRuntime* model = system.getModelByRuntimeId(runtimeModelId);
-        if (!model || runtimeModelId == 0) continue;
+        if (!model) continue;
 
-        if (!model->appendProduct(outProduct)) {
+        const std::vector<glm::vec3>& positions = model->getSurfacePositions();
+        const std::vector<glm::vec3>& normals = model->getSurfaceNormals();
+        const std::vector<uint32_t>& triangleIndices = model->getSurfaceTriangleIndices();
+        const size_t vertexCount = model->getSurfaceVertexCount();
+        if (vertexCount == 0 || normals.size() != vertexCount || triangleIndices.size() < 3) {
             freeProduct();
             return false;
         }
+
+        const std::vector<float> vertexAreas = computeVertexAreas(positions, triangleIndices);
+
+        std::vector<heat::SurfacePoint> surfacePoints(vertexCount);
+        for (size_t vertexId = 0; vertexId < vertexCount; ++vertexId) {
+            heat::SurfacePoint& surfacePoint = surfacePoints[vertexId];
+            surfacePoint.position = positions[vertexId];
+            surfacePoint.temperatureC = model->getInitialTemperatureC();
+            surfacePoint.normal = normals[vertexId];
+            surfacePoint.vertexArea = vertexId < vertexAreas.size() ? vertexAreas[vertexId] : 0.0f;
+            surfacePoint.color = glm::vec4(1.0f);
+        }
+
+        const VkDeviceSize storageAlignment =
+            vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
+
+        VkBuffer surfaceBuffer = VK_NULL_HANDLE;
+        VkDeviceSize surfaceBufferOffset = 0;
+        if (uploadDeviceBuffer(
+                memoryAllocator,
+                renderCommandPool,
+                surfacePoints.data(),
+                sizeof(heat::SurfacePoint) * vertexCount,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT,
+                storageAlignment,
+                surfaceBuffer,
+                surfaceBufferOffset) != VK_SUCCESS) {
+            freeProduct();
+            return false;
+        }
+
+        std::vector<glm::vec4> zeroGradients(vertexCount, glm::vec4(0.0f));
+        VkBuffer gradientBuffer = VK_NULL_HANDLE;
+        VkDeviceSize gradientBufferOffset = 0;
+        if (uploadDeviceBuffer(
+                memoryAllocator,
+                renderCommandPool,
+                zeroGradients.data(),
+                sizeof(glm::vec4) * vertexCount,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                storageAlignment,
+                gradientBuffer,
+                gradientBufferOffset) != VK_SUCCESS) {
+            memoryAllocator.free(surfaceBuffer, surfaceBufferOffset);
+            freeProduct();
+            return false;
+        }
+
         outProduct.modelRuntimeModelIds.push_back(runtimeModelId);
+        outProduct.modelSurfaceBuffers.push_back(surfaceBuffer);
+        outProduct.modelSurfaceBufferOffsets.push_back(surfaceBufferOffset);
+        outProduct.modelSurfacePointCounts.push_back(static_cast<uint32_t>(vertexCount));
+        outProduct.modelSurfaceGradientBuffers.push_back(gradientBuffer);
+        outProduct.modelSurfaceGradientBufferOffsets.push_back(gradientBufferOffset);
     }
 
     if (!outProduct.isValid()) {
@@ -297,5 +377,3 @@ const HeatSystemComputeController::Config* HeatSystemComputeController::getConfi
     const auto configIt = configuredConfigs.find(socketKey);
     return configIt != configuredConfigs.end() ? &configIt->second : nullptr;
 }
-
-
