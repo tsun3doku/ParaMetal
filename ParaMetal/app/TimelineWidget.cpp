@@ -17,13 +17,13 @@
 #include <cstdint>
 #include <cmath>
 
-static constexpr int TimelineWidgetHeight = 60;
+static constexpr int TimelineWidgetHeight = 44;
 static constexpr int TimelineMarginX = 18;
-static constexpr int TimelineTrackHeight = 5;
-static constexpr int TimelineButtonSize = 30;
-static constexpr int TimelineButtonGap = 2;
+static constexpr int TimelineTrackHeight = 3;
+static constexpr int TimelineButtonSize = 24;
+static constexpr int TimelineButtonGap = 0;
 static constexpr int TimelineFrameBoxWidth = 42;
-static constexpr int TimelineFrameBoxHeight = 20;
+static constexpr int TimelineFrameBoxHeight = 14;
 static constexpr uint32_t TimelineDefaultEndFrame = 250;
 
 QIcon TimelineWidget::loadPlaybackIcon(const QString& folder, qreal logicalWidth, bool mirrorHorizontal) {
@@ -39,13 +39,13 @@ QIcon TimelineWidget::loadPlaybackIcon(const QString& folder, qreal logicalWidth
     return QIcon(pixmap);
 }
 
-QPushButton* TimelineWidget::createTransportButton(const QIcon& icon, const QString& tooltip) {
+QPushButton* TimelineWidget::createTransportButton(const QIcon& icon, const QString& tooltip, int iconSize, ui::ToolButtonSegment segment) {
     QPushButton* button = new QPushButton(this);
     button->setCursor(Qt::PointingHandCursor);
-    button->setStyleSheet(QString::fromStdString(ui::toolButtonStyle()));
+    button->setStyleSheet(QString::fromStdString(ui::toolButtonStyle(segment)));
     button->setToolTip(tooltip);
     button->setIcon(icon);
-    button->setIconSize(QSize(14, 14));
+    button->setIconSize(QSize(iconSize, iconSize));
     return button;
 }
 
@@ -54,35 +54,49 @@ TimelineWidget::TimelineWidget(QWidget* parent)
     setFixedHeight(TimelineWidgetHeight);
     setMouseTracking(true);
 
-    playIcon = loadPlaybackIcon(QStringLiteral("Playback/Start"), 16.0);
-    pauseIcon = loadPlaybackIcon(QStringLiteral("Playback/Pause"), 16.0);
+    playIcon = loadPlaybackIcon(QStringLiteral("Playback/Start"), 12.0);
+    pauseIcon = loadPlaybackIcon(QStringLiteral("Playback/Pause"), 12.0);
 
-    firstButton = createTransportButton(loadPlaybackIcon(QStringLiteral("Playback/Last_frame"), 14.0, true), QStringLiteral("First frame"));
+    firstButton = createTransportButton(
+        loadPlaybackIcon(QStringLiteral("Playback/Last_frame"), 10.0, true),
+        QStringLiteral("First frame"),
+        10,
+        ui::ToolButtonSegment::Leading);
     connect(firstButton, &QPushButton::clicked, this, &TimelineWidget::onFirstClicked);
 
-    previousButton = createTransportButton(loadPlaybackIcon(QStringLiteral("Playback/Next_frame"), 14.0, true), QStringLiteral("Previous frame"));
+    previousButton = createTransportButton(
+        loadPlaybackIcon(QStringLiteral("Playback/Next_frame"), 10.0, true),
+        QStringLiteral("Previous frame"),
+        10,
+        ui::ToolButtonSegment::Middle);
     connect(previousButton, &QPushButton::clicked, this, &TimelineWidget::onPreviousClicked);
 
-    playButton = new QPushButton(this);
-    playButton->setCursor(Qt::PointingHandCursor);
-    playButton->setStyleSheet(QString::fromStdString(ui::toolButtonStyle()));
-    playButton->setIcon(playIcon);
-    playButton->setIconSize(QSize(16, 16));
-    playButton->setToolTip(QStringLiteral("Play / pause"));
+    playButton = createTransportButton(
+        playIcon,
+        QStringLiteral("Play / pause"),
+        12,
+        ui::ToolButtonSegment::Middle);
     connect(playButton, &QPushButton::clicked, this, &TimelineWidget::onPlayClicked);
 
-    nextButton = createTransportButton(loadPlaybackIcon(QStringLiteral("Playback/Next_frame"), 14.0), QStringLiteral("Next frame"));
+    nextButton = createTransportButton(
+        loadPlaybackIcon(QStringLiteral("Playback/Next_frame"), 10.0),
+        QStringLiteral("Next frame"),
+        10,
+        ui::ToolButtonSegment::Middle);
     connect(nextButton, &QPushButton::clicked, this, &TimelineWidget::onNextClicked);
 
-    lastButton = createTransportButton(loadPlaybackIcon(QStringLiteral("Playback/Last_frame"), 14.0), QStringLiteral("Last recorded frame"));
+    lastButton = createTransportButton(
+        loadPlaybackIcon(QStringLiteral("Playback/Last_frame"), 10.0),
+        QStringLiteral("Last recorded frame"),
+        10,
+        ui::ToolButtonSegment::Middle);
     connect(lastButton, &QPushButton::clicked, this, &TimelineWidget::onLastClicked);
 
-    resetButton = new QPushButton(this);
-    resetButton->setCursor(Qt::PointingHandCursor);
-    resetButton->setStyleSheet(playButton->styleSheet());
-    resetButton->setIcon(loadPlaybackIcon(QStringLiteral("Playback/Reset"), 14.0));
-    resetButton->setIconSize(QSize(14, 14));
-    resetButton->setToolTip(QStringLiteral("Reset simulation"));
+    resetButton = createTransportButton(
+        loadPlaybackIcon(QStringLiteral("Playback/Reset"), 12.0),
+        QStringLiteral("Reset simulation"),
+        12,
+        ui::ToolButtonSegment::Trailing);
     connect(resetButton, &QPushButton::clicked, this, &TimelineWidget::resetClicked);
 
     layoutControls();
@@ -171,7 +185,7 @@ int TimelineWidget::trackWidth() const {
 }
 
 int TimelineWidget::trackCenterY() const {
-    return 31;
+    return height() / 2;
 }
 
 uint32_t TimelineWidget::maxTimelineFrame() const {
@@ -246,10 +260,14 @@ void TimelineWidget::paintEvent(QPaintEvent*) {
     p.setRenderHint(QPainter::Antialiasing);
 
     p.fillRect(rect(), ui::TimelineBackground);
+    p.fillRect(QRect(0, 0, width(), 1), ui::MenuBorder);
 
     int left = trackLeft();
     int tw = trackWidth();
     int centerY = trackCenterY();
+
+    const int frameNumberY = centerY - 20;
+    const int frameNumberH = 14;
 
     QRect trackRect(left, centerY - TimelineTrackHeight / 2, tw, TimelineTrackHeight);
     p.setPen(Qt::NoPen);
@@ -298,7 +316,7 @@ void TimelineWidget::paintEvent(QPaintEvent*) {
             const float ratio = static_cast<float>(frameIndex) / static_cast<float>(maxFrame);
             const int x = left + static_cast<int>(std::round(static_cast<float>(tw) * ratio));
             const QString label = QString::number(frameIndex);
-            p.drawText(QRect(x - 28, centerY - 25, 56, 15), Qt::AlignHCenter | Qt::AlignVCenter, label);
+            p.drawText(QRect(x - 28, frameNumberY, 56, frameNumberH), Qt::AlignHCenter | Qt::AlignVCenter, label);
             if (maxFrame - frameIndex < labelStep) {
                 break;
             }
@@ -307,13 +325,13 @@ void TimelineWidget::paintEvent(QPaintEvent*) {
         const int handleX = left + static_cast<int>(
             std::round(static_cast<float>(tw) * (static_cast<float>(frame) / static_cast<float>(maxFrame))));
         p.setPen(QPen(QColor(46, 126, 255), 2));
-        p.drawLine(handleX, centerY - 9, handleX, centerY + 22);
+        p.drawLine(handleX, centerY - 7, handleX, centerY + 16);
 
         const QString bubbleText = QString::number(frame);
         const QFont bubbleFont("Segoe UI", 8, QFont::DemiBold);
         p.setFont(bubbleFont);
         const int bubbleWidth = std::max(32, p.fontMetrics().horizontalAdvance(bubbleText) + 12);
-        QRect bubbleRect(handleX - bubbleWidth / 2, centerY - 29, bubbleWidth, 18);
+        QRect bubbleRect(handleX - bubbleWidth / 2, frameNumberY, bubbleWidth, frameNumberH);
         p.setPen(Qt::NoPen);
         p.setBrush(QColor(53, 120, 255));
         p.drawRoundedRect(bubbleRect, 6, 6);
@@ -324,12 +342,14 @@ void TimelineWidget::paintEvent(QPaintEvent*) {
     const int controlsRight = left + tw + 18;
     p.setFont(QFont("Segoe UI", 9));
     p.setPen(ui::TimelineText);
-    const QRect startLabelRect(controlsRight, 8, 34, TimelineFrameBoxHeight);
-    const QRect endLabelRect(controlsRight, 31, 34, TimelineFrameBoxHeight);
+    const int rowGap = 4;
+    const int rowsTop = (height() - 2 * TimelineFrameBoxHeight - rowGap) / 2;
+    const QRect startLabelRect(controlsRight, rowsTop, 34, TimelineFrameBoxHeight);
+    const QRect endLabelRect(controlsRight, rowsTop + TimelineFrameBoxHeight + rowGap, 34, TimelineFrameBoxHeight);
     p.drawText(startLabelRect, Qt::AlignRight | Qt::AlignVCenter, QStringLiteral("Start"));
     p.drawText(endLabelRect, Qt::AlignRight | Qt::AlignVCenter, QStringLiteral("End"));
-    QRect startBox(controlsRight + 42, 8, TimelineFrameBoxWidth, TimelineFrameBoxHeight);
-    QRect endBox(controlsRight + 42, 31, TimelineFrameBoxWidth, TimelineFrameBoxHeight);
+    QRect startBox(controlsRight + 42, rowsTop, TimelineFrameBoxWidth, TimelineFrameBoxHeight);
+    QRect endBox(controlsRight + 42, rowsTop + TimelineFrameBoxHeight + rowGap, TimelineFrameBoxWidth, TimelineFrameBoxHeight);
     p.setPen(QPen(QColor(58, 60, 68), 1));
     p.setBrush(QColor(34, 35, 40));
     p.drawRoundedRect(startBox, 5, 5);
@@ -343,7 +363,7 @@ void TimelineWidget::paintEvent(QPaintEvent*) {
     QString timeText = QString("%1 / %2 s")
         .arg(static_cast<double>(secondsForFrame(frame)), 0, 'f', 2)
         .arg(static_cast<double>(durationSeconds), 0, 'f', 2);
-    const QRect timeRect(endBox.right() + 18, 20, std::max(1, width() - endBox.right() - 24), 18);
+    const QRect timeRect(endBox.right() + 18, (height() - 16) / 2, std::max(1, width() - endBox.right() - 24), 16);
     p.drawText(timeRect, Qt::AlignLeft | Qt::AlignVCenter, timeText);
 }
 
@@ -357,12 +377,13 @@ void TimelineWidget::mousePressEvent(QMouseEvent* event) {
         return;
     }
 
-    // Track scrub
-    int left = trackLeft();
-    int tw = trackWidth();
-    if (event->pos().x() >= left && event->pos().x() <= left + tw) {
+    constexpr int scrubHitMargin = 16;
+    const int left = trackLeft();
+    const int tw = trackWidth();
+    const int x = event->pos().x();
+    if (x >= left - scrubHitMargin && x <= left + tw + scrubHitMargin) {
         isDragging = true;
-        dragStartFrame = frameFromX(event->pos().x());
+        dragStartFrame = frameFromX(x);
         scrubToFrame(dragStartFrame);
     }
 }

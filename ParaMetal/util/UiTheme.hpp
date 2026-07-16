@@ -43,12 +43,34 @@ inline constexpr QColor TimelineTrackFill = QColor(123, 104, 238);
 inline constexpr QColor TimelineText = QColor(204, 204, 204);        
 inline constexpr QColor TimelineTextDim = QColor(102, 102, 102);    
 
-inline std::string toolButtonStyle() {
+enum class ToolButtonSegment {
+    Standalone,
+    Leading,
+    Middle,
+    Trailing
+};
+
+inline std::string toolButtonStyle(ToolButtonSegment segment = ToolButtonSegment::Standalone) {
+    std::string radius;
+    switch (segment) {
+        case ToolButtonSegment::Leading:
+            radius = "border-top-left-radius: 4px; border-bottom-left-radius: 4px;";
+            break;
+        case ToolButtonSegment::Trailing:
+            radius = "border-top-right-radius: 4px; border-bottom-right-radius: 4px;";
+            break;
+        case ToolButtonSegment::Middle:
+            radius = "border-radius: 0px;";
+            break;
+        default:
+            radius = "border-radius: 4px;";
+            break;
+    }
     return
         "QPushButton {"
         "  background-color: " + ToolButtonNormal.name().toStdString() + ";"
         "  border: none;"
-        "  border-radius: 4px;"
+        "  " + radius +
         "  color: " + IconDefault.name().toStdString() + ";"
         "  font-family: 'Segoe UI';"
         "  font-size: 11px;"

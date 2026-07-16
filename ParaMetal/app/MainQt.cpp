@@ -103,8 +103,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     workAreaLayout->addWidget(nodeViewportSplitter, 1);
 
     timelineWidget = new TimelineWidget(workAreaHost);
-    timelineWidget->setMaximumHeight(60);
-    timelineWidget->setMinimumHeight(60);
     workAreaLayout->addWidget(timelineWidget);
 
     mainSplitter->addWidget(workAreaHost);

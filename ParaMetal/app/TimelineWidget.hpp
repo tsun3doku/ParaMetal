@@ -11,6 +11,10 @@ class QString;
 class QMouseEvent;
 class QResizeEvent;
 
+namespace ui {
+enum class ToolButtonSegment;
+}
+
 class TimelineWidget : public QWidget {
     Q_OBJECT
 
@@ -50,7 +54,7 @@ private:
     void layoutControls();
     void scrubToFrame(uint32_t frame);
     static QIcon loadPlaybackIcon(const QString& folder, qreal logicalWidth, bool mirrorHorizontal = false);
-    QPushButton* createTransportButton(const QIcon& icon, const QString& tooltip);
+    QPushButton* createTransportButton(const QIcon& icon, const QString& tooltip, int iconSize, ui::ToolButtonSegment segment);
 
     const RuntimeQuery* runtimeQuery = nullptr;
 
