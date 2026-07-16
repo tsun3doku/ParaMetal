@@ -34,16 +34,11 @@ PyTerminalWidget::PyTerminalWidget(QWidget* parent)
     QLabel* titleIcon = new QLabel(titleBar);
     titleIcon->setFixedSize(20, 20);
     titleIcon->setStyleSheet(QStringLiteral("border: none; background: transparent;"));
-    const QString iconPath = NodeGraphIconRegistry::iconPathForFolder(QStringLiteral("Terminal"), 20.0);
-    if (!iconPath.isEmpty()) {
-        QPixmap icon(iconPath);
-        if (!icon.isNull()) {
-            titleIcon->setPixmap(icon.scaled(
-                20,
-                20,
-                Qt::KeepAspectRatio,
-                Qt::SmoothTransformation));
-        }
+    const QPixmap icon = NodeGraphIconRegistry::screenSpacePixmapForFolder(
+        QStringLiteral("Terminal"),
+        20.0);
+    if (!icon.isNull()) {
+        titleIcon->setPixmap(icon);
     }
     titleLayout->addWidget(titleIcon);
 

@@ -1,5 +1,8 @@
 #include "NodeGraphCanvas.hpp"
 
+#include "nodegraph/ui/widgets/NodeGraphNavHints.hpp"
+#include "nodegraph/ui/widgets/NodeGraphWidgetStyle.hpp"
+
 #include <QContextMenuEvent>
 #include <QCursor>
 #include <QFrame>
@@ -7,6 +10,7 @@
 #include <QKeySequence>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QResizeEvent>
 #include <QScrollBar>
 #include <QWheelEvent>
 
@@ -23,6 +27,9 @@ NodeGraphCanvas::NodeGraphCanvas(QWidget* parent)
     viewport()->setCursor(Qt::ArrowCursor);
     setRenderHint(QPainter::Antialiasing, true);
     setRenderHint(QPainter::TextAntialiasing, true);
+
+    navHints = new NodeGraphNavHints(this);
+    navHints->raise();
 }
 
 void NodeGraphCanvas::centerOnContent() {
@@ -31,6 +38,23 @@ void NodeGraphCanvas::centerOnContent() {
     }
     const QRectF contentRect = scene()->itemsBoundingRect();
     centerOn(contentRect.center());
+}
+
+void NodeGraphCanvas::resizeEvent(QResizeEvent* event) {
+    QGraphicsView::resizeEvent(event);
+    positionNavHints();
+}
+
+void NodeGraphCanvas::positionNavHints() {
+    if (!navHints) {
+        return;
+    }
+    const QSize hint = navHints->sizeHint();
+    navHints->setGeometry(
+        nodegraphwidgets::navHintCanvasMargin,
+        height() - hint.height() - nodegraphwidgets::navHintCanvasMargin,
+        hint.width(),
+        hint.height());
 }
 
 void NodeGraphCanvas::mousePressEvent(QMouseEvent* event) {

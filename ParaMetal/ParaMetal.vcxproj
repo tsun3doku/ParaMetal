@@ -397,6 +397,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="nodegraph\NodeGraphCompiler.cpp" />
     <ClCompile Include="nodegraph\ui\widgets\NodePanel.cpp" />
     <ClCompile Include="nodegraph\ui\widgets\NodeGraphActionStrip.cpp" />
+    <ClCompile Include="nodegraph\ui\widgets\NodeGraphNavHints.cpp" />
     <ClCompile Include="nodegraph\ui\widgets\NodeGraphWidgetStyle.cpp" />
     <ClCompile Include="nodegraph\ui\widgets\NodeGraphSliderItem.cpp" />
     <ClCompile Include="nodegraph\ui\widgets\NodeGraphSliderRow.cpp" />
@@ -552,6 +553,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="nodegraph\NodeGraphUtils.hpp" />
     <ClInclude Include="nodegraph\NodePayloadRegistry.hpp" />
     <ClInclude Include="nodegraph\ui\widgets\NodeGraphWidgetStyle.hpp" />
+    <ClInclude Include="nodegraph\ui\widgets\NodeGraphNavHints.hpp" />
     <ClInclude Include="py\PyGraphTypes.hpp" />
     <ClInclude Include="runtime\RuntimeContactComputeTransport.hpp" />
     <ClInclude Include="runtime\ContactDisplayController.hpp" />

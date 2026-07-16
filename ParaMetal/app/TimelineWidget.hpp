@@ -49,7 +49,7 @@ private:
     int trackCenterY() const;
     void layoutControls();
     void scrubToFrame(uint32_t frame);
-    static QIcon loadPlaybackIcon(const QString& folder, bool mirrorHorizontal = false);
+    static QIcon loadPlaybackIcon(const QString& folder, qreal logicalWidth, bool mirrorHorizontal = false);
     QPushButton* createTransportButton(const QIcon& icon, const QString& tooltip);
 
     const RuntimeQuery* runtimeQuery = nullptr;

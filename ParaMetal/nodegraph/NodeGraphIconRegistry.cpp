@@ -1,11 +1,7 @@
 #include "NodeGraphIconRegistry.hpp"
 
 #include <algorithm>
-#include <filesystem>
 #include <cmath>
-#include <functional>
-#include <utility>
-#include <vector>
 
 const char* NodeGraphIconRegistry::iconFolderForType(const NodeTypeId& typeId) {
     if (typeId == "contact") return "Contact";
@@ -43,10 +39,9 @@ int NodeGraphIconRegistry::parseIconWidth(const std::filesystem::path& path) {
     }
 }
 
-QString NodeGraphIconRegistry::iconPathForFolder(const QString& folder, qreal targetPixelWidth) {
+std::vector<std::pair<int, std::filesystem::path>> NodeGraphIconRegistry::iconVariantsForFolder(const QString& folder) {
     std::vector<std::pair<int, std::filesystem::path>> variants;
     const std::string folderName = folder.toStdString();
-    const int targetWidth = iconWidthCacheKey(targetPixelWidth);
 
     for (const auto& folderPath : iconFolderCandidates(folderName)) {
         if (!std::filesystem::exists(folderPath) || !std::filesystem::is_directory(folderPath)) {
@@ -77,17 +72,23 @@ QString NodeGraphIconRegistry::iconPathForFolder(const QString& folder, qreal ta
         }
     }
 
-    if (variants.empty()) {
-        return QString();
-    }
-
     std::sort(
         variants.begin(),
         variants.end(),
         [](const auto& lhs, const auto& rhs) {
             return lhs.first < rhs.first;
         });
+    return variants;
+}
 
+QString NodeGraphIconRegistry::nearestIconPathForFolder(const QString& folder, qreal targetPixelWidth) {
+    const auto variants = iconVariantsForFolder(folder);
+
+    if (variants.empty()) {
+        return QString();
+    }
+
+    const int targetWidth = iconWidthCacheKey(targetPixelWidth);
     for (const auto& variant : variants) {
         if (variant.first >= targetWidth) {
             return QString::fromStdString(variant.second.string());
@@ -97,38 +98,27 @@ QString NodeGraphIconRegistry::iconPathForFolder(const QString& folder, qreal ta
     return QString::fromStdString(variants.back().second.string());
 }
 
-bool IconCacheKey::operator==(const IconCacheKey& other) const noexcept {
-    return typeId == other.typeId && iconWidthKey == other.iconWidthKey;
+QString NodeGraphIconRegistry::exactIconPathForFolder(const QString& folder, int pixelWidth) {
+    const auto variants = iconVariantsForFolder(folder);
+    const auto match = std::find_if(
+        variants.begin(),
+        variants.end(),
+        [pixelWidth](const auto& variant) {
+            return variant.first == pixelWidth;
+        });
+    return match == variants.end()
+        ? QString()
+        : QString::fromStdString(match->second.string());
 }
 
-std::size_t IconCacheKeyHash::operator()(const IconCacheKey& key) const noexcept {
-    const std::size_t typeHash = std::hash<NodeTypeId>{}(key.typeId);
-    const std::size_t widthHash = std::hash<int>{}(key.iconWidthKey);
-    return typeHash ^ (widthHash + 0x9e3779b9 + (typeHash << 6) + (typeHash >> 2));
-}
-
-QString NodeGraphIconRegistry::iconPathForType(const NodeTypeId& typeId, qreal targetPixelWidth) {
-    const char* folder = iconFolderForType(typeId);
-    if (!folder) {
-        return QString();
-    }
-
-    return iconPathForFolder(QString::fromUtf8(folder), targetPixelWidth);
-}
-
-QPixmap NodeGraphIconRegistry::iconForType(const NodeTypeId& typeId, qreal targetPixelWidth) {
-    const QString iconPath = iconPathForType(typeId, targetPixelWidth);
+QPixmap NodeGraphIconRegistry::pixmapForPath(const QString& iconPath) {
     if (iconPath.isEmpty()) {
         return QPixmap();
     }
 
-    const std::filesystem::path iconFilePath(iconPath.toStdString());
-    const IconCacheKey cacheKey{
-        typeId,
-        parseIconWidth(iconFilePath.parent_path().filename())
-    };
-    const auto cacheIt = iconCache.find(cacheKey);
-    if (cacheIt != iconCache.end()) {
+    const std::string cacheKey = iconPath.toStdString();
+    const auto cacheIt = pixmapCache.find(cacheKey);
+    if (cacheIt != pixmapCache.end()) {
         return cacheIt->second;
     }
 
@@ -137,7 +127,37 @@ QPixmap NodeGraphIconRegistry::iconForType(const NodeTypeId& typeId, qreal targe
         return QPixmap();
     }
 
-    iconCache.emplace(cacheKey, pixmap);
+    pixmapCache.emplace(cacheKey, pixmap);
+    return pixmap;
+}
+
+QPixmap NodeGraphIconRegistry::nodePixmapForType(const NodeTypeId& typeId, qreal targetPixelWidth) {
+    const char* folder = iconFolderForType(typeId);
+    if (!folder) {
+        return QPixmap();
+    }
+    return pixmapForPath(nearestIconPathForFolder(QString::fromUtf8(folder), targetPixelWidth));
+}
+
+QPixmap NodeGraphIconRegistry::screenSpaceNodePixmapForType(const NodeTypeId& typeId, qreal logicalWidth) {
+    const char* folder = iconFolderForType(typeId);
+    if (!folder) {
+        return QPixmap();
+    }
+    return screenSpacePixmapForFolder(QString::fromUtf8(folder), logicalWidth);
+}
+
+QPixmap NodeGraphIconRegistry::screenSpacePixmapForFolder(const QString& folder, qreal logicalWidth) {
+    if (logicalWidth <= 0.0) {
+        return QPixmap();
+    }
+
+    QPixmap pixmap = pixmapForPath(exactIconPathForFolder(folder, screenSpaceIconSourceWidth));
+    if (pixmap.isNull()) {
+        return QPixmap();
+    }
+
+    pixmap.setDevicePixelRatio(static_cast<qreal>(screenSpaceIconSourceWidth) / logicalWidth);
     return pixmap;
 }
 

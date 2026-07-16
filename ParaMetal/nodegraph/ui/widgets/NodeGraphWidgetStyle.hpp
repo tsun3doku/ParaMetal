@@ -52,6 +52,11 @@ constexpr int actionStripBannerRadius = 6;
 constexpr int actionStripIconSize = 28;
 constexpr int actionStripDismissSize = 24;
 
+constexpr int navHintIconSize = 28;
+constexpr int navHintIconTextGap = 6;
+constexpr int navHintItemSpacing = 18;
+constexpr int navHintCanvasMargin = 12;
+
 constexpr int sliderRowSpacing = 10;
 constexpr int sliderLabelWidth = 120;
 constexpr int sliderRightPadding = 10;
@@ -90,6 +95,7 @@ inline constexpr QColor colorSliderTrackActive = QColor(217, 215, 227);
 inline constexpr QColor colorSliderKnobMask = QColor(45, 44, 52);
 inline constexpr QColor colorSliderKnobFill = QColor(43, 42, 50);
 inline constexpr QColor colorSliderKnobStroke = QColor(239, 237, 248);
+inline constexpr QColor colorNavHintText = QColor(150, 149, 162);
 
 QString px(int value);
 void styleLineEdit(QLineEdit* edit);

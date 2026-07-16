@@ -168,9 +168,9 @@ bool NodePanel::setNode(NodeGraphNodeId nodeId) {
     subtitleLabel->setText(nodeTypeDescription(currentNodeTypeId));
     statusLabel->clear();
 
-    QPixmap icon = NodeGraphIconRegistry::iconForType(currentNodeTypeId, 24.0);
+    const QPixmap icon = NodeGraphIconRegistry::screenSpaceNodePixmapForType(currentNodeTypeId, 24.0);
     if (!icon.isNull()) {
-        iconLabel->setPixmap(icon.scaled(24, 24, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        iconLabel->setPixmap(icon);
         iconLabel->show();
     } else {
         iconLabel->hide();

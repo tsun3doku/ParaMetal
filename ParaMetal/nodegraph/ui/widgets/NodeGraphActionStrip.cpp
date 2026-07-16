@@ -32,16 +32,11 @@ NodeGraphActionStrip::NodeGraphActionStrip(
     iconLabel = new QLabel(this);
     iconLabel->setFixedSize(nodegraphwidgets::actionStripIconSize, nodegraphwidgets::actionStripIconSize);
     iconLabel->setAlignment(Qt::AlignCenter);
-    const QString iconPath = NodeGraphIconRegistry::iconPathForFolder(iconFolder, 32.0);
-    if (!iconPath.isEmpty()) {
-        QPixmap icon(iconPath);
-        if (!icon.isNull()) {
-            iconLabel->setPixmap(icon.scaled(
-                nodegraphwidgets::actionStripIconSize,
-                nodegraphwidgets::actionStripIconSize,
-                Qt::KeepAspectRatio,
-                Qt::SmoothTransformation));
-        }
+    const QPixmap icon = NodeGraphIconRegistry::screenSpacePixmapForFolder(
+        iconFolder,
+        nodegraphwidgets::actionStripIconSize);
+    if (!icon.isNull()) {
+        iconLabel->setPixmap(icon);
     }
     rootLayout->addWidget(iconLabel, 0, Qt::AlignTop);
 

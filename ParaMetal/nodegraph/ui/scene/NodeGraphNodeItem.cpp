@@ -113,7 +113,7 @@ void NodeGraphNodeItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*
     const qreal devicePixelRatio = painter->device() ? painter->device()->devicePixelRatioF() : 1.0;
     const qreal zoomLevel = option->levelOfDetailFromTransform(painter->worldTransform());
     const qreal targetPixelWidth = iconBounds.width() * zoomLevel * devicePixelRatio;
-    const QPixmap icon = NodeGraphIconRegistry::iconForType(typeId, targetPixelWidth);
+    const QPixmap icon = NodeGraphIconRegistry::nodePixmapForType(typeId, targetPixelWidth);
     if (!icon.isNull()) {
         const QSizeF iconSize = icon.deviceIndependentSize();
         const qreal scale = std::min(iconBounds.width() / iconSize.width(), iconBounds.height() / iconSize.height());

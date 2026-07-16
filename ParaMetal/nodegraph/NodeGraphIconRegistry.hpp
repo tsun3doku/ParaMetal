@@ -2,37 +2,32 @@
 
 #include "NodeGraphTypes.hpp"
 
-#include <cstddef>
 #include <filesystem>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <QPixmap>
 #include <QString>
 
-struct IconCacheKey {
-    NodeTypeId typeId{};
-    int iconWidthKey = 0;
-
-    bool operator==(const IconCacheKey& other) const noexcept;
-};
-
-struct IconCacheKeyHash {
-    std::size_t operator()(const IconCacheKey& key) const noexcept;
-};
-
 class NodeGraphIconRegistry {
 public:
     NodeGraphIconRegistry() = delete;
 
-    static QPixmap iconForType(const NodeTypeId& typeId, qreal targetPixelWidth);
-    static QString iconPathForFolder(const QString& folder, qreal targetPixelWidth);
+    static QPixmap nodePixmapForType(const NodeTypeId& typeId, qreal targetPixelWidth);
+    static QPixmap screenSpaceNodePixmapForType(const NodeTypeId& typeId, qreal logicalWidth);
+    static QPixmap screenSpacePixmapForFolder(const QString& folder, qreal logicalWidth);
 
 private:
+    static constexpr int screenSpaceIconSourceWidth = 128;
+
     static const char* iconFolderForType(const NodeTypeId& typeId);
     static std::vector<std::filesystem::path> iconFolderCandidates(const std::string& folder);
-    static QString iconPathForType(const NodeTypeId& typeId, qreal targetPixelWidth);
+    static std::vector<std::pair<int, std::filesystem::path>> iconVariantsForFolder(const QString& folder);
+    static QString nearestIconPathForFolder(const QString& folder, qreal targetPixelWidth);
+    static QString exactIconPathForFolder(const QString& folder, int pixelWidth);
+    static QPixmap pixmapForPath(const QString& iconPath);
     static int iconWidthCacheKey(qreal targetPixelWidth);
     static int parseIconWidth(const std::filesystem::path& path);
-    inline static std::unordered_map<IconCacheKey, QPixmap, IconCacheKeyHash> iconCache{};
+    inline static std::unordered_map<std::string, QPixmap> pixmapCache{};
 };

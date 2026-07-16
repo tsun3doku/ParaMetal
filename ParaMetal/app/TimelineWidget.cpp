@@ -26,8 +26,8 @@ static constexpr int TimelineFrameBoxWidth = 42;
 static constexpr int TimelineFrameBoxHeight = 20;
 static constexpr uint32_t TimelineDefaultEndFrame = 250;
 
-QIcon TimelineWidget::loadPlaybackIcon(const QString& folder, bool mirrorHorizontal) {
-    QPixmap pixmap(NodeGraphIconRegistry::iconPathForFolder(folder, 32.0));
+QIcon TimelineWidget::loadPlaybackIcon(const QString& folder, qreal logicalWidth, bool mirrorHorizontal) {
+    QPixmap pixmap = NodeGraphIconRegistry::screenSpacePixmapForFolder(folder, logicalWidth);
     if (pixmap.isNull()) {
         return {};
     }
@@ -54,13 +54,13 @@ TimelineWidget::TimelineWidget(QWidget* parent)
     setFixedHeight(TimelineWidgetHeight);
     setMouseTracking(true);
 
-    playIcon = loadPlaybackIcon(QStringLiteral("Playback/Start"));
-    pauseIcon = loadPlaybackIcon(QStringLiteral("Playback/Pause"));
+    playIcon = loadPlaybackIcon(QStringLiteral("Playback/Start"), 16.0);
+    pauseIcon = loadPlaybackIcon(QStringLiteral("Playback/Pause"), 16.0);
 
-    firstButton = createTransportButton(loadPlaybackIcon(QStringLiteral("Playback/Last_frame"), true), QStringLiteral("First frame"));
+    firstButton = createTransportButton(loadPlaybackIcon(QStringLiteral("Playback/Last_frame"), 14.0, true), QStringLiteral("First frame"));
     connect(firstButton, &QPushButton::clicked, this, &TimelineWidget::onFirstClicked);
 
-    previousButton = createTransportButton(loadPlaybackIcon(QStringLiteral("Playback/Next_frame"), true), QStringLiteral("Previous frame"));
+    previousButton = createTransportButton(loadPlaybackIcon(QStringLiteral("Playback/Next_frame"), 14.0, true), QStringLiteral("Previous frame"));
     connect(previousButton, &QPushButton::clicked, this, &TimelineWidget::onPreviousClicked);
 
     playButton = new QPushButton(this);
@@ -71,16 +71,16 @@ TimelineWidget::TimelineWidget(QWidget* parent)
     playButton->setToolTip(QStringLiteral("Play / pause"));
     connect(playButton, &QPushButton::clicked, this, &TimelineWidget::onPlayClicked);
 
-    nextButton = createTransportButton(loadPlaybackIcon(QStringLiteral("Playback/Next_frame")), QStringLiteral("Next frame"));
+    nextButton = createTransportButton(loadPlaybackIcon(QStringLiteral("Playback/Next_frame"), 14.0), QStringLiteral("Next frame"));
     connect(nextButton, &QPushButton::clicked, this, &TimelineWidget::onNextClicked);
 
-    lastButton = createTransportButton(loadPlaybackIcon(QStringLiteral("Playback/Last_frame")), QStringLiteral("Last recorded frame"));
+    lastButton = createTransportButton(loadPlaybackIcon(QStringLiteral("Playback/Last_frame"), 14.0), QStringLiteral("Last recorded frame"));
     connect(lastButton, &QPushButton::clicked, this, &TimelineWidget::onLastClicked);
 
     resetButton = new QPushButton(this);
     resetButton->setCursor(Qt::PointingHandCursor);
     resetButton->setStyleSheet(playButton->styleSheet());
-    resetButton->setIcon(loadPlaybackIcon(QStringLiteral("Playback/Reset")));
+    resetButton->setIcon(loadPlaybackIcon(QStringLiteral("Playback/Reset"), 14.0));
     resetButton->setIconSize(QSize(14, 14));
     resetButton->setToolTip(QStringLiteral("Reset simulation"));
     connect(resetButton, &QPushButton::clicked, this, &TimelineWidget::resetClicked);
