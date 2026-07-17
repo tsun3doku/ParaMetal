@@ -1,8 +1,8 @@
 #include "TimelineWidget.hpp"
 
-#include "nodegraph/NodeGraphIconRegistry.hpp"
 #include "runtime/RuntimeInterfaces.hpp"
-#include "util/UiTheme.hpp"
+#include "ui/UiIconRegistry.hpp"
+#include "ui/UiTheme.hpp"
 
 #include <QIcon>
 #include <QMouseEvent>
@@ -21,13 +21,13 @@ static constexpr int TimelineWidgetHeight = 44;
 static constexpr int TimelineMarginX = 18;
 static constexpr int TimelineTrackHeight = 3;
 static constexpr int TimelineButtonSize = 24;
-static constexpr int TimelineButtonGap = 0;
+static constexpr int TimelineButtonGap = 1;
 static constexpr int TimelineFrameBoxWidth = 42;
 static constexpr int TimelineFrameBoxHeight = 14;
 static constexpr uint32_t TimelineDefaultEndFrame = 250;
 
 QIcon TimelineWidget::loadPlaybackIcon(const QString& folder, qreal logicalWidth, bool mirrorHorizontal) {
-    QPixmap pixmap = NodeGraphIconRegistry::screenSpacePixmapForFolder(folder, logicalWidth);
+    QPixmap pixmap = ui::IconRegistry::screenSpacePixmapForFolder(folder, logicalWidth);
     if (pixmap.isNull()) {
         return {};
     }

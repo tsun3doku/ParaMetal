@@ -9,10 +9,10 @@
 #include "py/PyTerminalWidget.hpp"
 #include "scene/Camera.hpp"
 #include "scene/CameraController.hpp"
-#include "util/UiTheme.hpp"
-#include "VulkanWindow.hpp"
+#include "ui/UiTheme.hpp"
 #include "TimelineWidget.hpp"
 #include "TimelineNodeController.hpp"
+#include "ViewportPane.hpp"
 
 #include <QAction>
 #include <QApplication>
@@ -84,18 +84,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         nodeViewportSplitter->addWidget(nodeGraphEditor);
     }
 
-    QWidget* viewportHost = new QWidget(nodeViewportSplitter);
-    QVBoxLayout* viewportLayout = new QVBoxLayout(viewportHost);
-    viewportLayout->setContentsMargins(0, 0, 0, 0);
-    viewportLayout->setSpacing(0);
-    viewportWindow = new VulkanWindow();
-    viewportContainer = QWidget::createWindowContainer(viewportWindow, viewportHost);
-    viewportContainer->setFocusPolicy(Qt::StrongFocus);
-    viewportContainer->setMinimumSize(320, 240);
-    viewportLayout->addWidget(viewportContainer);
-
-    viewportHost->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    nodeViewportSplitter->addWidget(viewportHost);
+    viewportPane = new ViewportPane(nodeViewportSplitter);
+    nodeViewportSplitter->addWidget(viewportPane);
     nodeViewportSplitter->setStretchFactor(0, 0);
     nodeViewportSplitter->setStretchFactor(1, 1);
     nodeViewportSplitter->setSizes({360, 1080});
@@ -130,23 +120,14 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     uiSyncTimer->start();
     
     QTimer::singleShot(0, this, [this]() {
-        raiseNativeSplitterHandles();        
-#ifdef Q_OS_WIN
-        if (viewportWindow) {
-            const HWND vulkanHwnd = reinterpret_cast<HWND>(viewportWindow->winId());
-            if (vulkanHwnd) {
-                LONG_PTR exStyle = GetWindowLongPtr(vulkanHwnd, GWL_EXSTYLE);
-                SetWindowLongPtr(vulkanHwnd, GWL_EXSTYLE, exStyle | WS_EX_NOREDIRECTIONBITMAP);
-            }
-        }
-#endif
+        raiseNativeSplitterHandles();
     });
 }
 
 void MainWindow::setApp(App* application) {
     app = application;
-    if (viewportWindow) {
-        viewportWindow->setApp(app);
+    if (viewportPane) {
+        viewportPane->setApp(app);
     }
     if (timelineNodeController) {
         timelineNodeController->setApp(app);

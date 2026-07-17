@@ -21,18 +21,6 @@ void RenderSettingsManager::toggleGrid() {
     settings.gridEnabled = !settings.gridEnabled;
 }
 
-void RenderSettingsManager::onWireframeToggleRequested() {
-    toggleWireframeMode();
-}
-
-void RenderSettingsManager::onTimingOverlayToggleRequested() {
-    toggleTimingOverlay();
-}
-
-void RenderSettingsManager::onGridToggleRequested() {
-    toggleGrid();
-}
-
 app::RenderSettings RenderSettingsManager::getSnapshot() const {
     std::lock_guard<std::mutex> lock(mutex);
     return settings;

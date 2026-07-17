@@ -11,7 +11,7 @@
 #include "runtime/RuntimeInterfaces.hpp"
 #include "scene/SceneController.hpp"
 #include "scene/ModelSelection.hpp"
-#include "util/UiTheme.hpp"
+#include "ui/UiTheme.hpp"
 
 #include <QAction>
 #include <QContextMenuEvent>

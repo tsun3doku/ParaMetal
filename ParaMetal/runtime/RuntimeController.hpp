@@ -9,6 +9,7 @@
 
 class RenderContext;
 class RenderSettingsManager;
+class RenderSettingsController;
 class SceneContext;
 class VulkanCoreContext;
 class NodeGraphController;
@@ -21,6 +22,7 @@ public:
 
     bool initialize(RenderContext& render, SceneContext& scene, VulkanCoreContext& core,
                     WindowRuntimeState& windowRuntimeState, RenderSettingsManager& settingsManager,
+                    RenderSettingsController& settingsController,
                     std::atomic<bool>& simPaused);
     void shutdown();
     bool isInitialized() const;

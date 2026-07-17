@@ -1,7 +1,7 @@
 #include "NodeGraphActionStrip.hpp"
 
-#include "nodegraph/NodeGraphIconRegistry.hpp"
 #include "nodegraph/ui/widgets/NodeGraphWidgetStyle.hpp"
+#include "ui/UiIconRegistry.hpp"
 
 #include <QHBoxLayout>
 #include <QLabel>
@@ -32,7 +32,7 @@ NodeGraphActionStrip::NodeGraphActionStrip(
     iconLabel = new QLabel(this);
     iconLabel->setFixedSize(nodegraphwidgets::actionStripIconSize, nodegraphwidgets::actionStripIconSize);
     iconLabel->setAlignment(Qt::AlignCenter);
-    const QPixmap icon = NodeGraphIconRegistry::screenSpacePixmapForFolder(
+    const QPixmap icon = ui::IconRegistry::screenSpacePixmapForFolder(
         iconFolder,
         nodegraphwidgets::actionStripIconSize);
     if (!icon.isNull()) {

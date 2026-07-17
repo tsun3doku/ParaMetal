@@ -2,6 +2,7 @@
 
 #include "RenderContext.hpp"
 #include "RenderSettingsManager.hpp"
+#include "RenderSettingsController.hpp"
 #include "SceneContext.hpp"
 #include "VulkanCoreContext.hpp"
 #include "nodegraph/NodeGraphController.hpp"
@@ -18,6 +19,7 @@ bool RuntimeController::initialize(
     VulkanCoreContext& core,
     WindowRuntimeState& windowRuntimeState,
     RenderSettingsManager& settingsManager,
+    RenderSettingsController& settingsController,
     std::atomic<bool>& simPaused) {
     if (initialized) {
         return true;
@@ -27,7 +29,7 @@ bool RuntimeController::initialize(
         return false;
     }
 
-    if (!render.initializeInputPipeline(scene, settingsManager) || !render.runtime() ||
+    if (!render.initializeInputPipeline(scene, settingsController) || !render.runtime() ||
         !render.inputController()) {
         shutdown();
         return false;

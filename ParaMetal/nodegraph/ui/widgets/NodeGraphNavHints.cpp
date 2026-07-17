@@ -1,7 +1,7 @@
 #include "NodeGraphNavHints.hpp"
 
-#include "nodegraph/NodeGraphIconRegistry.hpp"
 #include "nodegraph/ui/widgets/NodeGraphWidgetStyle.hpp"
+#include "ui/UiIconRegistry.hpp"
 
 #include <QHBoxLayout>
 #include <QLabel>
@@ -30,7 +30,7 @@ QWidget* NodeGraphNavHints::createNavHintItem(const NavHint& hint, QWidget* pare
     iconLabel->setAlignment(Qt::AlignCenter);
     applyClickThrough(iconLabel);
 
-    const QPixmap icon = NodeGraphIconRegistry::screenSpacePixmapForFolder(
+    const QPixmap icon = ui::IconRegistry::screenSpacePixmapForFolder(
         QString::fromUtf8(hint.iconFolder),
         nodegraphwidgets::navHintIconSize);
     if (!icon.isNull()) {

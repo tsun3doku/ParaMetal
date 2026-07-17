@@ -1,9 +1,9 @@
 #include "PyTerminalWidget.hpp"
 
 #include "PyInterpreter.hpp"
-#include "nodegraph/NodeGraphIconRegistry.hpp"
 #include "nodegraph/ui/widgets/NodeGraphActionStrip.hpp"
 #include "nodegraph/ui/widgets/NodeGraphWidgetStyle.hpp"
+#include "ui/UiIconRegistry.hpp"
 
 #include <QPlainTextEdit>
 #include <QLineEdit>
@@ -34,7 +34,7 @@ PyTerminalWidget::PyTerminalWidget(QWidget* parent)
     QLabel* titleIcon = new QLabel(titleBar);
     titleIcon->setFixedSize(20, 20);
     titleIcon->setStyleSheet(QStringLiteral("border: none; background: transparent;"));
-    const QPixmap icon = NodeGraphIconRegistry::screenSpacePixmapForFolder(
+    const QPixmap icon = ui::IconRegistry::screenSpacePixmapForFolder(
         QStringLiteral("Terminal"),
         20.0);
     if (!icon.isNull()) {

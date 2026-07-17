@@ -17,11 +17,11 @@ class SceneController;
 class TimelineNodeController;
 class QCloseEvent;
 class QWidget;
-class VulkanWindow;
 class QSplitter;
 class QMenu;
 class QMenuBar;
 class TimelineWidget;
+class ViewportPane;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -65,8 +65,7 @@ private:
     QMenu* recentFilesMenu = nullptr;
     QAction* nodeGraphAction = nullptr;
     QAction* pyTerminalAction = nullptr;
-    VulkanWindow* viewportWindow = nullptr;
-    QWidget* viewportContainer = nullptr;
+    ViewportPane* viewportPane = nullptr;
     NodeGraphEditorWidget* nodeGraphEditor = nullptr;
     PyTerminalWidget* pyTerminal = nullptr;
     NodeGraph* boundNodeGraph = nullptr;

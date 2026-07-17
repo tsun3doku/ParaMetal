@@ -36,7 +36,8 @@ bool RuntimeSystems::initialize(WindowRuntimeState& runtimeState, const AppVulka
         cleanup();
         return false;
     }
-    if (!runtimeController.initialize(render, scene, core, runtimeState, settingsManager, simPaused)) {
+    if (!runtimeController.initialize(
+            render, scene, core, runtimeState, settingsManager, settingsController, simPaused)) {
         cleanup();
         return false;
     }

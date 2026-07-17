@@ -402,6 +402,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="nodegraph\ui\widgets\NodeGraphSliderItem.cpp" />
     <ClCompile Include="nodegraph\ui\widgets\NodeGraphSliderRow.cpp" />
     <ClCompile Include="nodegraph\NodeGraphIconRegistry.cpp" />
+    <ClCompile Include="ui\UiIconRegistry.cpp" />
     <ClCompile Include="nodegraph\ui\scene\NodeGraphNodeItem.cpp" />
     <ClCompile Include="nodegraph\ui\scene\NodeGraphScene.cpp" />
     <ClCompile Include="nodegraph\ui\scene\NodeGraphSceneStyle.cpp" />
@@ -436,6 +437,8 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="app\MainQt.cpp" />
     <ClCompile Include="app\TimelineWidget.cpp" />
     <ClCompile Include="app\TimelineNodeController.cpp" />
+    <ClCompile Include="app\ViewportOverlayBar.cpp" />
+    <ClCompile Include="app\ViewportPane.cpp" />
     <ClCompile Include="py\PyBridge.cpp" />
     <ClCompile Include="py\PyGraphBindings.cpp" />
     <ClCompile Include="py\PyIdBindings.cpp" />
@@ -527,6 +530,8 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="app\SwapchainStage.hpp" />
     <ClInclude Include="app\SwapchainManager.hpp" />
     <ClInclude Include="app\VulkanWindow.hpp" />
+    <ClInclude Include="app\ViewportOverlayBar.hpp" />
+    <ClInclude Include="app\ViewportPane.hpp" />
     <ClInclude Include="contact\ContactTypes.hpp" />
     <ClInclude Include="contact\ContactGpuStructs.hpp" />
     <ClInclude Include="heat\HeatContactSolver.hpp" />
@@ -605,7 +610,6 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="runtime\RuntimeProductManager.hpp" />
     <ClInclude Include="runtime\RuntimeController.hpp" />
     <ClInclude Include="runtime\RenderSettingsManager.hpp" />
-    <ClInclude Include="runtime\RenderSettingsController.hpp" />
     <ClInclude Include="runtime\TimelineController.hpp" />
     <ClInclude Include="runtime\TimelineRuntime.hpp" />
     <ClInclude Include="runtime\RuntimeInputController.hpp" />
@@ -760,6 +764,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <QtMoc Include="app\MainQt.h" />
     <QtMoc Include="app\TimelineWidget.hpp" />
     <QtMoc Include="app\TimelineNodeController.hpp" />
+    <QtMoc Include="runtime\RenderSettingsController.hpp" />
     <ClInclude Include="vulkan\MemoryAllocator.hpp" />
     <ClInclude Include="scene\Model.hpp" />
     <ClInclude Include="scene\ModelUploader.hpp" />
@@ -777,7 +782,8 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="scene\MousePicker.hpp" />
     <ClInclude Include="util\file_utils.h" />
     <ClInclude Include="util\Structs.hpp" />
-    <ClInclude Include="util\UiTheme.hpp" />
+    <ClInclude Include="ui\UiIconRegistry.hpp" />
+    <ClInclude Include="ui\UiTheme.hpp" />
     <ClInclude Include="vulkan\UniformBufferManager.hpp" />
     <ClInclude Include="vulkan\VulkanImage.hpp" />
     <ClInclude Include="py\PyBridge.hpp" />

@@ -1,11 +1,10 @@
 #pragma once
 
-#include "scene/InputActions.hpp"
 #include "render/RenderSettings.hpp"
 
 #include <mutex>
 
-class RenderSettingsManager : public InputActionHandler {
+class RenderSettingsManager {
 public:
     void setWireframeMode(app::WireframeMode mode);
 
@@ -16,10 +15,6 @@ public:
     app::RenderSettings getSnapshot() const;
 
 private:
-    void onWireframeToggleRequested() override;
-    void onTimingOverlayToggleRequested() override;
-    void onGridToggleRequested() override;
-
     mutable std::mutex mutex;
     app::RenderSettings settings;
 };

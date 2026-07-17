@@ -33,6 +33,10 @@ inline constexpr QColor ScrollBarHandleHoverColor = QColor(180, 180, 180);
 inline constexpr QColor ToolButtonNormal = QColor(58, 58, 58);       
 inline constexpr QColor ToolButtonHover = QColor(80, 80, 80);        
 inline constexpr QColor ToolButtonPressed = QColor(90, 90, 90);      
+inline constexpr QColor ToolButtonSelected = QColor(108, 108, 108);
+inline constexpr QColor ToolButtonSelectedHover = QColor(120, 120, 120);
+inline constexpr QColor ToolButtonSelectedPressed = QColor(128, 128, 128);
+inline constexpr QColor ToolButtonBorder = QColor(70, 70, 78);
 inline constexpr QColor ToolButtonDisabled = QColor(37, 37, 37);     
 inline constexpr QColor ToolButtonDisabledText = QColor(85, 85, 85); 
 inline constexpr QColor IconDefault = QColor(221, 221, 221);         
@@ -80,6 +84,15 @@ inline std::string toolButtonStyle(ToolButtonSegment segment = ToolButtonSegment
         "}"
         "QPushButton:pressed {"
         "  background-color: " + ToolButtonPressed.name().toStdString() + ";"
+        "}"
+        "QPushButton:checked {"
+        "  background-color: " + ToolButtonSelected.name().toStdString() + ";"
+        "}"
+        "QPushButton:checked:hover {"
+        "  background-color: " + ToolButtonSelectedHover.name().toStdString() + ";"
+        "}"
+        "QPushButton:checked:pressed {"
+        "  background-color: " + ToolButtonSelectedPressed.name().toStdString() + ";"
         "}"
         "QPushButton:disabled {"
         "  background-color: " + ToolButtonDisabled.name().toStdString() + ";"
