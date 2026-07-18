@@ -225,10 +225,7 @@ ComputePass::Synchronization HeatSystem::getSynchronization() const {
     return contactRuntime ? contactRuntime->getSynchronization() : ComputePass::Synchronization{};
 }
 
-bool HeatSystem::setRuntimeDirichletTemperatureC(
-    uint32_t runtimeModelId,
-    uint32_t regionId,
-    float temperatureC) {
+bool HeatSystem::setRuntimeDirichletTemperatureC(uint32_t runtimeModelId, uint32_t regionId, float temperatureC) {
     HeatModelRuntime* heatModel = runtime.getModelByRuntimeId(runtimeModelId);
     if (!heatModel) {
         return false;
@@ -245,6 +242,11 @@ bool HeatSystem::setRuntimeRobinState(uint32_t runtimeModelId, uint32_t regionId
     float ambientTemperatureC, float heatTransferCoefficient) {
     HeatModelRuntime* model = runtime.getModelByRuntimeId(runtimeModelId);
     return model && model->setRobinState(regionId, ambientTemperatureC, heatTransferCoefficient);
+}
+
+bool HeatSystem::setRuntimeRobinTemperatureC(uint32_t runtimeModelId, uint32_t regionId, float ambientTemperatureC) {
+    HeatModelRuntime* model = runtime.getModelByRuntimeId(runtimeModelId);
+    return model && model->setRuntimeRobinTemperatureC(regionId, ambientTemperatureC);
 }
 
 bool HeatSystem::setRuntimeVolumetricPowerDensity(uint32_t runtimeModelId, float powerDensity) {

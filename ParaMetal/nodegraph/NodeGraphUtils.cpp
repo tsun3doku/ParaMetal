@@ -163,7 +163,7 @@ std::string valueTypeToString(NodeGraphValueType value) {
 }
 
 NodeTypeId getNodeTypeId(const NodeTypeId& requestedTypeId) {
-    return requestedTypeId.empty() ? nodegraphtypes::Custom : requestedTypeId;
+    return requestedTypeId;
 }
 
 static const NodeGraphNode* findNode(const NodeGraphState& state, NodeGraphNodeId id) {

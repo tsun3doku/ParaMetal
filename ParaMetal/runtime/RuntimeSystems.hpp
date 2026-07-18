@@ -72,6 +72,8 @@ private:
     uint32_t getTimelineEndDisplayFrame() const override;
     float getTimelineCurrentSeconds() const override;
     float getTimelineDurationSeconds() const override;
+    bool getSerialTemperatureStatus(
+        uint64_t sourceKey, SerialTemperatureRuntime::Status& outStatus) const override;
 
     WindowRuntimeState* windowRuntimeState = nullptr;
     bool initialized = false;

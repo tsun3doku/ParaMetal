@@ -33,6 +33,7 @@ public:
     bool setDirichletTemperatureC(uint32_t regionId, float temperatureC);
     bool setNeumannHeatFlux(uint32_t regionId, float heatFlux);
     bool setRobinState(uint32_t regionId, float ambientTemperatureC, float heatTransferCoefficient);
+    bool setRobinTemperatureC(uint32_t regionId, float ambientTemperatureC);
     void uploadState(VkCommandBuffer commandBuffer);
     void cleanup(MemoryAllocator& allocator);
 
@@ -84,7 +85,4 @@ private:
     VkDeviceSize surfaceIndexBufferOffset = 0;
     VkBuffer stateBuffer = VK_NULL_HANDLE;
     VkDeviceSize stateBufferOffset = 0;
-    VkBuffer stateStagingBuffer = VK_NULL_HANDLE;
-    VkDeviceSize stateStagingBufferOffset = 0;
-    void* stateStagingMapped = nullptr;
 };

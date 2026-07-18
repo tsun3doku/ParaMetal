@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 #include "contact/ContactTypes.hpp"
@@ -10,6 +11,7 @@
 #include "domain/HeatData.hpp"
 #include "domain/RemeshData.hpp"
 #include "domain/VoronoiData.hpp"
+#include "domain/SerialTemperatureData.hpp"
 #include "hash/HashValues.hpp"
 #include "nodegraph/NodeGraphProductTypes.hpp"
 
@@ -145,6 +147,8 @@ struct HeatPackage {
     std::vector<float> resolvedBoundaryHeatFluxes;
     std::vector<float> resolvedBoundaryHeatTransferCoefficients;
     std::vector<float> resolvedVolumetricPowerDensities;
+    std::vector<uint64_t> resolvedRobinSourceKeys;
+    std::unordered_map<uint64_t, SerialTemperatureData> resolvedSerialSources;
 
     uint64_t computeHash() const { return hashes.full; }
     uint64_t displayHash() const { return hashes.display; }

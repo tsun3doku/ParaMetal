@@ -3,6 +3,9 @@
 
 #include "runtime/RuntimePackages.hpp"
 
+#include <algorithm>
+#include <vector>
+
 static void combineHandleHash(uint64_t& hash, const ProductHandle& handle, HashDomain domain) {
     HashBuilder::combine(hash, static_cast<uint64_t>(handle.type));
     HashBuilder::combine(hash, handle.outputSocketKey);
@@ -110,6 +113,22 @@ void HashPackage::seal(HeatPackage& pkg, const HashValues& authoredHashes) {
         HashBuilder::combineFloat(simulationHash, pkg.resolvedBoundaryHeatFluxes[i]);
         HashBuilder::combineFloat(simulationHash, pkg.resolvedBoundaryHeatTransferCoefficients[i]);
         HashBuilder::combineFloat(simulationHash, pkg.resolvedVolumetricPowerDensities[i]);
+        HashBuilder::combine(simulationHash,
+            i < pkg.resolvedRobinSourceKeys.size() ? pkg.resolvedRobinSourceKeys[i] : 0u);
+    }
+    std::vector<uint64_t> serialKeys;
+    serialKeys.reserve(pkg.resolvedSerialSources.size());
+    for (const auto& [key, unused] : pkg.resolvedSerialSources) {
+        (void)unused;
+        serialKeys.push_back(key);
+    }
+    std::sort(serialKeys.begin(), serialKeys.end());
+    for (uint64_t key : serialKeys) {
+        const auto& source = pkg.resolvedSerialSources.at(key);
+        HashBuilder::combine(simulationHash, key);
+        HashBuilder::combine(simulationHash, source.enabled ? 1u : 0u);
+        HashBuilder::combineString(simulationHash, source.portName);
+        HashBuilder::combine(simulationHash, source.baudRate);
     }
     HashBuilder::combine(simulationHash, static_cast<uint64_t>(pkg.voronoiProducts.size()));
     for (const ProductHandle& handle : pkg.voronoiProducts) {

@@ -1,5 +1,9 @@
 #pragma once
 
+#include "serial/SerialTemperatureRuntime.hpp"
+
+#include <cstdint>
+
 class RuntimeQuery {
 public:
     virtual ~RuntimeQuery() = default;
@@ -20,4 +24,5 @@ public:
     virtual uint32_t getTimelineEndDisplayFrame() const = 0;
     virtual float getTimelineCurrentSeconds() const = 0;
     virtual float getTimelineDurationSeconds() const = 0;
+    virtual bool getSerialTemperatureStatus(uint64_t sourceKey, SerialTemperatureRuntime::Status& outStatus) const = 0;
 };

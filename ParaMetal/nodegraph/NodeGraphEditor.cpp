@@ -130,7 +130,7 @@ void NodeGraphEditor::resetToDefaultGraph() {
     writeTransformNodeParams(*this, sourceTransform.id, sourceTransformParams);
 
     PointsNodeParams pointsParams{};
-    pointsParams.pointCount = 15000;
+    pointsParams.pointCount = 20000;
     pointsParams.dimX = 0.15f;
     pointsParams.dimY = 0.10f;
     pointsParams.dimZ = 0.15f;

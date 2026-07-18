@@ -146,7 +146,7 @@ static QString nodeCategoryDisplayName(NodeGraphNodeCategory category) {
         return "Meshing";
     case NodeGraphNodeCategory::System:
         return "System";
-    case NodeGraphNodeCategory::Custom:
+    case NodeGraphNodeCategory::Misc:
         return "Misc";
     }
     return "Misc";
@@ -162,7 +162,7 @@ static int nodeCategorySortKey(NodeGraphNodeCategory category) {
         return 2;
     case NodeGraphNodeCategory::System:
         return 3;
-    case NodeGraphNodeCategory::Custom:
+    case NodeGraphNodeCategory::Misc:
         return 4;
     }
     return 4;

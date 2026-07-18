@@ -105,6 +105,12 @@ const RuntimeQuery* RuntimeSystems::runtimeQuery() const {
     return this;
 }
 
+bool RuntimeSystems::getSerialTemperatureStatus(
+    uint64_t sourceKey, SerialTemperatureRuntime::Status& outStatus) const {
+    const HeatSystemComputeController* controller = render.heatSystemComputeController();
+    return controller && controller->getSerialTemperatureStatus(sourceKey, outStatus);
+}
+
 TimelineController* RuntimeSystems::timelineController() {
     return &timelineControllerInstance;
 }

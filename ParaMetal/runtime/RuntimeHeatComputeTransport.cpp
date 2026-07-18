@@ -59,6 +59,11 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(
     outConfig.rewindFrame = package.authored.rewindFrame;
     outConfig.contactThermalConductance = package.authored.contactThermalConductance;
     outConfig.simulationDuration = package.authored.simulationDuration;
+    for (const auto& [sourceKey, data] : package.resolvedSerialSources) {
+        outConfig.serialEnabledBySourceKey[sourceKey] = data.enabled;
+        outConfig.serialPortNamesBySourceKey[sourceKey] = data.portName;
+        outConfig.serialBaudRatesBySourceKey[sourceKey] = data.baudRate;
+    }
 
     outConfig.modelSurfacePositions.reserve(package.remeshProducts.size());
     outConfig.modelSurfaceNormals.reserve(package.remeshProducts.size());
@@ -102,6 +107,9 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(
         outConfig.modelDensity[product->runtimeModelId] = package.resolvedDensity[i];
         outConfig.modelSpecificHeat[product->runtimeModelId] = package.resolvedSpecificHeat[i];
         outConfig.modelConductivity[product->runtimeModelId] = package.resolvedConductivity[i];
+        if (i < package.resolvedRobinSourceKeys.size() && package.resolvedRobinSourceKeys[i] != 0) {
+            outConfig.modelRobinSourceKeys[product->runtimeModelId] = package.resolvedRobinSourceKeys[i];
+        }
 
         outConfig.supportingHalfedgeViews[i] = product->supportingHalfedgeView;
         outConfig.supportingAngleViews[i] = product->supportingAngleView;
@@ -189,6 +197,15 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(
     HashBuilder::combineFloat(structuralHash, package.authored.simulationDuration);
     outConfig.structuralHash = structuralHash;
 
+    uint64_t authoredSimulationHash = structuralHash;
+    for (uint32_t runtimeModelId : outConfig.modelRuntimeModelIds) {
+        HashBuilder::combine(authoredSimulationHash, runtimeModelId);
+        HashBuilder::combineFloat(authoredSimulationHash, outConfig.modelBoundaryTemperaturesCByRuntimeId.at(runtimeModelId));
+        HashBuilder::combineFloat(authoredSimulationHash, outConfig.modelBoundaryHeatFluxesByRuntimeId.at(runtimeModelId));
+        HashBuilder::combineFloat(authoredSimulationHash, outConfig.modelBoundaryHeatTransferCoefficientsByRuntimeId.at(runtimeModelId));
+        HashBuilder::combineFloat(authoredSimulationHash, outConfig.modelVolumetricPowerDensitiesByRuntimeId.at(runtimeModelId));
+    }
+    outConfig.authoredSimulationHash = authoredSimulationHash;
 
     return true;
 }

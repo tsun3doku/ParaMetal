@@ -23,6 +23,7 @@ class NodeTransformPanel;
 class NodeRemeshPanel;
 class NodeContactPanel;
 class NodeHeatModelPanel;
+class NodeSerialTemperaturePanel;
 class NodeVoronoiPanel;
 class NodePointsPanel;
 
@@ -47,7 +48,7 @@ private:
     NodeGraph* graph = nullptr;
     const RuntimeQuery* runtimeQuery = nullptr;
     NodeGraphNodeId currentNodeId{};
-    NodeTypeId currentNodeTypeId = nodegraphtypes::Custom;
+    NodeTypeId currentNodeTypeId;
 
     QFrame* headerBar = nullptr;
     QLabel* iconLabel = nullptr;
@@ -65,6 +66,7 @@ private:
     QWidget* heatModelPage = nullptr;
     QWidget* contactPage = nullptr;
     QWidget* heatPage = nullptr;
+    QWidget* serialTemperaturePage = nullptr;
     QWidget* pointsPage = nullptr;
 
     NodeModelPanel* modelPanel = nullptr;
@@ -75,6 +77,7 @@ private:
     NodeContactPanel* contactPanel = nullptr;
     NodeHeatModelPanel* heatModelPanel = nullptr;
     NodeHeatSolverPanel* heatSolverPanel = nullptr;
+    NodeSerialTemperaturePanel* serialTemperaturePanel = nullptr;
     NodePointsPanel* pointsPanel = nullptr;
 
     QTabWidget* mainTabWidget = nullptr;

@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 #include <glm/glm.hpp>
@@ -13,6 +14,7 @@
 #include "HeatSystemPresets.hpp"
 #include "framegraph/ComputePass.hpp"
 #include "voronoi/VoronoiGpuStructs.hpp"
+#include "serial/SerialTemperatureRuntime.hpp"
 
 class VulkanDevice;
 class MemoryAllocator;
@@ -54,6 +56,10 @@ public:
         std::unordered_map<uint32_t, float> modelDensity;
         std::unordered_map<uint32_t, float> modelSpecificHeat;
         std::unordered_map<uint32_t, float> modelConductivity;
+        std::unordered_map<uint64_t, bool> serialEnabledBySourceKey;
+        std::unordered_map<uint64_t, std::string> serialPortNamesBySourceKey;
+        std::unordered_map<uint64_t, uint32_t> serialBaudRatesBySourceKey;
+        std::unordered_map<uint32_t, uint64_t> modelRobinSourceKeys;
         std::unordered_map<uint32_t, VkBuffer> modelSimNodeBufferByModelId;
         std::unordered_map<uint32_t, VkDeviceSize> modelSimNodeBufferOffsetByModelId;
         std::unordered_map<uint32_t, VkBuffer> modelSimNodeCouplingBufferByModelId;
@@ -76,6 +82,7 @@ public:
         std::vector<ContactCoupling> contactCouplings;
         uint64_t computeHash = 0;
         uint64_t structuralHash = 0;
+        uint64_t authoredSimulationHash = 0;
     };
 
     HeatSystemComputeController(
@@ -96,11 +103,14 @@ public:
     std::vector<ComputePass*> getActiveSystems() const;
     const HeatSystem* getSystem(uint64_t socketKey) const;
     const Config* getConfig(uint64_t socketKey) const;
+    void updateSerialInputs();
+    bool getSerialTemperatureStatus(uint64_t sourceKey, SerialTemperatureRuntime::Status& outStatus) const;
 
 private:
     std::unique_ptr<HeatSystem> buildHeatSystem();
     void configureHeatSystem(HeatSystem& system, const Config& config);
     void applyRuntimeState(HeatSystem& system, const Config& config);
+    void syncSerialInputs();
 
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
@@ -110,5 +120,7 @@ private:
 
     std::unordered_map<uint64_t, std::unique_ptr<HeatSystem>> systemsBySocket;
     std::unordered_map<uint64_t, Config> configuredConfigs;
+    std::unordered_map<uint64_t, std::unique_ptr<SerialTemperatureRuntime>> serialRuntimes;
+    std::unordered_map<uint64_t, uint64_t> lastSerialRevisions;
     const uint32_t maxFramesInFlight;
 };

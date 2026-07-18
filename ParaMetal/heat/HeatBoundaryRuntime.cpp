@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstring>
 
 bool HeatBoundaryRuntime::configureRegions(
     const std::vector<Region>& configuredRegions,
@@ -197,9 +196,7 @@ bool HeatBoundaryRuntime::createBuffers(VulkanDevice& device, MemoryAllocator& a
     const VkDeviceSize stateSize = states.size() * sizeof(heat::BoundaryState);
     if (uploadDeviceBuffer(allocator, commandPool, states.data(), stateSize,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            alignment, stateBuffer, stateBufferOffset) != VK_SUCCESS ||
-        createStagingBuffer(allocator, stateSize,
-            stateStagingBuffer, stateStagingBufferOffset, &stateStagingMapped) != VK_SUCCESS) {
+            alignment, stateBuffer, stateBufferOffset) != VK_SUCCESS) {
         return false;
     }
     stateDirty = false;
@@ -246,14 +243,26 @@ bool HeatBoundaryRuntime::setRobinState(uint32_t regionId, float ambientTemperat
     return true;
 }
 
+bool HeatBoundaryRuntime::setRobinTemperatureC(uint32_t regionId, float ambientTemperatureC) {
+    const uint32_t stateIndex = findStateIndex(regionId);
+    if (stateIndex == NoBoundary || states[stateIndex].conditionType != RobinConvection ||
+        !std::isfinite(ambientTemperatureC)) {
+        return false;
+    }
+    stateDirty = stateDirty || states[stateIndex].temperatureC != ambientTemperatureC;
+    states[stateIndex].temperatureC = ambientTemperatureC;
+    return true;
+}
+
 void HeatBoundaryRuntime::uploadState(VkCommandBuffer commandBuffer) {
-    if (!stateDirty || commandBuffer == VK_NULL_HANDLE || stateStagingMapped == nullptr || stateBuffer == VK_NULL_HANDLE) {
+    if (!stateDirty || commandBuffer == VK_NULL_HANDLE || stateBuffer == VK_NULL_HANDLE) {
         return;
     }
     const VkDeviceSize stateSize = states.size() * sizeof(heat::BoundaryState);
-    std::memcpy(stateStagingMapped, states.data(), stateSize);
-    VkBufferCopy copy{stateStagingBufferOffset, stateBufferOffset, stateSize};
-    vkCmdCopyBuffer(commandBuffer, stateStagingBuffer, stateBuffer, 1, &copy);
+    if (stateSize == 0 || stateSize > 65536 || (stateSize & 3u) != 0 || (stateBufferOffset & 3u) != 0) {
+        return;
+    }
+    vkCmdUpdateBuffer(commandBuffer, stateBuffer, stateBufferOffset, stateSize, states.data());
 
     VkBufferMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
@@ -316,6 +325,4 @@ void HeatBoundaryRuntime::cleanup(MemoryAllocator& allocator) {
     freeBuffer(allocator, contributionBuffer, contributionBufferOffset);
     freeBuffer(allocator, surfaceIndexBuffer, surfaceIndexBufferOffset);
     freeBuffer(allocator, stateBuffer, stateBufferOffset);
-    freeBuffer(allocator, stateStagingBuffer, stateStagingBufferOffset);
-    stateStagingMapped = nullptr;
 }

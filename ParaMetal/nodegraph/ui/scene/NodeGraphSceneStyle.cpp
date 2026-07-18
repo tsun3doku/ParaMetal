@@ -22,9 +22,9 @@ QColor valueTypeColor(NodeGraphValueType valueType) {
     case NodeGraphValueType::Vector3:
         return QColor(106, 198, 236);
     case NodeGraphValueType::ScalarFloat:
-        return QColor(239, 171, 89);
+        return QColor(139, 126, 246);
     case NodeGraphValueType::ScalarInt:
-        return QColor(232, 145, 80);
+        return QColor(139, 126, 246);
     case NodeGraphValueType::ScalarBool:
         return QColor(233, 218, 104);
     }

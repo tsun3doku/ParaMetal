@@ -6,6 +6,7 @@
 
 #include "NodePayloadRegistry.hpp"
 #include "domain/HeatModelData.hpp"
+#include "domain/SerialTemperatureData.hpp"
 
 #include <cstddef>
 
@@ -64,6 +65,17 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodeGraphTypeRegistry* typ
         dataBlock.metadata.erase("heat_model.initial_temperature");
         dataBlock.metadata.erase("heat_model.dirichlet_temperature_c");
         dataBlock.metadata.erase("heat_model.initial_temperature_c");
+    }
+
+    if (dataBlock.dataType == payloadtypes::SerialTemperature) {
+        const auto* serial = registry ? registry->get<SerialTemperatureData>(dataBlock.payloadHandle) : nullptr;
+        dataBlock.metadata["serial.enabled"] = (serial && serial->enabled) ? "true" : "false";
+        dataBlock.metadata["serial.port"] = serial ? serial->portName : std::string();
+        dataBlock.metadata["serial.baud_rate"] = std::to_string(serial ? serial->baudRate : 0u);
+    } else {
+        dataBlock.metadata.erase("serial.enabled");
+        dataBlock.metadata.erase("serial.port");
+        dataBlock.metadata.erase("serial.baud_rate");
     }
 
     if (dataBlock.dataType == payloadtypes::Heat) {

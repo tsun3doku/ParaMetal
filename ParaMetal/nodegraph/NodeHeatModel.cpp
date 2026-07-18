@@ -18,6 +18,10 @@ void NodeHeatModel::execute(NodeKernelEval& eval) const {
     const NodeDataBlock* inputMeshValue =
         (meshSocketIndex < eval.inputs.size() && !eval.inputs[meshSocketIndex].empty())
             ? eval.inputs[meshSocketIndex].front() : nullptr;
+    const std::size_t temperatureSocketIndex = inputIndexOf(eval.node, NodeGraphValueType::ScalarFloat);
+    const NodeDataBlock* temperatureValue =
+        (temperatureSocketIndex < eval.inputs.size() && !eval.inputs[temperatureSocketIndex].empty())
+            ? eval.inputs[temperatureSocketIndex].front() : nullptr;
     NodePayloadRegistry* const payloadRegistry = eval.runtime.payloadRegistry;
 
     NodeDataHandle meshHandle{};
@@ -41,6 +45,10 @@ void NodeHeatModel::execute(NodeKernelEval& eval) const {
 
         HeatModelData payload{};
         payload.meshHandle = meshHandle;
+        if (temperatureValue && temperatureValue->dataType == payloadtypes::SerialTemperature &&
+            payloadRegistry->get<SerialTemperatureData>(temperatureValue->payloadHandle)) {
+            payload.robinTemperatureSourceHandle = temperatureValue->payloadHandle;
+        }
         payload.density = static_cast<float>(params.density);
         payload.specificHeat = static_cast<float>(params.specificHeat);
         payload.conductivity = static_cast<float>(params.conductivity);
@@ -72,6 +80,7 @@ HashValues NodeHeatModel::computeOutputHashes(const NodeKernelHash& hash) const 
     HashBuilder::combineFloat(thermalHash, static_cast<float>(params.heatFlux));
     HashBuilder::combineFloat(thermalHash, static_cast<float>(params.heatTransferCoefficient));
     HashBuilder::combineFloat(thermalHash, static_cast<float>(params.volumetricPowerDensity));
+    HashNodeCache::combineOptionalSocket(thermalHash, hash, NodeGraphValueType::ScalarFloat, HashDomain::Thermal);
 
     uint64_t simulationHash = HashBuilder::start();
     HashBuilder::combine(simulationHash, geometryHash);

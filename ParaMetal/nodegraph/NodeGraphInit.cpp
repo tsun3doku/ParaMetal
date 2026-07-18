@@ -17,6 +17,7 @@ namespace payloadtypes {
     uint8_t Voronoi = 0;
     uint8_t Contact = 0;
     uint8_t Points = 0;
+    uint8_t SerialTemperature = 0;
 }
 
 static NodeSocketSignature makeInputSocket(
@@ -158,6 +159,7 @@ static NodeTypeDefinition buildHeatModelNode() {
         NodeGraphNodeCategory::System,
         {
             makeInputSocket("Remesh", NodeGraphValueType::Remesh),
+            makeInputSocket("Robin Temperature (C)", NodeGraphValueType::ScalarFloat, false, false),
             makeOutputSocket("HeatModel", NodeGraphValueType::HeatModel, payloadtypes::HeatModel),
         },
         {
@@ -179,6 +181,23 @@ static NodeTypeDefinition buildHeatModelNode() {
             {nodegraphparams::heatmodel::HeatFlux, "Inward Heat Flux (W/m²)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
             {nodegraphparams::heatmodel::HeatTransferCoefficient, "Heat Transfer Coefficient (W/(m²·K))", NodeGraphParamType::Float, 0.0, 0, false, "", false},
             {nodegraphparams::heatmodel::VolumetricPowerDensity, "Volumetric Power Density (W/m³)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+        },
+    };
+}
+
+static NodeTypeDefinition buildSerialTemperatureNode() {
+    return {
+        nodegraphtypes::SerialTemperature,
+        "Serial Temperature",
+        NodeGraphNodeCategory::System,
+        {
+            makeOutputSocket(
+                "Temperature", NodeGraphValueType::ScalarFloat, payloadtypes::SerialTemperature),
+        },
+        {
+            {nodegraphparams::serialtemperature::Enabled, "Enabled", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
+            {nodegraphparams::serialtemperature::Port, "Port", NodeGraphParamType::String, 0.0, 0, false, "", false},
+            {nodegraphparams::serialtemperature::BaudRate, "Baud Rate", NodeGraphParamType::Int, 0.0, 115200, false, "", false},
         },
     };
 }
@@ -246,19 +265,6 @@ static NodeTypeDefinition buildHeatSolveNode() {
     };
 }
 
-static NodeTypeDefinition buildCustomNode() {
-    return {
-        nodegraphtypes::Custom,
-        "Custom",
-        NodeGraphNodeCategory::Custom,
-        {
-            makeInputSocket("In", NodeGraphValueType::None),
-            makeOutputSocket("Out", NodeGraphValueType::None, 0),
-        },
-        {},
-    };
-}
-
 static NodeTypeDefinition buildPointsNode() {
     return {
         nodegraphtypes::Points,
@@ -310,6 +316,7 @@ void initNodeGraph(NodeGraphRegistry& registry) {
     payloadtypes::Voronoi    = registry.registerPayloadType("voronoi",   NodeGraphValueType::Volume);
     payloadtypes::Contact    = registry.registerPayloadType("contact",   NodeGraphValueType::Field);
     payloadtypes::Points     = registry.registerPayloadType("points",    NodeGraphValueType::Points);
+    payloadtypes::SerialTemperature = registry.registerPayloadType("serial_temperature", NodeGraphValueType::ScalarFloat);
 
     registry.registerNodeType(buildModelNode());
     registry.registerNodeType(buildTransformNode());
@@ -322,5 +329,5 @@ void initNodeGraph(NodeGraphRegistry& registry) {
     registry.registerNodeType(buildPointsNode());
     registry.registerNodeType(buildMeshPointsNode());
     registry.registerNodeType(buildMergeNode());
-    registry.registerNodeType(buildCustomNode());
+    registry.registerNodeType(buildSerialTemperatureNode());
 }

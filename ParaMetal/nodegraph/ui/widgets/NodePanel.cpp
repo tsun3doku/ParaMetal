@@ -9,6 +9,7 @@
 #include "NodeHeatModelPanel.hpp"
 #include "NodeGroupPanel.hpp"
 #include "NodeHeatSolverPanel.hpp"
+#include "NodeSerialTemperaturePanel.hpp"
 #include "NodeModelPanel.hpp"
 #include "NodeTransformPanel.hpp"
 #include "NodeRemeshPanel.hpp"
@@ -54,6 +55,7 @@ void NodePanel::bind(NodeGraph* graphPtr, const RuntimeQuery* runtimeQueryPtr) {
     contactPanel->bind(graphPtr);
     heatModelPanel->bind(graphPtr);
     heatSolverPanel->bind(graphPtr, runtimeQueryPtr);
+    serialTemperaturePanel->bind(graphPtr, runtimeQueryPtr);
     pointsPanel->bind(graphPtr);
 
     if (isVisible() && currentNodeId.isValid()) {
@@ -94,6 +96,9 @@ static QString nodeTypeDescription(const NodeTypeId& typeId) {
     }
     if (typeId == nodegraphtypes::HeatSolve) {
         return "Simulate the transient transfer of heat between 3D geometry";
+    }
+    if (typeId == nodegraphtypes::SerialTemperature) {
+        return "Read a live Celsius value from a serial temperature sensor";
     }
     if (typeId == nodegraphtypes::Points) {
         return "Generate a point cloud domain";
@@ -176,6 +181,9 @@ bool NodePanel::setNode(NodeGraphNodeId nodeId) {
         iconLabel->hide();
     }
 
+    heatSolverPanel->stopStatusTimer();
+    serialTemperaturePanel->stopStatusTimer();
+
     if (currentNodeTypeId == nodegraphtypes::Model) {
         pageStack->setCurrentWidget(modelPage);
         modelPanel->setNode(currentNodeId);
@@ -212,6 +220,10 @@ bool NodePanel::setNode(NodeGraphNodeId nodeId) {
         } else {
             heatSolverPanel->stopStatusTimer();
         }
+    } else if (currentNodeTypeId == nodegraphtypes::SerialTemperature) {
+        pageStack->setCurrentWidget(serialTemperaturePage);
+        serialTemperaturePanel->setNode(currentNodeId);
+        serialTemperaturePanel->startStatusTimer();
     } else if (currentNodeTypeId == nodegraphtypes::Points) {
         pageStack->setCurrentWidget(pointsPage);
         pointsPanel->setNode(currentNodeId);
@@ -228,6 +240,7 @@ bool NodePanel::setNode(NodeGraphNodeId nodeId) {
 
 void NodePanel::hideEvent(QHideEvent* event) {
     heatSolverPanel->stopStatusTimer();
+    serialTemperaturePanel->stopStatusTimer();
 
     QWidget::hideEvent(event);
 }
@@ -372,6 +385,15 @@ void NodePanel::buildUi() {
         heatPage = nodegraphwidgets::buildPanelCardPage(inspectorContent, heatSolverPanel);
     }
     pageStack->addWidget(heatPage);
+
+    {
+        serialTemperaturePanel = new NodeSerialTemperaturePanel(inspectorContent);
+        serialTemperaturePanel->setStatusSink([this](const QString& text) {
+            statusLabel->setText(text);
+        });
+        serialTemperaturePage = nodegraphwidgets::buildPanelCardPage(inspectorContent, serialTemperaturePanel);
+    }
+    pageStack->addWidget(serialTemperaturePage);
 
     mainTabWidget = new QTabWidget(inspectorContent);
 

@@ -29,7 +29,7 @@ void bindRegistry(py::module_& m) {
         .value("PointSurface", NodeGraphNodeCategory::PointSurface)
         .value("Meshing", NodeGraphNodeCategory::Meshing)
         .value("System", NodeGraphNodeCategory::System)
-        .value("Custom", NodeGraphNodeCategory::Custom);
+        .value("Misc", NodeGraphNodeCategory::Misc);
 
     py::class_<NodeGraphSocketContract>(m, "SocketContract")
         .def_readwrite("produced_payload_type", &NodeGraphSocketContract::producedPayloadType);

@@ -271,6 +271,9 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="runtime\RuntimeRemeshComputeTransport.cpp" />
     <ClCompile Include="runtime\RuntimeContactComputeTransport.cpp" />
     <ClCompile Include="runtime\RuntimeHeatComputeTransport.cpp" />
+    <ClCompile Include="serial\SerialPortWindows.cpp" />
+    <ClCompile Include="serial\SerialTemperatureParser.cpp" />
+    <ClCompile Include="serial\SerialTemperatureRuntime.cpp" />
     <ClCompile Include="runtime\VoronoiDisplayController.cpp" />
     <ClCompile Include="runtime\RuntimeController.cpp" />
     <ClCompile Include="runtime\RenderSettingsManager.cpp" />
@@ -382,6 +385,9 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="nodegraph\NodeVoronoiParams.cpp" />
     <ClCompile Include="nodegraph\ui\widgets\NodeVoronoiPanel.cpp" />
     <ClCompile Include="nodegraph\NodeHeatModel.cpp" />
+    <ClCompile Include="nodegraph\NodeSerialTemperature.cpp" />
+    <ClCompile Include="nodegraph\NodeSerialTemperatureParams.cpp" />
+    <ClCompile Include="nodegraph\ui\widgets\NodeSerialTemperaturePanel.cpp" />
     <ClCompile Include="nodegraph\NodeHeatModelParams.cpp" />
     <ClCompile Include="nodegraph\ui\widgets\NodeHeatModelPanel.cpp" />
     <ClCompile Include="nodegraph\NodeContact.cpp" />
@@ -564,6 +570,10 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="runtime\ContactDisplayController.hpp" />
     <ClInclude Include="runtime\HeatDisplayController.hpp" />
     <ClInclude Include="runtime\RuntimeHeatComputeTransport.hpp" />
+    <ClInclude Include="serial\SerialPort.hpp" />
+    <ClInclude Include="serial\SerialTemperatureParser.hpp" />
+    <ClInclude Include="serial\SerialTemperatureRuntime.hpp" />
+    <ClInclude Include="domain\SerialTemperatureData.hpp" />
     <ClInclude Include="runtime\RuntimeHeatDisplayTransport.hpp" />
     <ClInclude Include="runtime\RemeshController.hpp" />
     <ClInclude Include="runtime\RemeshSystem.hpp" />
@@ -723,6 +733,9 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="nodegraph\NodeVoronoiParams.hpp" />
     <ClInclude Include="nodegraph\ui\widgets\NodeVoronoiPanel.hpp" />
     <ClInclude Include="nodegraph\NodeHeatModel.hpp" />
+    <ClInclude Include="nodegraph\NodeSerialTemperature.hpp" />
+    <ClInclude Include="nodegraph\NodeSerialTemperatureParams.hpp" />
+    <ClInclude Include="nodegraph\ui\widgets\NodeSerialTemperaturePanel.hpp" />
     <ClInclude Include="nodegraph\NodeHeatModelParams.hpp" />
     <ClInclude Include="nodegraph\ui\widgets\NodeHeatModelPanel.hpp" />
     <ClInclude Include="nodegraph\NodeContact.hpp" />

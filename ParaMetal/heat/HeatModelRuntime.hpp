@@ -158,6 +158,10 @@ public:
     bool setRobinState(uint32_t regionId, float ambientTemperatureC, float heatTransferCoefficient) {
         return boundaryRuntime.setRobinState(regionId, ambientTemperatureC, heatTransferCoefficient);
     }
+    bool setRuntimeRobinTemperatureC(uint32_t regionId, float ambientTemperatureC) {
+        boundaryTemperatureC = ambientTemperatureC;
+        return boundaryRuntime.setRobinTemperatureC(regionId, ambientTemperatureC);
+    }
     bool setVolumetricPowerDensity(float powerDensity);
     void uploadRuntimeLoads(VkCommandBuffer commandBuffer);
 

@@ -33,7 +33,7 @@ enum class NodeGraphNodeCategory {
     PointSurface,
     Meshing,
     System,
-    Custom
+    Misc
 };
 
 using NodeTypeId = std::string;
@@ -105,7 +105,7 @@ struct NodeGraphParamValue {
 struct NodeTypeDefinition {
     NodeTypeId id;
     std::string displayName;
-    NodeGraphNodeCategory category = NodeGraphNodeCategory::Custom;
+    NodeGraphNodeCategory category = NodeGraphNodeCategory::Misc;
     std::vector<NodeSocketSignature> sockets;
     std::vector<NodeGraphParamDefinition> parameters;
 };
@@ -121,7 +121,7 @@ struct NodeGraphSocket : NodeSocketSignature {
 struct NodeGraphNode {
     NodeGraphNodeId id{};
     NodeTypeId typeId;
-    NodeGraphNodeCategory category = NodeGraphNodeCategory::Custom;
+    NodeGraphNodeCategory category = NodeGraphNodeCategory::Misc;
     std::string title;
     float x = 0.0f;
     float y = 0.0f;

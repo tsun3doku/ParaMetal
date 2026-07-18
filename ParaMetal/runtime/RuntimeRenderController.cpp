@@ -28,8 +28,11 @@ RuntimeRenderFrameResult RuntimeRenderController::renderFrame(bool allowHeatSolv
     const app::RenderSettings settings = settingsManager.getSnapshot();
     const render::RenderFlags flags = buildRenderFlags(settings);
     std::vector<ComputePass*> computePasses;
-    if (allowHeatSolve && heatSystemComputeController) {
-        computePasses = heatSystemComputeController->getActiveSystems();
+    if (heatSystemComputeController) {
+        heatSystemComputeController->updateSerialInputs();
+        if (allowHeatSolve) {
+            computePasses = heatSystemComputeController->getActiveSystems();
+        }
     }
     RuntimeRenderFrameResult result{};
     result.frameSlot = frameSync.getCurrentFrameIndex();

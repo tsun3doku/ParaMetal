@@ -213,6 +213,17 @@ HeatPackage RuntimePackageCompiler::buildHeatPackage(
         package.resolvedBoundaryHeatFluxes.push_back(heatModel->boundaryCondition.heatFlux);
         package.resolvedBoundaryHeatTransferCoefficients.push_back(heatModel->boundaryCondition.heatTransferCoefficient);
         package.resolvedVolumetricPowerDensities.push_back(heatModel->volumetricHeatSource.powerDensity);
+        uint64_t serialSourceKey = 0;
+        if (heatModel->boundaryCondition.type == BoundaryCondition::Type::RobinConvection &&
+            heatModel->robinTemperatureSourceHandle.key != 0) {
+            const auto* serialData = payloadRegistry->get<SerialTemperatureData>(
+                heatModel->robinTemperatureSourceHandle);
+            if (serialData) {
+                serialSourceKey = heatModel->robinTemperatureSourceHandle.key;
+                package.resolvedSerialSources[serialSourceKey] = *serialData;
+            }
+        }
+        package.resolvedRobinSourceKeys.push_back(serialSourceKey);
     }
 
     if (usedHeatModelRemeshKeys.size() != heatModelByRemeshKey.size()) {

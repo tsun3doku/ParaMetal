@@ -5,6 +5,7 @@
 #include "domain/HeatData.hpp"
 #include "domain/RemeshData.hpp"
 #include "domain/VoronoiData.hpp"
+#include "domain/SerialTemperatureData.hpp"
 
 #include <cstdint>
 
@@ -17,4 +18,5 @@ namespace payloadtypes {
     extern uint8_t Voronoi;
     extern uint8_t Contact;
     extern uint8_t Points;
+    extern uint8_t SerialTemperature;
 }

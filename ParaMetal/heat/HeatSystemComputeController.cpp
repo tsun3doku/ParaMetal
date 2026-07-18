@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include "HeatSystem.hpp"
+#include "hash/HashBuilder.hpp"
 #include "hash/HashProduct.hpp"
 #include "heat/HeatModelRuntime.hpp"
 #include "runtime/RuntimeProducts.hpp"
@@ -10,6 +11,8 @@
 #include "vulkan/ModelRegistry.hpp"
 #include "vulkan/VulkanBuffer.hpp"
 #include "vulkan/VulkanDevice.hpp"
+
+#include <unordered_set>
 
 HeatSystemComputeController::HeatSystemComputeController(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, ModelRegistry& resourceManager,
     CommandPool& renderCommandPool,
@@ -129,6 +132,20 @@ void HeatSystemComputeController::apply(uint64_t socketKey, const Config& config
         return;
     }
 
+    if (configIt != configuredConfigs.end() && configIt->second.authoredSimulationHash != 0 &&
+        configIt->second.authoredSimulationHash == config.authoredSimulationHash) {
+        for (const auto& [runtimeModelId, sourceKey] : config.modelRobinSourceKeys) {
+            const auto temperatureIt = config.modelBoundaryTemperaturesCByRuntimeId.find(runtimeModelId);
+            if (temperatureIt != config.modelBoundaryTemperaturesCByRuntimeId.end()) {
+                system->setRuntimeRobinTemperatureC(runtimeModelId, 0u, temperatureIt->second);
+            }
+        }
+        configuredConfigs[socketKey] = config;
+        syncSerialInputs();
+        applyRuntimeState(*system, config);
+        return;
+    }
+
     if (configIt != configuredConfigs.end() && config.structuralHash != 0 &&
         configIt->second.structuralHash == config.structuralHash) {
         bool updated = true;
@@ -152,6 +169,7 @@ void HeatSystemComputeController::apply(uint64_t socketKey, const Config& config
         }
         if (updated) {
             configuredConfigs[socketKey] = config;
+            syncSerialInputs();
             system->resetSimulationState();
             applyRuntimeState(*system, config);
             return;
@@ -165,6 +183,7 @@ void HeatSystemComputeController::apply(uint64_t socketKey, const Config& config
     } else {
         configuredConfigs.erase(socketKey);
     }
+    syncSerialInputs();
 
     applyRuntimeState(*system, config);
 }
@@ -185,6 +204,7 @@ void HeatSystemComputeController::remove(uint64_t socketKey) {
         }
         systemsBySocket.erase(it);
     }
+    syncSerialInputs();
 }
 
 void HeatSystemComputeController::disableAll() {
@@ -200,6 +220,71 @@ void HeatSystemComputeController::disableAll() {
         }
     }
     systemsBySocket.clear();
+    serialRuntimes.clear();
+    lastSerialRevisions.clear();
+}
+
+void HeatSystemComputeController::syncSerialInputs() {
+    std::unordered_set<uint64_t> requiredSourceKeys;
+    for (const auto& [socketKey, config] : configuredConfigs) {
+        for (const auto& [sourceKey, portName] : config.serialPortNamesBySourceKey) {
+            requiredSourceKeys.insert(sourceKey);
+            auto& runtime = serialRuntimes[sourceKey];
+            if (!runtime) {
+                runtime = std::make_unique<SerialTemperatureRuntime>();
+            }
+            runtime->configure(
+                config.serialEnabledBySourceKey.at(sourceKey),
+                portName,
+                config.serialBaudRatesBySourceKey.at(sourceKey));
+        }
+    }
+
+    for (auto it = serialRuntimes.begin(); it != serialRuntimes.end();) {
+        if (requiredSourceKeys.find(it->first) == requiredSourceKeys.end()) {
+            it = serialRuntimes.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    lastSerialRevisions.clear();
+}
+
+void HeatSystemComputeController::updateSerialInputs() {
+    for (auto& [sourceKey, runtime] : serialRuntimes) {
+        if (runtime) runtime->update();
+    }
+
+    for (const auto& [socketKey, config] : configuredConfigs) {
+        const auto systemIt = systemsBySocket.find(socketKey);
+        if (systemIt == systemsBySocket.end() || !systemIt->second) continue;
+
+        for (const auto& [runtimeModelId, sourceKey] : config.modelRobinSourceKeys) {
+            const auto sourceIt = serialRuntimes.find(sourceKey);
+            if (sourceIt == serialRuntimes.end() || !sourceIt->second) continue;
+            const SerialTemperatureRuntime::Reading* reading = sourceIt->second->latestReading();
+            if (!reading) continue;
+
+            uint64_t bindingKey = HashBuilder::start();
+            HashBuilder::combine(bindingKey, socketKey);
+            HashBuilder::combine(bindingKey, runtimeModelId);
+            HashBuilder::combine(bindingKey, sourceKey);
+            if (lastSerialRevisions[bindingKey] == reading->revision) continue;
+
+            if (systemIt->second->setRuntimeRobinTemperatureC(
+                    runtimeModelId, 0u, reading->temperatureC)) {
+                lastSerialRevisions[bindingKey] = reading->revision;
+            }
+        }
+    }
+}
+
+bool HeatSystemComputeController::getSerialTemperatureStatus(
+    uint64_t sourceKey, SerialTemperatureRuntime::Status& outStatus) const {
+    const auto it = serialRuntimes.find(sourceKey);
+    if (it == serialRuntimes.end() || !it->second) return false;
+    outStatus = it->second->status();
+    return true;
 }
 
 bool HeatSystemComputeController::isAnyHeatSystemActive() const {

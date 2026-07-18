@@ -32,19 +32,14 @@ struct VolumetricHeatSource {
 
 struct HeatModelData {
     NodeDataHandle meshHandle{};
+    NodeDataHandle robinTemperatureSourceHandle{};
 
-    // Material
     float density = HeatSimDefaults::density;
     float specificHeat = HeatSimDefaults::specificHeat;
     float conductivity = HeatSimDefaults::conductivity;
-
-    // State
     float initialTemperatureC = HeatSimDefaults::ambientTemperatureC;
 
-    // Boundary condition
     BoundaryCondition boundaryCondition;
-
-    // Whole-model volumetric load
     VolumetricHeatSource volumetricHeatSource;
 
 };

@@ -20,7 +20,7 @@ inline constexpr const char* Points = "points";
 inline constexpr const char* HeatPoints = "heat_points";
 inline constexpr const char* MeshPoints = "mesh_points";
 inline constexpr const char* Merge = "merge";
-inline constexpr const char* Custom = "custom";
+inline constexpr const char* SerialTemperature = "serial_temperature";
 }
 
 namespace nodegraphparams {
@@ -107,6 +107,12 @@ constexpr uint32_t MaterialPreset = 7;
 constexpr uint32_t HeatFlux = 8;
 constexpr uint32_t HeatTransferCoefficient = 9;
 constexpr uint32_t VolumetricPowerDensity = 10;
+}
+
+namespace serialtemperature {
+constexpr uint32_t Enabled = 1;
+constexpr uint32_t Port = 2;
+constexpr uint32_t BaudRate = 3;
 }
 
 namespace points {

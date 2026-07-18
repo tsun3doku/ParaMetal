@@ -86,6 +86,7 @@ public:
     bool setRuntimeDirichletTemperatureC(uint32_t runtimeModelId, uint32_t regionId, float temperatureC);
     bool setRuntimeNeumannHeatFlux(uint32_t runtimeModelId, uint32_t regionId, float heatFlux);
     bool setRuntimeRobinState(uint32_t runtimeModelId, uint32_t regionId, float ambientTemperatureC, float heatTransferCoefficient);
+    bool setRuntimeRobinTemperatureC(uint32_t runtimeModelId, uint32_t regionId, float ambientTemperatureC);
     bool setRuntimeVolumetricPowerDensity(uint32_t runtimeModelId, float powerDensity);
 
     bool getIsActive() const { return isActive; }
@@ -152,8 +153,6 @@ private:
     bool needsInitialCapture = false;
     bool syntheticDirichletTestEnabled = false;
     float physicsAccumulator = 0.0f;
-    // Persistent read-buffer parity across frames. true = tempBufferA holds the
-    // current temperatures at the start of the next recorded frame.
     bool temperatureBufferAIsCurrent = true;
     std::chrono::steady_clock::time_point lastUpdateTime = std::chrono::steady_clock::now();
 
