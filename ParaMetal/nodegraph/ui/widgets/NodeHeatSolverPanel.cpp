@@ -59,7 +59,10 @@ NodeHeatSolverPanel::NodeHeatSolverPanel(QWidget* parent)
     fluxVectorScaleRow->setValue(1.0);
     layout->addWidget(fluxVectorScaleRow);
 
-    layout->addWidget(new QLabel("Contact parameters are authored on the Contact node.", this));
+    QLabel* contactHintLabel = new QLabel("Contact parameters are authored on the Contact node.", this);
+    nodegraphwidgets::styleDescriptionLabel(contactHintLabel);
+    contactHintLabel->setWordWrap(true);
+    layout->addWidget(contactHintLabel);
     layout->addStretch();
 
     heatStatusTimer = new QTimer(this);

@@ -4,6 +4,7 @@
 #include "nodegraph/ui/widgets/NodeGraphActionStrip.hpp"
 #include "nodegraph/ui/widgets/NodeGraphWidgetStyle.hpp"
 #include "ui/UiIconRegistry.hpp"
+#include "ui/UiTypography.hpp"
 
 #include <QPlainTextEdit>
 #include <QLineEdit>
@@ -43,6 +44,7 @@ PyTerminalWidget::PyTerminalWidget(QWidget* parent)
     titleLayout->addWidget(titleIcon);
 
     QLabel* titleLabel = new QLabel(QStringLiteral("Console"), titleBar);
+    nodegraphwidgets::styleTitleLabel(titleLabel);
     titleLayout->addWidget(titleLabel);
     titleLayout->addStretch(1);
     rootLayout->addWidget(titleBar);
@@ -52,6 +54,7 @@ PyTerminalWidget::PyTerminalWidget(QWidget* parent)
     outputEdit->setReadOnly(true);
     outputEdit->setLineWrapMode(QPlainTextEdit::WidgetWidth);
     outputEdit->setFrameStyle(QFrame::NoFrame);
+    outputEdit->setFont(ui::UiTypography::font(ui::TextRole::Console, ui::FontFamily::Monospace));
     outputEdit->setStyleSheet(QStringLiteral(
         "QPlainTextEdit {"
         "  border: none;"
@@ -63,9 +66,6 @@ PyTerminalWidget::PyTerminalWidget(QWidget* parent)
         "  border: none;"
         "}"
     ).arg(nodegraphwidgets::colorPanelBackground.name()));
-    QFont monoFont(QStringLiteral("Consolas"), 10);
-    monoFont.setStyleHint(QFont::Monospace);
-    outputEdit->setFont(monoFont);
     rootLayout->addWidget(outputEdit, 1);
 
     highlighter = new PySyntaxHighlighter(outputEdit->document());
@@ -96,7 +96,7 @@ PyTerminalWidget::PyTerminalWidget(QWidget* parent)
         QStringLiteral("Sample graph available"),
         QStringLiteral("default_graph() creates a sample graph"),
         QStringLiteral("Run"),
-        QStringLiteral("NodeGraph"),
+        QStringLiteral("textures/preview.png"),
         sampleGraphStripHost);
     sampleGraphStripLayout->addWidget(sampleGraphStrip);
     rootLayout->addWidget(sampleGraphStripHost);
@@ -113,7 +113,7 @@ PyTerminalWidget::PyTerminalWidget(QWidget* parent)
     // Input line
     inputEdit = new QLineEdit(this);
     inputEdit->setPlaceholderText(QStringLiteral(">>>"));
-    inputEdit->setFont(monoFont);
+    inputEdit->setFont(ui::UiTypography::font(ui::TextRole::Console, ui::FontFamily::Monospace));
     inputEdit->setStyleSheet(QStringLiteral(
         "QLineEdit {"
         "  background: %1;"

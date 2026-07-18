@@ -186,7 +186,7 @@ if(WIN32)
 endif()
 
 
-# Copy shaders, models, and textures folders to output dir
+# Copy shaders, models, textures and fonts folders to output dir
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/ParaMetal/shaders"
@@ -197,6 +197,9 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/ParaMetal/textures"
         "$<TARGET_FILE_DIR:${PROJECT_NAME}>/textures"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/ParaMetal/fonts"
+        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/fonts"
     COMMENT "Copying additional files to output directory..."
 )
 

@@ -62,19 +62,22 @@ void NodeGraphEditor::resetToDefaultGraph() {
         return socket ? socket->id : NodeGraphSocketId{};
     };
 
-    constexpr float leftColumnX = 82.5f;
-    constexpr float rightColumnX = 184.8f;
-    constexpr float centerColumnX = 133.7f;
-    constexpr float leftmostColumnX = -20.0f;
-    constexpr float farRightColumnX = 270.0f;
-    constexpr float receiverVoronoiX = 55.0f;
-    constexpr float sourceVoronoiX = 220.0f;
-    constexpr float row1Y = 26.4f;
-    constexpr float row2Y = 82.5f;
-    constexpr float row3Y = 141.9f;
-    constexpr float row4Y = 204.6f;
-    constexpr float row5Y = 270.6f;
-    constexpr float row6Y = 336.6f;
+    constexpr float columnSpacing = 100.0f;
+    constexpr float rowSpacing = 80.0f;
+    constexpr float centerColumnX = 0.0f;
+    constexpr float leftColumnX = centerColumnX - columnSpacing;
+    constexpr float rightColumnX = centerColumnX + columnSpacing;
+    constexpr float leftmostColumnX = centerColumnX - columnSpacing * 2.0f;
+    constexpr float farRightColumnX = centerColumnX + columnSpacing * 2.0f;
+    constexpr float receiverVoronoiX = leftColumnX;
+    constexpr float sourceVoronoiX = rightColumnX;
+    constexpr float row1Y = 0.0f;
+    constexpr float row2Y = row1Y + rowSpacing;
+    constexpr float row3Y = row2Y + rowSpacing;
+    constexpr float row4Y = row3Y + rowSpacing;
+    constexpr float row5Y = row4Y + rowSpacing;
+    constexpr float row6Y = row5Y + rowSpacing;
+    constexpr float row7Y = row6Y + rowSpacing;
 
     const CreatedNode receiverModel = createNode(nodegraphtypes::Model, "Receiver Model", leftColumnX, row1Y);
     const CreatedNode sourceModel = createNode(nodegraphtypes::Model, "Source Model", rightColumnX, row1Y);
@@ -90,10 +93,10 @@ void NodeGraphEditor::resetToDefaultGraph() {
     const CreatedNode sourceMeshPoints = createNode(nodegraphtypes::MeshPoints, "Mesh Points", farRightColumnX, row4Y);
     const CreatedNode leftMerge = createNode(nodegraphtypes::Merge, "Merge", leftmostColumnX, row5Y);
     const CreatedNode rightMerge = createNode(nodegraphtypes::Merge, "Merge", farRightColumnX, row5Y);
-    const CreatedNode receiverVoronoi = createNode(nodegraphtypes::Voronoi, "Receiver Voronoi", receiverVoronoiX, row5Y);
-    const CreatedNode sourceVoronoi = createNode(nodegraphtypes::Voronoi, "Source Voronoi", sourceVoronoiX, row5Y);
+    const CreatedNode receiverVoronoi = createNode(nodegraphtypes::Voronoi, "Receiver Voronoi", receiverVoronoiX, row6Y);
+    const CreatedNode sourceVoronoi = createNode(nodegraphtypes::Voronoi, "Source Voronoi", sourceVoronoiX, row6Y);
     const CreatedNode contact = createNode(nodegraphtypes::Contact, "", centerColumnX, row5Y);
-    const CreatedNode heatSolve = createNode(nodegraphtypes::HeatSolve, "", centerColumnX, row6Y);
+    const CreatedNode heatSolve = createNode(nodegraphtypes::HeatSolve, "", centerColumnX, row7Y);
 
     if (!receiverModel.id.isValid() || !receiverTransform.id.isValid() || !receiverRemesh.id.isValid() ||
         !sourceModel.id.isValid() || !sourceTransform.id.isValid() || !sourceRemesh.id.isValid() ||

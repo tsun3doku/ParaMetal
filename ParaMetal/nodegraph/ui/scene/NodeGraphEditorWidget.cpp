@@ -180,6 +180,7 @@ void NodeGraphEditorWidget::onRequestCreateMenu(QPoint globalPos, QPointF sceneP
     }
 
     QMenu addMenu(this);
+    addMenu.setObjectName(QStringLiteral("NodeGraphCreateMenu"));
     std::map<int, QMenu*> categoryMenus;
     auto getCategoryMenu = [&](NodeGraphNodeCategory category) -> QMenu* {
         const int key = nodeCategorySortKey(category);
@@ -188,6 +189,7 @@ void NodeGraphEditorWidget::onRequestCreateMenu(QPoint globalPos, QPointF sceneP
             return existing->second;
         }
         QMenu* menu = addMenu.addMenu(nodeCategoryDisplayName(category));
+        menu->setObjectName(QStringLiteral("NodeGraphCreateMenu"));
         categoryMenus.emplace(key, menu);
         return menu;
     };

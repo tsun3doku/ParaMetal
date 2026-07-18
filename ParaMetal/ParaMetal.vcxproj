@@ -173,7 +173,9 @@ xcopy /y /d /e /i "$(ProjectDir)shaders" "$(OutDir)shaders"
 if not exist "$(OutDir)models\" mkdir "$(OutDir)models\"
 xcopy /y /d /e /i "$(ProjectDir)models" "$(OutDir)models"
 if not exist "$(OutDir)textures\" mkdir "$(OutDir)textures\"
-xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
+xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"
+if not exist "$(OutDir)fonts\" mkdir "$(OutDir)fonts\"
+xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -220,7 +222,9 @@ xcopy /y /d /e /i "$(ProjectDir)shaders" "$(OutDir)shaders"
 if not exist "$(OutDir)models\" mkdir "$(OutDir)models\"
 xcopy /y /d /e /i "$(ProjectDir)models" "$(OutDir)models"
 if not exist "$(OutDir)textures\" mkdir "$(OutDir)textures\"
-xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
+xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"
+if not exist "$(OutDir)fonts\" mkdir "$(OutDir)fonts\"
+xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Platform)'=='x64'">
@@ -409,6 +413,8 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClCompile Include="nodegraph\ui\widgets\NodeGraphSliderRow.cpp" />
     <ClCompile Include="nodegraph\NodeGraphIconRegistry.cpp" />
     <ClCompile Include="ui\UiIconRegistry.cpp" />
+    <ClCompile Include="ui\UiFontRegistry.cpp" />
+    <ClCompile Include="ui\UiTypography.cpp" />
     <ClCompile Include="nodegraph\ui\scene\NodeGraphNodeItem.cpp" />
     <ClCompile Include="nodegraph\ui\scene\NodeGraphScene.cpp" />
     <ClCompile Include="nodegraph\ui\scene\NodeGraphSceneStyle.cpp" />
@@ -756,6 +762,7 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <QtMoc Include="nodegraph\ui\scene\NodeGraphScene.hpp" />
     <ClInclude Include="nodegraph\ui\scene\NodeGraphSceneStyle.hpp" />
     <ClInclude Include="nodegraph\ui\scene\NodeGraphSceneUtils.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphLayout.hpp" />
     <ClInclude Include="nodegraph\NodeGraphTypes.hpp" />
     <ClInclude Include="nodegraph\NodeGraphValidator.hpp" />
     <ClInclude Include="voronoi\LloydCompute.hpp" />
@@ -796,6 +803,8 @@ xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"</Command>
     <ClInclude Include="util\file_utils.h" />
     <ClInclude Include="util\Structs.hpp" />
     <ClInclude Include="ui\UiIconRegistry.hpp" />
+    <ClInclude Include="ui\UiFontRegistry.hpp" />
+    <ClInclude Include="ui\UiTypography.hpp" />
     <ClInclude Include="ui\UiTheme.hpp" />
     <ClInclude Include="vulkan\UniformBufferManager.hpp" />
     <ClInclude Include="vulkan\VulkanImage.hpp" />

@@ -9,6 +9,7 @@
 #include "py/PyTerminalWidget.hpp"
 #include "scene/Camera.hpp"
 #include "scene/CameraController.hpp"
+#include "ui/UiFontRegistry.hpp"
 #include "ui/UiTheme.hpp"
 #include "TimelineWidget.hpp"
 #include "TimelineNodeController.hpp"
@@ -582,6 +583,7 @@ int main(int argc, char** argv) {
     QApplication qapp(argc, argv);
     QApplication::setApplicationName("ParaMetal");
     QApplication::setOrganizationName("ParaMetal");
+    ui::UiFontRegistry::installBundledFonts(qapp);
 
     MainWindow mainWindow;
     App app;

@@ -32,13 +32,6 @@ NodeModelPanel::NodeModelPanel(QWidget* parent)
     pathRow->addWidget(browseButton);
     layout->addLayout(pathRow);
 
-    QLabel* hintLabel = new QLabel(
-        "Model nodes author geometry only. Their downstream graph wiring "
-        "and runtime projection determine how sinks consume this mesh.",
-        this);
-    hintLabel->setWordWrap(true);
-    layout->addWidget(hintLabel);
-
     layout->addStretch();
 
     connect(browseButton, &QPushButton::clicked, this, [this]() {

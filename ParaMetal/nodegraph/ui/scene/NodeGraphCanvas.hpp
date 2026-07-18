@@ -7,6 +7,14 @@
 class QResizeEvent;
 class NodeGraphNavHints;
 
+namespace nodegraphcanvas {
+
+inline constexpr qreal minimumZoom = 0.25;
+inline constexpr qreal maximumZoom = 2.5;
+inline constexpr qreal wheelZoomFactor = 1.15;
+
+}
+
 class NodeGraphCanvas : public QGraphicsView {
     Q_OBJECT
 public:

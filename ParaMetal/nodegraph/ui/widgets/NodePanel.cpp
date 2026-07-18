@@ -265,6 +265,7 @@ void NodePanel::buildUi() {
 
     headerTitleLabel = new QLabel(headerBar);
     headerTitleLabel->setText(QStringLiteral("No Node Selected"));
+    nodegraphwidgets::styleTitleLabel(headerTitleLabel);
     headerLayout->addWidget(headerTitleLabel);
     headerLayout->addStretch(1);
     root->addWidget(headerBar);
@@ -299,6 +300,7 @@ void NodePanel::buildUi() {
         QVBoxLayout* layout = new QVBoxLayout(genericPage);
         layout->setContentsMargins(0, 0, 0, 0);
         QLabel* msg = new QLabel("This node has no editable actions yet", genericPage);
+        msg->setObjectName(QStringLiteral("NodePanelEmptyMessage"));
         msg->setWordWrap(true);
         layout->addWidget(msg);
         layout->addStretch();

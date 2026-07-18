@@ -1,6 +1,7 @@
 #include "NodeGraphScene.hpp"
 #include "NodeGraphNodeItem.hpp"
 #include "NodeGraphSceneStyle.hpp"
+#include "ui/UiTypography.hpp"
 #include "NodeGraphSceneUtils.hpp"
 #include "NodeGraphSocketItem.hpp"
 #include "nodegraph/NodeGraphUtils.hpp"
@@ -166,11 +167,7 @@ NodeGraphNodeItem* NodeGraphScene::createNodeItem(const NodeGraphNode& node) {
 
     QGraphicsSimpleTextItem* titleItem = new QGraphicsSimpleTextItem(QString::fromStdString(node.title), nodeItem);
     titleItem->setBrush(nodegraphscene::titleColor());
-    QFont titleFont = titleItem->font();
-    titleFont.setPixelSize(static_cast<int>(nodegraphscene::titleFontPixelSize));
-    titleFont.setWeight(QFont::Medium);
-    titleFont.setHintingPreference(QFont::PreferFullHinting);
-    titleItem->setFont(titleFont);
+    titleItem->setFont(ui::UiTypography::font(ui::TextRole::NodeTitle));
     const QRectF titleBounds = titleItem->boundingRect();
     titleItem->setPos(nodegraphscene::titlePosition(titleBounds));
     nodegraphscene::setDecorativeItemFlags(titleItem);
@@ -684,10 +681,15 @@ void NodeGraphScene::syncNodePositionsToBridge() {
             continue;
         }
         const NodeGraphNodeId nodeId = itemNodeId(item);
-        const QPointF position = item->scenePos();
-        changed = editor.moveNode(nodeId, static_cast<float>(position.x()), static_cast<float>(position.y())) || changed;
+        const QPointF snappedPosition = nodegraphscene::snapToGrid(item->scenePos());
+        item->setPos(snappedPosition);
+        changed = editor.moveNode(
+            nodeId,
+            static_cast<float>(snappedPosition.x()),
+            static_cast<float>(snappedPosition.y())) || changed;
     }
 
+    updateEdgePathsFromCurrentLayout();
     if (changed) {
         applyPendingChanges();
     }

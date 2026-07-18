@@ -3,6 +3,7 @@
 #include "runtime/RuntimeInterfaces.hpp"
 #include "ui/UiIconRegistry.hpp"
 #include "ui/UiTheme.hpp"
+#include "ui/UiTypography.hpp"
 
 #include <QIcon>
 #include <QMouseEvent>
@@ -258,6 +259,7 @@ void TimelineWidget::scrubToFrame(uint32_t frame) {
 void TimelineWidget::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
+    p.setRenderHint(QPainter::TextAntialiasing);
 
     p.fillRect(rect(), ui::TimelineBackground);
     p.fillRect(QRect(0, 0, width(), 1), ui::MenuBorder);
@@ -310,7 +312,7 @@ void TimelineWidget::paintEvent(QPaintEvent*) {
             drawTick(maxFrame, true);
         }
 
-        p.setFont(QFont("Segoe UI", 8));
+        p.setFont(ui::UiTypography::font(ui::TextRole::TimelineNumber));
         p.setPen(ui::TimelineText);
         for (uint32_t frameIndex = 0u; frameIndex <= maxFrame; frameIndex += labelStep) {
             const float ratio = static_cast<float>(frameIndex) / static_cast<float>(maxFrame);
@@ -324,23 +326,23 @@ void TimelineWidget::paintEvent(QPaintEvent*) {
 
         const int handleX = left + static_cast<int>(
             std::round(static_cast<float>(tw) * (static_cast<float>(frame) / static_cast<float>(maxFrame))));
-        p.setPen(QPen(QColor(46, 126, 255), 2));
+        p.setPen(QPen(ui::InteractiveAccent, 2));
         p.drawLine(handleX, centerY - 7, handleX, centerY + 16);
 
         const QString bubbleText = QString::number(frame);
-        const QFont bubbleFont("Segoe UI", 8, QFont::DemiBold);
-        p.setFont(bubbleFont);
+        p.setFont(ui::UiTypography::font(ui::TextRole::TimelineBubble));
         const int bubbleWidth = std::max(32, p.fontMetrics().horizontalAdvance(bubbleText) + 12);
         QRect bubbleRect(handleX - bubbleWidth / 2, frameNumberY, bubbleWidth, frameNumberH);
         p.setPen(Qt::NoPen);
-        p.setBrush(QColor(53, 120, 255));
+        p.setBrush(ui::InteractiveAccent);
         p.drawRoundedRect(bubbleRect, 6, 6);
         p.setPen(QColor(245, 248, 255));
         p.drawText(bubbleRect, Qt::AlignCenter, bubbleText);
     }
 
     const int controlsRight = left + tw + 18;
-    p.setFont(QFont("Segoe UI", 9));
+    QFont controlsFont = ui::UiTypography::font(ui::TextRole::Regular);
+    p.setFont(controlsFont);
     p.setPen(ui::TimelineText);
     const int rowGap = 4;
     const int rowsTop = (height() - 2 * TimelineFrameBoxHeight - rowGap) / 2;
@@ -354,12 +356,14 @@ void TimelineWidget::paintEvent(QPaintEvent*) {
     p.setBrush(QColor(34, 35, 40));
     p.drawRoundedRect(startBox, 5, 5);
     p.drawRoundedRect(endBox, 5, 5);
+    const QFont descriptionFont = ui::UiTypography::font(ui::TextRole::Description);
+    p.setFont(descriptionFont);
     p.setPen(ui::TimelineText);
     p.drawText(startBox, Qt::AlignCenter, QStringLiteral("0"));
     p.drawText(endBox, Qt::AlignCenter, QString::number(maxFrame));
 
     p.setPen(ui::TimelineText);
-    p.setFont(QFont("Segoe UI", 8));
+    p.setFont(descriptionFont);
     QString timeText = QString("%1 / %2 s")
         .arg(static_cast<double>(secondsForFrame(frame)), 0, 'f', 2)
         .arg(static_cast<double>(durationSeconds), 0, 'f', 2);

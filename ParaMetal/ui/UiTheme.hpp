@@ -3,14 +3,16 @@
 #include <QColor>
 #include <QSplitter>
 
+#include "UiTypography.hpp"
+
 #include <string>
 
 namespace ui {
 
 inline constexpr int SplitterVisualThickness = 7;
-inline constexpr QColor SplitterBaseColor = QColor(46, 46, 52);
-inline constexpr QColor SplitterHoverColor = QColor(58, 57, 60);
-inline constexpr QColor SplitterBorderColor = QColor(58, 57, 60);
+inline constexpr QColor SplitterBaseColor = QColor(60, 60, 69);
+inline constexpr QColor SplitterHoverColor = QColor(60, 60, 69);
+inline constexpr QColor SplitterBorderColor = QColor(60, 60, 69);
 
 inline constexpr QColor MenuBarBackground = QColor(36, 36, 41);
 inline constexpr QColor MenuBarText = QColor(210, 210, 215);
@@ -30,12 +32,14 @@ inline constexpr QColor ScrollBarTrackColor = QColor(70, 70, 80);
 inline constexpr QColor ScrollBarHandleColor = QColor(100, 100, 110);
 inline constexpr QColor ScrollBarHandleHoverColor = QColor(180, 180, 180);
 
+inline constexpr QColor InteractiveAccent = QColor(53, 120, 255);
+
 inline constexpr QColor ToolButtonNormal = QColor(58, 58, 58);       
 inline constexpr QColor ToolButtonHover = QColor(80, 80, 80);        
 inline constexpr QColor ToolButtonPressed = QColor(90, 90, 90);      
-inline constexpr QColor ToolButtonSelected = QColor(108, 108, 108);
-inline constexpr QColor ToolButtonSelectedHover = QColor(120, 120, 120);
-inline constexpr QColor ToolButtonSelectedPressed = QColor(128, 128, 128);
+inline constexpr QColor ToolButtonSelected = InteractiveAccent;
+inline constexpr QColor ToolButtonSelectedHover = QColor(126, 151, 255);
+inline constexpr QColor ToolButtonSelectedPressed = QColor(75, 103, 224);
 inline constexpr QColor ToolButtonBorder = QColor(70, 70, 78);
 inline constexpr QColor ToolButtonDisabled = QColor(37, 37, 37);     
 inline constexpr QColor ToolButtonDisabledText = QColor(85, 85, 85); 
@@ -43,7 +47,7 @@ inline constexpr QColor IconDefault = QColor(221, 221, 221);
 
 inline constexpr QColor TimelineBackground = QColor(30, 30, 30);     
 inline constexpr QColor TimelineTrackBg = QColor(51, 51, 51);       
-inline constexpr QColor TimelineTrackFill = QColor(123, 104, 238);   
+inline constexpr QColor TimelineTrackFill = QColor(65, 109, 156);    
 inline constexpr QColor TimelineText = QColor(204, 204, 204);        
 inline constexpr QColor TimelineTextDim = QColor(102, 102, 102);    
 
@@ -76,8 +80,6 @@ inline std::string toolButtonStyle(ToolButtonSegment segment = ToolButtonSegment
         "  border: none;"
         "  " + radius +
         "  color: " + IconDefault.name().toStdString() + ";"
-        "  font-family: 'Segoe UI';"
-        "  font-size: 11px;"
         "}"
         "QPushButton:hover {"
         "  background-color: " + ToolButtonHover.name().toStdString() + ";"

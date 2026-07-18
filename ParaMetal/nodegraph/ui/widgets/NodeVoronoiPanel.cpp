@@ -6,7 +6,6 @@
 #include "nodegraph/NodeVoronoiParams.hpp"
 
 #include <QCheckBox>
-#include <QLabel>
 #include <QVBoxLayout>
 
 NodeVoronoiPanel::NodeVoronoiPanel(QWidget* parent)
@@ -27,12 +26,6 @@ NodeVoronoiPanel::NodeVoronoiPanel(QWidget* parent)
     voxelResolutionRow->setDecimals(0);
     voxelResolutionRow->setValue(static_cast<double>(voxelResolution));
     layout->addWidget(voxelResolutionRow);
-
-    QLabel* hintLabel = new QLabel(
-        "Voronoi domains rebuild automatically when the input geometry or these parameters change.",
-        this);
-    hintLabel->setWordWrap(true);
-    layout->addWidget(hintLabel);
 
     showVoronoiCheckBox = new QCheckBox("Show Voronoi", this);
     layout->addWidget(showVoronoiCheckBox);

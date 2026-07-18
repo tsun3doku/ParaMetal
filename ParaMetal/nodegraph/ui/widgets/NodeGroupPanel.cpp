@@ -178,6 +178,7 @@ NodeGroupPanel::NodeGroupPanel(QWidget* parent)
     QLabel* hintLabel = new QLabel(
         "Select a source type and source name from incoming mesh data, then assign triangles to a target group name.",
         this);
+    nodegraphwidgets::styleDescriptionLabel(hintLabel);
     hintLabel->setWordWrap(true);
     layout->addWidget(hintLabel);
     layout->addStretch();

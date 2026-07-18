@@ -4,6 +4,7 @@
 
 class QString;
 class QLineEdit;
+class QLabel;
 class QWidget;
 class QComboBox;
 class QFrame;
@@ -36,21 +37,16 @@ constexpr int panelFieldHorizontalPadding = 8;
 constexpr int panelButtonVerticalPadding = 7;
 constexpr int panelButtonHorizontalPadding = 12;
 constexpr int panelTitleBarHeight = 32;
-constexpr int panelTitleBarFontSize = 13;
-constexpr int panelTitleBarFontWeight = 600;
-constexpr int panelTitleFontSize = 19;
-constexpr int panelTitleFontWeight = 700;
-constexpr int panelSubtitleFontSize = 13;
-constexpr int panelTabFontSize = 12;
 constexpr int panelMinimumHeight = 260;
 constexpr int panelDataflowHeight = 140;
 constexpr int panelTableMinimumHeight = 120;
 constexpr int heatStatusTimerIntervalMs = 125;
 
-constexpr int actionStripHeight = 66;
+constexpr int actionStripHeight = 144;
 constexpr int actionStripBannerRadius = 6;
-constexpr int actionStripIconSize = 28;
+constexpr int actionStripPreviewSize = 128;
 constexpr int actionStripDismissSize = 24;
+constexpr int actionStripDismissIconSize = 12;
 
 constexpr int navHintIconSize = 28;
 constexpr int navHintIconTextGap = 6;
@@ -82,6 +78,8 @@ inline constexpr QColor colorTextTabSelected = QColor(244, 242, 255);
 inline constexpr QColor colorStatusAccent = QColor(167, 183, 255);
 inline constexpr QColor colorAccent = QColor(94, 124, 255);
 inline constexpr QColor colorAccentFocus = QColor(126, 151, 255);
+inline constexpr QColor colorAccentPressed = QColor(75, 103, 224);
+inline constexpr QColor colorTextOnAccent = QColor(255, 255, 255);
 inline constexpr QColor colorCheckboxBorder = QColor(119, 117, 139);
 inline constexpr QColor colorCheckboxBackground = QColor(58, 57, 70);
 inline constexpr QColor colorInputBackground = QColor(37, 36, 44);
@@ -99,6 +97,8 @@ inline constexpr QColor colorNavHintText = QColor(150, 149, 162);
 
 QString px(int value);
 void styleLineEdit(QLineEdit* edit);
+void styleTitleLabel(QLabel* label);
+void styleDescriptionLabel(QLabel* label);
 QLineEdit* createNumericEdit(QWidget* parent, double minimum, double maximum, int decimals);
 void styleComboBox(QComboBox* combo);
 QWidget* buildPanelCardPage(QWidget* parent, QWidget* contentWidget);

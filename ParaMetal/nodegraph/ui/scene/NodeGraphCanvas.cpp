@@ -14,6 +14,8 @@
 #include <QScrollBar>
 #include <QWheelEvent>
 
+#include <algorithm>
+
 NodeGraphCanvas::NodeGraphCanvas(QWidget* parent)
     : QGraphicsView(parent) {
     setDragMode(QGraphicsView::RubberBandDrag);
@@ -93,13 +95,26 @@ void NodeGraphCanvas::mouseReleaseEvent(QMouseEvent* event) {
 }
 
 void NodeGraphCanvas::wheelEvent(QWheelEvent* event) {
-    constexpr qreal zoomInFactor = 1.15;
-    constexpr qreal zoomOutFactor = 1.0 / zoomInFactor;
-    if (event->angleDelta().y() > 0) {
-        scale(zoomInFactor, zoomInFactor);
-    } else if (event->angleDelta().y() < 0) {
-        scale(zoomOutFactor, zoomOutFactor);
+    if (!event) {
+        return;
     }
+
+    const int wheelDelta = event->angleDelta().y();
+    if (wheelDelta == 0) {
+        event->accept();
+        return;
+    }
+
+    const qreal requestedFactor = wheelDelta > 0
+        ? nodegraphcanvas::wheelZoomFactor
+        : 1.0 / nodegraphcanvas::wheelZoomFactor;
+    const qreal currentZoom = transform().m11();
+    const qreal targetZoom = std::clamp(
+        currentZoom * requestedFactor,
+        nodegraphcanvas::minimumZoom,
+        nodegraphcanvas::maximumZoom);
+
+    scale(targetZoom / currentZoom, targetZoom / currentZoom);
     event->accept();
 }
 

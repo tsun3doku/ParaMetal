@@ -31,7 +31,8 @@ static constexpr int overlayTopMargin = 10;
 static constexpr int overlayCornerRadius = 4;
 static constexpr int wireframeGroupWidth = overlayButtonSize * 2 + overlayButtonGap + overlayGroupBorderWidth * 2;
 static constexpr int wireframeGroupHeight = overlayButtonSize + overlayGroupBorderWidth * 2;
-static constexpr int overlayWidth = wireframeGroupWidth + overlayGroupGap + overlayButtonSize;
+static constexpr int standaloneGroupSize = overlayButtonSize + overlayGroupBorderWidth * 2;
+static constexpr int overlayWidth = wireframeGroupWidth + overlayGroupGap + standaloneGroupSize;
 
 static QWidget* makeGroupFrame(QWidget* parent, int width, int height) {
     QWidget* frame = new QWidget(parent);
@@ -84,13 +85,11 @@ ViewportOverlayBar::ViewportOverlayBar(QWidget* host)
     : QObject(host), viewportHost(host) {
 
     wireframeIcon = QIcon(ui::IconRegistry::screenSpacePixmapForFolder(QStringLiteral("Overlays/wireframe"), overlayIconSize));
-    wireframeSelectedIcon = QIcon(ui::IconRegistry::screenSpacePixmapForFolder(QStringLiteral("Overlays/wireframe_selected"), overlayIconSize));
     shadedIcon = QIcon(ui::IconRegistry::screenSpacePixmapForFolder(QStringLiteral("Overlays/wireframe_shaded"), overlayIconSize));
-    shadedSelectedIcon = QIcon(ui::IconRegistry::screenSpacePixmapForFolder(QStringLiteral("Overlays/wireframe_shaded_selected"), overlayIconSize));
     gridIcon = QIcon(ui::IconRegistry::screenSpacePixmapForFolder(QStringLiteral("Overlays/grid"), overlayIconSize));
-    gridSelectedIcon = QIcon(ui::IconRegistry::screenSpacePixmapForFolder(QStringLiteral("Overlays/grid_selected"), overlayIconSize));
 
     wireframeGroupFrame = makeGroupFrame(viewportHost, wireframeGroupWidth, wireframeGroupHeight);
+    gridGroupFrame = makeGroupFrame(viewportHost, standaloneGroupSize, standaloneGroupSize);
     wireframeButton = makeSegmentButton(viewportHost, wireframeIcon, ui::ToolButtonSegment::Leading);
     shadedButton = makeSegmentButton(viewportHost, shadedIcon, ui::ToolButtonSegment::Trailing);
     gridButton = makeSegmentButton(viewportHost, gridIcon, ui::ToolButtonSegment::Standalone);
@@ -138,6 +137,7 @@ void ViewportOverlayBar::bind(RenderSettingsController* newController) {
 void ViewportOverlayBar::show() {
     reposition();
     wireframeGroupFrame->show();
+    gridGroupFrame->show();
     wireframeButton->show();
     shadedButton->show();
     gridButton->show();
@@ -146,8 +146,8 @@ void ViewportOverlayBar::show() {
 
 void ViewportOverlayBar::raiseNative() {
 #ifdef Q_OS_WIN
-    const std::array<QWidget*, 4> overlayWidgets = {
-        wireframeGroupFrame, wireframeButton, shadedButton, gridButton};
+    const std::array<QWidget*, 5> overlayWidgets = {
+        wireframeGroupFrame, gridGroupFrame, wireframeButton, shadedButton, gridButton};
     for (QWidget* widget : overlayWidgets) {
         const WId wid = widget->winId();
         if (wid != 0) {SetWindowPos(reinterpret_cast<HWND>(wid), HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
@@ -155,6 +155,7 @@ void ViewportOverlayBar::raiseNative() {
     }
 #else
     wireframeGroupFrame->raise();
+    gridGroupFrame->raise();
     wireframeButton->raise();
     shadedButton->raise();
     gridButton->raise();
@@ -173,10 +174,12 @@ void ViewportOverlayBar::reposition() {
         return;
     }
     const int left = (viewportHost->width() - overlayWidth) / 2;
+    const int gridFrameLeft = left + wireframeGroupWidth + overlayGroupGap;
     wireframeGroupFrame->move(left, overlayTopMargin - overlayGroupBorderWidth);
+    gridGroupFrame->move(gridFrameLeft, overlayTopMargin - overlayGroupBorderWidth);
     wireframeButton->move(left + overlayGroupBorderWidth, overlayTopMargin);
     shadedButton->move(left + overlayGroupBorderWidth + overlayButtonSize + overlayButtonGap, overlayTopMargin);
-    gridButton->move(left + wireframeGroupWidth + overlayGroupGap, overlayTopMargin);
+    gridButton->move(gridFrameLeft + overlayGroupBorderWidth, overlayTopMargin);
 }
 
 void ViewportOverlayBar::updateState() {
@@ -187,9 +190,6 @@ void ViewportOverlayBar::updateState() {
         wireframeButton->setChecked(false);
         shadedButton->setChecked(false);
         gridButton->setChecked(false);
-        wireframeButton->setIcon(wireframeIcon);
-        shadedButton->setIcon(shadedIcon);
-        gridButton->setIcon(gridIcon);
         return;
     }
     const app::RenderSettings settings = controller->getSnapshot();
@@ -197,7 +197,4 @@ void ViewportOverlayBar::updateState() {
     wireframeButton->setChecked(mode == app::WireframeMode::Wireframe);
     shadedButton->setChecked(mode == app::WireframeMode::Shaded);
     gridButton->setChecked(settings.gridEnabled);
-    wireframeButton->setIcon(mode == app::WireframeMode::Wireframe ? wireframeSelectedIcon : wireframeIcon);
-    shadedButton->setIcon(mode == app::WireframeMode::Shaded ? shadedSelectedIcon : shadedIcon);
-    gridButton->setIcon(settings.gridEnabled ? gridSelectedIcon : gridIcon);
 }

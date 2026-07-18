@@ -1,9 +1,16 @@
 #include "NodeGraphSceneStyle.hpp"
+#include "nodegraph/NodeGraphLayout.hpp"
 
 #include <algorithm>
 #include <cmath>
 
 namespace nodegraphscene {
+
+QPointF snapToGrid(const QPointF& position) {
+    return QPointF(
+        nodegraphlayout::snapCoordinate(position.x()),
+        nodegraphlayout::snapCoordinate(position.y()));
+}
 
 QColor valueTypeColor(NodeGraphValueType valueType) {
     switch (valueType) {

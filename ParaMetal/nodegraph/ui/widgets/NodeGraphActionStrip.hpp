@@ -3,6 +3,7 @@
 #include <QWidget>
 
 class QLabel;
+class QPixmap;
 class QPushButton;
 class QString;
 
@@ -13,7 +14,7 @@ public:
         const QString& title,
         const QString& description,
         const QString& actionText,
-        const QString& iconFolder,
+        const QString& previewPath,
         QWidget* parent = nullptr);
 
 signals:
@@ -21,7 +22,9 @@ signals:
     void dismissed();
 
 private:
-    QLabel* iconLabel = nullptr;
+    static QPixmap loadPreview(const QString& relativePath);
+
+    QLabel* previewLabel = nullptr;
     QLabel* titleLabel = nullptr;
     QLabel* descriptionLabel = nullptr;
     QPushButton* actionButton = nullptr;

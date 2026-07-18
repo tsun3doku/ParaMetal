@@ -173,8 +173,7 @@ void FrameController::drawFrame(const render::RenderFlags& flags, const std::vec
         submission);
 
     if (submitResult != VK_SUCCESS) {
-        std::cerr << "[DRAW] submitResult=" << static_cast<int>(submitResult)
-                  << " frameCall=" << callIndex << std::endl;
+        std::cerr << "[DRAW] submitResult=" << static_cast<int>(submitResult) << " frameCall=" << callIndex << std::endl;
         if (submitResult == VK_ERROR_DEVICE_LOST) {
             isShuttingDown.store(true, std::memory_order_release);
             return;
@@ -185,13 +184,10 @@ void FrameController::drawFrame(const render::RenderFlags& flags, const std::vec
 
     const FrameStageResult presentResult = swapchainStage.presentFrame(frameState.imageIndex);
     if (presentResult == FrameStageResult::RecreateSwapchain) {
-        std::cerr << "[DRAW] present recreate frameCall=" << callIndex << std::endl;
         (void)recreateSwapChain();
         return;
     }
     if (presentResult != FrameStageResult::Continue) {
-        std::cerr << "[DRAW] present fail result=" << static_cast<int>(presentResult)
-                  << " frameCall=" << callIndex << std::endl;
         isShuttingDown.store(true, std::memory_order_release);
         return;
     }

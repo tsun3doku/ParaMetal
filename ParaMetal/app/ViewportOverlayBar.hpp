@@ -25,14 +25,12 @@ private:
 
     QWidget* viewportHost = nullptr;
     QWidget* wireframeGroupFrame = nullptr;
+    QWidget* gridGroupFrame = nullptr;
     QPointer<RenderSettingsController> controller;
     QPushButton* wireframeButton = nullptr;
     QPushButton* shadedButton = nullptr;
     QPushButton* gridButton = nullptr;
     QIcon wireframeIcon;
-    QIcon wireframeSelectedIcon;
     QIcon shadedIcon;
-    QIcon shadedSelectedIcon;
     QIcon gridIcon;
-    QIcon gridSelectedIcon;
 };

@@ -1,5 +1,6 @@
 #include "NodeGraph.hpp"
 #include "NodeGraphInit.hpp"
+#include "NodeGraphLayout.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
 #include "NodeGraphValidator.hpp"
@@ -48,8 +49,8 @@ NodeGraphNodeId NodeGraph::addNode(const NodeTypeId& typeId, const std::string& 
     node.typeId = definition->id;
     node.category = definition->category;
     node.title = title.empty() ? definition->displayName : title;
-    node.x = x;
-    node.y = y;
+    node.x = static_cast<float>(nodegraphlayout::snapCoordinate(x));
+    node.y = static_cast<float>(nodegraphlayout::snapCoordinate(y));
     node.inputs = buildSocketsFromInterface(*definition, NodeGraphSocketDirection::Input);
     node.outputs = buildSocketsFromInterface(*definition, NodeGraphSocketDirection::Output);
     for (const NodeGraphParamDefinition& parameter : definition->parameters) {
@@ -104,12 +105,15 @@ bool NodeGraph::moveNode(NodeGraphNodeId nodeId, float x, float y) {
         return false;
     }
 
-    if (std::fabs(node->x - x) < 0.01f && std::fabs(node->y - y) < 0.01f) {
+    const float snappedX = static_cast<float>(nodegraphlayout::snapCoordinate(x));
+    const float snappedY = static_cast<float>(nodegraphlayout::snapCoordinate(y));
+
+    if (std::fabs(node->x - snappedX) < 0.01f && std::fabs(node->y - snappedY) < 0.01f) {
         return false;
     }
 
-    node->x = x;
-    node->y = y;
+    node->x = snappedX;
+    node->y = snappedY;
     bumpRevision();
 
     NodeGraphChange change{NodeGraphChangeType::NodeUpsert};
@@ -394,8 +398,8 @@ bool NodeGraph::loadSerializedState(
         rebuiltNode.typeId = definition->id;
         rebuiltNode.category = definition->category;
         rebuiltNode.title = savedNode.title.empty() ? definition->displayName : savedNode.title;
-        rebuiltNode.x = savedNode.x;
-        rebuiltNode.y = savedNode.y;
+        rebuiltNode.x = static_cast<float>(nodegraphlayout::snapCoordinate(savedNode.x));
+        rebuiltNode.y = static_cast<float>(nodegraphlayout::snapCoordinate(savedNode.y));
         rebuiltNode.state = savedNode.state;
         rebuiltNode.inputs = candidate.buildSocketsFromInterface(*definition, NodeGraphSocketDirection::Input);
         rebuiltNode.outputs = candidate.buildSocketsFromInterface(*definition, NodeGraphSocketDirection::Output);

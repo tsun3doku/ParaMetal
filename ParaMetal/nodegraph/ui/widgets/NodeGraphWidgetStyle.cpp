@@ -1,7 +1,11 @@
 #include "NodeGraphWidgetStyle.hpp"
+#include "ui/UiTheme.hpp"
+#include "ui/UiTypography.hpp"
 
 #include <QComboBox>
+#include <QFont>
 #include <QFrame>
+#include <QLabel>
 #include <QLineEdit>
 #include <QString>
 #include <QVBoxLayout>
@@ -19,6 +23,7 @@ void styleLineEdit(QLineEdit* edit) {
     }
 
     edit->setFrame(false);
+    edit->setFont(ui::UiTypography::font(ui::TextRole::Regular));
 
     QString stylesheet;
     stylesheet += "QLineEdit {";
@@ -50,6 +55,8 @@ void styleComboBox(QComboBox* combo) {
     if (!combo) {
         return;
     }
+
+    combo->setFont(ui::UiTypography::font(ui::TextRole::Regular));
 
     QString stylesheet;
     stylesheet += "QComboBox {";
@@ -103,6 +110,7 @@ QWidget* buildPanelCardPage(QWidget* parent, QWidget* contentWidget) {
 
 void applyNodePanelStyle(QWidget* panel) {
     panel->setObjectName("NodePanelRoot");
+    panel->setFont(ui::UiTypography::font(ui::TextRole::Regular));
 
     QString stylesheet;
     stylesheet += "QWidget#NodePanelRoot {";
@@ -123,16 +131,16 @@ void applyNodePanelStyle(QWidget* panel) {
     stylesheet += "}";
     stylesheet += "QLabel#NodePanelTitle {";
     stylesheet += "  color: " + colorTextHeading.name() + ";";
-    stylesheet += "  font-size: " + px(panelTitleFontSize) + ";";
-    stylesheet += "  font-weight: " + QString::number(panelTitleFontWeight) + ";";
     stylesheet += "}";
     stylesheet += "QLabel#NodePanelSubtitle {";
     stylesheet += "  color: " + colorTextSecondary.name() + ";";
-    stylesheet += "  font-size: " + px(panelSubtitleFontSize) + ";";
     stylesheet += "}";
     stylesheet += "QLabel#NodePanelStatus {";
     stylesheet += "  color: " + colorStatusAccent.name() + ";";
     stylesheet += "  padding-top: " + px(panelStatusTopPadding) + ";";
+    stylesheet += "}";
+    stylesheet += "QLabel#NodePanelDescription {";
+    stylesheet += "  color: " + colorTextSecondary.name() + ";";
     stylesheet += "}";
     stylesheet += "QTabWidget::pane {";
     stylesheet += "  border: none;";
@@ -149,7 +157,6 @@ void applyNodePanelStyle(QWidget* panel) {
         + px(panelTabBottomPadding) + " "
         + px(panelTabHorizontalPadding) + ";";
     stylesheet += "  margin-right: " + px(panelTabRightMargin) + ";";
-    stylesheet += "  font-size: " + px(panelTabFontSize) + ";";
     stylesheet += "}";
     stylesheet += "QTabBar::tab:selected {";
     stylesheet += "  color: " + colorTextTabSelected.name() + ";";
@@ -229,35 +236,33 @@ QString actionStripStyleSheet() {
     ss += "}";
     ss += "QLabel#ActionStripTitle {";
     ss += "  color: " + colorTextHeading.name() + ";";
-    ss += "  font-size: " + px(panelTabFontSize) + ";";
-    ss += "  font-weight: " + QString::number(panelTitleFontWeight) + ";";
     ss += "}";
     ss += "QLabel#ActionStripDescription {";
     ss += "  color: " + colorTextSecondary.name() + ";";
-    ss += "  font-size: " + px(panelTabFontSize) + ";";
     ss += "}";
     ss += "QPushButton#ActionStripButton {";
-    ss += "  background: " + colorButtonBackground.name() + ";";
-    ss += "  color: " + colorTextHeading.name() + ";";
-    ss += "  border: 1px solid " + colorButtonBorder.name() + ";";
+    ss += "  background: " + ui::InteractiveAccent.name() + ";";
+    ss += "  color: " + colorTextOnAccent.name() + ";";
+    ss += "  border: 1px solid " + ui::InteractiveAccent.name() + ";";
     ss += "  border-radius: " + px(panelWidgetRadius) + ";";
     ss += "  padding: 6px 10px;";
     ss += "}";
     ss += "QPushButton#ActionStripButton:hover {";
-    ss += "  background: " + colorButtonHover.name() + ";";
+    ss += "  background: " + colorAccentFocus.name() + ";";
+    ss += "  border-color: " + colorAccentFocus.name() + ";";
     ss += "}";
     ss += "QPushButton#ActionStripButton:pressed {";
-    ss += "  background: " + colorButtonPressed.name() + ";";
+    ss += "  background: " + colorAccentPressed.name() + ";";
+    ss += "  border-color: " + colorAccentPressed.name() + ";";
     ss += "}";
     ss += "QPushButton#ActionStripDismiss {";
     ss += "  background: transparent;";
-    ss += "  color: " + colorTextSecondary.name() + ";";
     ss += "  border: none;";
-    ss += "  padding: 2px;";
-    ss += "  font-size: 18px;";
+    ss += "  border-radius: " + px(panelWidgetRadius) + ";";
+    ss += "  padding: 0px;";
     ss += "}";
     ss += "QPushButton#ActionStripDismiss:hover {";
-    ss += "  color: " + colorTextHeading.name() + ";";
+    ss += "  background: " + colorButtonHover.name() + ";";
     ss += "}";
     return ss;
 }
@@ -266,6 +271,7 @@ void styleTitleBar(QFrame* frame) {
     if (!frame) {
         return;
     }
+    frame->setFont(ui::UiTypography::font(ui::TextRole::Title));
     frame->setFixedHeight(panelTitleBarHeight);
     QString ss;
     ss += "QFrame {";
@@ -274,10 +280,23 @@ void styleTitleBar(QFrame* frame) {
     ss += "}";
     ss += "QLabel {";
     ss += "  color: " + colorTextHeading.name() + ";";
-    ss += "  font-size: " + px(panelTitleBarFontSize) + ";";
-    ss += "  font-weight: " + QString::number(panelTitleBarFontWeight) + ";";
     ss += "}";
     frame->setStyleSheet(ss);
 }
 
+}
+
+void nodegraphwidgets::styleTitleLabel(QLabel* label) {
+    if (!label) {
+        return;
+    }
+    label->setFont(ui::UiTypography::font(ui::TextRole::Title));
+}
+
+void nodegraphwidgets::styleDescriptionLabel(QLabel* label) {
+    if (!label) {
+        return;
+    }
+    label->setObjectName(QStringLiteral("NodePanelDescription"));
+    label->setFont(ui::UiTypography::font(ui::TextRole::Description));
 }
