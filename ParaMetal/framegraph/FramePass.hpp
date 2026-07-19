@@ -7,6 +7,7 @@
 
 class ModelSelection;
 class GizmoController;
+class NavigationGizmoController;
 class WireframeRenderer;
 
 namespace render {
@@ -26,6 +27,7 @@ struct RenderFlags {
 struct RenderServices {
     ModelSelection* modelSelection = nullptr;
     GizmoController* gizmoController = nullptr;
+    NavigationGizmoController* navigationGizmoController = nullptr;
     WireframeRenderer* wireframeRenderer = nullptr;
 };
 

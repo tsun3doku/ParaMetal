@@ -11,21 +11,30 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <cstdint>
+
+enum class CameraProjectionMode : uint8_t {
+    Perspective = 0,
+    Orthographic = 1
+};
 
 class Camera {
 public:
     void update(float deltaTime);   
     void processMouseMovement(bool middleButtonPressed, double mouseX, double mouseY, bool shiftPressed = false);  
-    void processMouseScroll(double xOffset, double yOffset);    
+    void processMouseScroll(double yOffset);
     void setLookAt(const glm::vec3& target);
     void setOrientation(const glm::quat& q);
     void setRadius(float r);
     void setFov(float f);
+    void setProjectionMode(CameraProjectionMode mode);
+    void setOrthographicHeight(float height);
     void pan(float dx, float dy);
+    void orbit(float dx, float dy);
     void resetRadius();
+    glm::vec3 screenToWorldRayOrigin(double mouseX, double mouseY, int screenWidth, int screenHeight) const;
     glm::vec3 screenToWorldRay(double mouseX, double mouseY, int screenWidth, int screenHeight);
 
-    bool isMousePressed;
     glm::mat4 getViewMatrix() const;  
     glm::mat4 getProjectionMatrix(float aspectRatio) const; 
     glm::vec3 getPosition() const {
@@ -52,8 +61,12 @@ public:
         return radius;
     }
 
-    glm::vec3 getForwardDirection() const {
-        return orientation * glm::vec3(0.0f, 0.0f, 1.0f);
+    CameraProjectionMode getProjectionMode() const {
+        return projectionMode;
+    }
+
+    float getOrthographicHeight() const {
+        return orthographicHeight;
     }
 
     float radius = 2.0f;            // Camera distance from origin
@@ -61,25 +74,33 @@ public:
     float panSensitivity = 0.001f;  // Panning speed multiplier
 
 private:
+    bool isMousePressed = false;
+    double lastMouseX = 0.0;
+    double lastMouseY = 0.0;
     glm::vec3 position = glm::vec3(0.0f, 0.0f, 3.0f);   // Starting position    
-    glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);         // Up vector     
     glm::vec3 lookAt;
     
-    glm::quat orientation = glm::angleAxis(glm::radians(30.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-
-    glm::vec3 velocity = glm::vec3(0.0f);               
-
-    float movementSpeed = 60.0f;
+    glm::quat orientation =
+        glm::angleAxis(glm::radians(30.0f), glm::vec3(1.0f, 0.0f, 0.0f)) *
+        glm::angleAxis(glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
     float nearPlane = 0.01f, farPlane = 100.0f;
 
     float radiusVelocity = 0.0f;
-    float dampingFactor = 0.1f;
+    float dampingFactor = 0.15f;
     float currentFov = 45.0f;
     float baseFov = 45.0f;
     float minFov = 10.0f; 
     float zoomThreshold = 2.0f;
-    float maxVelocity = 5.0f;
+    float maxRadiusVelocity = 300.0f;
+    float maxOrthographicZoomVelocity = 7.2f;
     float minRadius = 0.1f;
     float maxRadius = 200.0f;
+
+    CameraProjectionMode projectionMode = CameraProjectionMode::Perspective;
+    float orthographicHeight = 2.0f;
+    float orthographicReferenceFov = 45.0f;
+    float orthographicZoomVelocity = 0.0f;
+    float minOrthographicHeight = 0.001f;
+    float maxOrthographicHeight = 1000.0f;
 };

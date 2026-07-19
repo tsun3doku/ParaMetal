@@ -51,17 +51,12 @@ QString UiFontRegistry::loadBundledFontFamily(const QStringList& relativePaths) 
 }
 
 void UiFontRegistry::installBundledFonts(QApplication& application) {
-    const QString urbanistFamily = loadBundledFontFamily({
-        QStringLiteral("fonts/Urbanist/Urbanist-Light.ttf"),
-        QStringLiteral("fonts/Urbanist/Urbanist-Regular.ttf"),
-        QStringLiteral("fonts/Urbanist/Urbanist-Medium.ttf"),
-        QStringLiteral("fonts/Urbanist/Urbanist-SemiBold.ttf"),
-        QStringLiteral("fonts/Urbanist/Urbanist-Bold.ttf"),
-        QStringLiteral("fonts/Urbanist/Urbanist-LightItalic.ttf"),
-        QStringLiteral("fonts/Urbanist/Urbanist-Italic.ttf"),
-        QStringLiteral("fonts/Urbanist/Urbanist-MediumItalic.ttf"),
-        QStringLiteral("fonts/Urbanist/Urbanist-SemiBoldItalic.ttf"),
-        QStringLiteral("fonts/Urbanist/Urbanist-BoldItalic.ttf")
+    const QString outfitFamily = loadBundledFontFamily({
+        QStringLiteral("fonts/Outfit/Outfit-Light.ttf"),
+        QStringLiteral("fonts/Outfit/Outfit-Regular.ttf"),
+        QStringLiteral("fonts/Outfit/Outfit-Medium.ttf"),
+        QStringLiteral("fonts/Outfit/Outfit-SemiBold.ttf"),
+        QStringLiteral("fonts/Outfit/Outfit-Bold.ttf")
     });
     loadBundledFontFamily({
         QStringLiteral("fonts/AzeretMono/AzeretMono-Regular.ttf"),
@@ -70,9 +65,9 @@ void UiFontRegistry::installBundledFonts(QApplication& application) {
         QStringLiteral("fonts/AzeretMono/AzeretMono-BoldItalic.ttf")
     });
 
-    if (!urbanistFamily.isEmpty()) {
+    if (!outfitFamily.isEmpty()) {
         QFont applicationFont = UiTypography::font(TextRole::Regular);
-        applicationFont.setFamily(urbanistFamily);
+        applicationFont.setFamily(outfitFamily);
         application.setFont(applicationFont);
     }
 }

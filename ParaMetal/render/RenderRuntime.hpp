@@ -28,6 +28,7 @@ class FrameGraph;
 class SceneRenderer;
 class ModelSelection;
 class GizmoController;
+class NavigationGizmoController;
 class WireframeRenderer;
 class FrameController;
 class VkFrameGraphBackend;
@@ -67,6 +68,8 @@ public:
     const ModelSelection& getModelSelection() const;
     GizmoController& getGizmoController();
     const GizmoController& getGizmoController() const;
+    NavigationGizmoController& getNavigationGizmoController();
+    const NavigationGizmoController& getNavigationGizmoController() const;
     WireframeRenderer& getWireframeRenderer();
     const WireframeRenderer& getWireframeRenderer() const;
 
@@ -87,6 +90,7 @@ private:
     std::unique_ptr<SceneRenderer> sceneRenderer;
     std::unique_ptr<ModelSelection> modelSelection;
     std::unique_ptr<GizmoController> gizmoController;
+    std::unique_ptr<NavigationGizmoController> navigationGizmoController;
     std::unique_ptr<WireframeRenderer> wireframeRenderer;
     std::unique_ptr<FrameController> frameController;
 };

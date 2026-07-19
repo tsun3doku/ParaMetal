@@ -312,7 +312,7 @@ void TimelineWidget::paintEvent(QPaintEvent*) {
             drawTick(maxFrame, true);
         }
 
-        p.setFont(ui::UiTypography::font(ui::TextRole::TimelineNumber));
+        p.setFont(ui::UiTypography::font(ui::TextRole::Title));
         p.setPen(ui::TimelineText);
         for (uint32_t frameIndex = 0u; frameIndex <= maxFrame; frameIndex += labelStep) {
             const float ratio = static_cast<float>(frameIndex) / static_cast<float>(maxFrame);

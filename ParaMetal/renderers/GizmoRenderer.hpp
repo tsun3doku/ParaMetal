@@ -98,11 +98,13 @@ private:
         glm::mat4 view = glm::mat4(1.0f);
         glm::mat4 proj = glm::mat4(1.0f);
         float cameraFov = 45.0f;
+        bool orthographic = false;
+        float orthographicHeight = 2.0f;
     };
 
-    float applyDistanceScaling(float baseScale, float distance, float cameraFov) const;
-    float getArrowSize(float baseScale, float distance, float cameraFov) const;
-    float getArrowDistance(float baseScale, float distance, float cameraFov) const;
+    float applyProjectionScaling(const RenderState& state) const;
+    float getArrowSize(const RenderState& state) const;
+    float getArrowDistance(const RenderState& state) const;
 
     void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& memory);
     void renderAxis(const RenderState& state, const glm::vec3& direction, const glm::vec3& color, bool hovered, uint32_t pickId = 0);

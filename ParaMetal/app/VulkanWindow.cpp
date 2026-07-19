@@ -19,6 +19,13 @@
 #include <iostream>
 #include <vector>
 
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 static constexpr std::array<const char*, 5> kDeviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
     VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,
@@ -47,6 +54,7 @@ void VulkanWindow::setApp(App* appPtr) {
 
     app = appPtr;
     appInitialized = false;
+    firstFramePresented = false;
     frameTimer.invalidate();
 
     if (isExposed()) {
@@ -69,6 +77,7 @@ void VulkanWindow::exposeEvent(QExposeEvent* event) {
     if (isExposed()) {
         runtimeState.width.store(physicalWidth(), std::memory_order_release);
         runtimeState.height.store(physicalHeight(), std::memory_order_release);
+        runtimeState.devicePixelRatio.store(static_cast<float>(devicePixelRatio()), std::memory_order_release);
         requestRender();
     }
 }
@@ -81,10 +90,35 @@ bool VulkanWindow::event(QEvent* event) {
     return QWindow::event(event);
 }
 
+bool VulkanWindow::nativeEvent(const QByteArray& eventType, void* message, qintptr* result) {
+#ifdef Q_OS_WIN
+    MSG* nativeMessage = static_cast<MSG*>(message);
+    if (nativeMessage && nativeMessage->message == WM_ERASEBKGND) {
+        if (!firstFramePresented) {
+            RECT clientRect{};
+            GetClientRect(nativeMessage->hwnd, &clientRect);
+            HBRUSH backgroundBrush = CreateSolidBrush(RGB(32, 32, 35));
+            FillRect(reinterpret_cast<HDC>(nativeMessage->wParam), &clientRect, backgroundBrush);
+            DeleteObject(backgroundBrush);
+        }
+        if (result) {
+            *result = 1;
+        }
+        return true;
+    }
+#else
+    (void)eventType;
+    (void)message;
+    (void)result;
+#endif
+    return QWindow::nativeEvent(eventType, message, result);
+}
+
 void VulkanWindow::resizeEvent(QResizeEvent* event) {
     QWindow::resizeEvent(event);
     runtimeState.width.store(physicalWidth(), std::memory_order_release);
     runtimeState.height.store(physicalHeight(), std::memory_order_release);
+    runtimeState.devicePixelRatio.store(static_cast<float>(devicePixelRatio()), std::memory_order_release);
     if (isExposed()) {
         requestRender();
     }
@@ -200,7 +234,6 @@ void VulkanWindow::wheelEvent(QWheelEvent* event) {
 
     WindowInputEvent inputEvent{};
     inputEvent.type = WindowInputEventType::Scroll;
-    inputEvent.xOffset = event->angleDelta().x() / 120.0;
     inputEvent.yOffset = event->angleDelta().y() / 120.0;
     runtimeState.pushInputEvent(inputEvent);
     QWindow::wheelEvent(event);
@@ -236,6 +269,7 @@ void VulkanWindow::renderFrame() {
         ? static_cast<float>(frameTimer.restart()) / 1000.0f
         : (1.0f / 60.0f);
     app->tickFrame(deltaSeconds);
+    firstFramePresented = true;
 
     requestRender();
 }
@@ -320,6 +354,7 @@ void VulkanWindow::cleanupVulkan() {
     runtimeState.shouldClose.store(true, std::memory_order_release);
 
     appInitialized = false;
+    firstFramePresented = false;
 
     if (vulkanDevice.getDevice() != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(vulkanDevice.getDevice());
@@ -336,6 +371,7 @@ void VulkanWindow::cleanupVulkan() {
 
 void VulkanWindow::setRuntimeMousePosition(const QPointF& position) {
     const qreal dpr = devicePixelRatio();
+    runtimeState.devicePixelRatio.store(static_cast<float>(dpr), std::memory_order_release);
     runtimeState.mouseX.store(static_cast<float>(position.x() * dpr), std::memory_order_release);
     runtimeState.mouseY.store(static_cast<float>(position.y() * dpr), std::memory_order_release);
 }

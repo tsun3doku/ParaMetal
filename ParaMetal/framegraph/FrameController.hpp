@@ -26,6 +26,7 @@ class ModelRegistry;
 class UniformBufferManager;
 class ModelSelection;
 class GizmoController;
+class NavigationGizmoController;
 class WireframeRenderer;
 class VkFrameGraphBackend;
 class InputController;
@@ -37,6 +38,7 @@ struct FrameControllerServices {
     UniformBufferManager& uniformBufferManager;
     ModelSelection& modelSelection;
     GizmoController& gizmoController;
+    NavigationGizmoController& navigationGizmoController;
     WireframeRenderer& wireframeRenderer;
     InputController& inputController;
     LightingSystem& lightingSystem;
@@ -72,6 +74,7 @@ private:
     FrameSync& frameSync;
     FrameStats& frameStats;
     CameraController& cameraController;
+    NavigationGizmoController& navigationGizmoController;
     std::atomic<bool>& isOperating;
     std::atomic<bool>& isShuttingDown;
 

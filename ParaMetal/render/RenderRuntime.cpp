@@ -9,6 +9,7 @@
 #include "framegraph/FrameGraphVkTypes.hpp"
 #include "framegraph/FrameSync.hpp"
 #include "scene/GizmoController.hpp"
+#include "scene/NavigationGizmoController.hpp"
 #include "scene/IBLSystem.hpp"
 #include "scene/InputController.hpp"
 #include "scene/LightingSystem.hpp"
@@ -104,6 +105,10 @@ bool RenderRuntime::initializeBase(VkFormat swapChainFormat, VkExtent2D extent, 
     if (!gizmoController) {
         return false;
     }
+    navigationGizmoController = std::make_unique<NavigationGizmoController>(cameraController);
+    if (!navigationGizmoController) {
+        return false;
+    }
 
     wireframeRenderer = std::make_unique<WireframeRenderer>(
         vulkanDevice,
@@ -118,7 +123,7 @@ bool RenderRuntime::initializeBase(VkFormat swapChainFormat, VkExtent2D extent, 
 }
 
 bool RenderRuntime::initializeFrameController(const FrameControllerServices& services) {
-    if (!modelSelection || !gizmoController || !wireframeRenderer || !frameGraph || !frameGraphBackend || !sceneRenderer) {
+    if (!modelSelection || !gizmoController || !navigationGizmoController || !wireframeRenderer || !frameGraph || !frameGraphBackend || !sceneRenderer) {
         return false;
     }
 
@@ -196,6 +201,7 @@ void RenderRuntime::cleanup() {
     frameController.reset();
     wireframeRenderer.reset();
     gizmoController.reset();
+    navigationGizmoController.reset();
     modelSelection.reset();
     sceneRenderer.reset();
     frameGraphBackend.reset();
@@ -240,6 +246,14 @@ GizmoController& RenderRuntime::getGizmoController() {
 
 const GizmoController& RenderRuntime::getGizmoController() const {
     return *gizmoController;
+}
+
+NavigationGizmoController& RenderRuntime::getNavigationGizmoController() {
+    return *navigationGizmoController;
+}
+
+const NavigationGizmoController& RenderRuntime::getNavigationGizmoController() const {
+    return *navigationGizmoController;
 }
 
 WireframeRenderer& RenderRuntime::getWireframeRenderer() {

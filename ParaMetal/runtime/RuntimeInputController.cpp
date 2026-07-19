@@ -18,7 +18,7 @@ void RuntimeInputController::tick(float deltaTime) {
     for (const WindowInputEvent& inputEvent : inputEvents) {
         switch (inputEvent.type) {
         case WindowInputEventType::Scroll:
-            inputController.handleScrollInput(inputEvent.xOffset, inputEvent.yOffset);
+            inputController.handleScrollInput(inputEvent.yOffset);
             break;
         case WindowInputEventType::Key:
             inputController.handleKeyInput(static_cast<Qt::Key>(inputEvent.key), inputEvent.pressed, inputEvent.ctrlPressed);

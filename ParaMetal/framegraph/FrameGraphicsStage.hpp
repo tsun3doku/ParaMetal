@@ -9,6 +9,7 @@ class FrameSync;
 class SceneRenderer;
 class ModelSelection;
 class GizmoController;
+class NavigationGizmoController;
 class WireframeRenderer;
 
 // Collected graphics work for a frame. VK_NULL_HANDLE commandBuffer means
@@ -26,6 +27,7 @@ public:
         SceneRenderer& sceneRenderer,
         ModelSelection& modelSelection,
         GizmoController& gizmoController,
+        NavigationGizmoController& navigationGizmoController,
         WireframeRenderer& wireframeRenderer);
 
     // Records the scene command buffer. Does NOT submit. Returns the collected
@@ -38,5 +40,6 @@ private:
     SceneRenderer& sceneRenderer;
     ModelSelection& modelSelection;
     GizmoController& gizmoController;
+    NavigationGizmoController& navigationGizmoController;
     WireframeRenderer& wireframeRenderer;
 };

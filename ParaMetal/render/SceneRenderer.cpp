@@ -24,6 +24,8 @@
 #include "VoronoiOverlayRenderer.hpp"
 #include "renderers/IntrinsicRenderer.hpp"
 #include "renderers/GizmoRenderer.hpp"
+#include "renderers/NavigationGizmoRenderer.hpp"
+#include "renderers/ScreenTextRenderer.hpp"
 
 SceneRenderer::SceneRenderer(VulkanDevice& device, MemoryAllocator& allocator, FrameGraph& graph, VkFrameGraphRuntime& runtime, ModelRegistry& manager, UniformBufferManager& ubo, uint32_t framesInFlight, CommandPool& commandPool,
                              IBLSystem& iblSystem)
@@ -124,7 +126,22 @@ bool SceneRenderer::initializePasses() {
         frameGraphRuntime.getRenderPass(),
         framegraph::toIndex(overlayPassId),
         renderCommandPool);
-    if (!heatOverlayRenderer || !voronoiOverlayRenderer || !intrinsicRenderer || !gizmoRenderer) {
+    screenTextRenderer = std::make_unique<ScreenTextRenderer>(
+        vulkanDevice,
+        memoryAllocator,
+        maxFramesInFlight,
+        frameGraphRuntime.getRenderPass(),
+        framegraph::toIndex(overlayPassId),
+        renderCommandPool);
+    navigationGizmoRenderer = std::make_unique<NavigationGizmoRenderer>(
+        vulkanDevice,
+        memoryAllocator,
+        renderCommandPool,
+        frameGraphRuntime.getRenderPass(),
+        framegraph::toIndex(overlayPassId));
+    if (!heatOverlayRenderer || !voronoiOverlayRenderer || !intrinsicRenderer || !gizmoRenderer ||
+        !screenTextRenderer || !screenTextRenderer->isReady() ||
+        !navigationGizmoRenderer || !navigationGizmoRenderer->isReady()) {
         std::cerr << "[SceneRenderer] Failed to create surface visualization renderers" << std::endl;
         return false;
     }
@@ -164,6 +181,8 @@ bool SceneRenderer::initializePasses() {
         *voronoiOverlayRenderer,
         *intrinsicRenderer,
         *gizmoRenderer,
+        *screenTextRenderer,
+        *navigationGizmoRenderer,
         maxFramesInFlight,
         renderCommandPool,
         overlayPassId,
@@ -537,6 +556,14 @@ void SceneRenderer::cleanup() {
     if (gizmoRenderer) {
         gizmoRenderer->cleanup();
         gizmoRenderer.reset();
+    }
+    if (navigationGizmoRenderer) {
+        navigationGizmoRenderer->cleanup();
+        navigationGizmoRenderer.reset();
+    }
+    if (screenTextRenderer) {
+        screenTextRenderer->cleanup();
+        screenTextRenderer.reset();
     }
 }
 

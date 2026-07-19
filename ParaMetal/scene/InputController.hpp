@@ -9,7 +9,9 @@
 #include "nodegraph/NodeGraphTypes.hpp"
 
 class Camera;
+class CameraController;
 class GizmoController;
+class NavigationGizmoController;
 class NodeGraph;
 class ModelSelection;
 class ModelRegistry;
@@ -18,8 +20,9 @@ class SwapchainManager;
 
 class InputController {
 public:
-    InputController(Camera& camera,
+    InputController(CameraController& cameraController,
         GizmoController& gizmoController,
+        NavigationGizmoController& navigationGizmoController,
         ModelSelection& modelSelection,
         ModelRegistry& resourceManager,
         SceneController& sceneController,
@@ -28,7 +31,7 @@ public:
         InputActionHandler& actionHandler);
     ~InputController() = default;
 
-    void handleScrollInput(double xOffset, double yOffset);
+    void handleScrollInput(double yOffset);
     void handleKeyInput(Qt::Key key, bool pressed, bool ctrlPressed);
     void handleMouseMove(float mouseX, float mouseY);
     void handleMouseRelease(int button, float mouseX, float mouseY);
@@ -42,8 +45,10 @@ public:
     bool isDraggingGizmo = false;
 
 private:
+    CameraController& cameraController;
     Camera& camera;
     GizmoController& gizmoController;
+    NavigationGizmoController& navigationGizmoController;
     ModelSelection& modelSelection;
     ModelRegistry& resourceManager;
     SceneController& sceneController;

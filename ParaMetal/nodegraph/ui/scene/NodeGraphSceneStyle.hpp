@@ -1,6 +1,7 @@
 #pragma once
 
 #include "nodegraph/NodeGraphTypes.hpp"
+#include "ui/UiTheme.hpp"
 
 #include <QColor>
 #include <QGraphicsItem>
@@ -55,7 +56,7 @@ enum class NodeHitRegion : uint8_t {
     RightCap = 3
 };
 
-inline constexpr QColor sceneBackgroundColor = QColor(46, 46, 52);
+inline constexpr QColor sceneBackgroundColor = ui::PanelBackground;
 
 QColor valueTypeColor(NodeGraphValueType valueType);
 QColor nodeShellColor();

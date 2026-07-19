@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ui/UiTheme.hpp"
+
 #include <QColor>
 
 class QString;
@@ -65,7 +67,7 @@ constexpr int sliderKnobMaskPadding = 3;
 constexpr int sliderHorizontalInset = 6;
 constexpr int sliderMinimumHeight = 28;
 
-inline constexpr QColor colorPanelBackground = QColor(46, 46, 52);
+inline constexpr QColor colorPanelBackground = ui::PanelBackground;
 inline constexpr QColor colorPanelCardBackground = QColor(45, 44, 50);
 inline constexpr QColor colorPanelCardBorder = QColor(58, 57, 60);
 inline constexpr QColor colorTextPrimary = QColor(236, 234, 246);
@@ -79,6 +81,7 @@ inline constexpr QColor colorStatusAccent = QColor(167, 183, 255);
 inline constexpr QColor colorAccent = QColor(94, 124, 255);
 inline constexpr QColor colorAccentFocus = QColor(126, 151, 255);
 inline constexpr QColor colorAccentPressed = QColor(75, 103, 224);
+inline constexpr QColor colorActionStripButtonHover = QColor(65, 128, 255);
 inline constexpr QColor colorTextOnAccent = QColor(255, 255, 255);
 inline constexpr QColor colorCheckboxBorder = QColor(119, 117, 139);
 inline constexpr QColor colorCheckboxBackground = QColor(58, 57, 70);

@@ -1,26 +1,17 @@
-﻿#pragma once
+#pragma once
 
 #include <vulkan/vulkan.h>
-#include <glm/glm.hpp>
+
 #include "util/GlyphText.hpp"
 
-#include <cstdint>
 #include <string>
 #include <vector>
 
-class MemoryAllocator;
-class VulkanDevice;
-class CommandPool;
+class ScreenTextRenderer;
 
 class TimingRenderer {
 public:
-    TimingRenderer(
-        VulkanDevice& vulkanDevice,
-        MemoryAllocator& allocator,
-        uint32_t maxFramesInFlight,
-        VkRenderPass renderPass,
-        uint32_t subpassIndex,
-        CommandPool& commandPool);
+    explicit TimingRenderer(ScreenTextRenderer& textRenderer);
     ~TimingRenderer();
 
     void setLines(const std::vector<std::string>& lines);
@@ -28,46 +19,10 @@ public:
     void cleanup();
 
 private:
-    struct QuadVertex {
-        glm::vec2 position;
-        glm::vec2 texCoord;
-    };
-
-    void createQuadVertexBuffer();
-    void createInstanceBuffers(uint32_t maxFramesInFlight);
-    void createFontAtlas();
-    void createDescriptorPool(uint32_t maxFramesInFlight);
-    void createDescriptorSetLayout();
-    void createDescriptorSets(uint32_t maxFramesInFlight);
-    void createPipeline(VkRenderPass renderPass, uint32_t subpassIndex);
     void buildGlyphInstances();
 
-    VulkanDevice& vulkanDevice;
-    MemoryAllocator& allocator;
-    CommandPool& commandPool;
-
-    VkBuffer quadVertexBuffer = VK_NULL_HANDLE;
-    VkDeviceSize quadVertexBufferOffset = 0;
-
-    std::vector<VkBuffer> instanceBuffers;
-    std::vector<VkDeviceSize> instanceBufferOffsets;
-    std::vector<void*> instanceBuffersMapped;
-
-    VkImage fontAtlasImage = VK_NULL_HANDLE;
-    VkDeviceMemory fontAtlasMemory = VK_NULL_HANDLE;
-    VkImageView fontAtlasView = VK_NULL_HANDLE;
-    VkSampler fontSampler = VK_NULL_HANDLE;
-
-    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
-    VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
-    std::vector<VkDescriptorSet> descriptorSets;
-
-    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-    VkPipeline pipeline = VK_NULL_HANDLE;
-
-    GlyphText glyphText;
+    ScreenTextRenderer& textRenderer;
     std::vector<std::string> activeLines;
     std::vector<GlyphText::GlyphInstance> glyphInstances;
-    uint32_t glyphCount = 0;
     uint32_t maxGlyphCapacity = 512;
 };

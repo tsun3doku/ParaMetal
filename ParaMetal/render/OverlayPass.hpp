@@ -19,6 +19,8 @@ class CommandPool;
 class TimingRenderer;
 class GridRenderer;
 class GizmoRenderer;
+class NavigationGizmoRenderer;
+class ScreenTextRenderer;
 class IntrinsicRenderer;
 class OutlineRenderer;
 class VkFrameGraphRuntime;
@@ -45,6 +47,8 @@ public:
         VoronoiOverlayRenderer& voronoiOverlayRenderer,
         IntrinsicRenderer& intrinsicRenderer,
         GizmoRenderer& gizmoRenderer,
+        ScreenTextRenderer& screenTextRenderer,
+        NavigationGizmoRenderer& navigationGizmoRenderer,
         uint32_t framesInFlight,
         CommandPool& pool,
         framegraph::PassId passId,
@@ -74,6 +78,8 @@ private:
     VoronoiOverlayRenderer& voronoiOverlayRenderer;
     IntrinsicRenderer& intrinsicRenderer;
     GizmoRenderer& gizmoRenderer;
+    ScreenTextRenderer& screenTextRenderer;
+    NavigationGizmoRenderer& navigationGizmoRenderer;
     ::VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
     VkFrameGraphRuntime& frameGraphRuntime;

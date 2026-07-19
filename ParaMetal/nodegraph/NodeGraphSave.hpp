@@ -2,6 +2,7 @@
 
 #include "NodeGraphState.hpp"
 #include "NodeGraphTypes.hpp"
+#include "scene/Camera.hpp"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -19,6 +20,8 @@ public:
         glm::quat orientation{1.0f, 0.0f, 0.0f, 0.0f};
         float radius = 2.0f;
         float fov = 45.0f;
+        CameraProjectionMode projectionMode = CameraProjectionMode::Perspective;
+        float orthographicHeight = 2.0f;
     };
 
     struct Data {

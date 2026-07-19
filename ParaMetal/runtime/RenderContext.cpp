@@ -212,8 +212,9 @@ bool RenderContext::initializeInputPipeline(SceneContext& scene, InputActionHand
     }
 
     inputControllerState = std::make_unique<InputController>(
-        scene.cameraController().getCamera(),
+        scene.cameraController(),
         renderRuntime->getGizmoController(),
+        renderRuntime->getNavigationGizmoController(),
         renderRuntime->getModelSelection(),
         *resourceManager,
         *sceneControllerState,
@@ -226,6 +227,7 @@ bool RenderContext::initializeInputPipeline(SceneContext& scene, InputActionHand
         *uniformBufferManager,
         renderRuntime->getModelSelection(),
         renderRuntime->getGizmoController(),
+        renderRuntime->getNavigationGizmoController(),
         renderRuntime->getWireframeRenderer(),
         *inputControllerState,
         *lightingSystem,

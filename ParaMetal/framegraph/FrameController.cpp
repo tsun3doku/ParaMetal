@@ -1,6 +1,7 @@
 #include "FrameController.hpp"
 
 #include "scene/CameraController.hpp"
+#include "scene/NavigationGizmoController.hpp"
 #include "FrameStats.hpp"
 #include "FrameSync.hpp"
 #include "render/SceneRenderer.hpp"
@@ -34,6 +35,7 @@ FrameController::FrameController(
       frameSync(frameSync),
       frameStats(frameStats),
       cameraController(cameraController),
+      navigationGizmoController(services.navigationGizmoController),
       isOperating(isOperating),
       isShuttingDown(isShuttingDown),
       vulkanDevice(vulkanDevice),
@@ -64,6 +66,7 @@ FrameController::FrameController(
           sceneRenderer,
           services.modelSelection,
           services.gizmoController,
+          services.navigationGizmoController,
           services.wireframeRenderer) {
 }
 
@@ -107,10 +110,16 @@ void FrameController::drawFrame(const render::RenderFlags& flags, const std::vec
 
     FrameState frameState{};
     frameState.frameIndex = frameIndex;
-    std::vector<std::string> timingLines = buildFrameTimingLines(frameState.frameIndex);
+    std::vector<std::string> timingLines;
+    if (flags.drawTimingOverlay) {
+        timingLines = buildFrameTimingLines(frameState.frameIndex);
+    }
     frameUpdateStage.processPicking(frameState.frameIndex);
 
     frameState.extent = swapchainManager.getExtent();
+    navigationGizmoController.setViewport(
+        frameState.extent,
+        windowState.devicePixelRatio.load(std::memory_order_acquire));
     frameState.sceneView = cameraController.buildSceneView(frameState.extent);
     frameState.flags = flags;
     frameUpdateStage.updateFrameState(frameState.frameIndex, frameState.sceneView);
@@ -121,6 +130,8 @@ void FrameController::drawFrame(const render::RenderFlags& flags, const std::vec
                   << " frameCall=" << callIndex << std::endl;
         if (computeCollection.result == FrameStageResult::RecreateSwapchain) {
             (void)recreateSwapChain();
+        } else if (computeCollection.result == FrameStageResult::Fatal) {
+            isShuttingDown.store(true, std::memory_order_release);
         }
         return;
     }
@@ -150,7 +161,11 @@ void FrameController::drawFrame(const render::RenderFlags& flags, const std::vec
     if (graphicsCollection.result != FrameStageResult::Continue) {
         std::cerr << "[DRAW] graphics stage fail result=" << static_cast<int>(graphicsCollection.result)
                   << " frameCall=" << callIndex << std::endl;
-        (void)recreateSwapChain();
+        if (graphicsCollection.result == FrameStageResult::RecreateSwapchain) {
+            (void)recreateSwapChain();
+        } else if (graphicsCollection.result == FrameStageResult::Fatal) {
+            isShuttingDown.store(true, std::memory_order_release);
+        }
         return;
     }
 

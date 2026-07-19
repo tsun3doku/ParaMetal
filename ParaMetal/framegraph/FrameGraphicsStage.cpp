@@ -13,12 +13,14 @@ FrameGraphicsStage::FrameGraphicsStage(
     SceneRenderer& sceneRenderer,
     ModelSelection& modelSelection,
     GizmoController& gizmoController,
+    NavigationGizmoController& navigationGizmoController,
     WireframeRenderer& wireframeRenderer)
     : vulkanDevice(vulkanDevice),
       frameSync(frameSync),
       sceneRenderer(sceneRenderer),
       modelSelection(modelSelection),
       gizmoController(gizmoController),
+      navigationGizmoController(navigationGizmoController),
       wireframeRenderer(wireframeRenderer) {
 }
 
@@ -45,6 +47,7 @@ FrameGraphicsCollection FrameGraphicsStage::collect(const FrameState& frameState
     render::RenderServices services{};
     services.modelSelection = &modelSelection;
     services.gizmoController = &gizmoController;
+    services.navigationGizmoController = &navigationGizmoController;
     services.wireframeRenderer = &wireframeRenderer;
 
     if (!sceneRenderer.recordCommandBuffer(

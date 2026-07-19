@@ -42,8 +42,6 @@ private:
     void createDescriptorSetLayout(VulkanDevice& vulkanDevice);
     void createDescriptorSets(VulkanDevice& vulkanDevice, UniformBufferManager& uniformBufferManager, uint32_t maxFramesInFlight);
     void createPipeline(VulkanDevice& vulkanDevice, VkRenderPass renderPass, uint32_t subpass);
-    void generateMipmaps(VkImage image, VkFormat format, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
-    
     void generateLabelInstances(const glm::vec3& gridSize);
     void addEdgeLabels(const glm::vec3& basePos, int varyingAxis, float start, float end, float interval, float scale, const glm::vec3& textRight, const glm::vec3& textUp, bool includeOrigin = true);
     void addTextInstances(const std::string& text, const glm::vec3& position, float scale, float charSpacing, const glm::vec3& textRight, const glm::vec3& textUp);

@@ -7,7 +7,6 @@
 
 enum class FrameStageResult {
     Continue,
-    SkipFrame,
     RecreateSwapchain,
     Fatal
 };

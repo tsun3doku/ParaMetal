@@ -316,7 +316,10 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
     <ClCompile Include="render\BlendPass.cpp" />
     <ClCompile Include="mesh\\remesher\\GeodesicTracer.cpp" />
     <ClCompile Include="scene\GizmoController.cpp" />
+    <ClCompile Include="scene\NavigationGizmoController.cpp" />
     <ClCompile Include="renderers\GizmoRenderer.cpp" />
+    <ClCompile Include="renderers\NavigationGizmoRenderer.cpp" />
+    <ClCompile Include="renderers\ScreenTextRenderer.cpp" />
     <ClCompile Include="spatial\Grid.cpp" />
     <ClCompile Include="spatial\GridLabel.cpp" />
     <ClCompile Include="renderers\TimingRenderer.cpp" />
@@ -483,6 +486,10 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
     <None Include="shaders\gbuffer.vert" />
     <None Include="shaders\gizmo.frag" />
     <None Include="shaders\gizmo.vert" />
+    <None Include="shaders\navigation_gizmo.frag" />
+    <None Include="shaders\navigation_gizmo.vert" />
+    <None Include="shaders\navigation_gizmo_frag.spv" />
+    <None Include="shaders\navigation_gizmo_vert.spv" />
     <None Include="shaders\pick_gizmo.frag" />
     <None Include="shaders\pick_model.frag" />
     <None Include="shaders\pick_model.vert" />
@@ -662,7 +669,10 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
     <ClInclude Include="mesh\\remesher\\GeodesicTracer.hpp" />
     <ClInclude Include="util\GeometryUtils.hpp" />
     <ClInclude Include="scene\GizmoController.hpp" />
+    <ClInclude Include="scene\NavigationGizmoController.hpp" />
     <ClInclude Include="renderers\GizmoRenderer.hpp" />
+    <ClInclude Include="renderers\NavigationGizmoRenderer.hpp" />
+    <ClInclude Include="renderers\ScreenTextRenderer.hpp" />
     <ClInclude Include="spatial\Grid.hpp" />
     <ClInclude Include="spatial\GridLabel.hpp" />
     <ClInclude Include="renderers\TimingRenderer.hpp" />

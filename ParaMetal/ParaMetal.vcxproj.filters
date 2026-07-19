@@ -315,7 +315,16 @@
     <ClCompile Include="scene\GizmoController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="scene\NavigationGizmoController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="renderers\GizmoRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="renderers\NavigationGizmoRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="renderers\ScreenTextRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="mesh\\remesher\\SignPostMesh.cpp">
@@ -806,6 +815,18 @@
     <None Include="shaders\gizmo.vert">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="shaders\navigation_gizmo.frag">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\navigation_gizmo.vert">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\navigation_gizmo_frag.spv">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\navigation_gizmo_vert.spv">
+      <Filter>Shaders</Filter>
+    </None>
     <None Include="shaders\pick_gizmo.frag">
       <Filter>Shaders</Filter>
     </None>
@@ -1210,7 +1231,16 @@
     <ClInclude Include="scene\GizmoController.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="scene\NavigationGizmoController.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="renderers\GizmoRenderer.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="renderers\NavigationGizmoRenderer.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="renderers\ScreenTextRenderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="mesh\\remesher\\CommonSubdivision.hpp">

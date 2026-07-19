@@ -9,6 +9,8 @@
 
 namespace ui {
 
+inline constexpr QColor PanelBackground = QColor(46, 46, 52);
+
 inline constexpr int SplitterVisualThickness = 7;
 inline constexpr QColor SplitterBaseColor = QColor(60, 60, 69);
 inline constexpr QColor SplitterHoverColor = QColor(60, 60, 69);
@@ -17,7 +19,7 @@ inline constexpr QColor SplitterBorderColor = QColor(60, 60, 69);
 inline constexpr QColor MenuBarBackground = QColor(36, 36, 41);
 inline constexpr QColor MenuBarText = QColor(210, 210, 215);
 inline constexpr QColor MenuBarItemHover = QColor(58, 57, 65);
-inline constexpr QColor MenuBackground = QColor(46, 46, 52);
+inline constexpr QColor MenuBackground = PanelBackground;
 inline constexpr QColor MenuBorder = QColor(70, 70, 78);
 inline constexpr QColor MenuItemHover = QColor(72, 71, 82);
 inline constexpr QColor MenuItemSelected = QColor(80, 79, 92);
@@ -38,7 +40,6 @@ inline constexpr QColor ToolButtonNormal = QColor(58, 58, 58);
 inline constexpr QColor ToolButtonHover = QColor(80, 80, 80);        
 inline constexpr QColor ToolButtonPressed = QColor(90, 90, 90);      
 inline constexpr QColor ToolButtonSelected = InteractiveAccent;
-inline constexpr QColor ToolButtonSelectedHover = QColor(126, 151, 255);
 inline constexpr QColor ToolButtonSelectedPressed = QColor(75, 103, 224);
 inline constexpr QColor ToolButtonBorder = QColor(70, 70, 78);
 inline constexpr QColor ToolButtonDisabled = QColor(37, 37, 37);     
@@ -81,7 +82,7 @@ inline std::string toolButtonStyle(ToolButtonSegment segment = ToolButtonSegment
         "  " + radius +
         "  color: " + IconDefault.name().toStdString() + ";"
         "}"
-        "QPushButton:hover {"
+        "QPushButton:hover:!checked {"
         "  background-color: " + ToolButtonHover.name().toStdString() + ";"
         "}"
         "QPushButton:pressed {"
@@ -89,9 +90,6 @@ inline std::string toolButtonStyle(ToolButtonSegment segment = ToolButtonSegment
         "}"
         "QPushButton:checked {"
         "  background-color: " + ToolButtonSelected.name().toStdString() + ";"
-        "}"
-        "QPushButton:checked:hover {"
-        "  background-color: " + ToolButtonSelectedHover.name().toStdString() + ";"
         "}"
         "QPushButton:checked:pressed {"
         "  background-color: " + ToolButtonSelectedPressed.name().toStdString() + ";"

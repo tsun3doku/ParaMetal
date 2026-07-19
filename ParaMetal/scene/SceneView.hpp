@@ -9,6 +9,8 @@ struct SceneView {
     glm::mat4 proj = glm::mat4(1.0f);
     glm::vec3 cameraPosition = glm::vec3(0.0f);
     float cameraFov = 45.0f;
+    bool orthographic = false;
+    float orthographicHeight = 2.0f;
 };
 
 } 

@@ -9,6 +9,7 @@
 #include <QSaveFile>
 
 #include <algorithm>
+#include <cmath>
 
 constexpr int ProjectVersion = 1;
 constexpr const char* ProjectApp = "ParaMetal";
@@ -414,6 +415,10 @@ QJsonObject NodeGraphSave::viewportToJson(const Viewport& viewport) {
     obj["orientation"] = quatToJson(viewport.orientation);
     obj["radius"] = viewport.radius;
     obj["fov"] = viewport.fov;
+    obj["projection"] = viewport.projectionMode == CameraProjectionMode::Orthographic
+        ? QStringLiteral("orthographic")
+        : QStringLiteral("perspective");
+    obj["orthographicHeight"] = viewport.orthographicHeight;
     return obj;
 }
 
@@ -666,5 +671,32 @@ bool NodeGraphSave::viewportFromJson(const QJsonValue& value, Viewport& outViewp
     }
     outViewport.radius = static_cast<float>(obj["radius"].toDouble());
     outViewport.fov = static_cast<float>(obj["fov"].toDouble());
+    const QJsonValue projectionValue = obj["projection"];
+    if (projectionValue.isUndefined()) {
+        outViewport.projectionMode = CameraProjectionMode::Perspective;
+    } else if (!projectionValue.isString()) {
+        setError(outError, "Viewport projection must be a string.");
+        return false;
+    } else if (projectionValue.toString() == QStringLiteral("perspective")) {
+        outViewport.projectionMode = CameraProjectionMode::Perspective;
+    } else if (projectionValue.toString() == QStringLiteral("orthographic")) {
+        outViewport.projectionMode = CameraProjectionMode::Orthographic;
+    } else {
+        setError(outError, "Viewport projection is not recognized.");
+        return false;
+    }
+
+    const QJsonValue orthographicHeightValue = obj["orthographicHeight"];
+    if (orthographicHeightValue.isUndefined()) {
+        outViewport.orthographicHeight = 2.0f * outViewport.radius *
+            std::tan(glm::radians(outViewport.fov) * 0.5f);
+    } else if (!orthographicHeightValue.isDouble() ||
+               !std::isfinite(orthographicHeightValue.toDouble()) ||
+               orthographicHeightValue.toDouble() <= 0.0) {
+        setError(outError, "Viewport orthographic height is invalid.");
+        return false;
+    } else {
+        outViewport.orthographicHeight = static_cast<float>(orthographicHeightValue.toDouble());
+    }
     return true;
 }

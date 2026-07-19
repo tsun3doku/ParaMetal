@@ -24,6 +24,8 @@ class VkFrameGraphRuntime;
 class IBLSystem;
 class IntrinsicRenderer;
 class GizmoRenderer;
+class NavigationGizmoRenderer;
+class ScreenTextRenderer;
 namespace render { class ContactOverlayRenderer; }
 namespace render { class HeatOverlayRenderer; }
 namespace render { class PointOverlayRenderer; }
@@ -138,6 +140,8 @@ private:
     std::unique_ptr<render::VoronoiOverlayRenderer> voronoiOverlayRenderer;
     std::unique_ptr<IntrinsicRenderer> intrinsicRenderer;
     std::unique_ptr<GizmoRenderer> gizmoRenderer;
+    std::unique_ptr<NavigationGizmoRenderer> navigationGizmoRenderer;
+    std::unique_ptr<ScreenTextRenderer> screenTextRenderer;
 
     uint32_t maxFramesInFlight = 0;
     VkQueryPool gpuTimingQueryPool = VK_NULL_HANDLE;

@@ -24,6 +24,7 @@ public:
 protected:
     void exposeEvent(QExposeEvent* event) override;
     bool event(QEvent* event) override;
+    bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
     void resizeEvent(QResizeEvent* event) override;
 
     void keyPressEvent(QKeyEvent* event) override;
@@ -47,6 +48,7 @@ private:
     App* app = nullptr;
     bool appInitialized = false;
     bool vulkanInitialized = false;
+    bool firstFramePresented = false;
 
     QVulkanInstance* qtVulkanInstance = nullptr;
     VulkanDevice vulkanDevice;

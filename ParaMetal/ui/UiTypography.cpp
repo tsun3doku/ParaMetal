@@ -8,7 +8,7 @@ QString UiTypography::familyName(FontFamily family) {
         return QStringLiteral("Azeret Mono");
     case FontFamily::Interface:
     default:
-        return QStringLiteral("Urbanist");
+        return QStringLiteral("Outfit");
     }
 }
 
@@ -20,8 +20,6 @@ const TypographySpec& UiTypography::spec(TextRole role) {
         return Description;
     case TextRole::Console:
         return Console;
-    case TextRole::TimelineNumber:
-        return TimelineNumber;
     case TextRole::TimelineBubble:
         return TimelineBubble;
     case TextRole::NodeTitle:

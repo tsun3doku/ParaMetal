@@ -1,7 +1,9 @@
 #include "InputController.hpp"
 
 #include "Camera.hpp"
+#include "CameraController.hpp"
 #include "GizmoController.hpp"
+#include "NavigationGizmoController.hpp"
 #include "ModelSelection.hpp"
 #include "app/SwapchainManager.hpp"
 #include "nodegraph/NodeGraph.hpp"
@@ -27,11 +29,14 @@ bool InputController::resolveSelectedTransformNode(NodeGraphNodeId& outTransform
     return graph.resolveGizmoTransformNode(outputSocketKey, outTransformNodeId);
 }
 
-InputController::InputController(Camera& camera, GizmoController& gizmoController, ModelSelection& modelSelection, ModelRegistry& resourceManager,
+InputController::InputController(CameraController& cameraController, GizmoController& gizmoController,
+    NavigationGizmoController& navigationGizmoController, ModelSelection& modelSelection, ModelRegistry& resourceManager,
     SceneController& sceneController, NodeGraph& graph,
     const SwapchainManager& swapchainManager, InputActionHandler& actionHandler)
-    : camera(camera),
+    : cameraController(cameraController),
+      camera(cameraController.getCamera()),
       gizmoController(gizmoController),
+      navigationGizmoController(navigationGizmoController),
       modelSelection(modelSelection),
       resourceManager(resourceManager),
       sceneController(sceneController),
@@ -40,8 +45,9 @@ InputController::InputController(Camera& camera, GizmoController& gizmoControlle
       actionHandler(actionHandler) {
 }
 
-void InputController::handleScrollInput(double xOffset, double yOffset) {
-    camera.processMouseScroll(xOffset, yOffset);
+void InputController::handleScrollInput(double yOffset) {
+    cameraController.cancelTransition();
+    camera.processMouseScroll(yOffset);
 }
 
 void InputController::handleKeyInput(Qt::Key key, bool pressed, bool ctrlPressed) {
@@ -75,10 +81,14 @@ void InputController::handleKeyInput(Qt::Key key, bool pressed, bool ctrlPressed
 }
 
 void InputController::handleMouseMove(float mouseX, float mouseY) {
+    if (navigationGizmoController.handlePointerMove(mouseX, mouseY)) {
+        return;
+    }
     const VkExtent2D swapChainExtent = swapchainManager.getExtent();
 
     if (isDraggingGizmo) {
-        const glm::vec3 rayOrigin = camera.getPosition();
+        const glm::vec3 rayOrigin = camera.screenToWorldRayOrigin(
+            mouseX, mouseY, swapChainExtent.width, swapChainExtent.height);
         const glm::vec3 rayDir = camera.screenToWorldRay(mouseX, mouseY, swapChainExtent.width, swapChainExtent.height);
 
         if (gizmoController.getMode() == GizmoMode::Translate) {
@@ -93,9 +103,11 @@ void InputController::handleMouseMove(float mouseX, float mouseY) {
 }
 
 void InputController::handleMouseRelease(int button, float mouseX, float mouseY) {
-    (void)mouseX;
-    (void)mouseY;
     if (button != static_cast<int>(Qt::LeftButton)) {
+        return;
+    }
+
+    if (navigationGizmoController.handlePointerRelease(mouseX, mouseY)) {
         return;
     }
 
@@ -115,6 +127,10 @@ void InputController::handleMouseButton(int button, float mouseX, float mouseY, 
         return;
     }
 
+    if (navigationGizmoController.handlePointerPress(mouseX, mouseY)) {
+        return;
+    }
+
     const VkExtent2D swapChainExtent = swapchainManager.getExtent();
     int x = static_cast<int>(mouseX);
     int y = static_cast<int>(mouseY);
@@ -127,6 +143,9 @@ void InputController::handleMouseButton(int button, float mouseX, float mouseY, 
 
 void InputController::processInput(bool shiftPressed, bool middleButtonPressed, double mouseX, double mouseY, float deltaTime) {
     (void)deltaTime;
+    if (middleButtonPressed) {
+        cameraController.cancelTransition();
+    }
     camera.processMouseMovement(middleButtonPressed, mouseX, mouseY, shiftPressed);
 }
 
@@ -178,7 +197,7 @@ void InputController::updateGizmo() {
 
                 const PickingRequest pickReq = modelSelection.getLastPickRequest();
                 const glm::vec3 gizmoPosition = gizmoController.calculateGizmoPosition(resourceManager, modelSelection);
-                const glm::vec3 rayOrigin = camera.getPosition();
+                const glm::vec3 rayOrigin = camera.screenToWorldRayOrigin(pickReq.mouseX, pickReq.mouseY, swapChainExtent.width, swapChainExtent.height);
                 const glm::vec3 rayDir = camera.screenToWorldRay(pickReq.mouseX, pickReq.mouseY, swapChainExtent.width, swapChainExtent.height);
 
                 isDraggingGizmo = true;

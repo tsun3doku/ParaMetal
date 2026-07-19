@@ -403,7 +403,9 @@ bool MainWindow::openProjectPath(const QString& path) {
             data.viewport.lookAt,
             data.viewport.orientation,
             data.viewport.radius,
-            data.viewport.fov);
+            data.viewport.fov,
+            data.viewport.projectionMode,
+            data.viewport.orthographicHeight);
     }
 
     currentProjectPath = path;
@@ -457,6 +459,8 @@ bool MainWindow::saveProjectToPath(const QString& path) {
         data.viewport.orientation = camera.getOrientation();
         data.viewport.radius = camera.getRadius();
         data.viewport.fov = camera.getBaseFov();
+        data.viewport.projectionMode = camera.getProjectionMode();
+        data.viewport.orthographicHeight = camera.getOrthographicHeight();
     }
 
     QString error;

@@ -16,6 +16,9 @@
 #include "VoronoiOverlayRenderer.hpp"
 #include "scene/GizmoController.hpp"
 #include "renderers/GizmoRenderer.hpp"
+#include "renderers/NavigationGizmoRenderer.hpp"
+#include "renderers/ScreenTextRenderer.hpp"
+#include "scene/NavigationGizmoController.hpp"
 #include "spatial/Grid.hpp"
 #include "scene/ModelSelection.hpp"
 #include "vulkan/MemoryAllocator.hpp"
@@ -43,6 +46,8 @@ OverlayPass::OverlayPass(
     VoronoiOverlayRenderer& voronoiOverlayRenderer,
     IntrinsicRenderer& intrinsicRenderer,
     GizmoRenderer& gizmo,
+    ScreenTextRenderer& screenText,
+    NavigationGizmoRenderer& navigationGizmo,
     uint32_t framesInFlight,
     CommandPool& pool,
     framegraph::PassId passId,
@@ -53,6 +58,8 @@ OverlayPass::OverlayPass(
       voronoiOverlayRenderer(voronoiOverlayRenderer),
       intrinsicRenderer(intrinsicRenderer),
       gizmoRenderer(gizmo),
+      screenTextRenderer(screenText),
+      navigationGizmoRenderer(navigationGizmo),
       vulkanDevice(device),
       memoryAllocator(allocator),
       frameGraphRuntime(runtime),
@@ -75,69 +82,44 @@ void OverlayPass::create() {
     ready = false;
     destroy();
     outlineRenderer = std::make_unique<OutlineRenderer>(vulkanDevice);
-    if (!outlineRenderer || !outlineRenderer->initialize(
-            frameGraphRuntime.getRenderPass(),
-            framegraph::toIndex(passId),
-            maxFramesInFlight)) {
+    if (!outlineRenderer || !outlineRenderer->initialize(frameGraphRuntime.getRenderPass(), framegraph::toIndex(passId), maxFramesInFlight)) {
         std::cerr << "[OverlayPass] Failed to create outline renderer" << std::endl;
         destroy();
         return;
     }
 
-    if (!intrinsicRenderer.initializeOverlay(
-            frameGraphRuntime.getRenderPass(),
-            maxFramesInFlight,
-            framegraph::toIndex(passId))) {
+    if (!intrinsicRenderer.initializeOverlay(frameGraphRuntime.getRenderPass(), maxFramesInFlight, framegraph::toIndex(passId))) {
         std::cerr << "[OverlayPass] Failed to create intrinsic renderer" << std::endl;
         destroy();
         return;
     }
 
-    timingOverlay = std::make_unique<TimingRenderer>(vulkanDevice, memoryAllocator, maxFramesInFlight, frameGraphRuntime.getRenderPass(), framegraph::toIndex(passId), renderCommandPool);
+    timingOverlay = std::make_unique<TimingRenderer>(screenTextRenderer);
     if (!timingOverlay) {
         std::cerr << "[OverlayPass] Failed to create timing overlay renderer" << std::endl;
         destroy();
         return;
     }
 
-    contactOverlayRenderer = std::make_unique<ContactOverlayRenderer>(
-        vulkanDevice,
-        memoryAllocator,
-        uniformBufferManager,
-        renderCommandPool);
+    contactOverlayRenderer = std::make_unique<ContactOverlayRenderer>(vulkanDevice, memoryAllocator, uniformBufferManager, renderCommandPool);
     if (!contactOverlayRenderer) {
         std::cerr << "[OverlayPass] Failed to create contact overlay renderer" << std::endl;
         destroy();
         return;
     }
 
-    contactOverlayRenderer->initialize(
-        frameGraphRuntime.getRenderPass(),
-        framegraph::toIndex(passId),
-        maxFramesInFlight);
+    contactOverlayRenderer->initialize(frameGraphRuntime.getRenderPass(), framegraph::toIndex(passId), maxFramesInFlight);
+    heatOverlayRenderer.initializeOverlay(frameGraphRuntime.getRenderPass(), framegraph::toIndex(passId), maxFramesInFlight);
+    voronoiOverlayRenderer.initializeOverlay(frameGraphRuntime.getRenderPass(), framegraph::toIndex(passId), maxFramesInFlight);
 
-    heatOverlayRenderer.initializeOverlay(
-        frameGraphRuntime.getRenderPass(),
-        framegraph::toIndex(passId),
-        maxFramesInFlight);
-    voronoiOverlayRenderer.initializeOverlay(
-        frameGraphRuntime.getRenderPass(),
-        framegraph::toIndex(passId),
-        maxFramesInFlight);
-
-    pointOverlayRenderer = std::make_unique<PointOverlayRenderer>(
-        vulkanDevice,
-        uniformBufferManager);
+    pointOverlayRenderer = std::make_unique<PointOverlayRenderer>(vulkanDevice, uniformBufferManager);
     if (!pointOverlayRenderer) {
         std::cerr << "[OverlayPass] Failed to create point overlay renderer" << std::endl;
         destroy();
         return;
     }
 
-    pointOverlayRenderer->initialize(
-        frameGraphRuntime.getRenderPass(),
-        framegraph::toIndex(passId),
-        maxFramesInFlight);
+    pointOverlayRenderer->initialize(frameGraphRuntime.getRenderPass(), framegraph::toIndex(passId), maxFramesInFlight);
 
     gridRenderer = std::make_unique<GridRenderer>(
         vulkanDevice,
@@ -215,6 +197,7 @@ void OverlayPass::record(const FrameContext& context, const SceneView& view, con
     WireframeRenderer& wireframeRenderer = *services.wireframeRenderer;
     VkCommandBuffer commandBuffer = context.commandBuffer;
     const uint32_t currentFrame = context.currentFrame;
+    screenTextRenderer.beginFrame(currentFrame);
     const VkExtent2D extent = context.extent;
     if (contactOverlayRenderer) {
         contactOverlayRenderer->render(commandBuffer, currentFrame, extent);
@@ -233,7 +216,15 @@ void OverlayPass::record(const FrameContext& context, const SceneView& view, con
 
     if (flags.drawGrid && gridRenderer && currentFrame < gridRenderer->getGridDescriptorSets().size()) {
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, gridRenderer->getGridPipeline());
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, gridRenderer->getGridPipelineLayout(), 0, 1, &gridRenderer->getGridDescriptorSets()[currentFrame], 0, nullptr);
+        vkCmdBindDescriptorSets(
+            commandBuffer, 
+            VK_PIPELINE_BIND_POINT_GRAPHICS, 
+            gridRenderer->getGridPipelineLayout(), 
+            0, 
+            1, 
+            &gridRenderer->getGridDescriptorSets()[currentFrame], 
+            0, 
+            nullptr);
         vkCmdDraw(commandBuffer, gridRenderer->vertexCount, 1, 0, 0);
         gridRenderer->renderLabels(commandBuffer, currentFrame);
     }
@@ -284,6 +275,9 @@ void OverlayPass::record(const FrameContext& context, const SceneView& view, con
     }
 
     heatOverlayRenderer.renderScreen(commandBuffer, currentFrame, extent);
+    if (services.navigationGizmoController) {
+        navigationGizmoRenderer.render(commandBuffer, services.navigationGizmoController->getRenderData());
+    }
 }
 
 void OverlayPass::destroy() {
@@ -304,7 +298,6 @@ void OverlayPass::destroy() {
         timingOverlay->cleanup();
         timingOverlay.reset();
     }
-
     if (gridRenderer) {
         gridRenderer->cleanup();
         gridRenderer.reset();

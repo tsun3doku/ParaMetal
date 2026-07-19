@@ -248,12 +248,8 @@ QString actionStripStyleSheet() {
     ss += "  padding: 6px 10px;";
     ss += "}";
     ss += "QPushButton#ActionStripButton:hover {";
-    ss += "  background: " + colorAccentFocus.name() + ";";
-    ss += "  border-color: " + colorAccentFocus.name() + ";";
-    ss += "}";
-    ss += "QPushButton#ActionStripButton:pressed {";
-    ss += "  background: " + colorAccentPressed.name() + ";";
-    ss += "  border-color: " + colorAccentPressed.name() + ";";
+    ss += "  background: " + colorActionStripButtonHover.name() + ";";
+    ss += "  border-color: " + colorActionStripButtonHover.name() + ";";
     ss += "}";
     ss += "QPushButton#ActionStripDismiss {";
     ss += "  background: transparent;";

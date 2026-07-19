@@ -531,6 +531,8 @@ void GizmoRenderer::render(
     state.view = sceneView.view;
     state.proj = sceneView.proj;
     state.cameraFov = sceneView.cameraFov;
+    state.orthographic = sceneView.orthographic;
+    state.orthographicHeight = sceneView.orthographicHeight;
 
     VkViewport viewport{};
     viewport.x = 0.0f;
@@ -602,6 +604,8 @@ void GizmoRenderer::renderPick(
     state.view = sceneView.view;
     state.proj = sceneView.proj;
     state.cameraFov = sceneView.cameraFov;
+    state.orthographic = sceneView.orthographic;
+    state.orthographicHeight = sceneView.orthographicHeight;
 
     VkViewport viewport{};
     viewport.x = 0.0f;
@@ -642,8 +646,8 @@ void GizmoRenderer::renderPick(
 }
 
 void GizmoRenderer::renderAxis(const RenderState& state, const glm::vec3& direction, const glm::vec3& color, bool hovered, uint32_t pickId) {
-    const float offsetDistance = getArrowDistance(state.scale, state.distance, state.cameraFov);
-    const float arrowScale = getArrowSize(state.scale, state.distance, state.cameraFov);
+    const float offsetDistance = getArrowDistance(state);
+    const float arrowScale = getArrowSize(state);
     const glm::vec3 offsetPosition = state.position + direction * offsetDistance;
 
     glm::mat4 rotation = glm::mat4(1.0f);
@@ -695,7 +699,7 @@ void GizmoRenderer::renderAxis(const RenderState& state, const glm::vec3& direct
 }
 
 void GizmoRenderer::renderRotationRing(const RenderState& state, const glm::vec3& axis, const glm::vec3& color, bool hovered, float radiusMultiplier, uint32_t pickId) {
-    const float scaled = applyDistanceScaling(state.scale, state.distance, state.cameraFov);
+    const float scaled = applyProjectionScaling(state);
     const float ringScale = scaled * 0.75f * radiusMultiplier;
 
     glm::mat4 rotation = glm::mat4(1.0f);
@@ -777,34 +781,39 @@ float GizmoRenderer::calculateGizmoScale(ModelRegistry& resourceManager, const M
     return gizmoScale;
 }
 
-float GizmoRenderer::applyDistanceScaling(float baseScale, float distance, float cameraFov) const {
+float GizmoRenderer::applyProjectionScaling(const RenderState& state) const {
     const float referenceDistance = 1.0f;
     const float maxScreenSpaceScale = 0.20f;
     const float cameraBaseFov = 45.0f;
 
-    const float currentFov = cameraFov;
     const float tanBase = glm::tan(glm::radians(cameraBaseFov) / 2.0f);
-    const float tanCurrent = glm::tan(glm::radians(currentFov) / 2.0f);
-    const float fovFactor = tanCurrent / tanBase;
-
     const float maxBaseScale = maxScreenSpaceScale * referenceDistance;
-    const float effectiveBaseScale = std::min(baseScale, maxBaseScale);
+    const float effectiveBaseScale = std::min(state.scale, maxBaseScale);
 
-    float scaleFactor = (distance / referenceDistance) * fovFactor;
+    float scaleFactor = 1.0f;
+    if (state.orthographic) {
+        const float halfVisibleHeight = state.orthographicHeight * 0.5f;
+        scaleFactor = halfVisibleHeight / (referenceDistance * tanBase);
+    } else {
+        const float tanCurrent = glm::tan(glm::radians(state.cameraFov) / 2.0f);
+        const float fovFactor = tanCurrent / tanBase;
+        scaleFactor = (state.distance / referenceDistance) * fovFactor;
+    }
+
     scaleFactor = glm::clamp(scaleFactor, 0.01f, 50.0f);
 
     return effectiveBaseScale * scaleFactor;
 }
 
-float GizmoRenderer::getArrowSize(float baseScale, float distance, float cameraFov) const {
+float GizmoRenderer::getArrowSize(const RenderState& state) const {
     const float arrowSizeMultiplier = 0.1f;
-    const float scaled = applyDistanceScaling(baseScale, distance, cameraFov);
+    const float scaled = applyProjectionScaling(state);
     return scaled * arrowSizeMultiplier;
 }
 
-float GizmoRenderer::getArrowDistance(float baseScale, float distance, float cameraFov) const {
+float GizmoRenderer::getArrowDistance(const RenderState& state) const {
     const float distanceMultiplier = 0.5f;
-    const float scaled = applyDistanceScaling(baseScale, distance, cameraFov);
+    const float scaled = applyProjectionScaling(state);
     return scaled * distanceMultiplier;
 }
 
