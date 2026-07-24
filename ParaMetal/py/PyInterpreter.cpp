@@ -1,5 +1,7 @@
 #include "PyInterpreter.hpp"
 
+#include "nodegraph/NodeGraph.hpp"
+
 #include <pybind11/embed.h>
 
 namespace py = pybind11;
@@ -41,7 +43,7 @@ PyInterpreter::~PyInterpreter() {
     delete getCtx(impl);
 }
 
-bool PyInterpreter::initialize() {
+bool PyInterpreter::initialize(NodeGraph& graph) {
     PyCtx* ctx = getCtx(impl);
     if (ctx->interpreter) {
         return true;
@@ -57,6 +59,8 @@ bool PyInterpreter::initialize() {
             ctx->interactive_interp = PyObject_GetAttrString(main, "__parametal_interp");
         }
 
+        py::module_ module = py::module_::import("parametal");
+        module.attr("_graph") = py::cast(&graph, py::return_value_policy::reference);
         PyRun_SimpleString("import parametal as pm");
         PyRun_SimpleString(R"PY(
 def default_graph():
@@ -127,6 +131,13 @@ def registry():
 void PyInterpreter::shutdown() {
     if (!impl) return;
     PyCtx* ctx = getCtx(impl);
+    if (ctx->interpreter) {
+        try {
+            py::module_::import("parametal").attr("_graph") = py::none();
+        } catch (const py::error_already_set&) {
+            PyErr_Clear();
+        }
+    }
     if (ctx->interactive_interp) {
         Py_DECREF(ctx->interactive_interp);
         ctx->interactive_interp = nullptr;

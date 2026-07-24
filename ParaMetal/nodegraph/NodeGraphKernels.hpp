@@ -26,7 +26,6 @@ class RuntimeVoronoiDisplayTransport;
 class RuntimeContactDisplayTransport;
 class RuntimeHeatDisplayTransport;
 class SceneController;
-class RenderSettingsController;
 class VulkanDevice;
 class MemoryAllocator;
 
@@ -45,7 +44,6 @@ struct NodeRuntimeServices {
     RuntimeHeatDisplayTransport* heatDisplayTransport = nullptr;
     RuntimePointComputeTransport* pointComputeTransport = nullptr;
     HeatSystemComputeController* heatSystemController = nullptr;
-    RenderSettingsController* renderSettingsController = nullptr;
     NodePayloadRegistry* payloadRegistry = nullptr;
     ModelRegistry* resourceManager = nullptr;
     VulkanDevice* vulkanDevice = nullptr;

@@ -142,11 +142,10 @@ public:
     void setNodalThermalMasses(std::vector<float> masses) { nodalThermalMasses = std::move(masses); }
 
     void updateHistoryDescriptorOffset(uint32_t displayFrame, VkDeviceSize frameStride, uint32_t currentFrame);
-    bool configureBoundary(
-        const std::vector<uint32_t>& nodeIds,
-        const std::vector<float>& surfacePatchAreas);
+    bool configureBoundary(const std::vector<uint32_t>& nodeIds, const std::vector<float>& surfacePatchAreas);
     bool resolveBoundaryContactAreas(const std::vector<float>& coveredAreas);
     bool configureVolumetricSource(float powerDensity);
+
     bool setRuntimeDirichletTemperatureC(uint32_t regionId, float temperatureC) {
         if (!boundaryRuntime.hasDirichletTemperature()) return false;
         boundaryTemperatureC = temperatureC;

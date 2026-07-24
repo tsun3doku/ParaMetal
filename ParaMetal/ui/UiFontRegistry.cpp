@@ -1,12 +1,12 @@
 #include "UiFontRegistry.hpp"
 #include "UiTypography.hpp"
 
-#include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QFont>
 #include <QFontDatabase>
+#include <QGuiApplication>
 
 namespace ui {
 
@@ -50,7 +50,7 @@ QString UiFontRegistry::loadBundledFontFamily(const QStringList& relativePaths) 
     return family;
 }
 
-void UiFontRegistry::installBundledFonts(QApplication& application) {
+void UiFontRegistry::installBundledFonts(QGuiApplication& application) {
     const QString outfitFamily = loadBundledFontFamily({
         QStringLiteral("fonts/Outfit/Outfit-Light.ttf"),
         QStringLiteral("fonts/Outfit/Outfit-Regular.ttf"),

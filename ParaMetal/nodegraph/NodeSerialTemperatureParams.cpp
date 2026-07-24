@@ -3,13 +3,13 @@
 #include "NodeGraphEditor.hpp"
 #include "NodeGraphParamUtils.hpp"
 #include "NodeGraphRegistry.hpp"
-#include "nodegraph/ui/widgets/NodePanelUtils.hpp"
+#include "nodegraph/NodeParamUtils.hpp"
 
 SerialTemperatureNodeParams readSerialTemperatureNodeParams(const NodeGraphNode& node) {
     SerialTemperatureNodeParams params{};
-    params.enabled = NodePanelUtils::readBoolParam(node, nodegraphparams::serialtemperature::Enabled, true);
-    params.portName = NodePanelUtils::readStringParam(node, nodegraphparams::serialtemperature::Port);
-    const int baudRate = NodePanelUtils::readIntParam(
+    params.enabled = NodeParamUtils::readBoolParam(node, nodegraphparams::serialtemperature::Enabled, true);
+    params.portName = NodeParamUtils::readStringParam(node, nodegraphparams::serialtemperature::Port);
+    const int baudRate = NodeParamUtils::readIntParam(
         node, nodegraphparams::serialtemperature::BaudRate, 115200);
     if (baudRate > 0) params.baudRate = static_cast<uint32_t>(baudRate);
     return params;

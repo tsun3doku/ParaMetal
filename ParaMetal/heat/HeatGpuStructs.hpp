@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
 #include <limits>
 
 #include <glm/glm.hpp>
@@ -64,7 +65,14 @@ static_assert(sizeof(BoundaryContribution) == 8, "BoundaryContribution must matc
 struct BufferPushConstant {
     alignas(16) glm::mat4 modelMatrix;
     alignas(16) glm::vec4 sourceParams;
+    uint32_t palette = 0;
+    float minTemperature = 0.0f;
+    float maxTemperature = 100.0f;
 };
+
+static_assert(offsetof(BufferPushConstant, palette) == 80);
+static_assert(offsetof(BufferPushConstant, minTemperature) == 84);
+static_assert(offsetof(BufferPushConstant, maxTemperature) == 88);
 
 struct SourceRenderPushConstant {
     alignas(16) glm::mat4 modelMatrix;

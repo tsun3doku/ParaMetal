@@ -2,12 +2,14 @@
 
 #include <string>
 
+class NodeGraph;
+
 class PyInterpreter {
 public:
     PyInterpreter();
     ~PyInterpreter();
 
-    bool initialize();
+    bool initialize(NodeGraph& graph);
     void shutdown();
     bool isInitialized() const;
 

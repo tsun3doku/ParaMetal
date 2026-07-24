@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "FrameTypes.hpp"
@@ -20,12 +21,14 @@ struct FrameComputeCollection {
     bool insertComputeToGraphicsBarrier = false;
     VkPipelineStageFlags waitDstStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
     ComputePass::Synchronization synchronization{};
+    std::optional<float> computeGpuMs;
     FrameStageResult result = FrameStageResult::Continue;
 };
 
 class FrameComputeStage {
 public:
     FrameComputeStage(VulkanDevice& vulkanDevice, VkFrameGraphRuntime& frameGraphRuntime, FrameSync& frameSync);
+    ~FrameComputeStage();
 
     // Records compute command buffers for the frame. Does NOT submit. Returns
     // the collected work; result indicates whether to proceed, recreate, etc.
@@ -35,4 +38,7 @@ private:
     VulkanDevice& vulkanDevice;
     VkFrameGraphRuntime& frameGraphRuntime;
     FrameSync& frameSync;
+    VkQueryPool timingQueryPool = VK_NULL_HANDLE;
+    float timestampPeriod = 0.0f;
+    std::vector<uint8_t> timingValid;
 };

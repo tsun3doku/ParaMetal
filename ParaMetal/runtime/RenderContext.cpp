@@ -2,15 +2,13 @@
 
 #include "SceneContext.hpp"
 #include "VulkanCoreContext.hpp"
-#include "RenderSettingsController.hpp"
-#include "app/SwapchainManager.hpp"
+#include "app/ViewportTarget.hpp"
 #include "framegraph/FrameController.hpp"
 #include "framegraph/VkFrameGraphRuntime.hpp"
 #include "contact/ContactSystemComputeController.hpp"
 #include "heat/HeatSystem.hpp"
 #include "heat/HeatSystemComputeController.hpp"
 #include "voronoi/VoronoiSystemComputeController.hpp"
-#include "nodegraph/NodeGraph.hpp"
 #include "nodegraph/NodeGraphController.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
 #include "runtime/RuntimeProductManager.hpp"
@@ -37,11 +35,13 @@
 
 RenderContext::~RenderContext() = default;
 
-bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, WindowRuntimeState& windowState, RenderSettingsController* renderSettingsController,
+bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, WindowRuntimeState& windowState, const AppVulkanContext& vulkanContext,
     std::atomic<bool>& runtimeBusy, std::atomic<bool>& isShuttingDown) {
     if (initialized) {
         return true;
     }
+
+    this->windowState = &windowState;
 
     auto* allocator = core.allocator();
     auto* commandPool = core.getRenderCommandPool();
@@ -54,18 +54,24 @@ bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, Win
         return false;
     }
 
-    swapchainManager.initialize(core.device(), windowState);
-    if (!swapchainManager.create()) {
+    viewportTarget.initialize(core.device());
+    if (!viewportTarget.update(
+            vulkanContext.viewportImage,
+            vulkanContext.viewportFormat,
+            vulkanContext.viewportExtent)) {
+        return false;
+    }
+    if (!frameSync.initialize(core.device().getDevice(), renderconfig::MaxFramesInFlight)) {
         return false;
     }
 
-    const VkFormat swapChainImageFormat = swapchainManager.getImageFormat();
-    const VkExtent2D swapChainExtent = swapchainManager.getExtent();
+    const VkFormat viewportImageFormat = viewportTarget.getImageFormat();
+    const VkExtent2D viewportExtent = viewportTarget.getExtent();
 
     renderRuntime = std::make_unique<RenderRuntime>(
         windowState,
         core.device(),
-        swapchainManager,
+        viewportTarget,
         *commandPool,
         frameSync,
         scene.cameraController(),
@@ -73,8 +79,8 @@ bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, Win
         isShuttingDown);
 
     if (!renderRuntime->initializeBase(
-        swapChainImageFormat,
-        swapChainExtent,
+        viewportImageFormat,
+        viewportExtent,
         *allocator,
         *resourceManager,
         *uniformBufferManager,
@@ -182,21 +188,19 @@ bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, Win
     nodeRuntimeServices.heatDisplayTransport = runtimeHeatDisplayTransportState.get();
     nodeRuntimeServices.pointComputeTransport = runtimePointComputeTransportState.get();
     nodeRuntimeServices.heatSystemController = heatSystemComputeControllerState.get();
-    nodeRuntimeServices.renderSettingsController = renderSettingsController;
     nodeRuntimeServices.payloadRegistry = payloadRegistryState.get();
     nodeRuntimeServices.resourceManager = resourceManager;
     nodeRuntimeServices.vulkanDevice = &core.device();
     nodeRuntimeServices.memoryAllocator = allocator;
 
-    nodeGraphState = std::make_unique<NodeGraph>();
-    nodeGraphControllerState = std::make_unique<NodeGraphController>(nodeGraphState.get(), nodeRuntimeServices);
+    nodeGraphControllerState = std::make_unique<NodeGraphController>(nodeRuntimeServices);
 
     initialized = true;
     return true;
 }
 
-bool RenderContext::initializeInputPipeline(SceneContext& scene, InputActionHandler& inputActions) {
-    if (!initialized || !renderRuntime || !sceneControllerState || !nodeGraphControllerState || !nodeGraphState) {
+bool RenderContext::initializeInputPipeline(SceneContext& scene) {
+    if (!initialized || !renderRuntime || !sceneControllerState || !nodeGraphControllerState) {
         return false;
     }
     if (inputPipelineInitialized) {
@@ -218,9 +222,8 @@ bool RenderContext::initializeInputPipeline(SceneContext& scene, InputActionHand
         renderRuntime->getModelSelection(),
         *resourceManager,
         *sceneControllerState,
-        *nodeGraphState,
-        swapchainManager,
-        inputActions);
+        *nodeGraphControllerState,
+        *windowState);
 
     FrameControllerServices frameControllerServices{
         *resourceManager,
@@ -243,25 +246,17 @@ bool RenderContext::initializeInputPipeline(SceneContext& scene, InputActionHand
 }
 
 bool RenderContext::initializeSyncObjects() {
-    if (renderRuntime) {
-        return renderRuntime->initializeSyncObjects();
-    }
-    return false;
+    return initialized;
 }
 
 void RenderContext::shutdown() {
-    if (renderRuntime) {
-        renderRuntime->cleanupSwapChain();
-        renderRuntime->shutdownSyncObjects();
-    }
+    frameSync.waitForAllFrameFences();
 
-    // Now safe to destroy controllers and backends
     if (nodeGraphControllerState && nodeGraphControllerState->getProductManager()) {
         nodeGraphControllerState->getProductManager()->destroyAll();
     }
     inputControllerState.reset();
     nodeGraphControllerState.reset();
-    nodeGraphState.reset();
     sceneControllerState.reset();
     runtimeModelDisplayTransportState.reset();
     runtimeRemeshDisplayTransportState.reset();
@@ -288,7 +283,8 @@ void RenderContext::shutdown() {
     }
     renderRuntime.reset();
     frameSync.shutdown();
-    swapchainManager.cleanup();
+    viewportTarget.cleanup();
+    windowState = nullptr;
     inputPipelineInitialized = false;
     initialized = false;
 }
@@ -297,12 +293,8 @@ bool RenderContext::isInitialized() const {
     return initialized;
 }
 
-SwapchainManager& RenderContext::swapchain() {
-    return swapchainManager;
-}
-
-const SwapchainManager& RenderContext::swapchain() const {
-    return swapchainManager;
+bool RenderContext::updateViewportTarget(VkImage image, VkFormat format, VkExtent2D extent) {
+    return renderRuntime && renderRuntime->updateViewportTarget(image, format, extent);
 }
 
 FrameSync& RenderContext::sync() {
@@ -343,14 +335,6 @@ SceneController* RenderContext::sceneController() {
 
 const SceneController* RenderContext::sceneController() const {
     return sceneControllerState.get();
-}
-
-NodeGraph* RenderContext::nodeGraph() {
-    return nodeGraphState.get();
-}
-
-const NodeGraph* RenderContext::nodeGraph() const {
-    return nodeGraphState.get();
 }
 
 NodeGraphController* RenderContext::nodeGraphController() {

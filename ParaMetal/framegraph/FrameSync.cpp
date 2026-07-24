@@ -96,6 +96,22 @@ void FrameSync::waitForSlot() {
     }
 }
 
+void FrameSync::prepareExternalFrame(uint32_t frameIndex) {
+    if (frameCount == 0) {
+        return;
+    }
+
+    currentFrame = frameIndex % frameCount;
+    if (device == VK_NULL_HANDLE || currentFrame >= frameSlots.size()) {
+        return;
+    }
+
+    const FrameSlot& slot = frameSlots[currentFrame];
+    if (slot.computeSubmittedThisLap) {
+        vkWaitForFences(device, 1, &slot.computeFence, VK_TRUE, UINT64_MAX);
+    }
+}
+
 void FrameSync::waitForAllFrameFences() {
     if (device == VK_NULL_HANDLE || frameSlots.empty()) {
         return;
@@ -231,6 +247,13 @@ VkResult FrameSync::submitFrame(VkQueue computeQueue, VkQueue graphicsQueue,
     }
 
     return VK_SUCCESS;
+}
+
+VkResult FrameSync::submitCompute(VkQueue computeQueue, const FrameSubmission& submission) {
+    FrameSubmission computeSubmission = submission;
+    computeSubmission.graphicsCommandBuffer = VK_NULL_HANDLE;
+    computeSubmission.waitForComputeSemaphore = false;
+    return submitFrame(computeQueue, VK_NULL_HANDLE, VK_NULL_HANDLE, 0, computeSubmission);
 }
 
 VkResult FrameSync::present(VkQueue presentQueue, VkSwapchainKHR swapChain, uint32_t imageIndex) const {

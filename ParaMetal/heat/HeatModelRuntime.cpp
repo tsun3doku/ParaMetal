@@ -331,10 +331,13 @@ void HeatModelRuntime::setSimResources(
     VkBuffer couplingBuffer, VkDeviceSize couplingOffset, uint32_t couplingCount) {
     this->simNodeBuffer = nodeBuffer;
     this->simNodeOffset = nodeOffset;
-    this->simNodeCount = nodeCount;
     this->simNodeCouplingBuffer = couplingBuffer;
     this->simNodeCouplingOffset = couplingOffset;
     this->simNodeCouplingCount = couplingCount;
+
+    if (!tempBufferA.isValid()) {
+        this->simNodeCount = nodeCount;
+    }
 }
 
 bool HeatModelRuntime::configureBoundary(

@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <sstream>
+#include <unordered_set>
 #include <utility>
 
 NodeGraph::NodeGraph() {
@@ -173,10 +174,14 @@ bool NodeGraph::toggleNodeDisplay(NodeGraphNodeId nodeId) {
 }
 
 bool NodeGraph::setNodeParameter(NodeGraphNodeId nodeId, const NodeGraphParamValue& parameter) {
+    return setNodeParameters(nodeId, std::vector<NodeGraphParamValue>{parameter});
+}
+
+bool NodeGraph::setNodeParameters(NodeGraphNodeId nodeId, const std::vector<NodeGraphParamValue>& parameters) {
     std::lock_guard<std::recursive_mutex> lock(mutex);
 
     NodeGraphNode* node = findNodeUnlocked(nodeId);
-    if (!node) {
+    if (!node || parameters.empty()) {
         return false;
     }
 
@@ -185,20 +190,41 @@ bool NodeGraph::setNodeParameter(NodeGraphNodeId nodeId, const NodeGraphParamVal
         return false;
     }
 
-    const NodeGraphParamDefinition* parameterDefinition = findNodeParamDefinition(*definition, parameter.id);
-    NodeGraphParamValue normalizedParameter = parameter;
-    if (!parameterDefinition ||
-        !normalizeNodeGraphParamValue(*parameterDefinition, normalizedParameter) ||
-        !validateNodeGraphParamValue(*parameterDefinition, normalizedParameter)) {
-        return false;
+    std::unordered_set<uint32_t> parameterIds;
+    std::vector<NodeGraphParamValue> normalizedParameters;
+    parameterIds.reserve(parameters.size());
+    normalizedParameters.reserve(parameters.size());
+
+    for (const NodeGraphParamValue& parameter : parameters) {
+        if (!parameterIds.insert(parameter.id).second) {
+            return false;
+        }
+
+        const NodeGraphParamDefinition* parameterDefinition = findNodeParamDefinition(*definition, parameter.id);
+        NodeGraphParamValue normalizedParameter = parameter;
+        if (!parameterDefinition ||
+            !normalizeNodeGraphParamValue(*parameterDefinition, normalizedParameter) ||
+            !validateNodeGraphParamValue(*parameterDefinition, normalizedParameter)) {
+            return false;
+        }
+        normalizedParameters.push_back(std::move(normalizedParameter));
     }
 
-    NodeGraphParamValue* existingParameter = findNodeParamValue(*node, parameter.id);
-    if (existingParameter) {
-        *existingParameter = std::move(normalizedParameter);
-    } else {
-        node->parameters.push_back(std::move(normalizedParameter));
+    std::vector<NodeGraphParamValue> updatedParameters = node->parameters;
+    for (NodeGraphParamValue& parameter : normalizedParameters) {
+        const auto existingParameter = std::find_if(
+            updatedParameters.begin(),
+            updatedParameters.end(),
+            [&parameter](const NodeGraphParamValue& candidate) {
+                return candidate.id == parameter.id;
+            });
+        if (existingParameter != updatedParameters.end()) {
+            *existingParameter = std::move(parameter);
+        } else {
+            updatedParameters.push_back(std::move(parameter));
+        }
     }
+    node->parameters.swap(updatedParameters);
 
     bumpRevision();
     NodeGraphChange change{NodeGraphChangeType::NodeUpsert};
@@ -209,10 +235,7 @@ bool NodeGraph::setNodeParameter(NodeGraphNodeId nodeId, const NodeGraphParamVal
     return true;
 }
 
-bool NodeGraph::appendSocket(
-    NodeGraphNodeId nodeId,
-    const NodeSocketSignature& socketSignature,
-    NodeGraphSocketId* outSocketId) {
+bool NodeGraph::appendSocket(NodeGraphNodeId nodeId, const NodeSocketSignature& socketSignature, NodeGraphSocketId* outSocketId) {
     std::lock_guard<std::recursive_mutex> lock(mutex);
 
     NodeGraphNode* node = findNodeUnlocked(nodeId);

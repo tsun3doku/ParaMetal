@@ -250,7 +250,6 @@ void HeatSystemSurfaceStage::dispatchSurfacePass(
 
     heat::HeatModelPushConstant surfacePushConstant{};
     surfacePushConstant.elementCount = 0;
-
     const bool useB = (currentFrame % 2) == 1;
 
     for (const auto& [runtimeModelId, heatModel] : activeModels) {

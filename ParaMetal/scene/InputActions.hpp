@@ -1,10 +1,21 @@
 #pragma once
 
-class InputActionHandler {
-public:
-    virtual ~InputActionHandler() = default;
+#include "nodegraph/NodeGraphTypes.hpp"
 
-    virtual void onWireframeToggleRequested() = 0;
-    virtual void onTimingOverlayToggleRequested() = 0;
-    virtual void onGridToggleRequested() = 0;
+#include <variant>
+#include <vector>
+
+struct ToggleWireframeAction {};
+struct ToggleTimingOverlayAction {};
+struct ToggleGridAction {};
+
+struct SetNodeParametersAction {
+    NodeGraphNodeId nodeId;
+    std::vector<NodeGraphParamValue> parameters;
 };
+
+using InputAction = std::variant<
+    ToggleWireframeAction,
+    ToggleTimingOverlayAction,
+    ToggleGridAction,
+    SetNodeParametersAction>;

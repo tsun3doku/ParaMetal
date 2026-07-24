@@ -6,12 +6,12 @@
 #include <vector>
 
 #include "app/AppTypes.hpp"
-#include "RenderSettingsController.hpp"
-#include "RenderSettingsManager.hpp"
 #include "RenderContext.hpp"
 #include "RuntimeController.hpp"
 #include "RuntimeInterfaces.hpp"
-#include "SimulationError.hpp"
+#include "nodegraph/NodeGraphState.hpp"
+#include "nodegraph/NodeGraphTypes.hpp"
+#include "scene/InputActions.hpp"
 #include "SceneContext.hpp"
 #include "TimelineController.hpp"
 #include "TimelineRuntime.hpp"
@@ -31,21 +31,25 @@ public:
     ~RuntimeSystems();
 
     bool initialize(WindowRuntimeState& runtimeState, const AppVulkanContext& vulkanContext);
-    void tickFrame(float deltaTime);
+    void tickFrame(float deltaTime, VkCommandBuffer commandBuffer, uint32_t frameIndex);
+    bool updateViewportTarget(VkImage image, VkFormat format, VkExtent2D extent);
+    void replaceGraphState(const NodeGraphState& state);
+    bool applyGraphDelta(const NodeGraphDelta& delta);
+    std::vector<InputAction> takePendingAuthoringActions();
     void shutdown();
     bool isInitialized() const;
 
     const RuntimeQuery* runtimeQuery() const;
     TimelineController* timelineController();
     const TimelineController* timelineController() const;
-    std::vector<SimulationError> consumeSimulationErrors();
     uint32_t loadModel(const std::string& modelPath, uint32_t preferredModelId = 0);
     void setPanSensitivity(float sensitivity);
-    void setSimPaused(bool paused);
-    RenderSettingsController* getSettingsController();
-    const RenderSettingsController* getSettingsController() const;
-    NodeGraph* getNodeGraph();
-    const NodeGraph* getNodeGraph() const;
+    void setWireframeMode(app::WireframeMode mode);
+    void setGridEnabled(bool enabled);
+    void setHeatPaletteRange(float minimum, float maximum);
+    void setHeatPalette(int palette);
+    bool isHeatPaletteVisible() const;
+    const app::RenderSettings& renderSettings() const;
     CameraController* getCameraController();
     const CameraController* getCameraController() const;
     SceneController* getSceneController();
@@ -57,6 +61,7 @@ public:
 
 private:
     void cleanup();
+    void dispatchInputActions();
     bool isSimulationActive() const override;
     bool isSimulationPaused() const override;
     float getSimulationTotalTime() const override;
@@ -77,7 +82,6 @@ private:
 
     WindowRuntimeState* windowRuntimeState = nullptr;
     bool initialized = false;
-    std::atomic<bool> simPaused{false};
     std::atomic<bool> runtimeBusy{false};
     std::atomic<bool> isShuttingDown{false};
     uint32_t frameCounter = 0;
@@ -87,8 +91,8 @@ private:
     RenderContext render;
     RuntimeController runtimeController;
 
-    RenderSettingsManager settingsManager;
-    RenderSettingsController settingsController{&settingsManager};
+    app::RenderSettings renderSettingsState;
     TimelineRuntime timelineRuntime;
     TimelineController timelineControllerInstance{&timelineRuntime};
+    std::vector<InputAction> pendingAuthoringActions;
 };

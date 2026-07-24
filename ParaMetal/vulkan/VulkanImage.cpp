@@ -353,6 +353,41 @@ VkResult createTextureImage(VulkanDevice& vulkanDevice, MemoryAllocator& memoryA
     return createTextureImage(vulkanDevice, memoryAllocator, commandPool, textureImage, textureImageMemory, texturePath.c_str(), mipLevels);
 }
 
+VkResult createTextureImage16(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, CommandPool& commandPool, const char* imagePath, VkImage& textureImage, VkDeviceMemory& textureImageMemory) {
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    stbi_us* pixels = stbi_load_16(imagePath, &width, &height, &channels, 4);
+    if (!pixels || width <= 0 || height <= 0) {
+        if (pixels) stbi_image_free(pixels);
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    const VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * static_cast<VkDeviceSize>(height) * 4u * sizeof(uint16_t);
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    VkDeviceSize stagingOffset = 0;
+    void* mapped = nullptr;
+    if (createStagingBuffer(memoryAllocator, imageSize, stagingBuffer, stagingOffset, &mapped) != VK_SUCCESS || !mapped) {
+        stbi_image_free(pixels);
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    memcpy(mapped, pixels, static_cast<size_t>(imageSize));
+    stbi_image_free(pixels);
+    VkResult result = createImage(vulkanDevice, static_cast<uint32_t>(width), static_cast<uint32_t>(height), VK_FORMAT_R16G16B16A16_UNORM, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImage, textureImageMemory, VK_SAMPLE_COUNT_1_BIT);
+    if (result == VK_SUCCESS) result = transitionImageLayout(commandPool, textureImage, VK_FORMAT_R16G16B16A16_UNORM, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    if (result == VK_SUCCESS) {
+        commandPool.copyBufferToImage(stagingBuffer, textureImage, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+        result = transitionImageLayout(commandPool, textureImage, VK_FORMAT_R16G16B16A16_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    }
+    memoryAllocator.free(stagingBuffer, stagingOffset);
+    if (result != VK_SUCCESS) {
+        if (textureImage != VK_NULL_HANDLE) vkDestroyImage(vulkanDevice.getDevice(), textureImage, nullptr);
+        if (textureImageMemory != VK_NULL_HANDLE) vkFreeMemory(vulkanDevice.getDevice(), textureImageMemory, nullptr);
+        textureImage = VK_NULL_HANDLE;
+        textureImageMemory = VK_NULL_HANDLE;
+    }
+    return result;
+}
+
 VkResult createTextureImageView(const VulkanDevice& vulkanDevice, VkImage textureImage, VkImageView& outImageView, uint32_t mipLevels) {
     return createImageView(
         vulkanDevice, textureImage, VK_FORMAT_R8G8B8A8_SRGB,

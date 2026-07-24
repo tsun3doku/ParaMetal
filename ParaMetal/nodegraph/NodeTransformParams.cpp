@@ -3,19 +3,19 @@
 #include "NodeGraph.hpp"
 #include "NodeGraphEditor.hpp"
 #include "NodeGraphRegistry.hpp"
-#include "nodegraph/ui/widgets/NodePanelUtils.hpp"
+#include "nodegraph/NodeParamUtils.hpp"
 
 TransformNodeParams readTransformNodeParams(const NodeGraphNode& node) {
     TransformNodeParams params{};
-    params.translateX = NodePanelUtils::readFloatParam(node, nodegraphparams::transform::TranslateX, 0.0);
-    params.translateY = NodePanelUtils::readFloatParam(node, nodegraphparams::transform::TranslateY, 0.0);
-    params.translateZ = NodePanelUtils::readFloatParam(node, nodegraphparams::transform::TranslateZ, 0.0);
-    params.rotateXDegrees = NodePanelUtils::readFloatParam(node, nodegraphparams::transform::RotateXDegrees, 0.0);
-    params.rotateYDegrees = NodePanelUtils::readFloatParam(node, nodegraphparams::transform::RotateYDegrees, 0.0);
-    params.rotateZDegrees = NodePanelUtils::readFloatParam(node, nodegraphparams::transform::RotateZDegrees, 0.0);
-    params.scaleX = NodePanelUtils::readFloatParam(node, nodegraphparams::transform::ScaleX, 1.0);
-    params.scaleY = NodePanelUtils::readFloatParam(node, nodegraphparams::transform::ScaleY, 1.0);
-    params.scaleZ = NodePanelUtils::readFloatParam(node, nodegraphparams::transform::ScaleZ, 1.0);
+    params.translateX = NodeParamUtils::readFloatParam(node, nodegraphparams::transform::TranslateX, 0.0);
+    params.translateY = NodeParamUtils::readFloatParam(node, nodegraphparams::transform::TranslateY, 0.0);
+    params.translateZ = NodeParamUtils::readFloatParam(node, nodegraphparams::transform::TranslateZ, 0.0);
+    params.rotateXDegrees = NodeParamUtils::readFloatParam(node, nodegraphparams::transform::RotateXDegrees, 0.0);
+    params.rotateYDegrees = NodeParamUtils::readFloatParam(node, nodegraphparams::transform::RotateYDegrees, 0.0);
+    params.rotateZDegrees = NodeParamUtils::readFloatParam(node, nodegraphparams::transform::RotateZDegrees, 0.0);
+    params.scaleX = NodeParamUtils::readFloatParam(node, nodegraphparams::transform::ScaleX, 1.0);
+    params.scaleY = NodeParamUtils::readFloatParam(node, nodegraphparams::transform::ScaleY, 1.0);
+    params.scaleZ = NodeParamUtils::readFloatParam(node, nodegraphparams::transform::ScaleZ, 1.0);
     return params;
 }
 

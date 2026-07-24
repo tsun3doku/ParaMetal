@@ -8,6 +8,8 @@
 
 class VulkanDevice;
 class UniformBufferManager;
+class MemoryAllocator;
+class CommandPool;
 
 class HeatSurfaceRenderer {
 public:
@@ -24,24 +26,30 @@ public:
         VkDeviceSize surfaceBufferOffset = 0;
     };
 
-    HeatSurfaceRenderer(VulkanDevice& device, UniformBufferManager& uniformBufferManager);
+    HeatSurfaceRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, CommandPool& commandPool);
     ~HeatSurfaceRenderer();
 
     void initialize(VkRenderPass renderPass, uint32_t subpass, uint32_t maxFramesInFlight);
     void cleanup();
+    void setPalette(uint32_t updatedPalette) { palette = updatedPalette < 4 ? updatedPalette : 0u; }
+    void setRange(float minimum, float maximum) { minTemperature = minimum; maxTemperature = maximum; }
     void render(VkCommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<SurfaceRenderBinding>& surfaces);
 
 private:
     bool createDescriptorPool(uint32_t maxFramesInFlight);
     bool createDescriptorSetLayout();
     bool createPipeline(VkRenderPass renderPass, uint32_t subpass);
+    bool createPaletteTextures();
+    void destroyPaletteTextures();
     void drawModel(VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet, const SurfaceRenderBinding& binding) const;
     
     VkDescriptorSet allocateDescriptorSet(VkDescriptorPool pool);
     void updateDescriptorSet(VkDescriptorSet descriptorSet, uint32_t frameIndex, const SurfaceRenderBinding& binding);
 
     VulkanDevice& vulkanDevice;
+    MemoryAllocator& memoryAllocator;
     UniformBufferManager& uniformBufferManager;
+    CommandPool& commandPool;
 
     std::vector<VkDescriptorPool> descriptorPools;
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
@@ -50,4 +58,20 @@ private:
     VkPipeline pipeline = VK_NULL_HANDLE;
 
     bool initialized = false;
+    VkImage infernoImage = VK_NULL_HANDLE;
+    VkDeviceMemory infernoMemory = VK_NULL_HANDLE;
+    VkImageView infernoView = VK_NULL_HANDLE;
+    VkImage viridisImage = VK_NULL_HANDLE;
+    VkDeviceMemory viridisMemory = VK_NULL_HANDLE;
+    VkImageView viridisView = VK_NULL_HANDLE;
+    VkImage inferno2Image = VK_NULL_HANDLE;
+    VkDeviceMemory inferno2Memory = VK_NULL_HANDLE;
+    VkImageView inferno2View = VK_NULL_HANDLE;
+    VkImage parulaImage = VK_NULL_HANDLE;
+    VkDeviceMemory parulaMemory = VK_NULL_HANDLE;
+    VkImageView parulaView = VK_NULL_HANDLE;
+    VkSampler paletteSampler = VK_NULL_HANDLE;
+    uint32_t palette = 0;
+    float minTemperature = 0.0f;
+    float maxTemperature = 100.0f;
 };

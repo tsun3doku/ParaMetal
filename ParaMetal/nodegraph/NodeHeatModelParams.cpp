@@ -6,7 +6,7 @@
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
 #include "NodeHeatMaterialPresets.hpp"
-#include "nodegraph/ui/widgets/NodePanelUtils.hpp"
+#include "nodegraph/NodeParamUtils.hpp"
 
 HeatModelNodeParams readHeatModelNodeParams(const NodeGraphNode& node) {
     HeatModelNodeParams params{};
@@ -19,32 +19,32 @@ HeatModelNodeParams readHeatModelNodeParams(const NodeGraphNode& node) {
             }
         }
     }
-    params.density = NodePanelUtils::readFloatParam(
+    params.density = NodeParamUtils::readFloatParam(
         node,
         nodegraphparams::heatmodel::Density,
         HeatSimDefaults::density);
-    params.specificHeat = NodePanelUtils::readFloatParam(
+    params.specificHeat = NodeParamUtils::readFloatParam(
         node,
         nodegraphparams::heatmodel::SpecificHeat,
         HeatSimDefaults::specificHeat);
-    params.conductivity = NodePanelUtils::readFloatParam(
+    params.conductivity = NodeParamUtils::readFloatParam(
         node,
         nodegraphparams::heatmodel::Conductivity,
         HeatSimDefaults::conductivity);
-    params.initialTemperatureC = NodePanelUtils::readFloatParam(
+    params.initialTemperatureC = NodeParamUtils::readFloatParam(
         node,
         nodegraphparams::heatmodel::InitialTemperatureC,
         HeatSimDefaults::ambientTemperatureC);
     params.boundaryConditionType = static_cast<BoundaryCondition::Type>(
-        NodePanelUtils::readEnumParam(node, nodegraphparams::heatmodel::BoundaryCondition, 0));
-    params.boundaryTemperatureC = NodePanelUtils::readFloatParam(
+        NodeParamUtils::readEnumParam(node, nodegraphparams::heatmodel::BoundaryCondition, 0));
+    params.boundaryTemperatureC = NodeParamUtils::readFloatParam(
         node,
         nodegraphparams::heatmodel::DirichletTemperatureC,
         HeatSimDefaults::ambientTemperatureC);
-    params.heatFlux = NodePanelUtils::readFloatParam(node, nodegraphparams::heatmodel::HeatFlux, 0.0);
-    params.heatTransferCoefficient = NodePanelUtils::readFloatParam(
+    params.heatFlux = NodeParamUtils::readFloatParam(node, nodegraphparams::heatmodel::HeatFlux, 0.0);
+    params.heatTransferCoefficient = NodeParamUtils::readFloatParam(
         node, nodegraphparams::heatmodel::HeatTransferCoefficient, 0.0);
-    params.volumetricPowerDensity = NodePanelUtils::readFloatParam(
+    params.volumetricPowerDensity = NodeParamUtils::readFloatParam(
         node, nodegraphparams::heatmodel::VolumetricPowerDensity, 0.0);
     return params;
 }

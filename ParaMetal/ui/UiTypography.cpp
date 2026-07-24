@@ -20,8 +20,6 @@ const TypographySpec& UiTypography::spec(TextRole role) {
         return Description;
     case TextRole::Console:
         return Console;
-    case TextRole::TimelineBubble:
-        return TimelineBubble;
     case TextRole::NodeTitle:
         return NodeTitle;
     case TextRole::Regular:

@@ -13,8 +13,8 @@
 #include <iostream>
 #include <unordered_set>
 
-HeatSurfaceRenderer::HeatSurfaceRenderer(VulkanDevice& device, UniformBufferManager& uboManager)
-    : vulkanDevice(device), uniformBufferManager(uboManager) {
+HeatSurfaceRenderer::HeatSurfaceRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uboManager, CommandPool& paletteCommandPool)
+    : vulkanDevice(device), memoryAllocator(allocator), uniformBufferManager(uboManager), commandPool(paletteCommandPool) {
 }
 
 HeatSurfaceRenderer::~HeatSurfaceRenderer() {
@@ -26,7 +26,8 @@ void HeatSurfaceRenderer::initialize(VkRenderPass renderPass, uint32_t subpass, 
         cleanup();
     }
 
-    if (!createDescriptorPool(maxFramesInFlight) ||
+    if (!createPaletteTextures() ||
+        !createDescriptorPool(maxFramesInFlight) ||
         !createDescriptorSetLayout() ||
         !createPipeline(renderPass, subpass)) {
         cleanup();
@@ -39,13 +40,15 @@ void HeatSurfaceRenderer::initialize(VkRenderPass renderPass, uint32_t subpass, 
 bool HeatSurfaceRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
     const uint32_t maxRenderableHeatModels = 64;
 
-    std::array<VkDescriptorPoolSize, 3> poolSizes{};
+    std::array<VkDescriptorPoolSize, 4> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = maxRenderableHeatModels;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
     poolSizes[1].descriptorCount = maxRenderableHeatModels * 10;
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     poolSizes[2].descriptorCount = maxRenderableHeatModels;
+    poolSizes[3].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[3].descriptorCount = maxRenderableHeatModels * 4;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -65,7 +68,7 @@ bool HeatSurfaceRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
 }
 
 bool HeatSurfaceRenderer::createDescriptorSetLayout() {
-    std::array<VkDescriptorSetLayoutBinding, 12> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 16> bindings{};
 
     bindings[0].binding = 0;
     bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -84,6 +87,18 @@ bool HeatSurfaceRenderer::createDescriptorSetLayout() {
     bindings[11].descriptorCount = 1;
     bindings[11].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
+    bindings[12].binding = 12;
+    bindings[12].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[12].descriptorCount = 1;
+    bindings[12].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[13] = bindings[12];
+    bindings[13].binding = 13;
+    bindings[14] = bindings[12];
+    bindings[14].binding = 14;
+    bindings[15] = bindings[12];
+    bindings[15].binding = 15;
+
+
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
@@ -95,6 +110,43 @@ bool HeatSurfaceRenderer::createDescriptorSetLayout() {
     }
 
     return true;
+}
+
+bool HeatSurfaceRenderer::createPaletteTextures() {
+    if (createTextureImage16(vulkanDevice, memoryAllocator, commandPool, "textures/palettes/inferno.png", infernoImage, infernoMemory) != VK_SUCCESS ||
+        createTextureImage16(vulkanDevice, memoryAllocator, commandPool, "textures/palettes/viridis.png", viridisImage, viridisMemory) != VK_SUCCESS ||
+        createTextureImage16(vulkanDevice, memoryAllocator, commandPool, "textures/palettes/inferno2.png", inferno2Image, inferno2Memory) != VK_SUCCESS ||
+        createTextureImage16(vulkanDevice, memoryAllocator, commandPool, "textures/palettes/parula.png", parulaImage, parulaMemory) != VK_SUCCESS ||
+        createImageView(vulkanDevice, infernoImage, VK_FORMAT_R16G16B16A16_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, infernoView) != VK_SUCCESS ||
+        createImageView(vulkanDevice, viridisImage, VK_FORMAT_R16G16B16A16_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, viridisView) != VK_SUCCESS ||
+        createImageView(vulkanDevice, inferno2Image, VK_FORMAT_R16G16B16A16_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, inferno2View) != VK_SUCCESS ||
+        createImageView(vulkanDevice, parulaImage, VK_FORMAT_R16G16B16A16_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, parulaView) != VK_SUCCESS ||
+        createTextureSampler(vulkanDevice, paletteSampler) != VK_SUCCESS) {
+        destroyPaletteTextures();
+        return false;
+    }
+    return true;
+}
+
+void HeatSurfaceRenderer::destroyPaletteTextures() {
+    VkDevice device = vulkanDevice.getDevice();
+    if (paletteSampler != VK_NULL_HANDLE) vkDestroySampler(device, paletteSampler, nullptr);
+    if (infernoView != VK_NULL_HANDLE) vkDestroyImageView(device, infernoView, nullptr);
+    if (viridisView != VK_NULL_HANDLE) vkDestroyImageView(device, viridisView, nullptr);
+    if (inferno2View != VK_NULL_HANDLE) vkDestroyImageView(device, inferno2View, nullptr);
+    if (parulaView != VK_NULL_HANDLE) vkDestroyImageView(device, parulaView, nullptr);
+    if (infernoImage != VK_NULL_HANDLE) vkDestroyImage(device, infernoImage, nullptr);
+    if (viridisImage != VK_NULL_HANDLE) vkDestroyImage(device, viridisImage, nullptr);
+    if (inferno2Image != VK_NULL_HANDLE) vkDestroyImage(device, inferno2Image, nullptr);
+    if (parulaImage != VK_NULL_HANDLE) vkDestroyImage(device, parulaImage, nullptr);
+    if (infernoMemory != VK_NULL_HANDLE) vkFreeMemory(device, infernoMemory, nullptr);
+    if (viridisMemory != VK_NULL_HANDLE) vkFreeMemory(device, viridisMemory, nullptr);
+    if (inferno2Memory != VK_NULL_HANDLE) vkFreeMemory(device, inferno2Memory, nullptr);
+    if (parulaMemory != VK_NULL_HANDLE) vkFreeMemory(device, parulaMemory, nullptr);
+    paletteSampler = VK_NULL_HANDLE;
+    infernoView = viridisView = inferno2View = parulaView = VK_NULL_HANDLE;
+    infernoImage = viridisImage = inferno2Image = parulaImage = VK_NULL_HANDLE;
+    infernoMemory = viridisMemory = inferno2Memory = parulaMemory = VK_NULL_HANDLE;
 }
 
 bool HeatSurfaceRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpass) {
@@ -284,6 +336,9 @@ void HeatSurfaceRenderer::drawModel(VkCommandBuffer commandBuffer, VkDescriptorS
     heat::BufferPushConstant pushConstants{};
     pushConstants.modelMatrix = binding.modelMatrix;
     pushConstants.sourceParams = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
+    pushConstants.palette = palette;
+    pushConstants.minTemperature = minTemperature;
+    pushConstants.maxTemperature = maxTemperature;
     vkCmdPushConstants(
         commandBuffer,
         pipelineLayout,
@@ -317,7 +372,7 @@ VkDescriptorSet HeatSurfaceRenderer::allocateDescriptorSet(VkDescriptorPool pool
 }
 
 void HeatSurfaceRenderer::updateDescriptorSet(VkDescriptorSet set, uint32_t frameIndex, const SurfaceRenderBinding& binding) {
-    std::array<VkWriteDescriptorSet, 12> descriptorWrites{};
+    std::array<VkWriteDescriptorSet, 16> descriptorWrites{};
 
     VkDescriptorBufferInfo uboBufferInfo{};
     uboBufferInfo.buffer = uniformBufferManager.getUniformBuffers()[frameIndex];
@@ -355,7 +410,34 @@ void HeatSurfaceRenderer::updateDescriptorSet(VkDescriptorSet set, uint32_t fram
     descriptorWrites[11].descriptorCount = 1;
     descriptorWrites[11].pBufferInfo = &surfaceInfo;
 
-    vkUpdateDescriptorSets(vulkanDevice.getDevice(), 12, descriptorWrites.data(), 0, nullptr);
+    VkDescriptorImageInfo infernoInfo{};
+    infernoInfo.sampler = paletteSampler;
+    infernoInfo.imageView = infernoView;
+    infernoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkDescriptorImageInfo viridisInfo = infernoInfo;
+    viridisInfo.imageView = viridisView;
+    VkDescriptorImageInfo inferno2Info = infernoInfo;
+    inferno2Info.imageView = inferno2View;
+    VkDescriptorImageInfo parulaInfo = infernoInfo;
+    parulaInfo.imageView = parulaView;
+
+    descriptorWrites[12].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[12].dstSet = set;
+    descriptorWrites[12].dstBinding = 12;
+    descriptorWrites[12].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrites[12].descriptorCount = 1;
+    descriptorWrites[12].pImageInfo = &infernoInfo;
+    descriptorWrites[13] = descriptorWrites[12];
+    descriptorWrites[13].dstBinding = 13;
+    descriptorWrites[13].pImageInfo = &viridisInfo;
+    descriptorWrites[14] = descriptorWrites[12];
+    descriptorWrites[14].dstBinding = 14;
+    descriptorWrites[14].pImageInfo = &inferno2Info;
+    descriptorWrites[15] = descriptorWrites[12];
+    descriptorWrites[15].dstBinding = 15;
+    descriptorWrites[15].pImageInfo = &parulaInfo;
+
+    vkUpdateDescriptorSets(vulkanDevice.getDevice(), 16, descriptorWrites.data(), 0, nullptr);
 }
 
 void HeatSurfaceRenderer::render(VkCommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<SurfaceRenderBinding>& surfaces) {
@@ -403,6 +485,8 @@ void HeatSurfaceRenderer::cleanup() {
         vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
         descriptorSetLayout = VK_NULL_HANDLE;
     }
+
+    destroyPaletteTextures();
 
     initialized = false;
 }

@@ -2,11 +2,11 @@
 
 #include "NodeGraphEditor.hpp"
 #include "NodeGraphRegistry.hpp"
-#include "nodegraph/ui/widgets/NodePanelUtils.hpp"
+#include "nodegraph/NodeParamUtils.hpp"
 
 ModelNodeParams readModelNodeParams(const NodeGraphNode& node) {
     ModelNodeParams params{};
-    params.path = NodePanelUtils::readStringParam(node, nodegraphparams::model::Path);
+    params.path = NodeParamUtils::readStringParam(node, nodegraphparams::model::Path);
     return params;
 }
 

@@ -405,28 +405,63 @@ bool SceneRenderer::recordCommandBuffer(
     bool insertComputeToGraphicsBarrier,
     VkPipelineStageFlags computeToGraphicsDstStageMask,
     const std::function<void(VkCommandBuffer)>& postRenderCommands) {
+    if (frameRequest.frameIndex >= gbufferCommandBuffers.size()) {
+        std::cerr << "[SceneRenderer] Invalid frame index for command buffer recording" << std::endl;
+        return false;
+    }
+
+    return recordCommands(
+        gbufferCommandBuffers[frameRequest.frameIndex],
+        true,
+        frameRequest,
+        services,
+        insertComputeToGraphicsBarrier,
+        computeToGraphicsDstStageMask,
+        postRenderCommands);
+}
+
+bool SceneRenderer::recordExternalCommandBuffer(
+    VkCommandBuffer commandBuffer,
+    const render::RenderFrameRequest& frameRequest,
+    render::RenderServices& services,
+    bool insertComputeToGraphicsBarrier,
+    VkPipelineStageFlags computeToGraphicsDstStageMask) {
+    return recordCommands(
+        commandBuffer,
+        false,
+        frameRequest,
+        services,
+        insertComputeToGraphicsBarrier,
+        computeToGraphicsDstStageMask,
+        {});
+}
+
+bool SceneRenderer::recordCommands(
+    VkCommandBuffer commandBuffer,
+    bool manageCommandBufferRecording,
+    const render::RenderFrameRequest& frameRequest,
+    render::RenderServices& services,
+    bool insertComputeToGraphicsBarrier,
+    VkPipelineStageFlags computeToGraphicsDstStageMask,
+    const std::function<void(VkCommandBuffer)>& postRenderCommands) {
     if (!ready) {
         return false;
     }
     const uint32_t currentFrame = frameRequest.frameIndex;
     const uint32_t imageIndex = frameRequest.imageIndex;
     const VkExtent2D extent = frameRequest.extent;
-    if (currentFrame >= gbufferCommandBuffers.size()) {
-        std::cerr << "[SceneRenderer] Invalid frame index for command buffer recording" << std::endl;
-        return false;
-    }
-    VkCommandBuffer commandBuffer = gbufferCommandBuffers[currentFrame];
     if (commandBuffer == VK_NULL_HANDLE) {
         std::cerr << "[SceneRenderer] Null command buffer" << std::endl;
         return false;
     }
 
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-
-    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
-        std::cerr << "[SceneRenderer] Failed to begin command buffer recording" << std::endl;
-        return false;
+    if (manageCommandBufferRecording) {
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+            std::cerr << "[SceneRenderer] Failed to begin command buffer recording" << std::endl;
+            return false;
+        }
     }
 
     uint32_t timingQueryBase = 0;
@@ -449,7 +484,9 @@ bool SceneRenderer::recordCommandBuffer(
     renderPassInfo.framebuffer = frameGraphRuntime.getFramebuffer(currentFrame, imageIndex);
     if (renderPassInfo.framebuffer == VK_NULL_HANDLE) {
         std::cerr << "[SceneRenderer] Invalid framebuffer" << std::endl;
-        vkEndCommandBuffer(commandBuffer);
+        if (manageCommandBufferRecording) {
+            vkEndCommandBuffer(commandBuffer);
+        }
         return false;
     }
     renderPassInfo.renderArea.offset = { 0, 0 };
@@ -533,9 +570,11 @@ bool SceneRenderer::recordCommandBuffer(
         }
     }
 
-    if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
-        std::cerr << "[SceneRenderer] Failed to finalize command buffer recording" << std::endl;
-        return false;
+    if (manageCommandBufferRecording) {
+        if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+            std::cerr << "[SceneRenderer] Failed to finalize command buffer recording" << std::endl;
+            return false;
+        }
     }
     return true;
 }

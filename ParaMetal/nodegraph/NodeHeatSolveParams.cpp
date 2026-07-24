@@ -3,20 +3,20 @@
 #include "heat/HeatGpuStructs.hpp"
 #include "NodeGraphEditor.hpp"
 #include "NodeGraphRegistry.hpp"
-#include "nodegraph/ui/widgets/NodePanelUtils.hpp"
+#include "nodegraph/NodeParamUtils.hpp"
 
 HeatSolveNodeParams readHeatSolveNodeParams(const NodeGraphNode& node) {
     HeatSolveNodeParams params{};
-    params.enabled = NodePanelUtils::readBoolParam(node, nodegraphparams::heatsolve::Enabled, false);
-    params.paused = NodePanelUtils::readBoolParam(node, nodegraphparams::heatsolve::Paused, false);
-    params.resetCounter = static_cast<uint32_t>(NodePanelUtils::readIntParam(node, nodegraphparams::heatsolve::ResetRequested, 0));
-    params.rewindFrame = static_cast<uint32_t>(NodePanelUtils::readIntParam(node, nodegraphparams::heatsolve::RewindFrame, heat::NoRewindFrame));
-    params.contactThermalConductance = NodePanelUtils::readFloatParam(node, nodegraphparams::heatsolve::ContactThermalConductance, 16000.0);
-    params.simulationDuration = NodePanelUtils::readFloatParam(node, nodegraphparams::heatsolve::SimulationDuration, 5.0);
-    params.preview.showHeatOverlay = NodePanelUtils::readBoolParam(node, nodegraphparams::heatsolve::ShowHeatOverlay, false);
-    params.preview.showFluxVectors = NodePanelUtils::readBoolParam(node, nodegraphparams::heatsolve::ShowFluxVectors, false);
-    params.preview.showHeatPalette = NodePanelUtils::readBoolParam(node, nodegraphparams::heatsolve::ShowHeatPalette, false);
-    params.preview.fluxVectorScale = NodePanelUtils::readFloatParam(node, nodegraphparams::heatsolve::FluxVectorScale, 1.0);
+    params.enabled = NodeParamUtils::readBoolParam(node, nodegraphparams::heatsolve::Enabled, false);
+    params.paused = NodeParamUtils::readBoolParam(node, nodegraphparams::heatsolve::Paused, false);
+    params.resetCounter = static_cast<uint32_t>(NodeParamUtils::readIntParam(node, nodegraphparams::heatsolve::ResetRequested, 0));
+    params.rewindFrame = static_cast<uint32_t>(NodeParamUtils::readIntParam(node, nodegraphparams::heatsolve::RewindFrame, heat::NoRewindFrame));
+    params.contactThermalConductance = NodeParamUtils::readFloatParam(node, nodegraphparams::heatsolve::ContactThermalConductance, 16000.0);
+    params.simulationDuration = NodeParamUtils::readFloatParam(node, nodegraphparams::heatsolve::SimulationDuration, 5.0);
+    params.preview.showHeatOverlay = NodeParamUtils::readBoolParam(node, nodegraphparams::heatsolve::ShowHeatOverlay, false);
+    params.preview.showFluxVectors = NodeParamUtils::readBoolParam(node, nodegraphparams::heatsolve::ShowFluxVectors, false);
+    params.preview.showHeatPalette = NodeParamUtils::readBoolParam(node, nodegraphparams::heatsolve::ShowHeatPalette, false);
+    params.preview.fluxVectorScale = NodeParamUtils::readFloatParam(node, nodegraphparams::heatsolve::FluxVectorScale, 1.0);
 
     return params;
 }

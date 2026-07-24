@@ -86,6 +86,12 @@ public:
         bool insertComputeToGraphicsBarrier,
         VkPipelineStageFlags computeToGraphicsDstStageMask,
         const std::function<void(VkCommandBuffer)>& postRenderCommands = {});
+    bool recordExternalCommandBuffer(
+        VkCommandBuffer commandBuffer,
+        const render::RenderFrameRequest& frameRequest,
+        render::RenderServices& services,
+        bool insertComputeToGraphicsBarrier,
+        VkPipelineStageFlags computeToGraphicsDstStageMask);
 
     void cleanup();
     bool getGpuTimingStats(uint32_t frameIndex, GpuTimingStats& outStats) const;
@@ -120,6 +126,14 @@ private:
     void createGpuTimingQueryPool();
     void destroyGpuTimingQueryPool();
     void recordComputeToGraphicsBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags dstStageMask);
+    bool recordCommands(
+        VkCommandBuffer commandBuffer,
+        bool manageCommandBufferRecording,
+        const render::RenderFrameRequest& frameRequest,
+        render::RenderServices& services,
+        bool insertComputeToGraphicsBarrier,
+        VkPipelineStageFlags computeToGraphicsDstStageMask,
+        const std::function<void(VkCommandBuffer)>& postRenderCommands);
     
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;

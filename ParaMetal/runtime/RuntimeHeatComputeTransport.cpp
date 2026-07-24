@@ -53,10 +53,7 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(
 
     outConfig = {};
     outConfig.active = package.authored.active;
-    outConfig.paused = package.authored.paused;
     outConfig.syntheticDirichletTestEnabled = false;
-    outConfig.resetCounter = package.authored.resetCounter;
-    outConfig.rewindFrame = package.authored.rewindFrame;
     outConfig.contactThermalConductance = package.authored.contactThermalConductance;
     outConfig.simulationDuration = package.authored.simulationDuration;
     for (const auto& [sourceKey, data] : package.resolvedSerialSources) {

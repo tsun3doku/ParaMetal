@@ -23,6 +23,7 @@ public:
     void shutdown();
 
     void waitForSlot();
+    void prepareExternalFrame(uint32_t frameIndex);
 
     void waitForAllFrameFences();
 
@@ -31,6 +32,7 @@ public:
     VkResult submitFrame(VkQueue computeQueue, VkQueue graphicsQueue,
         VkSwapchainKHR swapChain, uint32_t imageIndex,
         const FrameSubmission& submission);
+    VkResult submitCompute(VkQueue computeQueue, const FrameSubmission& submission);
 
     void advanceFrame();
     void resetFrameIndex();

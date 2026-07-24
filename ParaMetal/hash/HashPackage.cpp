@@ -144,8 +144,6 @@ void HashPackage::seal(HeatPackage& pkg, const HashValues& authoredHashes) {
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showFluxVectors ? 1u : 0u));
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showHeatPalette ? 1u : 0u));
     HashBuilder::combineFloat(displayHash, pkg.display.fluxVectorScale);
-    HashBuilder::combineFloat(displayHash, pkg.display.heatPaletteMinTemp);
-    HashBuilder::combineFloat(displayHash, pkg.display.heatPaletteMaxTemp);
 
     uint64_t fullHash = HashBuilder::start();
     HashBuilder::combine(fullHash, simulationHash);

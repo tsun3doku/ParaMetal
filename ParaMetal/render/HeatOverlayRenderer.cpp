@@ -6,6 +6,8 @@
 #include "domain/HeatModelData.hpp"
 
 #include <iostream>
+#include <algorithm>
+#include <cmath>
 
 namespace render {
 
@@ -17,9 +19,8 @@ HeatOverlayRenderer::HeatOverlayRenderer(
     : vulkanDevice(device),
       commandPool(commandPool),
       memoryAllocator(allocator),
-      surfaceRenderer(std::make_unique<HeatSurfaceRenderer>(device, uniformBufferManager)),
-      vectorArrowRenderer(std::make_unique<VectorArrowRenderer>(device, allocator, uniformBufferManager, commandPool)),
-      heatPaletteRenderer(std::make_unique<HeatPaletteRenderer>(device, allocator, commandPool)) {
+      surfaceRenderer(std::make_unique<HeatSurfaceRenderer>(device, allocator, uniformBufferManager, commandPool)),
+      vectorArrowRenderer(std::make_unique<VectorArrowRenderer>(device, allocator, uniformBufferManager, commandPool)) {
 }
 
 HeatOverlayRenderer::~HeatOverlayRenderer() {
@@ -44,9 +45,6 @@ void HeatOverlayRenderer::initializeOverlay(VkRenderPass renderPass, uint32_t ov
 
     maxFramesInFlight = updatedMaxFramesInFlight;
     vectorArrowRenderer->initialize(renderPass, overlaySubpass, maxFramesInFlight);
-    if (heatPaletteRenderer) {
-        heatPaletteRenderer->initialize(renderPass, overlaySubpass, maxFramesInFlight);
-    }
     overlayInitialized = true;
     rebuildBindings();
 }
@@ -80,20 +78,13 @@ void HeatOverlayRenderer::rebuildBindings() {
     surfaceBindings.clear();
     fluxVectorBindings.clear();
 
-    bool heatPaletteVisible = false;
-    float heatPaletteMin = 0.0f;
-    float heatPaletteMax = 100.0f;
+    paletteVisible = false;
 
     for (const auto& [socketKey, config] : configsBySocket) {
-        if (!config.active && !config.paused) {
-
-            continue;
-        }
+        if (!config.active) continue;
 
         if (config.showHeatPalette) {
-            heatPaletteVisible = true;
-            heatPaletteMin = config.heatPaletteMinTemp;
-            heatPaletteMax = config.heatPaletteMaxTemp;
+            paletteVisible = true;
         }
 
         if (config.showHeatOverlay) {
@@ -167,15 +158,6 @@ void HeatOverlayRenderer::rebuildBindings() {
             }
         }
     }
-
-
-
-    if (heatPaletteRenderer) {
-        heatPaletteRenderer->setVisible(heatPaletteVisible);
-        if (heatPaletteVisible) {
-            heatPaletteRenderer->setRange(heatPaletteMin, heatPaletteMax);
-        }
-    }
 }
 
 void HeatOverlayRenderer::renderSurface(VkCommandBuffer commandBuffer, uint32_t frameIndex) {
@@ -186,20 +168,21 @@ void HeatOverlayRenderer::renderSurface(VkCommandBuffer commandBuffer, uint32_t 
     surfaceRenderer->render(commandBuffer, frameIndex, surfaceBindings);
 }
 
+void HeatOverlayRenderer::setPaletteRange(float minimum, float maximum) {
+    if (std::isfinite(minimum) && std::isfinite(maximum) && maximum > minimum) {
+        if (surfaceRenderer) surfaceRenderer->setRange(minimum, maximum);
+    }
+}
+void HeatOverlayRenderer::setPalette(int palette) {
+    if (surfaceRenderer) surfaceRenderer->setPalette(palette);
+}
+
 void HeatOverlayRenderer::renderOverlay(VkCommandBuffer commandBuffer, uint32_t frameIndex) {
     if (!overlayInitialized || !vectorArrowRenderer) {
         return;
     }
 
     vectorArrowRenderer->render(commandBuffer, frameIndex, fluxVectorBindings);
-}
-
-void HeatOverlayRenderer::renderScreen(VkCommandBuffer commandBuffer, uint32_t frameIndex, VkExtent2D extent) {
-    if (!overlayInitialized || !heatPaletteRenderer) {
-        return;
-    }
-
-    heatPaletteRenderer->render(commandBuffer, frameIndex, extent);
 }
 
 void HeatOverlayRenderer::cleanup() {
@@ -214,9 +197,6 @@ void HeatOverlayRenderer::cleanup() {
     }
     if (vectorArrowRenderer) {
         vectorArrowRenderer->cleanup();
-    }
-    if (heatPaletteRenderer) {
-        heatPaletteRenderer->cleanup();
     }
 }
 

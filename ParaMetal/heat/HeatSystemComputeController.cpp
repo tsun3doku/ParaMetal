@@ -106,8 +106,38 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
 void HeatSystemComputeController::applyRuntimeState(HeatSystem& system, const Config& config) {
     system.setActive(config.active);
     system.setSyntheticDirichletTestEnabled(config.syntheticDirichletTestEnabled);
-    system.setPlaybackState(config.paused, config.resetCounter);
-    system.setRewindFrame(config.rewindFrame);
+    system.setPlaybackState(!timelinePlaying, timelineResetCounter);
+    system.setRewindFrame(timelineScrubFrame);
+}
+
+void HeatSystemComputeController::setTimelinePlaying(bool playing) {
+    timelinePlaying = playing;
+    if (playing) timelineScrubFrame = heat::NoRewindFrame;
+    for (auto& [key, system] : systemsBySocket) {
+        if (!system || !system->getIsActive()) continue;
+        system->setPlaybackState(!timelinePlaying, timelineResetCounter);
+        system->setRewindFrame(timelineScrubFrame);
+    }
+}
+
+void HeatSystemComputeController::resetTimeline() {
+    ++timelineResetCounter;
+    timelinePlaying = true;
+    timelineScrubFrame = heat::NoRewindFrame;
+    for (auto& [key, system] : systemsBySocket) {
+        if (!system || !system->getIsActive()) continue;
+        system->setPlaybackState(false, timelineResetCounter);
+    }
+}
+
+void HeatSystemComputeController::scrubTimeline(uint32_t frame) {
+    timelinePlaying = false;
+    timelineScrubFrame = frame;
+    for (auto& [key, system] : systemsBySocket) {
+        if (!system || !system->getIsActive()) continue;
+        system->setPlaybackState(true, timelineResetCounter);
+        system->setRewindFrame(frame);
+    }
 }
 
 void HeatSystemComputeController::apply(uint64_t socketKey, const Config& config) {

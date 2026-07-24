@@ -2,7 +2,6 @@
 
 #include "NodeGraphTypes.hpp"
 
-#include <functional>
 #include <string>
 #include <vector>
 
@@ -40,7 +39,7 @@ public:
     bool toggleNodeFrozen(NodeGraphNodeId nodeId);
     bool toggleNodeDisplay(NodeGraphNodeId nodeId);
     bool setNodeParameter(NodeGraphNodeId nodeId, const NodeGraphParamValue& parameter);
-    bool updateNodeParameter(NodeGraphNodeId nodeId, uint32_t paramId, const std::function<bool(NodeGraphParamValue&)>& updater);
+    bool setNodeParameters(NodeGraphNodeId nodeId, const std::vector<NodeGraphParamValue>& parameters);
     bool connectSockets(
         NodeGraphNodeId fromNode,
         NodeGraphSocketId fromSocket,

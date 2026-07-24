@@ -25,8 +25,7 @@ void bindRegistry(py::module_& m) {
         .value("Output", NodeGraphSocketDirection::Output);
 
     py::enum_<NodeGraphNodeCategory>(m, "NodeCategory")
-        .value("Model", NodeGraphNodeCategory::Model)
-        .value("PointSurface", NodeGraphNodeCategory::PointSurface)
+        .value("Geometry", NodeGraphNodeCategory::Geometry)
         .value("Meshing", NodeGraphNodeCategory::Meshing)
         .value("System", NodeGraphNodeCategory::System)
         .value("Misc", NodeGraphNodeCategory::Misc);

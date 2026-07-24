@@ -21,7 +21,15 @@ layout(set = 0, binding = 10) uniform samplerBuffer L_input;    // Input edge le
 layout(set = 0, binding = 11) uniform sampler2D wireframe;      // Wireframe texture
 
 const float PI = 3.14159265359;
-const int IMAX = 128;  // Higher budget for thin input triangles over dense intrinsic meshes
+const float WALK_AREA_EPSILON = 1e-10;
+const int WALK_MAX_STEPS = 256;
+const int WALK_SUCCESS = 0;
+const int WALK_NO_SEED = -1;
+const int WALK_INVALID_TOPOLOGY = -2;
+const int WALK_DEGENERATE = -3;
+const int WALK_BOUNDARY = -4;
+const int WALK_LIMIT_REACHED = -5;
+const int WALK_STALLED = -6;
 const float INTRINSIC_ROUGHNESS = 0.05;
 const float INTRINSIC_METALNESS = 0.0;
 const float INTRINSIC_LIGHTING_MIX = 0.5;
@@ -61,14 +69,40 @@ vec3 intrinsicPaletteColor(int triangleID) {
     return mix(vec3(luminance), linearColor, saturation);
 }
 
+struct WalkResult {
+    int triangle;
+    int status;
+    int steps;
+    vec3 bary;
+    vec3 baryDx;
+    vec3 baryDy;
+};
+
+WalkResult makeWalkResult(int status) {
+    WalkResult result;
+    result.triangle = -1;
+    result.status = status;
+    result.steps = 0;
+    result.bary = vec3(1.0, 0.0, 0.0);
+    result.baryDx = result.bary;
+    result.baryDy = result.bary;
+    return result;
+}
+
+bool validIndex(int index, int count) {
+    return index >= 0 && index < count;
+}
+
+bool validLength(float lengthValue) {
+    return lengthValue > 0.0 && !isnan(lengthValue) && !isinf(lengthValue);
+}
+
 bool ccw(vec2 p, vec2 q, vec2 r) {
     float det = (p.x - r.x) * (q.y - r.y) - (p.y - r.y) * (q.x - r.x);
     return det >= 0.0;
 }
 
-// Check if ray from origin to p crosses edge v_a to v_b
-bool crossing(vec2 v_a, vec2 v_b, vec2 p) {
-    vec2 origin = vec2(0.0, 0.0);
+bool crossing(vec2 origin, vec2 v_a, vec2 v_b, vec2 p) {
     bool t0 = ccw(origin, p, v_a);
     bool t1 = ccw(origin, p, v_b);
     bool u0 = ccw(v_a, v_b, origin);
@@ -81,265 +115,215 @@ float area(vec2 p, vec2 q, vec2 r) {
     return det / 2.0;
 }
 
-vec3 clampBarycentric(vec3 b) {
-    vec3 clamped = max(b, vec3(0.0));
-    float sum = clamped.x + clamped.y + clamped.z;
-    if (sum < 1e-8) {
-        return vec3(1.0, 0.0, 0.0);
-    }
-    return clamped / sum;
-}
+// Returns -1 at a boundary and -2 for malformed topology.
+int mate(int he, int halfedgeCount, int edgeCount) {
+    if (!validIndex(he, halfedgeCount)) return -2;
 
-// Get opposite HE
-int mate(int he) {
-    if (he < 0) 
-    return -1;
-
-    ivec4 halfedge = texelFetch(H, he);
-    int edgeIdx = halfedge.g;  // .g = edge index
-
-    if (edgeIdx < 0) 
-    return -1;
+    int edgeIdx = texelFetch(H, he).g;
+    if (!validIndex(edgeIdx, edgeCount)) return -2;
 
     ivec2 edge = texelFetch(E, edgeIdx).rg;
-    return (edge.r == he) ? edge.g : edge.r;
+    int opposite = -2;
+    if (edge.r == he) opposite = edge.g;
+    else if (edge.g == he) opposite = edge.r;
+
+    if (opposite == -1) return -1;
+    if (!validIndex(opposite, halfedgeCount) || opposite == he) return -2;
+    return opposite;
 }
 
 bool loadInputTriangleChart(int inputTri, out ivec3 faceHEs, out vec2 triCoords[3]) {
+    int inputTriangleCount = textureSize(T_input);
+    int inputHalfedgeCount = textureSize(H_input);
+    if (!validIndex(inputTri, inputTriangleCount)) return false;
+
     int h0 = texelFetch(T_input, inputTri).r;
-    if (h0 < 0) {
-        return false;
-    }
+    if (!validIndex(h0, inputHalfedgeCount)) return false;
 
     int h1 = texelFetch(H_input, h0).a;
-    if (h1 < 0) {
-        return false;
-    }
+    if (!validIndex(h1, inputHalfedgeCount)) return false;
 
     int h2 = texelFetch(H_input, h1).a;
-    if (h2 < 0) {
-        return false;
-    }
+    if (!validIndex(h2, inputHalfedgeCount) || texelFetch(H_input, h2).a != h0) return false;
 
     faceHEs = ivec3(h0, h1, h2);
 
     int e0 = texelFetch(H_input, h0).g;
     int e1 = texelFetch(H_input, h1).g;
     int e2 = texelFetch(H_input, h2).g;
-    if (e0 < 0 || e1 < 0 || e2 < 0) {
-        return false;
-    }
+    int inputEdgeCount = textureSize(L_input);
+    if (!validIndex(e0, inputEdgeCount) || !validIndex(e1, inputEdgeCount) || !validIndex(e2, inputEdgeCount)) return false;
 
     float a = texelFetch(L_input, e0).r;
     float b = texelFetch(L_input, e1).r;
     float c = texelFetch(L_input, e2).r;
-    if (a <= 0.0 || b <= 0.0 || c <= 0.0) {
-        return false;
-    }
+    if (!validLength(a) || !validLength(b) || !validLength(c)) return false;
 
     triCoords[0] = vec2(0.0, 0.0);
     triCoords[1] = vec2(a, 0.0);
     float x = (a * a + c * c - b * b) / (2.0 * a);
-    float y2 = max(c * c - x * x, 0.0);
+    float y2 = c * c - x * x;
+    if (!(y2 > WALK_AREA_EPSILON) || isnan(y2) || isinf(y2)) return false;
     triCoords[2] = vec2(x, sqrt(y2));
-
     return true;
 }
 
-vec2 inputChartPoint(vec2 triCoords[3]) {
-    return fragBaryCoord.x * triCoords[0] + fragBaryCoord.y * triCoords[1] + fragBaryCoord.z * triCoords[2];
+vec2 inputChartPoint(vec2 triCoords[3], vec3 inputBary) {
+    return inputBary.x * triCoords[0] + inputBary.y * triCoords[1] + inputBary.z * triCoords[2];
 }
 
-bool findIntrinsicTriangleFromSeed(vec2 p, vec2 px, vec2 py, int inputHe, vec2 seedOrigin, float seedPhi, out int intrinsicTri, out vec3 baryCoords, out vec3 duvwdx, out vec3 duvwdy, out int failureCode) {
+bool remapBarycentric(int href, int h0, int h1, int h2, vec3 localBary, out vec3 bary) {
+    if (href == h0) bary = localBary;
+    else if (href == h1) bary = localBary.yzx;
+    else if (href == h2) bary = localBary.zxy;
+    else return false;
+    return true;
+}
+
+WalkResult walkFromSeed(vec2 p, vec2 px, vec2 py, int inputHe, vec2 seedOrigin, float seedPhi, bool calculateDerivatives) {
+    WalkResult result = makeWalkResult(WALK_INVALID_TOPOLOGY);
+    int supportCount = textureSize(S);
+    int angleCount = textureSize(A);
+    int halfedgeCount = textureSize(H);
+    int edgeCount = textureSize(E);
+    int triangleCount = textureSize(T);
+    int lengthCount = textureSize(L);
+    if (!validIndex(inputHe, supportCount) || !validIndex(inputHe, angleCount)) return result;
+
     int h0 = texelFetch(S, inputHe).r;
-    float phi0 = seedPhi + texelFetch(A, inputHe).r;
-
     if (h0 < 0) {
-        baryCoords = vec3(1, 0, 0);
-        intrinsicTri = -1;
-        failureCode = -1;
-        return false;
+        result.status = WALK_NO_SEED;
+        return result;
     }
+    if (!validIndex(h0, halfedgeCount)) return result;
 
+    float phi0 = seedPhi + texelFetch(A, inputHe).r;
     ivec4 he0 = texelFetch(H, h0);
     int e0 = he0.g;
-    if (e0 < 0) {
-        baryCoords = vec3(1, 0, 0);
-        intrinsicTri = -1;
-        failureCode = -1;
-        return false;
-    }
+    if (!validIndex(e0, lengthCount)) return result;
 
     float l0 = texelFetch(L, e0).r;
+    if (!validLength(l0) || isnan(phi0) || isinf(phi0)) return result;
 
     vec2 v0 = seedOrigin;
-    vec2 v1 = v0 + vec2(l0 * cos(phi0), l0 * sin(phi0));
+    vec2 v1 = v0 + l0 * vec2(cos(phi0), sin(phi0));
+    for (int iter = 0; iter < WALK_MAX_STEPS; ++iter) {
+        result.steps = iter + 1;
+        if (!validIndex(h0, halfedgeCount)) return result;
 
-    for (int iter = 0; iter < IMAX; iter++) {
         ivec4 halfedge = texelFetch(H, h0);
-        int t = halfedge.b;   // .b = face index
-        int h1 = halfedge.a;  // .a = next halfedge
-
-        if (h1 < 0 || t < 0) {
-            baryCoords = vec3(1, 0, 0);
-            intrinsicTri = -1;
-            failureCode = -2 - iter;
-            return false;
-        }
+        int t = halfedge.b;
+        int h1 = halfedge.a;
+        if (!validIndex(t, triangleCount) || !validIndex(h1, halfedgeCount)) return result;
 
         ivec4 he1 = texelFetch(H, h1);
-        int h2 = he1.a;  // next after h1
-        if (h2 < 0) {
-            break;
-        }
+        int h2 = he1.a;
+        if (!validIndex(h2, halfedgeCount)) return result;
+
+        ivec4 he2 = texelFetch(H, h2);
+        if (he2.a != h0) return result;
 
         int e1 = he1.g;
-        ivec4 he2 = texelFetch(H, h2);
         int e2 = he2.g;
-        if (e1 < 0 || e2 < 0) {
-            break;
-        }
+        if (!validIndex(e1, lengthCount) || !validIndex(e2, lengthCount)) return result;
 
         float l1 = texelFetch(L, e1).r;
         float l2 = texelFetch(L, e2).r;
+        if (!validLength(l1) || !validLength(l2)) return result;
 
-        float alpha = acos(clamp((l0*l0 + l1*l1 - l2*l2) / (2.0*l0*l1), -1.0, 1.0));
+        float alphaDenominator = 2.0 * l0 * l1;
+        if (!validLength(alphaDenominator)) return result;
+        float alpha = acos(clamp((l0 * l0 + l1 * l1 - l2 * l2) / alphaDenominator, -1.0, 1.0));
         float phi1 = phi0 + PI - alpha;
-        vec2 v2 = vec2(v1.x + l1*cos(phi1), v1.y + l1*sin(phi1));
-        float a = area(v0, v1, v2);
-        if (abs(a) < 1e-10) {
-            break;
+        vec2 v2 = v1 + l1 * vec2(cos(phi1), sin(phi1));
+        float triangleArea = area(v0, v1, v2);
+        if (isnan(triangleArea) || isinf(triangleArea) || abs(triangleArea) <= WALK_AREA_EPSILON) {
+            result.status = WALK_DEGENERATE;
+            return result;
         }
 
-        bool out_v1v2 = !ccw(v1, v2, p);
-        if (out_v1v2 && crossing(v1, v2, p)) {
-            int m1 = mate(h1);
-            if (m1 != -1) {
-                v0 = v2;
-                l0 = l1;
-                h0 = m1;
-                phi0 = phi1 + PI;
-                continue;
+        bool outsideEdge12 = !ccw(v1, v2, p);
+        bool outsideEdge20 = !ccw(v2, v0, p);
+        if (outsideEdge12 && (ccw(v2, v0, p) || crossing(seedOrigin, v1, v2, p))) {
+            int nextH = mate(h1, halfedgeCount, edgeCount);
+            if (nextH == -1) {
+                result.status = WALK_BOUNDARY;
+                return result;
             }
-            break;
-        }
-        else if (out_v1v2 || !ccw(v2, v0, p)) {
-            int m2 = mate(h2);
-            if (m2 != -1) {
-                float beta = acos(clamp((l0*l0 + l2*l2 - l1*l1) / (2.0*l0*l2), -1.0, 1.0));
-                v1 = v2;
-                l0 = l2;
-                h0 = m2;
-                phi0 = phi0 + beta;
-                continue;
-            }
-            break;
-        }
-        else {
-            float a12 = area(v1, v2, p);
-            float a20 = area(v2, v0, p);
-            float a01 = a - a12 - a20;
-            
-            float a12x = area(v1, v2, px);
-            float a20x = area(v2, v0, px);
-            float a01x = a - a12x - a20x;
+            if (nextH < 0) return result;
 
-            float a12y = area(v1, v2, py);
-            float a20y = area(v2, v0, py);
-            float a01y = a - a12y - a20y;
-
-            vec3 localBary = vec3(a12 / a, a20 / a, a01 / a);
-            vec3 localBaryX = vec3(a12x / a, a20x / a, a01x / a);
-            vec3 localBaryY = vec3(a12y / a, a20y / a, a01y / a);
-
-            int href = texelFetch(T, t).r;
-            vec3 uvw, uvwx, uvwy;
-            
-            if (href == h0) {
-                uvw.x = localBary.x;
-                uvw.y = localBary.y;
-                uvwx.x = localBaryX.x;
-                uvwx.y = localBaryX.y;
-                uvwy.x = localBaryY.x;
-                uvwy.y = localBaryY.y;
-            }
-            else if (href == h1) {
-                uvw.x = localBary.y;
-                uvw.y = localBary.z;
-                uvwx.x = localBaryX.y;
-                uvwx.y = localBaryX.z;
-                uvwy.x = localBaryY.y;
-                uvwy.y = localBaryY.z;
-            }
-            else { // href == h2
-                uvw.x = localBary.z;
-                uvw.y = localBary.x;
-                uvwx.x = localBaryX.z;
-                uvwx.y = localBaryX.x;
-                uvwy.x = localBaryY.z;
-                uvwy.y = localBaryY.x;
-            }
-            uvw.z = 1.0 - uvw.x - uvw.y;
-            uvwx.z = 1.0 - uvwx.x - uvwx.y;
-            uvwy.z = 1.0 - uvwy.x - uvwy.y;
-
-            baryCoords = uvw;
-            duvwdx = uvwx - uvw;
-            duvwdy = uvwy - uvw;
-
-            intrinsicTri = t;
-            failureCode = 0;
-            return true;
-        }
-    }
-
-    baryCoords = vec3(1, 0, 0);
-    duvwdx = vec3(0, 0, 0);
-    duvwdy = vec3(0, 0, 0);
-    intrinsicTri = -1;
-    failureCode = -1;
-    return false;
-}
-
-// Find which intrinsic triangle contains this fragment
-int findIntrinsicTriangle(ivec3 faceHEs, vec2 triCoords[3], vec2 p, vec2 px, vec2 py, out vec3 baryCoords, out vec3 duvwdx, out vec3 duvwdy) {
-    int bestFailure = -1;
-    bool hadSeed = false;
-    for (int i = 0; i < 3; ++i) {
-        int inputHe = faceHEs[i];
-        int supportHe = texelFetch(S, inputHe).r;
-        if (supportHe < 0) {
+            v0 = v2;
+            l0 = l1;
+            h0 = nextH;
+            phi0 = phi1 + PI;
             continue;
         }
 
-        hadSeed = true;
-        vec2 edgeDir = triCoords[(i + 1) % 3] - triCoords[i];
-        float seedPhi = atan(edgeDir.y, edgeDir.x);
+        if (outsideEdge20) {
+            int nextH = mate(h2, halfedgeCount, edgeCount);
+            if (nextH == -1) {
+                result.status = WALK_BOUNDARY;
+                return result;
+            }
+            if (nextH < 0) return result;
 
-        int intrinsicTri = -1;
-        int failureCode = -1;
-        vec3 candidateBary = vec3(1, 0, 0);
-        vec3 candidateDuvwdx = vec3(0, 0, 0);
-        vec3 candidateDuvwdy = vec3(0, 0, 0);
-        if (findIntrinsicTriangleFromSeed(p, px, py, inputHe, triCoords[i], seedPhi, intrinsicTri, candidateBary, candidateDuvwdx, candidateDuvwdy, failureCode)) {
-            baryCoords = candidateBary;
-            duvwdx = candidateDuvwdx;
-            duvwdy = candidateDuvwdy;
-            return intrinsicTri;
+            float betaDenominator = 2.0 * l0 * l2;
+            if (!validLength(betaDenominator)) return result;
+            float beta = acos(clamp((l0 * l0 + l2 * l2 - l1 * l1) / betaDenominator, -1.0, 1.0));
+
+            v1 = v2;
+            l0 = l2;
+            h0 = nextH;
+            phi0 += beta;
+            continue;
         }
 
-        if (failureCode < bestFailure) {
-            bestFailure = failureCode;
+        vec3 localBary = vec3(
+            area(v1, v2, p) / triangleArea,
+            area(v2, v0, p) / triangleArea,
+            0.0);
+        localBary.z = 1.0 - localBary.x - localBary.y;
+
+        int href = texelFetch(T, t).r;
+        if (!remapBarycentric(href, h0, h1, h2, localBary, result.bary)) return result;
+
+        if (calculateDerivatives) {
+            vec3 localBaryX = vec3(
+                area(v1, v2, px) / triangleArea,
+                area(v2, v0, px) / triangleArea,
+                0.0);
+            localBaryX.z = 1.0 - localBaryX.x - localBaryX.y;
+
+            vec3 localBaryY = vec3(
+                area(v1, v2, py) / triangleArea,
+                area(v2, v0, py) / triangleArea,
+                0.0);
+            localBaryY.z = 1.0 - localBaryY.x - localBaryY.y;
+
+            if (!remapBarycentric(href, h0, h1, h2, localBaryX, result.baryDx) ||
+                !remapBarycentric(href, h0, h1, h2, localBaryY, result.baryDy)) return result;
+        } else {
+            result.baryDx = result.bary;
+            result.baryDy = result.bary;
         }
+
+        result.triangle = t;
+        result.status = WALK_SUCCESS;
+        return result;
     }
 
-    baryCoords = vec3(1, 0, 0);
-    duvwdx = vec3(0, 0, 0);
-    duvwdy = vec3(0, 0, 0);
-    if (!hadSeed) {
-        return -1;
+    result.status = WALK_LIMIT_REACHED;
+    return result;
+}
+
+WalkResult locateIntrinsicTriangle(ivec3 faceHEs, vec2 triCoords[3], vec2 p, vec2 px, vec2 py, bool calculateDerivatives) {
+    int inputHe = faceHEs[0];
+    if (!validIndex(inputHe, textureSize(S)) || texelFetch(S, inputHe).r < 0) {
+        return makeWalkResult(WALK_NO_SEED);
     }
-    return bestFailure;
+
+    vec2 edgeDir = triCoords[1] - triCoords[0];
+    return walkFromSeed(p, px, py, inputHe, triCoords[0], atan(edgeDir.y, edgeDir.x), calculateDerivatives);
 }
 
 void main() {
@@ -352,37 +336,27 @@ void main() {
         return;
     }
 
-    vec3 baryCoords, duvwdx, duvwdy;
-    vec2 p = inputChartPoint(triCoords);
+    vec2 p = inputChartPoint(triCoords, fragBaryCoord);
     vec2 px = p + dFdx(p);
     vec2 py = p + dFdy(p);
-    int intrinsicTri = findIntrinsicTriangle(faceHEs, triCoords, p, px, py, baryCoords, duvwdx, duvwdy);
+    WalkResult walk = locateIntrinsicTriangle(faceHEs, triCoords, p, px, py, true);
     
-    if (intrinsicTri < 0) {
-        if (intrinsicTri < -2) {
-            // Hit invalid data during walk
-            int iter = -(intrinsicTri + 2);
-            float intensity = float(iter) / 50.0;
-            writeIntrinsicSurface(vec3(0, 0, intensity));
-            return;
-        } else {
-            // Walk completed but didnt converge
-            writeIntrinsicSurface(vec3(0.8, 0.8, 0.8));
-            return;
-        }
+    if (walk.status != WALK_SUCCESS) {
+        writeIntrinsicSurface(vec3(0.8, 0.8, 0.8));
+        return;
     }
 
-    vec3 albedo = intrinsicPaletteColor(intrinsicTri);
-    vec3 fx = duvwdx;
-    vec3 fy = duvwdy;
+    vec3 albedo = intrinsicPaletteColor(walk.triangle);
+    vec3 fx = walk.baryDx - walk.bary;
+    vec3 fy = walk.baryDy - walk.bary;
 
-    vec4 xWire = textureGrad(wireframe, vec2(baryCoords.x, 0.5), vec2(fx.x, 0.0), vec2(fy.x, 0.0));
+    vec4 xWire = textureGrad(wireframe, vec2(walk.bary.x, 0.5), vec2(fx.x, 0.0), vec2(fy.x, 0.0));
     albedo = applyWireMask(albedo, xWire.a);
 
-    vec4 yWire = textureGrad(wireframe, vec2(baryCoords.y, 0.5), vec2(fx.y, 0.0), vec2(fy.y, 0.0));
+    vec4 yWire = textureGrad(wireframe, vec2(walk.bary.y, 0.5), vec2(fx.y, 0.0), vec2(fy.y, 0.0));
     albedo = applyWireMask(albedo, yWire.a);
 
-    vec4 zWire = textureGrad(wireframe, vec2(baryCoords.z, 0.5), vec2(fx.z, 0.0), vec2(fy.z, 0.0));
+    vec4 zWire = textureGrad(wireframe, vec2(walk.bary.z, 0.5), vec2(fx.z, 0.0), vec2(fy.z, 0.0));
     albedo = applyWireMask(albedo, zWire.a);
 
     writeIntrinsicSurface(clamp(albedo, vec3(0.0), vec3(1.0)));

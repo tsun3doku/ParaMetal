@@ -67,14 +67,25 @@
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" />
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <QtInstall>6.9.3_msvc2022_64</QtInstall>
-    <QtModules>core;gui;widgets</QtModules>
+    <QtModules>core;gui;qml;quick;quickcontrols2</QtModules>
   </PropertyGroup>
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <QtInstall>6.9.3_msvc2022_64</QtInstall>
-    <QtModules>core;gui;widgets</QtModules>
+    <QtModules>core;gui;qml;quick;quickcontrols2</QtModules>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') OR !Exists('$(QtMsBuild)\Qt.props')">
     <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
+  </Target>
+  <ItemGroup>
+    <QmlFiles Include="$(ProjectDir)qml\**\*.qml" />
+    <QmlFiles Include="$(ProjectDir)qml\qmldir" />
+  </ItemGroup>
+  <Target Name="CopyQmlFiles" BeforeTargets="Build"
+          Inputs="@(QmlFiles)"
+          Outputs="$(OutDir)qml\.qml-inputs.stamp">
+    <MakeDir Directories="$(OutDir)qml" />
+    <Exec Command="xcopy /y /e /i &quot;$(ProjectDir)qml&quot; &quot;$(OutDir)qml&quot;" />
+    <Touch Files="$(OutDir)qml\.qml-inputs.stamp" AlwaysCreate="true" />
   </Target>
   <ImportGroup Label="ExtensionSettings">
     <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.3.props" />
@@ -165,7 +176,10 @@
     <PostBuildEvent>
       <Command>xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\bin\Qt6Cored.dll" "$(OutDir)"
 xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\bin\Qt6Guid.dll" "$(OutDir)"
-xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\bin\Qt6Widgetsd.dll" "$(OutDir)"
+xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\bin\Qt6Qmld.dll" "$(OutDir)"
+xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\bin\Qt6Quickd.dll" "$(OutDir)"
+if not exist "$(OutDir)qml\" mkdir "$(OutDir)qml\"
+xcopy /y /d /e /i "$(ProjectDir)qml" "$(OutDir)qml"
 if not exist "$(OutDir)platforms\" mkdir "$(OutDir)platforms\"
 xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindowsd.dll" "$(OutDir)platforms\"
 if not exist "$(OutDir)shaders\" mkdir "$(OutDir)shaders\"
@@ -175,7 +189,8 @@ xcopy /y /d /e /i "$(ProjectDir)models" "$(OutDir)models"
 if not exist "$(OutDir)textures\" mkdir "$(OutDir)textures\"
 xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"
 if not exist "$(OutDir)fonts\" mkdir "$(OutDir)fonts\"
-xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
+xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
+"C:\Qt\6.9.3\msvc2022_64\bin\windeployqt.exe" --debug --qmldir "$(ProjectDir)qml" "$(TargetPath)"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -214,7 +229,10 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
     <PostBuildEvent>
       <Command>xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\bin\Qt6Core.dll" "$(OutDir)"
 xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\bin\Qt6Gui.dll" "$(OutDir)"
-xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\bin\Qt6Widgets.dll" "$(OutDir)"
+xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\bin\Qt6Qml.dll" "$(OutDir)"
+xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\bin\Qt6Quick.dll" "$(OutDir)"
+if not exist "$(OutDir)qml\" mkdir "$(OutDir)qml\"
+xcopy /y /d /e /i "$(ProjectDir)qml" "$(OutDir)qml"
 if not exist "$(OutDir)platforms\" mkdir "$(OutDir)platforms\"
 xcopy /y /d "C:\Qt\6.9.3\msvc2022_64\plugins\platforms\qwindows.dll" "$(OutDir)platforms\"
 if not exist "$(OutDir)shaders\" mkdir "$(OutDir)shaders\"
@@ -224,7 +242,8 @@ xcopy /y /d /e /i "$(ProjectDir)models" "$(OutDir)models"
 if not exist "$(OutDir)textures\" mkdir "$(OutDir)textures\"
 xcopy /y /d /e /i "$(ProjectDir)textures" "$(OutDir)textures"
 if not exist "$(OutDir)fonts\" mkdir "$(OutDir)fonts\"
-xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
+xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
+"C:\Qt\6.9.3\msvc2022_64\bin\windeployqt.exe" --release --qmldir "$(ProjectDir)qml" "$(TargetPath)"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Platform)'=='x64'">
@@ -280,8 +299,6 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
     <ClCompile Include="serial\SerialTemperatureRuntime.cpp" />
     <ClCompile Include="runtime\VoronoiDisplayController.cpp" />
     <ClCompile Include="runtime\RuntimeController.cpp" />
-    <ClCompile Include="runtime\RenderSettingsManager.cpp" />
-    <ClCompile Include="runtime\RenderSettingsController.cpp" />
     <ClCompile Include="runtime\TimelineController.cpp" />
     <ClCompile Include="runtime\TimelineRuntime.cpp" />
     <ClCompile Include="runtime\RuntimeInputController.cpp" />
@@ -326,9 +343,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
     <ClCompile Include="mesh\\remesher\\HalfEdgeMesh.cpp" />
     <ClCompile Include="spatial\HashGrid.cpp" />
     <ClCompile Include="renderers\HashGridRenderer.cpp" />
-    <ClCompile Include="renderers\HeatPointRenderer.cpp" />
     <ClCompile Include="renderers\HeatSurfaceRenderer.cpp" />
-    <ClCompile Include="renderers\HeatPaletteRenderer.cpp" />
     <ClCompile Include="renderers\VectorArrowRenderer.cpp" />
     <ClCompile Include="heat\HeatModelRuntime.cpp" />
     <ClCompile Include="heat\HeatBoundaryRuntime.cpp" />
@@ -359,8 +374,6 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
     <ClCompile Include="nodegraph\NodeGraphController.cpp" />
     <ClCompile Include="nodegraph\NodeGraph.cpp" />
     <ClCompile Include="nodegraph\NodeGraphSave.cpp" />
-    <ClCompile Include="nodegraph\ui\scene\NodeGraphCanvas.cpp" />
-    <ClCompile Include="nodegraph\ui\scene\NodeGraphEditorWidget.cpp" />
     <ClCompile Include="nodegraph\NodeGraphEditor.cpp" />
     <ClCompile Include="nodegraph\NodeGraphDataTypes.cpp" />
     <ClCompile Include="hash\HashBuilder.cpp" />
@@ -374,52 +387,34 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
     <ClCompile Include="nodegraph\NodeGraphDebugCache.cpp" />
     <ClCompile Include="nodegraph\NodeModel.cpp" />
     <ClCompile Include="nodegraph\NodeModelParams.cpp" />
-    <ClCompile Include="nodegraph\ui\widgets\NodeModelPanel.cpp" />
     <ClCompile Include="nodegraph\NodeTransform.cpp" />
     <ClCompile Include="nodegraph\NodeTransformParams.cpp" />
-    <ClCompile Include="nodegraph\ui\widgets\NodeTransformPanel.cpp" />
     <ClCompile Include="nodegraph\NodeGroup.cpp" />
-    <ClCompile Include="nodegraph\ui\widgets\NodeGroupPanel.cpp" />
     <ClCompile Include="nodegraph\NodeContactParams.cpp" />
     <ClCompile Include="nodegraph\NodeRemesh.cpp" />
     <ClCompile Include="nodegraph\NodeRemeshParams.cpp" />
-    <ClCompile Include="nodegraph\ui\widgets\NodeRemeshPanel.cpp" />
     <ClCompile Include="nodegraph\NodePoints.cpp" />
     <ClCompile Include="nodegraph\NodeMeshPoints.cpp" />
     <ClCompile Include="nodegraph\NodeMerge.cpp" />
     <ClCompile Include="nodegraph\NodePointsParams.cpp" />
-    <ClCompile Include="nodegraph\ui\widgets\NodePointsPanel.cpp" />
     <ClCompile Include="nodegraph\NodeVoronoiParams.cpp" />
-    <ClCompile Include="nodegraph\ui\widgets\NodeVoronoiPanel.cpp" />
     <ClCompile Include="nodegraph\NodeHeatModel.cpp" />
     <ClCompile Include="nodegraph\NodeSerialTemperature.cpp" />
     <ClCompile Include="nodegraph\NodeSerialTemperatureParams.cpp" />
-    <ClCompile Include="nodegraph\ui\widgets\NodeSerialTemperaturePanel.cpp" />
     <ClCompile Include="nodegraph\NodeHeatModelParams.cpp" />
-    <ClCompile Include="nodegraph\ui\widgets\NodeHeatModelPanel.cpp" />
     <ClCompile Include="nodegraph\NodeContact.cpp" />
     <ClCompile Include="nodegraph\NodeVoronoi.cpp" />
     <ClCompile Include="nodegraph\NodeHeatSolve.cpp" />
     <ClCompile Include="nodegraph\NodeHeatSolveParams.cpp" />
     <ClCompile Include="nodegraph\NodeHeatMaterialPresets.cpp" />
-    <ClCompile Include="nodegraph\ui\widgets\NodeContactPanel.cpp" />
-    <ClCompile Include="nodegraph\ui\widgets\NodeHeatSolverPanel.cpp" />
-    <ClCompile Include="nodegraph\ui\widgets\NodePanelBase.cpp" />
-    <ClCompile Include="nodegraph\ui\widgets\NodePanelUtils.cpp" />
+    <ClCompile Include="nodegraph\NodeParamUtils.cpp" />
     <ClCompile Include="nodegraph\NodeGraphDisplay.cpp" />
     <ClCompile Include="nodegraph\NodeGraphCompiler.cpp" />
-    <ClCompile Include="nodegraph\ui\widgets\NodePanel.cpp" />
-    <ClCompile Include="nodegraph\ui\widgets\NodeGraphActionStrip.cpp" />
-    <ClCompile Include="nodegraph\ui\widgets\NodeGraphNavHints.cpp" />
-    <ClCompile Include="nodegraph\ui\widgets\NodeGraphWidgetStyle.cpp" />
-    <ClCompile Include="nodegraph\ui\widgets\NodeGraphSliderItem.cpp" />
-    <ClCompile Include="nodegraph\ui\widgets\NodeGraphSliderRow.cpp" />
     <ClCompile Include="nodegraph\NodeGraphIconRegistry.cpp" />
     <ClCompile Include="ui\UiIconRegistry.cpp" />
     <ClCompile Include="ui\UiFontRegistry.cpp" />
     <ClCompile Include="ui\UiTypography.cpp" />
-    <ClCompile Include="nodegraph\ui\scene\NodeGraphNodeItem.cpp" />
-    <ClCompile Include="nodegraph\ui\scene\NodeGraphScene.cpp" />
+    <ClCompile Include="ui\UiTypographyQml.cpp" />
     <ClCompile Include="nodegraph\ui\scene\NodeGraphSceneStyle.cpp" />
     <ClCompile Include="nodegraph\ui\scene\NodeGraphSceneUtils.cpp" />
     <ClCompile Include="nodegraph\NodeGraphValidator.cpp" />
@@ -445,24 +440,22 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
     <ClCompile Include="spatial\VoxelGrid.cpp" />
     <ClCompile Include="vulkan\VulkanBuffer.cpp" />
     <ClCompile Include="vulkan\VulkanExternalBuffer.cpp" />
-    <ClCompile Include="app\SwapchainStage.cpp" />
-    <ClCompile Include="app\SwapchainManager.cpp" />
-    <ClCompile Include="app\VulkanWindow.cpp" />
+    <ClCompile Include="app\ViewportTarget.cpp" />
+    <ClCompile Include="app\NodeGraphModel.cpp" />
+    <ClCompile Include="app\NodeGraphCanvasItem.cpp" />
+    <ClCompile Include="app\UiModel.cpp" />
+    <ClCompile Include="app\GraphHost.cpp" />
+    <ClCompile Include="app\GraphThread.cpp" />
     <ClCompile Include="render\MainRenderGraph.cpp" />
-    <ClCompile Include="app\MainQt.cpp" />
-    <ClCompile Include="app\TimelineWidget.cpp" />
-    <ClCompile Include="app\TimelineNodeController.cpp" />
-    <ClCompile Include="app\ViewportOverlayBar.cpp" />
-    <ClCompile Include="app\ViewportPane.cpp" />
-    <ClCompile Include="py\PyBridge.cpp" />
+    <ClCompile Include="app\MainQuick.cpp" />
+    <ClCompile Include="app\ViewportItem.cpp" />
+    <ClCompile Include="app\ViewportMailbox.cpp" />
     <ClCompile Include="py\PyGraphBindings.cpp" />
     <ClCompile Include="py\PyIdBindings.cpp" />
     <ClCompile Include="py\PyInterpreter.cpp" />
     <ClCompile Include="py\PyModule.cpp" />
     <ClCompile Include="py\PyParamBindings.cpp" />
     <ClCompile Include="py\PyRegistryBindings.cpp" />
-    <ClCompile Include="py\PySyntaxHighlighter.cpp" />
-    <ClCompile Include="py\PyTerminalWidget.cpp" />
     <ClCompile Include="vulkan\MemoryAllocator.cpp" />
     <ClCompile Include="scene\Model.cpp" />
     <ClCompile Include="scene\ModelUploader.cpp" />
@@ -478,6 +471,19 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
     <ClCompile Include="renderers\WireframeRenderer.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="qml\UiMenu.qml" />
+    <None Include="qml\UiMenuItem.qml" />
+    <None Include="qml\UiMenuSeparator.qml" />
+    <None Include="qml\UiTheme.qml" />
+    <None Include="qml\qmldir" />
+    <None Include="qml\ConsolePane.qml" />
+    <None Include="qml\InspectorField.qml" />
+    <None Include="qml\Main.qml" />
+    <None Include="qml\NodeEditorPane.qml" />
+    <None Include="qml\NodeInspectorPane.qml" />
+    <None Include="qml\TimelineBar.qml" />
+    <None Include="qml\ToolIconButton.qml" />
+    <None Include="qml\ViewportPane.qml" />
     <None Include="shaders\blend.frag" />
     <None Include="shaders\blend.vert" />
     <None Include="shaders\contact_lines.frag" />
@@ -501,9 +507,6 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
     <None Include="shaders\hash_grid_vis.frag" />
     <None Include="shaders\hash_grid_vis.vert" />
     <None Include="shaders\heat_buffer.frag" />
-    <None Include="shaders\heat_palette.glsl" />
-    <None Include="shaders\heat_palette_bar.vert" />
-    <None Include="shaders\heat_palette_bar.frag" />
     <None Include="shaders\heat_source.frag" />
     <None Include="shaders\heat_source.vert" />
     <None Include="shaders\voronoi_geometry.slang" />
@@ -546,11 +549,14 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
   <ItemGroup>
     <ClInclude Include="app\App.h" />
     <ClInclude Include="app\AppTypes.hpp" />
-    <ClInclude Include="app\SwapchainStage.hpp" />
-    <ClInclude Include="app\SwapchainManager.hpp" />
-    <ClInclude Include="app\VulkanWindow.hpp" />
-    <ClInclude Include="app\ViewportOverlayBar.hpp" />
-    <ClInclude Include="app\ViewportPane.hpp" />
+    <ClInclude Include="app\ViewportTarget.hpp" />
+    <QtMoc Include="app\NodeGraphModel.hpp" />
+    <QtMoc Include="app\NodeGraphCanvasItem.hpp" />
+    <QtMoc Include="app\UiModel.hpp" />
+    <QtMoc Include="app\RuntimeNotifier.hpp" />
+    <QtMoc Include="app\GraphHost.hpp" />
+    <ClInclude Include="app\GraphThread.hpp" />
+    <ClInclude Include="app\UiRuntimeTypes.hpp" />
     <ClInclude Include="contact\ContactTypes.hpp" />
     <ClInclude Include="contact\ContactGpuStructs.hpp" />
     <ClInclude Include="heat\HeatContactSolver.hpp" />
@@ -576,8 +582,6 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
     <ClInclude Include="nodegraph\NodeGraphParamUtils.hpp" />
     <ClInclude Include="nodegraph\NodeGraphUtils.hpp" />
     <ClInclude Include="nodegraph\NodePayloadRegistry.hpp" />
-    <ClInclude Include="nodegraph\ui\widgets\NodeGraphWidgetStyle.hpp" />
-    <ClInclude Include="nodegraph\ui\widgets\NodeGraphNavHints.hpp" />
     <ClInclude Include="py\PyGraphTypes.hpp" />
     <ClInclude Include="runtime\RuntimeContactComputeTransport.hpp" />
     <ClInclude Include="runtime\ContactDisplayController.hpp" />
@@ -618,8 +622,6 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
     <ClInclude Include="framegraph\FrameComputeStage.hpp" />
     <ClInclude Include="framegraph\FrameGraphicsStage.hpp" />
     <ClInclude Include="nodegraph\NodeGraphIconRegistry.hpp" />
-    <ClInclude Include="nodegraph\ui\scene\NodeGraphNodeItem.hpp" />
-    <ClInclude Include="nodegraph\ui\scene\NodeGraphSocketItem.hpp" />
     <ClInclude Include="framegraph\FrameStats.hpp" />
     <ClInclude Include="render\RenderConfig.hpp" />
     <ClInclude Include="render\RenderSettings.hpp" />
@@ -632,8 +634,8 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
     <ClInclude Include="runtime\RuntimePackages.hpp" />
     <ClInclude Include="runtime\RuntimeProductManager.hpp" />
     <ClInclude Include="runtime\RuntimeController.hpp" />
-    <ClInclude Include="runtime\RenderSettingsManager.hpp" />
     <ClInclude Include="runtime\TimelineController.hpp" />
+    <ClInclude Include="runtime\TimelinePlaybackTarget.hpp" />
     <ClInclude Include="runtime\TimelineRuntime.hpp" />
     <ClInclude Include="runtime\RuntimeInputController.hpp" />
     <ClInclude Include="runtime\RuntimeRenderController.hpp" />
@@ -679,9 +681,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
     <ClInclude Include="mesh\\remesher\\HalfEdgeMesh.hpp" />
     <ClInclude Include="spatial\HashGrid.hpp" />
     <ClInclude Include="renderers\HashGridRenderer.hpp" />
-    <ClInclude Include="renderers\HeatPointRenderer.hpp" />
     <ClInclude Include="renderers\HeatSurfaceRenderer.hpp" />
-    <ClInclude Include="renderers\HeatPaletteRenderer.hpp" />
     <ClInclude Include="renderers\VectorArrowRenderer.hpp" />
     <ClInclude Include="voronoi\VoronoiSystemBuildStage.hpp" />
     <ClInclude Include="voronoi\VoronoiNodeIndex.hpp" />
@@ -714,8 +714,6 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
     <ClInclude Include="nodegraph\NodeGraphController.hpp" />
     <ClInclude Include="nodegraph\NodeGraph.hpp" />
     <ClInclude Include="nodegraph\NodeGraphSave.hpp" />
-    <QtMoc Include="nodegraph\ui\scene\NodeGraphCanvas.hpp" />
-    <QtMoc Include="nodegraph\ui\scene\NodeGraphEditorWidget.hpp" />
     <ClInclude Include="nodegraph\NodeGraphEditor.hpp" />
     <ClInclude Include="nodegraph\NodeGraphDataTypes.hpp" />
     <ClInclude Include="nodegraph\NodeGraphEdges.hpp" />
@@ -731,45 +729,29 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
     <ClInclude Include="nodegraph\NodeGraphKernels.hpp" />
     <ClInclude Include="nodegraph\NodeModel.hpp" />
     <ClInclude Include="nodegraph\NodeModelParams.hpp" />
-    <ClInclude Include="nodegraph\ui\widgets\NodeModelPanel.hpp" />
     <ClInclude Include="nodegraph\NodeTransform.hpp" />
     <ClInclude Include="nodegraph\NodeTransformParams.hpp" />
-    <ClInclude Include="nodegraph\ui\widgets\NodeTransformPanel.hpp" />
     <ClInclude Include="nodegraph\NodeGroup.hpp" />
-    <ClInclude Include="nodegraph\ui\widgets\NodeGroupPanel.hpp" />
     <ClInclude Include="nodegraph\NodeContactParams.hpp" />
     <ClInclude Include="nodegraph\NodeRemesh.hpp" />
     <ClInclude Include="nodegraph\NodeRemeshParams.hpp" />
-    <ClInclude Include="nodegraph\ui\widgets\NodeRemeshPanel.hpp" />
     <ClInclude Include="nodegraph\NodePoints.hpp" />
     <ClInclude Include="nodegraph\NodeMeshPoints.hpp" />
     <ClInclude Include="nodegraph\NodeMerge.hpp" />
     <ClInclude Include="nodegraph\NodePointsParams.hpp" />
-    <ClInclude Include="nodegraph\ui\widgets\NodePointsPanel.hpp" />
     <ClInclude Include="nodegraph\NodeVoronoiParams.hpp" />
-    <ClInclude Include="nodegraph\ui\widgets\NodeVoronoiPanel.hpp" />
     <ClInclude Include="nodegraph\NodeHeatModel.hpp" />
     <ClInclude Include="nodegraph\NodeSerialTemperature.hpp" />
     <ClInclude Include="nodegraph\NodeSerialTemperatureParams.hpp" />
-    <ClInclude Include="nodegraph\ui\widgets\NodeSerialTemperaturePanel.hpp" />
     <ClInclude Include="nodegraph\NodeHeatModelParams.hpp" />
-    <ClInclude Include="nodegraph\ui\widgets\NodeHeatModelPanel.hpp" />
     <ClInclude Include="nodegraph\NodeContact.hpp" />
     <ClInclude Include="nodegraph\NodeVoronoi.hpp" />
     <ClInclude Include="nodegraph\NodeHeatSolve.hpp" />
     <ClInclude Include="nodegraph\NodeHeatSolveParams.hpp" />
     <ClInclude Include="nodegraph\NodeHeatMaterialPresets.hpp" />
-    <ClInclude Include="nodegraph\ui\widgets\NodeContactPanel.hpp" />
-    <ClInclude Include="nodegraph\ui\widgets\NodeHeatSolverPanel.hpp" />
-    <ClInclude Include="nodegraph\ui\widgets\NodePanelBase.hpp" />
-    <ClInclude Include="nodegraph\ui\widgets\NodePanelUtils.hpp" />
+    <ClInclude Include="nodegraph\NodeParamUtils.hpp" />
     <ClInclude Include="nodegraph\NodeGraphDisplay.hpp" />
     <ClInclude Include="nodegraph\NodeGraphCompiler.hpp" />
-    <ClInclude Include="nodegraph\ui\widgets\NodePanel.hpp" />
-    <QtMoc Include="nodegraph\ui\widgets\NodeGraphActionStrip.hpp" />
-    <ClInclude Include="nodegraph\ui\widgets\NodeGraphSliderItem.hpp" />
-    <ClInclude Include="nodegraph\ui\widgets\NodeGraphSliderRow.hpp" />
-    <QtMoc Include="nodegraph\ui\scene\NodeGraphScene.hpp" />
     <ClInclude Include="nodegraph\ui\scene\NodeGraphSceneStyle.hpp" />
     <ClInclude Include="nodegraph\ui\scene\NodeGraphSceneUtils.hpp" />
     <ClInclude Include="nodegraph\NodeGraphLayout.hpp" />
@@ -791,10 +773,8 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
     <ClInclude Include="voronoi\VoronoiMeshGrid.hpp" />
     <ClInclude Include="spatial\VoxelGrid.hpp" />
     <ClInclude Include="renderers\WireframeRenderer.hpp" />
-    <QtMoc Include="app\MainQt.h" />
-    <QtMoc Include="app\TimelineWidget.hpp" />
-    <QtMoc Include="app\TimelineNodeController.hpp" />
-    <QtMoc Include="runtime\RenderSettingsController.hpp" />
+    <QtMoc Include="app\ViewportItem.hpp" />
+    <ClInclude Include="app\ViewportMailbox.hpp" />
     <ClInclude Include="vulkan\MemoryAllocator.hpp" />
     <ClInclude Include="scene\Model.hpp" />
     <ClInclude Include="scene\ModelUploader.hpp" />
@@ -815,13 +795,10 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"</Command>
     <ClInclude Include="ui\UiIconRegistry.hpp" />
     <ClInclude Include="ui\UiFontRegistry.hpp" />
     <ClInclude Include="ui\UiTypography.hpp" />
-    <ClInclude Include="ui\UiTheme.hpp" />
+    <QtMoc Include="ui\UiTypographyQml.hpp" />
     <ClInclude Include="vulkan\UniformBufferManager.hpp" />
     <ClInclude Include="vulkan\VulkanImage.hpp" />
-    <ClInclude Include="py\PyBridge.hpp" />
     <ClInclude Include="py\PyInterpreter.hpp" />
-    <QtMoc Include="py\PySyntaxHighlighter.hpp" />
-    <QtMoc Include="py\PyTerminalWidget.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="resources\ParaMetal.rc" />

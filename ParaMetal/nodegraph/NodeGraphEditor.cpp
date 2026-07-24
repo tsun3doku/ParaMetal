@@ -6,7 +6,7 @@
 
 #include "NodeGraph.hpp"
 #include "nodegraph/ui/scene/NodeGraphSceneUtils.hpp"
-#include "nodegraph/ui/widgets/NodePanelUtils.hpp"
+#include "nodegraph/NodeParamUtils.hpp"
 
 #include <algorithm>
 #include <unordered_map>
@@ -323,27 +323,8 @@ bool NodeGraphEditor::setNodeParameter(NodeGraphNodeId nodeId, const NodeGraphPa
     return bridge && bridge->setNodeParameter(nodeId, parameter);
 }
 
-bool NodeGraphEditor::updateNodeParameter(NodeGraphNodeId nodeId, uint32_t paramId, const std::function<bool(NodeGraphParamValue&)>& updater) {
-    if (!bridge || !nodeId.isValid() || !updater) {
-        return false;
-    }
-
-    NodeGraphNode node{};
-    if (!bridge->getNode(nodeId, node)) {
-        return false;
-    }
-
-    const NodeGraphParamValue* existingParameter = findNodeParamValue(node, paramId);
-    if (!existingParameter) {
-        return false;
-    }
-
-    NodeGraphParamValue updatedParameter = *existingParameter;
-    if (!updater(updatedParameter)) {
-        return false;
-    }
-
-    return setNodeParameter(nodeId, updatedParameter);
+bool NodeGraphEditor::setNodeParameters(NodeGraphNodeId nodeId, const std::vector<NodeGraphParamValue>& parameters) {
+    return bridge && bridge->setNodeParameters(nodeId, parameters);
 }
 
 bool NodeGraphEditor::connectSockets(

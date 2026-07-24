@@ -333,6 +333,7 @@ bool IntrinsicRenderer::createSupportingHalfedgeDescriptorSetLayout() {
     bindings[11].descriptorCount = 1;
     bindings[11].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
+
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
@@ -584,6 +585,7 @@ void IntrinsicRenderer::updateSupportingHalfedgeDescriptorSet(uint64_t socketKey
     descriptorWrites[11].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     descriptorWrites[11].descriptorCount = 1;
     descriptorWrites[11].pImageInfo = &wireframeInfo;
+
 
     vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 }

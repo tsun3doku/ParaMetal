@@ -26,7 +26,6 @@ struct WindowInputEvent {
 };
 
 struct WindowRuntimeState {
-    std::atomic<bool> shouldClose{false};
     std::atomic<uint32_t> width{960};
     std::atomic<uint32_t> height{540};
     std::atomic<float> devicePixelRatio{1.0f};
@@ -34,8 +33,6 @@ struct WindowRuntimeState {
     std::atomic<float> mouseY{0.0f};
     std::atomic<bool> shiftPressed{false};
     std::atomic<bool> middleButtonPressed{false};
-    std::atomic<uint64_t> resizeSequence{0};
-    std::atomic<int64_t> lastResizeEventNs{0};
 
     void pushInputEvent(const WindowInputEvent& event) {
         std::lock_guard<std::mutex> lock(inputEventsMutex);

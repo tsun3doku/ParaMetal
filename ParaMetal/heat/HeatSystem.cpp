@@ -312,13 +312,7 @@ bool HeatSystem::ensureConfigured() {
     if (!needsHardRebuild) return true;
 
 
-    const VkResult idleResult = vkDeviceWaitIdle(vulkanDevice.getDevice());
-    if (idleResult != VK_SUCCESS) {
-        std::cerr << "[HEAT-CONFIG] waitIdle failed"
-                  << " result=" << static_cast<int>(idleResult)
-                  << std::endl;
-        return false;
-    }
+    if (vkDeviceWaitIdle(vulkanDevice.getDevice()) != VK_SUCCESS) return false;
 
     if (contactRuntime) {
         contactRuntime->cleanup();
@@ -351,13 +345,7 @@ bool HeatSystem::ensureConfigured() {
         if (!heatModel) continue;
         auto countIt = simNodeCounts.find(runtimeModelId);
         uint32_t nodeCount = (countIt != simNodeCounts.end()) ? countIt->second : 0;
-        if (!heatModel->ensureSimulationBuffers(nodeCount)) {
-            std::cerr << "[HEAT-CONFIG] ensureSimulationBuffers failed"
-                      << " model=" << runtimeModelId
-                      << " nodeCount=" << nodeCount
-                      << std::endl;
-            return false;
-        }
+        if (!heatModel->ensureSimulationBuffers(nodeCount)) return false;
         heatModel->initializePlayback(vulkanDevice, memoryAllocator, frameCapacity);
     }
 
@@ -645,13 +633,7 @@ void HeatSystem::resetVoronoiTemperatures() {
             regionB.size = bufferSize;
             vkCmdCopyBuffer(cmd, stagingBuffer, heatModel->getTempBufferB(), 1, &regionB);
 
-            const bool copyOk = transferCommandPool.endCommands(cmd);
-            if (!copyOk) {
-                std::cerr << "[HEAT-UPLOAD] resetTemperature failed"
-                          << " model=" << runtimeModelId
-                          << " nodeCount=" << nodeCount
-                          << std::endl;
-            }
+            transferCommandPool.endCommands(cmd);
         }
 
         memoryAllocator.free(stagingBuffer, stagingOffset);
@@ -718,6 +700,10 @@ void HeatSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t c
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
         return;
+    }
+
+    if (timingQueryPool != VK_NULL_HANDLE) {
+        vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, timingQueryPool, timingStartQuery);
     }
 
     bool hasWork = hasDispatchableComputeWork();
@@ -823,7 +809,16 @@ void HeatSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t c
         }
     }
 
+    if (timingQueryPool != VK_NULL_HANDLE) {
+        vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timingQueryPool, timingEndQuery);
+    }
     vkEndCommandBuffer(commandBuffer);
+}
+
+void HeatSystem::setComputeTimingQueries(VkQueryPool queryPool, uint32_t startQuery, uint32_t endQuery) {
+    timingQueryPool = queryPool;
+    timingStartQuery = startQuery;
+    timingEndQuery = endQuery;
 }
 
 bool HeatSystem::configureMaterialNodes() {
@@ -867,7 +862,6 @@ bool HeatSystem::configureMaterialNodes() {
         }
 
         heatModelPtr->setNodalThermalMasses(std::move(nodalThermalMasses));
-
     }
 
     return true;

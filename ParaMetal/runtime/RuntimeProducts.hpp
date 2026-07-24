@@ -78,6 +78,7 @@ struct RemeshProduct {
     VkDeviceSize lengthOffset = 0;
     VkBufferView lengthView = VK_NULL_HANDLE;
 
+
     VkBuffer inputHalfedgeBuffer = VK_NULL_HANDLE;
     VkDeviceSize inputHalfedgeOffset = 0;
     VkBufferView inputHalfedgeView = VK_NULL_HANDLE;

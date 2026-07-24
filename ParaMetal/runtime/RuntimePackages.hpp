@@ -120,8 +120,6 @@ struct HeatPackage {
         bool showFluxVectors = false;
         bool showHeatPalette = false;
         float fluxVectorScale = 1.0f;
-        float heatPaletteMinTemp = 0.0f;
-        float heatPaletteMaxTemp = 100.0f;
 
         bool anyVisible() const {
             return showHeatOverlay || showFluxVectors || showHeatPalette;

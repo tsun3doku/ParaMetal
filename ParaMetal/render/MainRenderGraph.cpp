@@ -73,7 +73,7 @@ static framegraph::ResourceId addDepthStencilImage(
     return frameGraph.addImageResource(std::move(createInfo));
 }
 
-static framegraph::ResourceId addSwapchainOutput(FrameGraph& frameGraph, std::string_view name) {
+static framegraph::ResourceId addViewportOutput(FrameGraph& frameGraph, std::string_view name) {
     return addColorImage(
         frameGraph,
         name,
@@ -82,7 +82,7 @@ static framegraph::ResourceId addSwapchainOutput(FrameGraph& frameGraph, std::st
         framegraph::SampleCount::Count1,
         framegraph::ImageUsage::ColorAttachment,
         makeAttachmentOps(framegraph::AttachmentLoadOp::Clear, framegraph::AttachmentStoreOp::Store),
-        framegraph::ResourceLayout::PresentSrc,
+        framegraph::ResourceLayout::ShaderReadOnly,
         framegraph::ResourceLifetime::External);
 }
 
@@ -275,7 +275,7 @@ void MainRenderGraph::buildMainRenderGraph(FrameGraph& frameGraph) {
             framegraph::AttachmentStoreOp::DontCare),
         framegraph::ResourceLayout::DepthStencilAttachment);
 
-    const framegraph::ResourceId resSwapchain = addSwapchainOutput(frameGraph, framegraph::resources::Swapchain);
+    const framegraph::ResourceId resViewport = addViewportOutput(frameGraph, framegraph::resources::Swapchain);
 
     framegraph::PassDescription geometryPass{};
     geometryPass.name = framegraph::passes::Geometry;
@@ -365,7 +365,7 @@ void MainRenderGraph::buildMainRenderGraph(FrameGraph& frameGraph) {
         makeRef(resLightingResolve),
         makeRef(resAlbedoResolve),
     };
-    blendPass.colors = { makeRef(resSwapchain) };
+    blendPass.colors = { makeRef(resViewport) };
     frameGraph.addPassDesc(std::move(blendPass));
 }
 

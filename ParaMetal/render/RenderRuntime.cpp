@@ -20,7 +20,7 @@
 #include "RenderConfig.hpp"
 #include "vulkan/ModelRegistry.hpp"
 #include "SceneRenderer.hpp"
-#include "app/SwapchainManager.hpp"
+#include "app/ViewportTarget.hpp"
 #include "vulkan/UniformBufferManager.hpp"
 #include "framegraph/VkFrameGraphBackend.hpp"
 #include "vulkan/VulkanDevice.hpp"
@@ -31,7 +31,7 @@
 RenderRuntime::RenderRuntime(
     const WindowRuntimeState& windowState,
     VulkanDevice& vulkanDevice,
-    SwapchainManager& swapchainManager,
+    ViewportTarget& viewportTarget,
     CommandPool& renderCommandPool,
     FrameSync& frameSync,
     CameraController& cameraController,
@@ -39,7 +39,7 @@ RenderRuntime::RenderRuntime(
     std::atomic<bool>& isShuttingDown)
     : windowState(windowState),
       vulkanDevice(vulkanDevice),
-      swapchainManager(swapchainManager),
+      viewportTarget(viewportTarget),
       renderCommandPool(renderCommandPool),
       frameSync(frameSync),
       cameraController(cameraController),
@@ -68,7 +68,7 @@ bool RenderRuntime::initializeBase(VkFormat swapChainFormat, VkExtent2D extent, 
     if (!frameGraphBackend) {
         return false;
     }
-    if (!frameGraphBackend->rebuild(frameGraph->getFrameGraphResult(), swapchainManager.getImageViews(), extent, renderconfig::MaxFramesInFlight)) {
+    if (!frameGraphBackend->rebuild(frameGraph->getFrameGraphResult(), viewportTarget.getImageViews(), extent, renderconfig::MaxFramesInFlight)) {
         return false;
     }
 
@@ -130,7 +130,7 @@ bool RenderRuntime::initializeFrameController(const FrameControllerServices& ser
     frameController = std::make_unique<FrameController>(
         windowState,
         vulkanDevice,
-        swapchainManager,
+        viewportTarget,
         *frameGraph,
         *frameGraphBackend,
         *sceneRenderer,
@@ -144,44 +144,42 @@ bool RenderRuntime::initializeFrameController(const FrameControllerServices& ser
     return frameController != nullptr;
 }
 
-bool RenderRuntime::initializeSyncObjects() {
+bool RenderRuntime::renderFrame(
+    VkCommandBuffer commandBuffer,
+    uint32_t frameIndex,
+    const render::RenderFlags& flags,
+    const std::vector<ComputePass*>& computePasses) {
     if (frameController) {
-        return frameController->initializeSyncObjects();
+        return frameController->drawFrame(commandBuffer, frameIndex, flags, computePasses);
     }
-
-    return frameSync.initialize(vulkanDevice.getDevice(), renderconfig::MaxFramesInFlight);
+    return false;
 }
 
-void RenderRuntime::shutdownSyncObjects() {
-    if (frameController) {
-        frameController->shutdownSyncObjects();
-        return;
-    }
-
-    frameSync.shutdown();
-}
-
-void RenderRuntime::renderFrame(const render::RenderFlags& flags, const std::vector<ComputePass*>& computePasses) {
-    if (frameController) {
-        frameController->drawFrame(flags, computePasses);
-    }
-}
-
-
-void RenderRuntime::cleanupSwapChain() {
-    if (frameController) {
-        frameController->cleanupSwapChain();
-        return;
+bool RenderRuntime::updateViewportTarget(VkImage image, VkFormat format, VkExtent2D extent) {
+    if (!frameGraph || !frameGraphBackend || !sceneRenderer) {
+        return false;
     }
 
     vkDeviceWaitIdle(vulkanDevice.getDevice());
-    if (frameGraphBackend) {
-        frameGraphBackend->cleanup(renderconfig::MaxFramesInFlight);
+    frameGraphBackend->cleanup(renderconfig::MaxFramesInFlight);
+    if (!viewportTarget.update(image, format, extent)) {
+        return false;
     }
-    if (sceneRenderer) {
-        sceneRenderer->freeCommandBuffers();
+    if (!frameGraph->compile(
+            framegraph::vk::toFrameGraphFormat(format),
+            framegraph::vk::toFrameGraphExtent(extent))) {
+        return false;
     }
-    swapchainManager.cleanup();
+    if (!frameGraphBackend->rebuild(
+            frameGraph->getFrameGraphResult(),
+            viewportTarget.getImageViews(),
+            extent,
+            renderconfig::MaxFramesInFlight)) {
+        return false;
+    }
+    sceneRenderer->resize(extent);
+    sceneRenderer->updateDescriptorSets();
+    return true;
 }
 
 void RenderRuntime::cleanup() {

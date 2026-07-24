@@ -4,6 +4,7 @@
 #include <glm/glm.hpp>
 #include <Qt>
 #include <cstdint>
+#include <vector>
 
 #include "InputActions.hpp"
 #include "nodegraph/NodeGraphTypes.hpp"
@@ -12,11 +13,11 @@ class Camera;
 class CameraController;
 class GizmoController;
 class NavigationGizmoController;
-class NodeGraph;
+class NodeGraphController;
 class ModelSelection;
 class ModelRegistry;
 class SceneController;
-class SwapchainManager;
+struct WindowRuntimeState;
 
 class InputController {
 public:
@@ -26,9 +27,8 @@ public:
         ModelSelection& modelSelection,
         ModelRegistry& resourceManager,
         SceneController& sceneController,
-        NodeGraph& graph,
-        const SwapchainManager& swapchainManager,
-        InputActionHandler& actionHandler);
+        NodeGraphController& graphController,
+        const WindowRuntimeState& windowState);
     ~InputController() = default;
 
     void handleScrollInput(double yOffset);
@@ -39,6 +39,7 @@ public:
 
     void processInput(bool shiftPressed, bool middleButtonPressed, double mouseX, double mouseY, float deltaTime);
     void updateGizmo();
+    std::vector<InputAction> takePendingActions();
 
     bool resolveSelectedTransformNode(NodeGraphNodeId& outTransformNodeId);
 
@@ -52,9 +53,9 @@ private:
     ModelSelection& modelSelection;
     ModelRegistry& resourceManager;
     SceneController& sceneController;
-    NodeGraph& graph;
-    const SwapchainManager& swapchainManager;
-    InputActionHandler& actionHandler;
+    NodeGraphController& graphController;
+    const WindowRuntimeState& windowState;
+    std::vector<InputAction> pendingActions;
 
     glm::vec3 accumulatedTranslation{0.0f};
     glm::vec3 lastAppliedTranslation{0.0f};

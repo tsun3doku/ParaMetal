@@ -23,6 +23,7 @@ public:
     bool toggleNodeFrozen(NodeGraphNodeId nodeId);
     bool toggleNodeDisplay(NodeGraphNodeId nodeId);
     bool setNodeParameter(NodeGraphNodeId nodeId, const NodeGraphParamValue& parameter);
+    bool setNodeParameters(NodeGraphNodeId nodeId, const std::vector<NodeGraphParamValue>& parameters);
     bool appendSocket(NodeGraphNodeId nodeId, const NodeSocketSignature& socketSignature, NodeGraphSocketId* outSocketId = nullptr);
 
     bool addConnection(

@@ -258,14 +258,4 @@ QPainterPath buildEdgePath(
     return path;
 }
 
-void setDecorativeItemFlags(QGraphicsItem* item) {
-    if (!item) {
-        return;
-    }
-
-    item->setAcceptedMouseButtons(Qt::NoButton);
-    item->setFlag(QGraphicsItem::ItemIsSelectable, false);
-    item->setFlag(QGraphicsItem::ItemIsMovable, false);
-}
-
 }

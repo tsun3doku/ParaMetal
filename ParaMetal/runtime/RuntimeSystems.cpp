@@ -1,8 +1,12 @@
 #include "RuntimeSystems.hpp"
 
 #include "render/WindowRuntimeState.hpp"
+#include "render/SceneRenderer.hpp"
+#include "render/HeatOverlayRenderer.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <utility>
 
 RuntimeSystems::~RuntimeSystems() {
     shutdown();
@@ -16,7 +20,6 @@ bool RuntimeSystems::initialize(WindowRuntimeState& runtimeState, const AppVulka
     windowRuntimeState = &runtimeState;
     isShuttingDown.store(false, std::memory_order_release);
     runtimeBusy.store(false, std::memory_order_release);
-    simPaused.store(false, std::memory_order_release);
     frameCounter = 0;
     timelineRuntime.reset();
 
@@ -28,16 +31,17 @@ bool RuntimeSystems::initialize(WindowRuntimeState& runtimeState, const AppVulka
         cleanup();
         return false;
     }
-    if (!render.initialize(core, scene, runtimeState, &settingsController, runtimeBusy, isShuttingDown)) {
+    if (!render.initialize(core, scene, runtimeState, vulkanContext, runtimeBusy, isShuttingDown)) {
         cleanup();
         return false;
     }
+    timelineControllerInstance.bindPlaybackTarget(render.heatSystemComputeController());
     if (!render.initializeSyncObjects()) {
         cleanup();
         return false;
     }
     if (!runtimeController.initialize(
-            render, scene, core, runtimeState, settingsManager, settingsController, simPaused)) {
+            render, scene, core, runtimeState)) {
         cleanup();
         return false;
     }
@@ -46,7 +50,7 @@ bool RuntimeSystems::initialize(WindowRuntimeState& runtimeState, const AppVulka
     return true;
 }
 
-void RuntimeSystems::tickFrame(float deltaTime) {
+void RuntimeSystems::tickFrame(float deltaTime, VkCommandBuffer commandBuffer, uint32_t frameIndex) {
     if (!initialized || !windowRuntimeState || !runtimeController.isInitialized()) {
         return;
     }
@@ -74,7 +78,6 @@ void RuntimeSystems::tickFrame(float deltaTime) {
                 : 0u;
         }
         timelineRuntime.setCurrentFrame(syncedFrame);
-
         const bool heatAtEnd = timelineRuntime.getCurrentFrame() >= timelineRuntime.getMaxFrame() ||
             (heatDuration > 0.0f && getSimulationTotalTime() >= heatDuration);
         timelineRuntime.setPlaying(!isSimulationPaused() && !heatAtEnd);
@@ -82,7 +85,56 @@ void RuntimeSystems::tickFrame(float deltaTime) {
         timelineRuntime.tick(deltaTime);
     }
 
-    runtimeController.tick(deltaTime, frameCounter);
+    runtimeController.tick(
+        deltaTime,
+        frameCounter,
+        commandBuffer,
+        frameIndex,
+        renderSettingsState);
+    dispatchInputActions();
+}
+
+bool RuntimeSystems::updateViewportTarget(VkImage image, VkFormat format, VkExtent2D extent) {
+    if (!initialized) {
+        return false;
+    }
+    return render.updateViewportTarget(image, format, extent);
+}
+
+void RuntimeSystems::replaceGraphState(const NodeGraphState& state) {
+    if (NodeGraphController* controller = getNodeGraphController()) controller->resetGraph(state);
+}
+
+bool RuntimeSystems::applyGraphDelta(const NodeGraphDelta& delta) {
+    NodeGraphController* controller = getNodeGraphController();
+    return controller && controller->applyGraphDelta(delta);
+}
+
+void RuntimeSystems::dispatchInputActions() {
+    InputController* input = render.inputController();
+    if (!input) {
+        return;
+    }
+
+    for (InputAction& action : input->takePendingActions()) {
+        if (std::holds_alternative<ToggleWireframeAction>(action)) {
+            renderSettingsState.wireframeMode = static_cast<app::WireframeMode>(
+                (static_cast<int>(renderSettingsState.wireframeMode) + 1) % 3);
+        } else if (std::holds_alternative<ToggleTimingOverlayAction>(action)) {
+            renderSettingsState.gpuTimingOverlayEnabled =
+                !renderSettingsState.gpuTimingOverlayEnabled;
+        } else if (std::holds_alternative<ToggleGridAction>(action)) {
+            renderSettingsState.gridEnabled = !renderSettingsState.gridEnabled;
+        } else {
+            pendingAuthoringActions.push_back(std::move(action));
+        }
+    }
+}
+
+std::vector<InputAction> RuntimeSystems::takePendingAuthoringActions() {
+    std::vector<InputAction> actions;
+    actions.swap(pendingAuthoringActions);
+    return actions;
 }
 
 void RuntimeSystems::shutdown() {
@@ -119,10 +171,6 @@ const TimelineController* RuntimeSystems::timelineController() const {
     return &timelineControllerInstance;
 }
 
-std::vector<SimulationError> RuntimeSystems::consumeSimulationErrors() {
-    return {};
-}
-
 uint32_t RuntimeSystems::loadModel(const std::string& modelPath, uint32_t preferredModelId) {
     SceneController* sceneController = render.sceneController();
     if (!sceneController) {
@@ -135,27 +183,28 @@ void RuntimeSystems::setPanSensitivity(float sensitivity) {
     scene.cameraController().setPanSensitivity(sensitivity);
 }
 
-void RuntimeSystems::setSimPaused(bool paused) {
-    simPaused.store(paused, std::memory_order_release);
-    if (paused && core.isInitialized() && core.device().getDevice() != VK_NULL_HANDLE) {
-        vkDeviceWaitIdle(core.device().getDevice());
-    }
+void RuntimeSystems::setWireframeMode(app::WireframeMode mode) {
+    renderSettingsState.wireframeMode = mode;
 }
 
-RenderSettingsController* RuntimeSystems::getSettingsController() {
-    return &settingsController;
+void RuntimeSystems::setGridEnabled(bool enabled) {
+    renderSettingsState.gridEnabled = enabled;
 }
 
-const RenderSettingsController* RuntimeSystems::getSettingsController() const {
-    return &settingsController;
+void RuntimeSystems::setHeatPaletteRange(float minimum, float maximum) {
+    if (render.runtime()) render.runtime()->getSceneRenderer().getHeatOverlayRenderer()->setPaletteRange(minimum, maximum);
+}
+void RuntimeSystems::setHeatPalette(int palette) {
+    if (render.runtime()) render.runtime()->getSceneRenderer().getHeatOverlayRenderer()->setPalette(palette);
 }
 
-NodeGraph* RuntimeSystems::getNodeGraph() {
-    return render.nodeGraph();
+bool RuntimeSystems::isHeatPaletteVisible() const {
+    const RenderRuntime* runtimeState = render.runtime();
+    return runtimeState && runtimeState->getSceneRenderer().getHeatOverlayRenderer()->isPaletteVisible();
 }
 
-const NodeGraph* RuntimeSystems::getNodeGraph() const {
-    return render.nodeGraph();
+const app::RenderSettings& RuntimeSystems::renderSettings() const {
+    return renderSettingsState;
 }
 
 CameraController* RuntimeSystems::getCameraController() {
@@ -199,6 +248,8 @@ const NodeGraphController* RuntimeSystems::getNodeGraphController() const {
 }
 
 void RuntimeSystems::cleanup() {
+    pendingAuthoringActions.clear();
+    timelineControllerInstance.bindPlaybackTarget(nullptr);
     runtimeController.shutdown();
     render.shutdown();
     scene.shutdown();

@@ -35,6 +35,7 @@ public:
     bool ensureConfigured();
     bool setupDescriptors(const std::vector<VkBuffer>& surfaceBuffers, const std::vector<VkDeviceSize>& surfaceOffsets, const std::vector<VkBuffer>& gradientBuffers, const std::vector<VkDeviceSize>& gradientOffsets);
     void recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t currentFrame) override;
+    void setComputeTimingQueries(VkQueryPool queryPool, uint32_t startQuery, uint32_t endQuery) override;
     bool createComputeCommandBuffers(uint32_t maxFramesInFlight);
     void cleanup();
 
@@ -133,6 +134,9 @@ private:
     CommandPool& renderCommandPool;
     CommandPool& transferCommandPool;
     std::vector<VkCommandBuffer> computeCommandBuffers;
+    VkQueryPool timingQueryPool = VK_NULL_HANDLE;
+    uint32_t timingStartQuery = 0;
+    uint32_t timingEndQuery = 0;
     uint32_t maxFramesInFlight;
 
     std::unique_ptr<HeatSystemSimStage> simStage;

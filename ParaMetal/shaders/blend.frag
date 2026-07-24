@@ -29,5 +29,6 @@ void main() {
     float coverage = clamp(lighting.a, 0.0, 1.0);
     vec3 color = lighting.rgb + clearColor.rgb * (1.0 - coverage);
     color = color * (1.0 - lineOverlay.a) + lineOverlay.rgb;
+
     outColor = vec4(linearToSrgb(color), 1.0);
 }

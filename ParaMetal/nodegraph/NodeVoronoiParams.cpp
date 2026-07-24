@@ -2,19 +2,19 @@
 
 #include "NodeGraphEditor.hpp"
 #include "NodeGraphRegistry.hpp"
-#include "nodegraph/ui/widgets/NodePanelUtils.hpp"
+#include "nodegraph/NodeParamUtils.hpp"
 
 VoronoiNodeParams readVoronoiNodeParams(const NodeGraphNode& node) {
     constexpr double sdfSize = 0.005;
     constexpr int voxelResolution = 128;
 
     VoronoiNodeParams params{};
-    params.sdfSize = NodePanelUtils::readFloatParam(node, nodegraphparams::voronoi::SDFSize, sdfSize);
-    params.voxelResolution = NodePanelUtils::readIntParam(node, nodegraphparams::voronoi::VoxelResolution, voxelResolution);
+    params.sdfSize = NodeParamUtils::readFloatParam(node, nodegraphparams::voronoi::SDFSize, sdfSize);
+    params.voxelResolution = NodeParamUtils::readIntParam(node, nodegraphparams::voronoi::VoxelResolution, voxelResolution);
     if (params.sdfSize <= 0.0) { params.sdfSize = sdfSize; }
     if (params.voxelResolution <= 0) { params.voxelResolution = voxelResolution; }
-    params.preview.showVoronoi = NodePanelUtils::readBoolParam(node, nodegraphparams::voronoi::ShowVoronoi, false);
-    params.preview.showPoints = NodePanelUtils::readBoolParam(node, nodegraphparams::voronoi::ShowPoints, false);
+    params.preview.showVoronoi = NodeParamUtils::readBoolParam(node, nodegraphparams::voronoi::ShowVoronoi, false);
+    params.preview.showPoints = NodeParamUtils::readBoolParam(node, nodegraphparams::voronoi::ShowPoints, false);
     return params;
 }
 

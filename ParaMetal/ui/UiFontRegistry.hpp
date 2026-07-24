@@ -3,7 +3,7 @@
 #include <QString>
 #include <QStringList>
 
-class QApplication;
+class QGuiApplication;
 
 namespace ui {
 
@@ -11,7 +11,7 @@ class UiFontRegistry {
 public:
     UiFontRegistry() = delete;
 
-    static void installBundledFonts(QApplication& application);
+    static void installBundledFonts(QGuiApplication& application);
 
 private:
     static QString resolveBundledAsset(const QString& relativePath);

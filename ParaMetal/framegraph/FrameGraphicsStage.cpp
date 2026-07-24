@@ -64,3 +64,40 @@ FrameGraphicsCollection FrameGraphicsStage::collect(const FrameState& frameState
     collection.result = FrameStageResult::Continue;
     return collection;
 }
+
+FrameGraphicsCollection FrameGraphicsStage::collectExternal(
+    VkCommandBuffer commandBuffer,
+    const FrameState& frameState,
+    const FrameSyncState& syncState) {
+    FrameGraphicsCollection collection{};
+    if (commandBuffer == VK_NULL_HANDLE) {
+        collection.result = FrameStageResult::Fatal;
+        return collection;
+    }
+
+    render::RenderFrameRequest frameRequest{};
+    frameRequest.frameIndex = frameState.frameIndex;
+    frameRequest.imageIndex = 0;
+    frameRequest.extent = frameState.extent;
+    frameRequest.sceneView = frameState.sceneView;
+    frameRequest.flags = frameState.flags;
+
+    render::RenderServices services{};
+    services.modelSelection = &modelSelection;
+    services.gizmoController = &gizmoController;
+    services.navigationGizmoController = &navigationGizmoController;
+    services.wireframeRenderer = &wireframeRenderer;
+
+    if (!sceneRenderer.recordExternalCommandBuffer(
+            commandBuffer,
+            frameRequest,
+            services,
+            syncState.insertComputeToGraphicsBarrier,
+            syncState.waitDstStageMask)) {
+        collection.result = FrameStageResult::Fatal;
+        return collection;
+    }
+
+    collection.commandBuffer = commandBuffer;
+    return collection;
+}

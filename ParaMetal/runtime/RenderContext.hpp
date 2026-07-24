@@ -3,6 +3,7 @@
 #include <atomic>
 #include <memory>
 
+#include "app/AppTypes.hpp"
 #include "framegraph/FrameSync.hpp"
 #include "contact/ContactSystemComputeController.hpp"
 #include "runtime/RemeshController.hpp"
@@ -28,15 +29,13 @@
 #include "runtime/VoronoiDisplayController.hpp"
 #include "heat/HeatSystemComputeController.hpp"
 #include "voronoi/VoronoiSystemComputeController.hpp"
-#include "nodegraph/NodeGraph.hpp"
 #include "nodegraph/NodeGraphController.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
-#include "app/SwapchainManager.hpp"
+#include "app/ViewportTarget.hpp"
 #include "render/RenderRuntime.hpp"
 #include "scene/InputController.hpp"
 #include "scene/SceneController.hpp"
 
-class RenderSettingsController;
 class SceneContext;
 class VulkanCoreContext;
 struct WindowRuntimeState;
@@ -45,14 +44,19 @@ class RenderContext {
 public:
     ~RenderContext();
 
-    bool initialize(VulkanCoreContext& core, SceneContext& scene, WindowRuntimeState& windowState, RenderSettingsController* renderSettingsController, std::atomic<bool>& runtimeBusy, std::atomic<bool>& isShuttingDown);
-    bool initializeInputPipeline(SceneContext& scene, InputActionHandler& inputActions);
+    bool initialize(
+        VulkanCoreContext& core,
+        SceneContext& scene,
+        WindowRuntimeState& windowState,
+        const AppVulkanContext& vulkanContext,
+        std::atomic<bool>& runtimeBusy,
+        std::atomic<bool>& isShuttingDown);
+    bool initializeInputPipeline(SceneContext& scene);
     bool initializeSyncObjects();
     void shutdown();
     bool isInitialized() const;
 
-    SwapchainManager& swapchain();
-    const SwapchainManager& swapchain() const;
+    bool updateViewportTarget(VkImage image, VkFormat format, VkExtent2D extent);
     FrameSync& sync();
     RenderRuntime* runtime();
     const RenderRuntime* runtime() const;
@@ -63,14 +67,13 @@ public:
     const ModelComputeRuntime* modelComputeRuntime() const;
     SceneController* sceneController();
     const SceneController* sceneController() const;
-    NodeGraph* nodeGraph();
-    const NodeGraph* nodeGraph() const;
     NodeGraphController* nodeGraphController();
     const NodeGraphController* nodeGraphController() const;
     InputController* inputController();
 
 private:
-    SwapchainManager swapchainManager;
+    const WindowRuntimeState* windowState = nullptr;
+    ViewportTarget viewportTarget;
     std::unique_ptr<RenderRuntime> renderRuntime;
     FrameSync frameSync;
     std::unique_ptr<RuntimeContactComputeTransport> runtimeContactComputeTransportState;
@@ -99,7 +102,6 @@ private:
     std::unique_ptr<ContactSystemComputeController> contactSystemComputeControllerState;
     std::unique_ptr<SceneController> sceneControllerState;
     std::unique_ptr<InputController> inputControllerState;
-    std::unique_ptr<NodeGraph> nodeGraphState;
     std::unique_ptr<NodeGraphController> nodeGraphControllerState;
     std::unique_ptr<NodePayloadRegistry> payloadRegistryState;
     bool initialized = false;

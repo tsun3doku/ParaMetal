@@ -30,7 +30,7 @@ void TimingRenderer::buildGlyphInstances() {
                 GlyphText::GlyphInstance glyph{};
                 glyph.centerPx = glm::vec2(
                     cursorX + info.xoffset * scale + 0.5f * info.width * scale,
-                    lineTop + info.yoffset * scale + 0.5f * info.height * scale);
+                    lineTop - info.yoffset * scale + 0.5f * info.height * scale);
                 glyph.sizePx = glm::vec2(info.width * scale, info.height * scale);
                 glyph.charUV = glyphText.getCharUV(character);
                 glyph.color = separatorPosition != std::string::npos && characterIndex > separatorPosition

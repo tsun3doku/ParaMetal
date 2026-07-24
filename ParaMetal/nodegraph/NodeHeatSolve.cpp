@@ -80,9 +80,6 @@ void NodeHeatSolve::execute(NodeKernelEval& eval) const {
     heatData.contactThermalConductance = static_cast<float>(params.contactThermalConductance);
     heatData.simulationDuration = static_cast<float>(params.simulationDuration);
     heatData.active = hasValidInputs && active;
-    heatData.paused = hasValidInputs && active && params.paused;
-    heatData.resetCounter = hasValidInputs && active ? params.resetCounter : 0;
-    heatData.rewindFrame = hasValidInputs && active ? params.rewindFrame : heat::NoRewindFrame;
 
     for (std::size_t outputIndex = 0; outputIndex < eval.outputs.size() && outputIndex < eval.node.outputs.size(); ++outputIndex) {
         NodeDataBlock& outputValue = eval.outputs[outputIndex];
@@ -116,14 +113,8 @@ HashValues NodeHeatSolve::computeOutputHashes(const NodeKernelHash& hash) const 
     const bool active = activeNodeId.isValid() && activeNodeId == hash.node.id;
     HashBuilder::combine(simulationHash, static_cast<uint64_t>(active ? 1u : 0u));
 
-    uint64_t fullHash = HashBuilder::start();
-    HashBuilder::combine(fullHash, simulationHash);
-    HashBuilder::combine(fullHash, static_cast<uint64_t>(active && params.paused ? 1u : 0u));
-    HashBuilder::combine(fullHash, static_cast<uint64_t>(active ? params.resetCounter : 0u));
-    HashBuilder::combine(fullHash, static_cast<uint64_t>(active ? params.rewindFrame : heat::NoRewindFrame));
-
     HashValues values{};
-    values.full = fullHash;
+    values.full = simulationHash;
     values.simulation = simulationHash;
     return values;
 }

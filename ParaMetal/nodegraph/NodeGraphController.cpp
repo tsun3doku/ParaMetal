@@ -4,7 +4,6 @@
 
 #include <unordered_set>
 
-#include "NodeGraph.hpp"
 #include "NodeGraphDebugCache.hpp"
 #include "NodePayloadRegistry.hpp"
 #include "runtime/RuntimeContactComputeTransport.hpp"
@@ -25,9 +24,8 @@
 #include "vulkan/MemoryAllocator.hpp"
 
 
-NodeGraphController::NodeGraphController(NodeGraph* bridge, const NodeRuntimeServices& services)
-    : bridge(bridge),
-      runtimeServices(services),
+NodeGraphController::NodeGraphController(const NodeRuntimeServices& services)
+    : runtimeServices(services),
       runtime(services) {
     plan.isValid = false;
     if (runtimeServices.vulkanDevice && runtimeServices.memoryAllocator) {
@@ -49,15 +47,7 @@ NodeGraphController::NodeGraphController(NodeGraph* bridge, const NodeRuntimeSer
     if (runtimeServices.pointDisplayTransport) { runtimeServices.pointDisplayTransport->setProducts(pm); }
 }
 
-void NodeGraphController::consumePendingGraphDelta() {
-    if (!bridge) {
-        return;
-    }
-
-    NodeGraphDelta delta{};
-    if (!bridge->consumeChanges(revisionSeen, delta)) {
-        return;
-    }
+void NodeGraphController::rebuildForDelta(const NodeGraphDelta& delta) {
     runtime.applyDelta(delta);
 
     bool nonLayout = false;
@@ -77,14 +67,50 @@ void NodeGraphController::consumePendingGraphDelta() {
 }
 
 void NodeGraphController::tick() {
-    consumePendingGraphDelta();
-
     if (plan.isValid && completedPackageRevision != pendingPackageRevision) {
         compileRuntimePackages();
         completedPackageRevision = pendingPackageRevision;
     }
 
     updateDisplayTransports();
+}
+
+void NodeGraphController::resetGraph(const NodeGraphState& state) {
+    NodeGraphDelta delta{};
+    delta.fromRevision = runtime.state().revision;
+    delta.toRevision = state.revision;
+    delta.changes.push_back(NodeGraphChange{});
+    for (const auto& entry : state.nodes) {
+        NodeGraphChange change{};
+        change.type = NodeGraphChangeType::NodeUpsert;
+        change.reason = NodeGraphChangeReason::Topology;
+        change.node = entry.second;
+        delta.changes.push_back(change);
+    }
+    for (const auto& entry : state.edges) {
+        NodeGraphChange change{};
+        change.type = NodeGraphChangeType::EdgeUpsert;
+        change.reason = NodeGraphChangeReason::Topology;
+        change.edge = entry.second;
+        delta.changes.push_back(change);
+    }
+    rebuildForDelta(delta);
+}
+
+bool NodeGraphController::applyGraphDelta(const NodeGraphDelta& delta) {
+    if (delta.fromRevision != runtime.state().revision) return false;
+    rebuildForDelta(delta);
+    return true;
+}
+
+const NodeGraphState& NodeGraphController::graphState() const {
+    return runtime.state();
+}
+
+bool NodeGraphController::resolveGizmoTransformNode(uint64_t outputSocketKey, NodeGraphNodeId& outNodeId) const {
+    outNodeId = {};
+    return outputSocketKey != 0 &&
+        findFirstUpstreamNodeByType(runtime.state(), outputSocketKey, nodegraphtypes::Transform, outNodeId);
 }
 
 void NodeGraphController::compileRuntimePackages() {
@@ -327,7 +353,6 @@ bool NodeGraphController::runtimeModelIdsForSocket(
         return true;
     }
     if (packageManager.findAny<PointPackage>(socketKey)) {
-        // Point packages do not own selectable runtime model IDs.
         return true;
     }
     return false;

@@ -79,11 +79,8 @@ private:
         outConfig.showFluxVectors = package.display.showFluxVectors;
         outConfig.showHeatPalette = package.display.showHeatPalette;
         outConfig.fluxVectorScale = package.display.fluxVectorScale;
-        outConfig.heatPaletteMinTemp = package.display.heatPaletteMinTemp;
-        outConfig.heatPaletteMaxTemp = package.display.heatPaletteMaxTemp;
         outConfig.authoredActive = package.authored.active;
         outConfig.active = package.authored.active;
-        outConfig.paused = package.authored.paused;
 
         for (size_t i = 0; i < package.remeshProducts.size(); ++i) {
             const ModelProduct* modelProduct = products->resolve<ModelProduct>(package.modelProducts[i]);

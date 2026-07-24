@@ -20,5 +20,6 @@ VkShaderModule createShaderModule(const VulkanDevice& vulkanDevice, const std::v
 
 VkResult createTextureImage(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, CommandPool& commandPool, const std::string& texturePath, VkImage& textureImage, VkDeviceMemory& textureImageMemory, uint32_t mipLevels = 1);
 VkResult createTextureImage(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, CommandPool& commandPool, VkImage& textureImage, VkDeviceMemory& textureImageMemory, const char* imagePath, uint32_t mipLevels = 1);
+VkResult createTextureImage16(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, CommandPool& commandPool, const char* imagePath, VkImage& textureImage, VkDeviceMemory& textureImageMemory);
 VkResult createTextureImageView(const VulkanDevice& vulkanDevice, VkImage textureImage, VkImageView& outImageView, uint32_t mipLevels = 1);
 VkResult createTextureSampler(const VulkanDevice& vulkanDevice, VkSampler& textureSampler);

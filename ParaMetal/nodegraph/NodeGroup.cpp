@@ -4,7 +4,7 @@
 #include "NodeGraphUtils.hpp"
 #include "hash/HashBuilder.hpp"
 #include "hash/HashNodeCache.hpp"
-#include "nodegraph/ui/widgets/NodePanelUtils.hpp"
+#include "nodegraph/NodeParamUtils.hpp"
 #include "NodePayloadRegistry.hpp"
 
 #include <algorithm>
@@ -30,9 +30,9 @@ void NodeGroup::execute(NodeKernelEval& eval) const {
         }
     }
 
-    const bool enabled = NodePanelUtils::readBoolParam(eval.node, nodegraphparams::group::Enabled, true);
-    const std::string sourceGroupName = NodePanelUtils::readStringParam(eval.node, nodegraphparams::group::SourceName);
-    const std::string targetGroupName = NodePanelUtils::readStringParam(eval.node, nodegraphparams::group::TargetName);
+    const bool enabled = NodeParamUtils::readBoolParam(eval.node, nodegraphparams::group::Enabled, true);
+    const std::string sourceGroupName = NodeParamUtils::readStringParam(eval.node, nodegraphparams::group::SourceName);
+    const std::string targetGroupName = NodeParamUtils::readStringParam(eval.node, nodegraphparams::group::TargetName);
     NodePayloadRegistry* const payloadRegistry = eval.runtime.payloadRegistry;
 
     const GeometryData* inputGeometry =
@@ -162,9 +162,9 @@ HashValues NodeGroup::computeOutputHashes(const NodeKernelHash& hash) const {
     uint64_t hashValue = HashBuilder::start();
     HashBuilder::combineString(hashValue, nodegraphtypes::Group);
     HashNodeCache::combineSocket(hashValue, hash, NodeGraphValueType::Mesh, HashDomain::Geometry);
-    HashBuilder::combine(hashValue, static_cast<uint64_t>(NodePanelUtils::readBoolParam(hash.node, nodegraphparams::group::Enabled, true) ? 1u : 0u));
-    HashBuilder::combineString(hashValue, NodePanelUtils::readStringParam(hash.node, nodegraphparams::group::SourceName));
-    HashBuilder::combineString(hashValue, NodePanelUtils::readStringParam(hash.node, nodegraphparams::group::TargetName));
+    HashBuilder::combine(hashValue, static_cast<uint64_t>(NodeParamUtils::readBoolParam(hash.node, nodegraphparams::group::Enabled, true) ? 1u : 0u));
+    HashBuilder::combineString(hashValue, NodeParamUtils::readStringParam(hash.node, nodegraphparams::group::SourceName));
+    HashBuilder::combineString(hashValue, NodeParamUtils::readStringParam(hash.node, nodegraphparams::group::TargetName));
 
     HashValues values{};
     values.full = hashValue;

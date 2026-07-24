@@ -13,7 +13,7 @@
 #include "WindowRuntimeState.hpp"
 
 class VulkanDevice;
-class SwapchainManager;
+class ViewportTarget;
 class CommandPool;
 class FrameSync;
 class CameraController;
@@ -41,7 +41,7 @@ public:
     RenderRuntime(
         const WindowRuntimeState& windowState,
         VulkanDevice& vulkanDevice,
-        SwapchainManager& swapchainManager,
+        ViewportTarget& viewportTarget,
         CommandPool& renderCommandPool,
         FrameSync& frameSync,
         CameraController& cameraController,
@@ -52,10 +52,12 @@ public:
     bool initializeBase(VkFormat swapChainFormat, VkExtent2D extent, MemoryAllocator& allocator, ModelRegistry& resourceManager, UniformBufferManager& ubo, IBLSystem& iblSystem);
     bool initializeFrameController(const FrameControllerServices& services);
 
-    bool initializeSyncObjects();
-    void shutdownSyncObjects();
-    void renderFrame(const render::RenderFlags& flags, const std::vector<ComputePass*>& computePasses);
-    void cleanupSwapChain();
+    bool renderFrame(
+        VkCommandBuffer commandBuffer,
+        uint32_t frameIndex,
+        const render::RenderFlags& flags,
+        const std::vector<ComputePass*>& computePasses);
+    bool updateViewportTarget(VkImage image, VkFormat format, VkExtent2D extent);
     void cleanup();
 
     FrameGraph& getFrameGraph();
@@ -76,7 +78,7 @@ public:
 private:
     const WindowRuntimeState& windowState;
     VulkanDevice& vulkanDevice;
-    SwapchainManager& swapchainManager;
+    ViewportTarget& viewportTarget;
     CommandPool& renderCommandPool;
     FrameSync& frameSync;
     CameraController& cameraController;

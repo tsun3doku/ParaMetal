@@ -5,9 +5,10 @@
 #include "GizmoController.hpp"
 #include "NavigationGizmoController.hpp"
 #include "ModelSelection.hpp"
-#include "app/SwapchainManager.hpp"
-#include "nodegraph/NodeGraph.hpp"
+#include "nodegraph/NodeGraphController.hpp"
+#include "nodegraph/NodeGraphRegistry.hpp"
 #include "nodegraph/NodeTransformParams.hpp"
+#include "render/WindowRuntimeState.hpp"
 #include "scene/SceneController.hpp"
 #include "vulkan/ModelRegistry.hpp"
 
@@ -26,13 +27,13 @@ bool InputController::resolveSelectedTransformNode(NodeGraphNodeId& outTransform
         return false;
     }
 
-    return graph.resolveGizmoTransformNode(outputSocketKey, outTransformNodeId);
+    return graphController.resolveGizmoTransformNode(outputSocketKey, outTransformNodeId);
 }
 
 InputController::InputController(CameraController& cameraController, GizmoController& gizmoController,
     NavigationGizmoController& navigationGizmoController, ModelSelection& modelSelection, ModelRegistry& resourceManager,
-    SceneController& sceneController, NodeGraph& graph,
-    const SwapchainManager& swapchainManager, InputActionHandler& actionHandler)
+    SceneController& sceneController, NodeGraphController& graphController,
+    const WindowRuntimeState& windowState)
     : cameraController(cameraController),
       camera(cameraController.getCamera()),
       gizmoController(gizmoController),
@@ -40,9 +41,21 @@ InputController::InputController(CameraController& cameraController, GizmoContro
       modelSelection(modelSelection),
       resourceManager(resourceManager),
       sceneController(sceneController),
-      graph(graph),
-      swapchainManager(swapchainManager),
-      actionHandler(actionHandler) {
+      graphController(graphController),
+      windowState(windowState) {
+}
+
+std::vector<InputAction> InputController::takePendingActions() {
+    std::vector<InputAction> actions;
+    actions.swap(pendingActions);
+    return actions;
+}
+
+static VkExtent2D viewportExtent(const WindowRuntimeState& windowState) {
+    return {
+        windowState.width.load(std::memory_order_acquire),
+        windowState.height.load(std::memory_order_acquire)
+    };
 }
 
 void InputController::handleScrollInput(double yOffset) {
@@ -56,10 +69,10 @@ void InputController::handleKeyInput(Qt::Key key, bool pressed, bool ctrlPressed
     }
 
     if (key == Qt::Key_H) {
-        actionHandler.onWireframeToggleRequested();
+        pendingActions.emplace_back(ToggleWireframeAction{});
     }
     else if (key == Qt::Key_AsciiTilde) {
-        actionHandler.onTimingOverlayToggleRequested();
+        pendingActions.emplace_back(ToggleTimingOverlayAction{});
     }
     else if (key == Qt::Key_F) {
         if (modelSelection.getSelected()) {
@@ -75,7 +88,7 @@ void InputController::handleKeyInput(Qt::Key key, bool pressed, bool ctrlPressed
             camera.setLookAt(glm::vec3(0.0f));
             camera.resetRadius();
         } else {
-            actionHandler.onGridToggleRequested();
+            pendingActions.emplace_back(ToggleGridAction{});
         }
     }
 }
@@ -84,7 +97,7 @@ void InputController::handleMouseMove(float mouseX, float mouseY) {
     if (navigationGizmoController.handlePointerMove(mouseX, mouseY)) {
         return;
     }
-    const VkExtent2D swapChainExtent = swapchainManager.getExtent();
+    const VkExtent2D swapChainExtent = viewportExtent(windowState);
 
     if (isDraggingGizmo) {
         const glm::vec3 rayOrigin = camera.screenToWorldRayOrigin(
@@ -131,7 +144,7 @@ void InputController::handleMouseButton(int button, float mouseX, float mouseY, 
         return;
     }
 
-    const VkExtent2D swapChainExtent = swapchainManager.getExtent();
+    const VkExtent2D swapChainExtent = viewportExtent(windowState);
     int x = static_cast<int>(mouseX);
     int y = static_cast<int>(mouseY);
 
@@ -150,7 +163,7 @@ void InputController::processInput(bool shiftPressed, bool middleButtonPressed, 
 }
 
 void InputController::updateGizmo() {
-    const VkExtent2D swapChainExtent = swapchainManager.getExtent();
+    const VkExtent2D swapChainExtent = viewportExtent(windowState);
 
     if (!isDraggingGizmo) {
         const PickedResult lastPick = modelSelection.getLastPickedResult();
@@ -173,12 +186,12 @@ void InputController::updateGizmo() {
                     return;
                 }
 
-                NodeGraphNode transformNode{};
-                if (!graph.getNode(transformNodeId, transformNode)) {
+                const NodeGraphNode* transformNode = graphController.graphState().node(transformNodeId);
+                if (!transformNode) {
                     modelSelection.clearLastPickedResult();
                     return;
                 }
-                const TransformNodeParams initialParams = readTransformNodeParams(transformNode);
+                const TransformNodeParams initialParams = readTransformNodeParams(*transformNode);
                 glm::vec3 initialTranslation(
                     static_cast<float>(initialParams.translateX),
                     static_cast<float>(initialParams.translateY),
@@ -230,17 +243,13 @@ void InputController::updateGizmo() {
         }
 
         const glm::vec3 authoredTranslation = transformDragStartTranslation + currentTranslation;
-        NodeGraphNode transformNode{};
-        if (!graph.getNode(activeTransformNodeId, transformNode)) {
-            return;
-        }
-        TransformNodeParams params = readTransformNodeParams(transformNode);
-        params.translateX = authoredTranslation.x;
-        params.translateY = authoredTranslation.y;
-        params.translateZ = authoredTranslation.z;
-        if (!writeTransformNodeParams(graph, activeTransformNodeId, params)) {
-            return;
-        }
+        pendingActions.emplace_back(SetNodeParametersAction{
+            activeTransformNodeId,
+            {
+                {nodegraphparams::transform::TranslateX, NodeGraphParamType::Float, authoredTranslation.x},
+                {nodegraphparams::transform::TranslateY, NodeGraphParamType::Float, authoredTranslation.y},
+                {nodegraphparams::transform::TranslateZ, NodeGraphParamType::Float, authoredTranslation.z}
+            }});
 
         lastAppliedTranslation = currentTranslation;
     }
@@ -270,17 +279,13 @@ void InputController::updateGizmo() {
             authoredRotation.z += currentRotation;
         }
 
-        NodeGraphNode transformNode{};
-        if (!graph.getNode(activeTransformNodeId, transformNode)) {
-            return;
-        }
-        TransformNodeParams params = readTransformNodeParams(transformNode);
-        params.rotateXDegrees = authoredRotation.x;
-        params.rotateYDegrees = authoredRotation.y;
-        params.rotateZDegrees = authoredRotation.z;
-        if (!writeTransformNodeParams(graph, activeTransformNodeId, params)) {
-            return;
-        }
+        pendingActions.emplace_back(SetNodeParametersAction{
+            activeTransformNodeId,
+            {
+                {nodegraphparams::transform::RotateXDegrees, NodeGraphParamType::Float, authoredRotation.x},
+                {nodegraphparams::transform::RotateYDegrees, NodeGraphParamType::Float, authoredRotation.y},
+                {nodegraphparams::transform::RotateZDegrees, NodeGraphParamType::Float, authoredRotation.z}
+            }});
 
         lastAppliedRotation = currentRotation;
     }

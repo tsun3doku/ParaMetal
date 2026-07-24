@@ -1,9 +1,9 @@
 #include "NodeHeatMaterialPresets.hpp"
 
-#include "nodegraph/ui/widgets/NodePanelUtils.hpp"
+#include "nodegraph/NodeParamUtils.hpp"
 
 bool tryResolveHeatPresetId(const std::string& value, HeatMaterialPresetId& outId) {
-    const std::string normalized = NodePanelUtils::normalizePresetName(value);
+    const std::string normalized = NodeParamUtils::normalizePresetName(value);
     if (normalized == "copper") {
         outId = HeatMaterialPresetId::Copper;
         return true;

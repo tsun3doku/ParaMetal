@@ -1,6 +1,7 @@
 #pragma once
 
-#include <atomic>
+#include <vulkan/vulkan.h>
+
 #include <cstdint>
 #include <memory>
 
@@ -8,8 +9,6 @@
 #include "RuntimeRenderController.hpp"
 
 class RenderContext;
-class RenderSettingsManager;
-class RenderSettingsController;
 class SceneContext;
 class VulkanCoreContext;
 class NodeGraphController;
@@ -21,12 +20,15 @@ public:
     ~RuntimeController();
 
     bool initialize(RenderContext& render, SceneContext& scene, VulkanCoreContext& core,
-                    WindowRuntimeState& windowRuntimeState, RenderSettingsManager& settingsManager,
-                    RenderSettingsController& settingsController,
-                    std::atomic<bool>& simPaused);
+                    WindowRuntimeState& windowRuntimeState);
     void shutdown();
     bool isInitialized() const;
-    void tick(float deltaTime, uint32_t& frameCounter);
+    void tick(
+        float deltaTime,
+        uint32_t& frameCounter,
+        VkCommandBuffer commandBuffer,
+        uint32_t frameIndex,
+        const app::RenderSettings& renderSettings);
 
     bool hasLastFrameSlot() const;
     uint32_t lastFrameSlot() const;
@@ -40,7 +42,6 @@ private:
     std::unique_ptr<RuntimeRenderController> runtimeRenderController;
     RenderContext* render = nullptr;
     SceneContext* scene = nullptr;
-    std::atomic<bool>* simPaused = nullptr;
     bool hasFrameSlot = false;
     uint32_t frameSlot = 0;
     bool initialized = false;

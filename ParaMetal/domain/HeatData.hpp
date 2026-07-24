@@ -21,8 +21,5 @@ struct HeatData {
     float contactThermalConductance = 16000.0f;
     float simulationDuration = 5.0f;
     bool active = false;
-    bool paused = false;
-    uint32_t resetCounter = 0;
-    uint32_t rewindFrame = std::numeric_limits<uint32_t>::max();
 
 };

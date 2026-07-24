@@ -1,5 +1,3 @@
-#include "PyBridge.hpp"
-
 #include "nodegraph/NodeGraph.hpp"
 #include "nodegraph/NodeGraphEditor.hpp"
 
@@ -23,20 +21,22 @@ PYBIND11_EMBEDDED_MODULE(parametal, m) {
     bindRegistry(m);
     bindGraph(m);
 
+    m.attr("_graph") = py::none();
+
     m.def("get_graph", []() {
-        NodeGraph* graph = pybridge::getGraph();
-        if (!graph) {
+        py::object graphObject = py::module_::import("parametal").attr("_graph");
+        if (graphObject.is_none()) {
             throw std::runtime_error("No graph available");
         }
-        return graph;
-    }, py::return_value_policy::reference);
+        return graphObject;
+    });
 
     m.def("default_graph", []() {
-        NodeGraph* graph = pybridge::getGraph();
-        if (!graph) {
+        py::object graphObject = py::module_::import("parametal").attr("_graph");
+        if (graphObject.is_none()) {
             throw std::runtime_error("No graph available");
         }
-
+        NodeGraph* graph = graphObject.cast<NodeGraph*>();
         NodeGraphEditor editor(*graph);
         editor.resetToDefaultGraph();
     });

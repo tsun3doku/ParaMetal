@@ -1,8 +1,6 @@
 #include "RuntimeController.hpp"
 
 #include "RenderContext.hpp"
-#include "RenderSettingsManager.hpp"
-#include "RenderSettingsController.hpp"
 #include "SceneContext.hpp"
 #include "VulkanCoreContext.hpp"
 #include "nodegraph/NodeGraphController.hpp"
@@ -17,19 +15,16 @@ bool RuntimeController::initialize(
     RenderContext& render,
     SceneContext& scene,
     VulkanCoreContext& core,
-    WindowRuntimeState& windowRuntimeState,
-    RenderSettingsManager& settingsManager,
-    RenderSettingsController& settingsController,
-    std::atomic<bool>& simPaused) {
+    WindowRuntimeState& windowRuntimeState) {
     if (initialized) {
         return true;
     }
 
-    if (!render.heatSystemComputeController() || !render.modelComputeRuntime() || !render.sceneController() || !render.nodeGraph() || !render.nodeGraphController()) {
+    if (!render.heatSystemComputeController() || !render.modelComputeRuntime() || !render.sceneController() || !render.nodeGraphController()) {
         return false;
     }
 
-    if (!render.initializeInputPipeline(scene, settingsController) || !render.runtime() ||
+    if (!render.initializeInputPipeline(scene) || !render.runtime() ||
         !render.inputController()) {
         shutdown();
         return false;
@@ -43,14 +38,12 @@ bool RuntimeController::initialize(
 
     this->render = &render;
     this->scene = &scene;
-    this->simPaused = &simPaused;
 
     runtimeInputController = std::make_unique<RuntimeInputController>(windowRuntimeState, *render.inputController());
     runtimeRenderController = std::make_unique<RuntimeRenderController>(
         *render.runtime(),
         render.sync(),
         allocator,
-        settingsManager,
         render.heatSystemComputeController());
 
     initialized = true;
@@ -62,7 +55,6 @@ void RuntimeController::shutdown() {
     runtimeInputController.reset();
     render = nullptr;
     scene = nullptr;
-    simPaused = nullptr;
     initialized = false;
 }
 
@@ -82,7 +74,12 @@ CameraController* RuntimeController::cameraController() {
     return scene ? &scene->cameraController() : nullptr;
 }
 
-void RuntimeController::tick(float deltaTime, uint32_t& frameCounter) {
+void RuntimeController::tick(
+    float deltaTime,
+    uint32_t& frameCounter,
+    VkCommandBuffer commandBuffer,
+    uint32_t frameIndex,
+    const app::RenderSettings& renderSettings) {
     if (!runtimeRenderController || !runtimeInputController || !render || !scene) {
         return;
     }
@@ -95,9 +92,13 @@ void RuntimeController::tick(float deltaTime, uint32_t& frameCounter) {
     graphController->tick();
 
     scene->cameraController().tick(deltaTime);
-    const bool playbackPaused = simPaused && simPaused->load(std::memory_order_acquire);
-    const bool allowHeatSolve = !playbackPaused && graphController->compiledState().isValid;
-    const RuntimeRenderFrameResult renderResult = runtimeRenderController->renderFrame(allowHeatSolve, frameCounter);
+    const bool allowHeatSolve = graphController->compiledState().isValid;
+    const RuntimeRenderFrameResult renderResult = runtimeRenderController->renderFrame(
+        allowHeatSolve,
+        frameCounter,
+        commandBuffer,
+        frameIndex,
+        renderSettings);
     hasFrameSlot = renderResult.submitted;
     frameSlot = renderResult.frameSlot;
 }

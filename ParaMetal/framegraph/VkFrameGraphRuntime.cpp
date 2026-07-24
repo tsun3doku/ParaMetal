@@ -375,6 +375,7 @@ bool VkFrameGraphRuntime::createRenderPass(const VulkanDevice& vulkanDevice) {
         externalBegin.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         externalBegin.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
         dependencies.push_back(externalBegin);
+
     }
 
     for (const auto& [_, dependency] : dependencyMap) {

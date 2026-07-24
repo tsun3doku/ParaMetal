@@ -2,13 +2,13 @@
 
 #include "NodeGraphEditor.hpp"
 #include "NodeGraphRegistry.hpp"
-#include "nodegraph/ui/widgets/NodePanelUtils.hpp"
+#include "nodegraph/NodeParamUtils.hpp"
 
 ContactNodeParams readContactNodeParams(const NodeGraphNode& node) {
     ContactNodeParams params{};
-    params.minNormalDot = NodePanelUtils::readFloatParam(node, nodegraphparams::contact::MinNormalDot, -0.65);
-    params.contactRadius = NodePanelUtils::readFloatParam(node, nodegraphparams::contact::ContactRadius, 0.01);
-    params.preview.showContactLines = NodePanelUtils::readBoolParam(node, nodegraphparams::contact::ShowContactLines, false);
+    params.minNormalDot = NodeParamUtils::readFloatParam(node, nodegraphparams::contact::MinNormalDot, -0.65);
+    params.contactRadius = NodeParamUtils::readFloatParam(node, nodegraphparams::contact::ContactRadius, 0.01);
+    params.preview.showContactLines = NodeParamUtils::readBoolParam(node, nodegraphparams::contact::ShowContactLines, false);
     return params;
 }
 

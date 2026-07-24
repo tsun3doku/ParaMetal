@@ -3,15 +3,15 @@
 #include <cstdint>
 
 class TimelineRuntime;
+class TimelinePlaybackTarget;
 
 class TimelineController {
 public:
     explicit TimelineController(TimelineRuntime* runtime = nullptr);
 
-    void bind(TimelineRuntime* runtime);
+    void bindPlaybackTarget(TimelinePlaybackTarget* playbackTarget);
 
     void setPlaying(bool playing);
-    void togglePlaying();
     void reset();
     void scrubToFrame(uint32_t frame);
     void stepFrames(int deltaFrames);
@@ -20,4 +20,5 @@ public:
 
 private:
     TimelineRuntime* runtime = nullptr;
+    TimelinePlaybackTarget* playbackTarget = nullptr;
 };

@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -12,11 +13,10 @@
 #include "FrameGraphicsStage.hpp"
 #include "FrameTypes.hpp"
 #include "FrameUpdateStage.hpp"
-#include "app/SwapchainStage.hpp"
 
 struct WindowRuntimeState;
 class VulkanDevice;
-class SwapchainManager;
+class ViewportTarget;
 class FrameGraph;
 class SceneRenderer;
 class FrameSync;
@@ -50,7 +50,7 @@ public:
     FrameController(
         const WindowRuntimeState& windowState,
         VulkanDevice& vulkanDevice,
-        SwapchainManager& swapchainManager,
+        ViewportTarget& viewportTarget,
         FrameGraph& frameGraph,
         VkFrameGraphBackend& frameGraphBackend,
         SceneRenderer& sceneRenderer,
@@ -61,15 +61,15 @@ public:
         std::atomic<bool>& isOperating,
         std::atomic<bool>& isShuttingDown);
 
-    bool initializeSyncObjects();
-    void shutdownSyncObjects();
-    void cleanupSwapChain();
-    bool recreateSwapChain();
-    void drawFrame(const render::RenderFlags& flags, const std::vector<ComputePass*>& computePasses);
+    bool drawFrame(
+        VkCommandBuffer commandBuffer,
+        uint32_t frameIndex,
+        const render::RenderFlags& flags,
+        const std::vector<ComputePass*>& computePasses);
 
 private:
     const WindowRuntimeState& windowState;
-    SwapchainManager& swapchainManager;
+    ViewportTarget& viewportTarget;
     SceneRenderer& sceneRenderer;
     FrameSync& frameSync;
     FrameStats& frameStats;
@@ -78,12 +78,11 @@ private:
     std::atomic<bool>& isOperating;
     std::atomic<bool>& isShuttingDown;
 
-    SwapchainStage swapchainStage;
     FrameUpdateStage frameUpdateStage;
     FrameComputeStage frameComputeStage;
     FrameGraphicsStage frameGraphicsStage;
 
-    std::vector<std::string> buildFrameTimingLines(uint32_t frameIndex);
+    std::vector<std::string> buildFrameTimingLines(uint32_t frameIndex, std::optional<float> computeGpuMs);
     void updateTimingOverlay(std::vector<std::string>& timingLines, const render::RenderFlags& flags);
 
     VulkanDevice& vulkanDevice;

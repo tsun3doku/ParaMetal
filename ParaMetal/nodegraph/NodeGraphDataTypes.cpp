@@ -81,14 +81,10 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodeGraphTypeRegistry* typ
     if (dataBlock.dataType == payloadtypes::Heat) {
         const HeatData* heatData = registry ? registry->get<HeatData>(dataBlock.payloadHandle) : nullptr;
         dataBlock.metadata["heat.active"] = (heatData && heatData->active) ? "true" : "false";
-        dataBlock.metadata["heat.paused"] = (heatData && heatData->paused) ? "true" : "false";
-        dataBlock.metadata["heat.reset_counter"] = std::to_string(heatData ? heatData->resetCounter : 0u);
         dataBlock.metadata["heat.model_count"] =
             std::to_string(heatData ? heatData->heatModelHandles.size() : 0u);
     } else {
         dataBlock.metadata.erase("heat.active");
-        dataBlock.metadata.erase("heat.paused");
-        dataBlock.metadata.erase("heat.reset_requested");
         dataBlock.metadata.erase("heat.model_count");
     }
 

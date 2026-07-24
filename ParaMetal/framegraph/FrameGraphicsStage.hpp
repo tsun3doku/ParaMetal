@@ -33,6 +33,10 @@ public:
     // Records the scene command buffer. Does NOT submit. Returns the collected
     // work; result indicates whether to proceed, recreate, etc.
     FrameGraphicsCollection collect(const FrameState& frameState, const FrameSyncState& syncState);
+    FrameGraphicsCollection collectExternal(
+        VkCommandBuffer commandBuffer,
+        const FrameState& frameState,
+        const FrameSyncState& syncState);
 
 private:
     VulkanDevice& vulkanDevice;

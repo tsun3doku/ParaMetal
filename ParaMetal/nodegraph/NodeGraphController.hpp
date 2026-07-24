@@ -10,17 +10,18 @@
 #include <memory>
 #include <vector>
 
-class NodeGraph;
 class VulkanDevice;
 class MemoryAllocator;
 
 class NodeGraphController {
 public:
-    NodeGraphController(
-        NodeGraph* bridge = nullptr,
-        const NodeRuntimeServices& services = {});
+    explicit NodeGraphController(const NodeRuntimeServices& services = {});
 
     void tick();
+    void resetGraph(const NodeGraphState& state);
+    bool applyGraphDelta(const NodeGraphDelta& delta);
+    const NodeGraphState& graphState() const;
+    bool resolveGizmoTransformNode(uint64_t outputSocketKey, NodeGraphNodeId& outNodeId) const;
     void updateDisplayTransports();
     const NodeGraphCompiled& compiledState() const;
 
@@ -31,7 +32,7 @@ public:
     RuntimePackageManager* getPackageManager() { return &packageManager; }
 
 private:
-    void consumePendingGraphDelta();
+    void rebuildForDelta(const NodeGraphDelta& delta);
     void compileRuntimePackages();
     void updateComputeTransport(uint64_t socketKey);
     void updateComputeTransports(const NodeGraphNode& node);
@@ -39,10 +40,8 @@ private:
                                    std::vector<uint32_t>& outIds) const;
     void addRuntimeModelId(std::vector<uint32_t>& outIds, uint32_t id) const;
 
-    NodeGraph* bridge = nullptr;
     NodeRuntimeServices runtimeServices{};
     NodeGraphRuntime runtime;
-    uint64_t revisionSeen = 0;
     uint64_t pendingPackageRevision = 0;  
     uint64_t completedPackageRevision = 0; 
     NodeGraphCompiled plan{};

@@ -15,6 +15,7 @@
 #include "framegraph/ComputePass.hpp"
 #include "voronoi/VoronoiGpuStructs.hpp"
 #include "serial/SerialTemperatureRuntime.hpp"
+#include "runtime/TimelinePlaybackTarget.hpp"
 
 class VulkanDevice;
 class MemoryAllocator;
@@ -23,14 +24,11 @@ class CommandPool;
 class HeatModelRuntime;
 struct HeatProduct;
 
-class HeatSystemComputeController {
+class HeatSystemComputeController : public TimelinePlaybackTarget {
 public:
     struct Config {
         bool active = false;
-        bool paused = false;
         bool syntheticDirichletTestEnabled = false;
-        uint32_t resetCounter = 0;
-        uint32_t rewindFrame = heat::NoRewindFrame;
         float contactThermalConductance = 16000.0f;
         float simulationDuration = 5.0f;
         std::vector<std::vector<glm::vec3>> modelSurfacePositions;
@@ -95,6 +93,9 @@ public:
 
     bool isAnyHeatSystemActive() const;
     bool isAnyHeatSystemPaused() const;
+    void setTimelinePlaying(bool playing) override;
+    void resetTimeline() override;
+    void scrubTimeline(uint32_t frame) override;
 
     void apply(uint64_t socketKey, const Config& config);
     bool buildProduct(uint64_t socketKey, HeatProduct& product);
@@ -122,5 +123,8 @@ private:
     std::unordered_map<uint64_t, Config> configuredConfigs;
     std::unordered_map<uint64_t, std::unique_ptr<SerialTemperatureRuntime>> serialRuntimes;
     std::unordered_map<uint64_t, uint64_t> lastSerialRevisions;
+    bool timelinePlaying = false;
+    uint32_t timelineResetCounter = 0;
+    uint32_t timelineScrubFrame = heat::NoRewindFrame;
     const uint32_t maxFramesInFlight;
 };

@@ -29,8 +29,7 @@ enum class NodeGraphSocketDirection {
 };
 
 enum class NodeGraphNodeCategory {
-    Model,
-    PointSurface,
+    Geometry,
     Meshing,
     System,
     Misc

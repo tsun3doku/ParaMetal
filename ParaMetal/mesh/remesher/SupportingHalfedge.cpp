@@ -626,6 +626,7 @@ SupportingHalfedge::GPUBuffers SupportingHalfedge::buildGPUBuffers() const {
         buffers.intrinsicLengths.push_back(static_cast<float>(edge.intrinsicLength));
     }
 
+
     buffers.inputHalfedgeData.reserve(inputHalfedges.size() * 4);
     for (const auto& he : inputHalfedges) {
         buffers.inputHalfedgeData.push_back(static_cast<int32_t>(he.origin));

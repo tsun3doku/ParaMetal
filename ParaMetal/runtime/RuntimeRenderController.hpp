@@ -1,11 +1,14 @@
 #pragma once
 
+#include <vulkan/vulkan.h>
+
 #include <cstdint>
+
+#include "render/RenderSettings.hpp"
 
 class RenderRuntime;
 class FrameSync;
 class MemoryAllocator;
-class RenderSettingsManager;
 class HeatSystemComputeController;
 
 struct RuntimeRenderFrameResult {
@@ -15,14 +18,18 @@ struct RuntimeRenderFrameResult {
 
 class RuntimeRenderController {
 public:
-    RuntimeRenderController(RenderRuntime& renderRuntime, FrameSync& frameSync, MemoryAllocator* memoryAllocator, RenderSettingsManager& settingsManager, HeatSystemComputeController* heatSystemComputeController);
+    RuntimeRenderController(RenderRuntime& renderRuntime, FrameSync& frameSync, MemoryAllocator* memoryAllocator, HeatSystemComputeController* heatSystemComputeController);
 
-    RuntimeRenderFrameResult renderFrame(bool allowHeatSolve, uint32_t& frameCounter);
+    RuntimeRenderFrameResult renderFrame(
+        bool allowHeatSolve,
+        uint32_t& frameCounter,
+        VkCommandBuffer commandBuffer,
+        uint32_t frameIndex,
+        const app::RenderSettings& settings);
 
 private:
     RenderRuntime& renderRuntime;
     FrameSync& frameSync;
     MemoryAllocator* memoryAllocator = nullptr;
-    RenderSettingsManager& settingsManager;
     HeatSystemComputeController* heatSystemComputeController = nullptr;
 };

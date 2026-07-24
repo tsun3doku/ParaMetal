@@ -78,7 +78,7 @@ static NodeTypeDefinition buildModelNode() {
     return {
         nodegraphtypes::Model,
         "Model",
-        NodeGraphNodeCategory::Model,
+        NodeGraphNodeCategory::Geometry,
         {
             makeOutputSocket("Mesh", NodeGraphValueType::Mesh, payloadtypes::Geometry),
         },
@@ -269,7 +269,7 @@ static NodeTypeDefinition buildPointsNode() {
     return {
         nodegraphtypes::Points,
         "Points",
-        NodeGraphNodeCategory::PointSurface,
+        NodeGraphNodeCategory::Geometry,
         {
             makeOutputSocket("Points", NodeGraphValueType::Points, payloadtypes::Points),
         },
@@ -286,7 +286,7 @@ static NodeTypeDefinition buildMeshPointsNode() {
     return {
         nodegraphtypes::MeshPoints,
         "Mesh Points",
-        NodeGraphNodeCategory::PointSurface,
+        NodeGraphNodeCategory::Geometry,
         {
             makePolymorphicInputSocket("Geometry", {NodeGraphValueType::Mesh, NodeGraphValueType::Remesh}),
             makeOutputSocket("Points", NodeGraphValueType::Points, payloadtypes::Points),

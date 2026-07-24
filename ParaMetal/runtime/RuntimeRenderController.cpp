@@ -1,7 +1,6 @@
 #include "RuntimeRenderController.hpp"
 
 #include "heat/HeatSystemComputeController.hpp"
-#include "RenderSettingsManager.hpp"
 #include "framegraph/ComputePass.hpp"
 #include "framegraph/FrameSync.hpp"
 #include "render/RenderConfig.hpp"
@@ -16,16 +15,19 @@ render::RenderFlags buildRenderFlags(const app::RenderSettings& settings) {
     return flags;
 }
 
-RuntimeRenderController::RuntimeRenderController(RenderRuntime& renderRuntime, FrameSync& frameSync, MemoryAllocator* memoryAllocator, RenderSettingsManager& settingsManager, HeatSystemComputeController* heatSystemComputeController)
+RuntimeRenderController::RuntimeRenderController(RenderRuntime& renderRuntime, FrameSync& frameSync, MemoryAllocator* memoryAllocator, HeatSystemComputeController* heatSystemComputeController)
     : renderRuntime(renderRuntime),
       frameSync(frameSync),
       memoryAllocator(memoryAllocator),
-      settingsManager(settingsManager),
       heatSystemComputeController(heatSystemComputeController) {
 }
 
-RuntimeRenderFrameResult RuntimeRenderController::renderFrame(bool allowHeatSolve, uint32_t& frameCounter) {
-    const app::RenderSettings settings = settingsManager.getSnapshot();
+RuntimeRenderFrameResult RuntimeRenderController::renderFrame(
+    bool allowHeatSolve,
+    uint32_t& frameCounter,
+    VkCommandBuffer commandBuffer,
+    uint32_t frameIndex,
+    const app::RenderSettings& settings) {
     const render::RenderFlags flags = buildRenderFlags(settings);
     std::vector<ComputePass*> computePasses;
     if (heatSystemComputeController) {
@@ -35,9 +37,8 @@ RuntimeRenderFrameResult RuntimeRenderController::renderFrame(bool allowHeatSolv
         }
     }
     RuntimeRenderFrameResult result{};
-    result.frameSlot = frameSync.getCurrentFrameIndex();
-    result.submitted = true;
-    renderRuntime.renderFrame(flags, computePasses);
+    result.frameSlot = frameIndex;
+    result.submitted = renderRuntime.renderFrame(commandBuffer, frameIndex, flags, computePasses);
 
     ++frameCounter;
 

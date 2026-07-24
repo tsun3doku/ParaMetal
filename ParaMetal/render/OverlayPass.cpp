@@ -274,7 +274,6 @@ void OverlayPass::record(const FrameContext& context, const SceneView& view, con
         gizmoRenderer.render(commandBuffer, gizmoPosition, extent, gizmoScale, view, gizmoController);
     }
 
-    heatOverlayRenderer.renderScreen(commandBuffer, currentFrame, extent);
     if (services.navigationGizmoController) {
         navigationGizmoRenderer.render(commandBuffer, services.navigationGizmoController->getRenderData());
     }
