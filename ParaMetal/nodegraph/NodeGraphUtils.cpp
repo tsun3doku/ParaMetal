@@ -147,14 +147,15 @@ std::size_t inputIndexOf(const NodeGraphNode& node, NodeGraphValueType socketTyp
 
 std::string valueTypeToString(NodeGraphValueType value) {
     switch (value) {
-    case NodeGraphValueType::None:       return "None";
-    case NodeGraphValueType::Mesh:       return "Mesh";
-    case NodeGraphValueType::Remesh:     return "Remesh";
-    case NodeGraphValueType::HeatModel:  return "HeatModel";
-    case NodeGraphValueType::Points:     return "Points";
-    case NodeGraphValueType::Volume:     return "Volume";
-    case NodeGraphValueType::Field:      return "Field";
-    case NodeGraphValueType::Vector3:    return "Vector3";
+    case NodeGraphValueType::None:        return "None";
+    case NodeGraphValueType::Mesh:        return "Mesh";
+    case NodeGraphValueType::Remesh:      return "Remesh";
+    case NodeGraphValueType::HeatModel:   return "HeatModel";
+    case NodeGraphValueType::HeatFluid:   return "HeatFluid";
+    case NodeGraphValueType::Points:      return "Points";
+    case NodeGraphValueType::Volume:      return "Volume";
+    case NodeGraphValueType::Field:       return "Field";
+    case NodeGraphValueType::Vector3:     return "Vector3";
     case NodeGraphValueType::ScalarFloat: return "ScalarFloat";
     case NodeGraphValueType::ScalarInt:   return "ScalarInt";
     case NodeGraphValueType::ScalarBool:  return "ScalarBool";
@@ -327,9 +328,6 @@ bool normalizeNodeGraphParamValue(const NodeGraphParamDefinition& definition, No
     }
 
     if (!value.enumValue.empty()) {
-        if (definition.id == nodegraphparams::heatmodel::BoundaryCondition && value.enumValue == "None") {
-            value.enumValue = "Adiabatic";
-        }
         const auto optionIt = std::find(
             definition.enumOptions.begin(),
             definition.enumOptions.end(),

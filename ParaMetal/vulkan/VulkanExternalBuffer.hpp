@@ -4,9 +4,6 @@
 
 class VulkanDevice;
 
-// Dedicated device-local buffer whose memory can be imported by another GPU API.
-// External memory cannot be suballocated from MemoryAllocator pools because CUDA
-// imports the complete VkDeviceMemory allocation.
 class VulkanExternalBuffer {
 public:
     VulkanExternalBuffer() = default;

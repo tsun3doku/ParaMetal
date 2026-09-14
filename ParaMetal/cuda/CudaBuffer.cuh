@@ -30,6 +30,11 @@ public:
         return *this;
     }
 
+    void swap(CudaBuffer& other) noexcept {
+        std::swap(data, other.data);
+        std::swap(elementCount, other.elementCount);
+    }
+
     bool allocate(size_t count) {
         reset();
         if (count == 0) return true;

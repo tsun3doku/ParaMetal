@@ -19,17 +19,17 @@ public:
     struct Config {
         bool showVoronoi = false;
         bool showPoints = false;
+        bool showContactManifold = false;
         uint32_t candidateNodeCount = 0;
-        const voronoi::Node* mappedCandidateNodes = nullptr;
-        VkBuffer candidateNodeBuffer = VK_NULL_HANDLE;
-        VkDeviceSize candidateNodeBufferOffset = 0;
         VkBuffer seedPositionBuffer = VK_NULL_HANDLE;
         VkDeviceSize seedPositionBufferOffset = 0;
+        VkBuffer pointVertexBuffer = VK_NULL_HANDLE;
+        VkDeviceSize pointVertexBufferOffset = 0;
         VkBuffer candidateNeighborIndicesBuffer = VK_NULL_HANDLE;
         VkDeviceSize candidateNeighborIndicesBufferOffset = 0;
-        VkBuffer occupancyPointBuffer = VK_NULL_HANDLE;
-        VkDeviceSize occupancyPointBufferOffset = 0;
-        uint32_t occupancyPointCount = 0;
+        VkBuffer contactVertexBuffer = VK_NULL_HANDLE;
+        VkDeviceSize contactVertexBufferOffset = 0;
+        uint32_t contactVertexCount = 0;
 
         std::vector<uint32_t> modelRuntimeIds;
         std::vector<VkBuffer> candidateBuffers;
@@ -47,27 +47,49 @@ public:
         uint64_t displayHash = 0;
 
         bool anyVisible() const {
-            return showVoronoi || showPoints;
+            return showVoronoi || showPoints || showContactManifold;
         }
 
         bool isValid() const {
-            const size_t modelCount = modelRuntimeIds.size();
-            return candidateNodeCount != 0 &&
-                candidateNodeBuffer != VK_NULL_HANDLE &&
-                seedPositionBuffer != VK_NULL_HANDLE &&
-                candidateNeighborIndicesBuffer != VK_NULL_HANDLE &&
-                (!showVoronoi || (modelCount != 0 &&
-                    modelCount == candidateBuffers.size() &&
-                    modelCount == candidateBufferOffsets.size() &&
-                    modelCount == modelBufferViews.size() &&
-                    modelCount == intrinsicVertexCounts.size() &&
-                    modelCount == modelVertexBuffers.size() &&
-                    modelCount == modelVertexBufferOffsets.size() &&
-                    modelCount == modelIndexBuffers.size() &&
-                    modelCount == modelIndexBufferOffsets.size() &&
-                    modelCount == modelIndexCounts.size() &&
-                    modelCount == modelMatrices.size() &&
-                    modelCount == modelCanonicalToWorldScales.size()));
+            if (!anyVisible()) return false;
+
+            if (showPoints &&
+                (candidateNodeCount == 0 ||
+                 pointVertexBuffer == VK_NULL_HANDLE)) {
+                return false;
+            }
+
+            if (showVoronoi) {
+                if (candidateNodeCount == 0 ||
+                    seedPositionBuffer == VK_NULL_HANDLE ||
+                    candidateNeighborIndicesBuffer == VK_NULL_HANDLE) {
+                    return false;
+                }
+
+                const size_t modelCount = modelRuntimeIds.size();
+                if (modelCount == 0 ||
+                    modelCount != candidateBuffers.size() ||
+                    modelCount != candidateBufferOffsets.size() ||
+                    modelCount != modelBufferViews.size() ||
+                    modelCount != intrinsicVertexCounts.size() ||
+                    modelCount != modelVertexBuffers.size() ||
+                    modelCount != modelVertexBufferOffsets.size() ||
+                    modelCount != modelIndexBuffers.size() ||
+                    modelCount != modelIndexBufferOffsets.size() ||
+                    modelCount != modelIndexCounts.size() ||
+                    modelCount != modelMatrices.size() ||
+                    modelCount != modelCanonicalToWorldScales.size()) {
+                    return false;
+                }
+            }
+
+            if (showContactManifold &&
+                (contactVertexBuffer == VK_NULL_HANDLE ||
+                 contactVertexCount == 0)) {
+                return false;
+            }
+
+            return true;
         }
 
     };

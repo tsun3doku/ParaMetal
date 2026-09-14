@@ -1,6 +1,6 @@
 #pragma once
 
-#include "renderers/HeatContactLevelSetRenderer.hpp"
+#include "renderers/HeatBoxRenderer.hpp"
 #include "renderers/HeatSurfaceRenderer.hpp"
 #include "renderers/VectorArrowRenderer.hpp"
 #include "runtime/HeatDisplayController.hpp"
@@ -32,6 +32,9 @@ public:
     void remove(uint64_t socketKey);
     void setPaletteRange(float minimum, float maximum);
     void setPalette(int palette);
+    uint32_t getPalette() const;
+    float getMinTemperature() const;
+    float getMaxTemperature() const;
     bool isPaletteVisible() const { return paletteVisible; }
     void renderSurface(VkCommandBuffer commandBuffer, uint32_t frameIndex);
     void renderOverlay(VkCommandBuffer commandBuffer, uint32_t frameIndex);
@@ -45,11 +48,11 @@ private:
     MemoryAllocator& memoryAllocator;
     std::unique_ptr<HeatSurfaceRenderer> surfaceRenderer;
     std::unique_ptr<VectorArrowRenderer> vectorArrowRenderer;
-    std::unique_ptr<HeatContactLevelSetRenderer> contactLevelSetRenderer;
+    std::unique_ptr<HeatBoxRenderer> boxRenderer;
     std::unordered_map<uint64_t, HeatDisplayController::Config> configsBySocket;
     std::vector<HeatSurfaceRenderer::SurfaceRenderBinding> surfaceBindings;
     std::vector<VectorArrowRenderer::VectorRenderBinding> fluxVectorBindings;
-    std::vector<HeatContactLevelSetRenderer::RenderBinding> contactLevelSetBindings;
+    std::vector<HeatBoxRenderer::RenderBinding> boxBindings;
     uint32_t maxFramesInFlight = 0;
     bool surfaceInitialized = false;
     bool overlayInitialized = false;

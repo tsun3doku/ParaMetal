@@ -157,7 +157,8 @@ Rectangle {
             anchors.bottom: parent.bottom
             function scrub(mouseX) {
                 const trackX = mouseX - root.scrubHitPadding
-                bridge.scrub(Math.round(Math.max(0, Math.min(1, trackX / track.width)) * root.maximumFrame))
+                const normalized = Math.max(0, Math.min(1, trackX / track.width))
+                bridge.scrub(Math.round(normalized * root.maximumFrame))
             }
             onPressed: function(mouse) { scrub(mouse.x) }
             onPositionChanged: function(mouse) { if (pressed) scrub(mouse.x) }

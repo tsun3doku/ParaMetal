@@ -14,6 +14,7 @@ QColor valueTypeColor(NodeGraphValueType valueType) {
     case NodeGraphValueType::Remesh:
         return QColor(72, 180, 180);
     case NodeGraphValueType::HeatModel:
+    case NodeGraphValueType::HeatFluid:
         return QColor(232, 120, 80);
     case NodeGraphValueType::Volume:
         return QColor(86, 196, 160);

@@ -13,10 +13,7 @@ class CudaExternalBuffer;
 
 class HeatGlobalSolver {
 public:
-    using FixedContribution = heat::FixedContribution;
-    using FixedRow = heat::FixedRow;
-
-    struct ModelNodes {
+    struct TemperatureNodes {
         uint32_t solverNodeOffset = 0;
         std::vector<uint32_t> localNodeIds;
         const VulkanExternalBuffer* externalA = nullptr;
@@ -37,10 +34,8 @@ public:
         const std::vector<int>& columnIndices,
         const std::vector<float>& values,
         const std::vector<float>& thermalMasses,
-        const std::vector<ModelNodes>& models,
-        const std::vector<FixedRow>& fixedRows,
-        const std::vector<FixedContribution>& fixedContributions,
-        uint32_t boundaryValueCount);
+        const std::vector<TemperatureNodes>& temperatureNodes,
+        const std::vector<float>& rhsAdditions);
 
     enum class SolvePollResult {
         Pending,
@@ -50,7 +45,6 @@ public:
 
     bool launch(
         bool sourceIsA,
-        const std::vector<float>& boundaryTemperaturesC,
         uint64_t destinationVulkanReleaseValue,
         uint64_t cudaReadyValue);
 
@@ -60,9 +54,18 @@ public:
     bool updateValues(
         const std::vector<float>& values,
         const std::vector<float>& thermalMasses,
-        const std::vector<FixedRow>& fixedRows,
-        const std::vector<FixedContribution>& fixedContributions,
-        uint32_t boundaryValueCount);
+        const std::vector<float>& rhsAdditions);
+
+    bool configureAdvectionTopology(
+        const std::vector<heat::AdvectionFace>& faces,
+        const std::vector<heat::AdvectionBoundaryFace>& boundaryFaces,
+        const float* deviceFaceFlux,
+        const float* deviceBoundaryFlux);
+
+    void updateAdvectionStep(
+        float inletTemperatureC,
+        uint32_t subcycleCount,
+        float subcycleDt);
 
     VkSemaphore getCudaReadySemaphore() const;
     VkSemaphore getVulkanReleaseSemaphore() const;

@@ -10,7 +10,6 @@
 
 #include "heat/HeatGpuStructs.hpp"
 #include "hash/HashValues.hpp"
-#include "voronoi/VoronoiGpuStructs.hpp"
 
 //                                                      [ Invariant:
 //                                                        - Products are outputs produced by runtime backends
@@ -137,51 +136,22 @@ struct RemeshProduct {
 
 struct VoronoiProduct {
     uint32_t candidateNodeCount = 0;
-    uint32_t nodeCount = 0;
-    uint32_t couplingCount = 0;
-
-    std::vector<voronoi::Node> nodes;
-    std::vector<voronoi::NodeCoupling> couplings;
-    std::vector<float> surfacePatchAreas;
-    std::vector<glm::vec3> nodePositions;
-    std::vector<uint32_t> surfaceNodeIds;
-    std::vector<voronoi::GMLSSurfaceStencil> surfaceStencils;
-    std::vector<voronoi::GMLSSurfaceWeight> surfaceValueWeights;
-    std::vector<voronoi::GMLSSurfaceGradientWeight> surfaceGradientWeights;
-
-    VkBuffer candidateNodeBuffer = VK_NULL_HANDLE;
-    VkDeviceSize candidateNodeBufferOffset = 0;
-
     VkBuffer candidateNeighborIndicesBuffer = VK_NULL_HANDLE;
     VkDeviceSize candidateNeighborIndicesBufferOffset = 0;
-
-    VkBuffer nodeBuffer = VK_NULL_HANDLE;
-    VkDeviceSize nodeBufferOffset = 0;
-    VkBuffer couplingBuffer = VK_NULL_HANDLE;
-    VkDeviceSize couplingBufferOffset = 0;
-
     VkBuffer seedPositionBuffer = VK_NULL_HANDLE;
     VkDeviceSize seedPositionBufferOffset = 0;
-    VkBuffer occupancyPointBuffer = VK_NULL_HANDLE;
-    VkDeviceSize occupancyPointBufferOffset = 0;
-    uint32_t occupancyPointCount = 0;
+    VkBuffer candidatePointVertexBuffer = VK_NULL_HANDLE;
+    VkDeviceSize candidatePointVertexBufferOffset = 0;
+    VkBuffer contactVertexBuffer = VK_NULL_HANDLE;
+    VkDeviceSize contactVertexBufferOffset = 0;
+    uint32_t contactVertexCount = 0;
 
-    uint32_t runtimeModelId = 0;
-    bool isPointDomain = false;
-    VkBuffer candidateBuffer = VK_NULL_HANDLE;
-    VkDeviceSize candidateBufferOffset = 0;
-    VkBuffer gmlsSurfaceStencilBuffer = VK_NULL_HANDLE;
-    VkDeviceSize gmlsSurfaceStencilBufferOffset = 0;
-    VkBuffer gmlsSurfaceWeightBuffer = VK_NULL_HANDLE;
-    VkDeviceSize gmlsSurfaceWeightBufferOffset = 0;
-    size_t gmlsSurfaceWeightCount = 0;
-    VkBuffer gmlsSurfaceGradientWeightBuffer = VK_NULL_HANDLE;
-    VkDeviceSize gmlsSurfaceGradientWeightBufferOffset = 0;
-    size_t gmlsSurfaceGradientWeightCount = 0;
+    VkBuffer globalSeedIdGridBuffer = VK_NULL_HANDLE;
+    VkDeviceSize globalSeedIdGridBufferOffset = 0;
+    uint32_t globalSeedIdGridCount = 0;
+
     HashValues hashes{};
 
-    // Global domain (DomainType::Global)
-    bool isGlobalDomain = false;
     std::vector<glm::vec4> globalSeedPositions;
     std::array<glm::vec3, 8> globalDomainCorners{};
     glm::vec3 globalSdfGridMin{};
@@ -192,18 +162,28 @@ struct VoronoiProduct {
     uint32_t globalFragmentCount = 0;
     std::vector<uint32_t> fragmentInstanceIds;
     std::vector<uint32_t> fragmentSeedIds;
-    std::vector<float> fragmentSurfaceBoundaryAreas;
+    std::vector<glm::vec3> fragmentCentroids;
     std::vector<float> fragmentVolumes;
+    float nominalCellSize = 0.0f;
     uint32_t globalFaceCount = 0;
-    std::vector<uint32_t> faceInstanceIds;
     std::vector<uint32_t> faceFragmentA;
     std::vector<uint32_t> faceFragmentB;
     std::vector<float> faceAreas;
-    uint32_t globalCutFaceCount = 0;
-    std::vector<uint32_t> cutFaceFragmentA;
-    std::vector<uint32_t> cutFaceFragmentB;
-    std::vector<float> cutFaceAreas;
-    std::vector<float> cutFaceGaps;
+    std::vector<float> faceOrthogonalDistancesA;
+    std::vector<float> faceOrthogonalDistancesB;
+    std::vector<glm::vec3> faceNormals;
+    uint32_t globalContactFaceCount = 0;
+    std::vector<uint32_t> contactFaceFragmentA;
+    std::vector<uint32_t> contactFaceFragmentB;
+    std::vector<float> contactFaceAreas;
+    std::vector<float> contactFaceOrthogonalDistancesA;
+    std::vector<float> contactFaceOrthogonalDistancesB;
+    std::vector<float> contactFaceGaps;
+    uint32_t globalBoundaryFaceCount = 0;
+    std::vector<uint32_t> boundaryFaceFragments;
+    std::vector<uint32_t> boundaryFaceDomainFaces;
+    std::vector<float> boundaryFaceAreas;
+    std::vector<float> boundaryFaceOrthogonalDistances;
     std::vector<uint32_t> instanceFragmentCounts;
 
     std::vector<uint32_t> globalDisplayRuntimeModelIds;
@@ -214,61 +194,35 @@ struct VoronoiProduct {
     std::vector<VkBuffer> globalDisplayCandidateBuffers;
     std::vector<VkDeviceSize> globalDisplayCandidateBufferOffsets;
 
-    std::vector<VkImageView> globalSdfImageViews;
-    std::vector<VkImageView> globalPsiImageViews;
-    VkSampler globalSdfSampler = VK_NULL_HANDLE;
-    VkBuffer contactRegionBuffer = VK_NULL_HANDLE;
-    VkDeviceSize contactRegionBufferOffset = 0;
-    VkDeviceSize contactRegionBufferSize = 0;
-    VkBuffer indirectDrawBuffer = VK_NULL_HANDLE;
-    VkDeviceSize indirectDrawBufferOffset = 0;
-
     bool isValid() const {
-        if (isGlobalDomain) {
-            return !globalSeedPositions.empty() &&
-                globalSdfGridDim.x >= 2 && globalSdfGridDim.y >= 2 && globalSdfGridDim.z >= 2 &&
-                globalSdfValues.size() ==
-                    size_t(globalSdfGridDim.x) * globalSdfGridDim.y * globalSdfGridDim.z *
-                        instanceFragmentCounts.size() &&
-                fragmentInstanceIds.size() == globalFragmentCount &&
-                fragmentSeedIds.size() == globalFragmentCount &&
-                fragmentSurfaceBoundaryAreas.size() == globalFragmentCount &&
-                fragmentVolumes.size() == globalFragmentCount &&
-                faceInstanceIds.size() == globalFaceCount &&
-                faceFragmentA.size() == globalFaceCount &&
-                faceFragmentB.size() == globalFaceCount &&
-                faceAreas.size() == globalFaceCount &&
-                cutFaceFragmentA.size() == globalCutFaceCount &&
-                cutFaceFragmentB.size() == globalCutFaceCount &&
-                cutFaceAreas.size() == globalCutFaceCount &&
-                cutFaceGaps.size() == globalCutFaceCount &&
-                !instanceFragmentCounts.empty();
-        }
-        const bool resourcesValid = candidateNodeCount != 0 &&
-            nodeCount != 0 &&
-            couplingCount != 0 &&
-            nodes.size() == nodeCount &&
-            couplings.size() == couplingCount &&
-            surfacePatchAreas.size() == nodeCount &&
-            nodePositions.size() == nodeCount &&
-            candidateNodeBuffer != VK_NULL_HANDLE &&
-            nodeBuffer != VK_NULL_HANDLE &&
-            couplingBuffer != VK_NULL_HANDLE &&
-            candidateNeighborIndicesBuffer != VK_NULL_HANDLE &&
-            seedPositionBuffer != VK_NULL_HANDLE &&
-            candidateBuffer != VK_NULL_HANDLE &&
-            (isPointDomain || runtimeModelId != 0);
-        if (!resourcesValid) {
-            return false;
-        }
-        for (uint32_t nodeId : surfaceNodeIds) {
-            if (nodeId >= nodeCount) {
-                return false;
-            }
-        }
-        return true;
+        return !globalSeedPositions.empty() &&
+            globalSdfGridDim.x >= 2 && globalSdfGridDim.y >= 2 && globalSdfGridDim.z >= 2 &&
+            globalSdfValues.size() ==
+                size_t(globalSdfGridDim.x) * globalSdfGridDim.y * globalSdfGridDim.z *
+                    globalSdfRuntimeModelIds.size() &&
+            globalSdfRuntimeModelIds.size() == instanceFragmentCounts.size() &&
+            fragmentInstanceIds.size() == globalFragmentCount &&
+            fragmentSeedIds.size() == globalFragmentCount &&
+            fragmentCentroids.size() == globalFragmentCount &&
+            fragmentVolumes.size() == globalFragmentCount &&
+            nominalCellSize > 0.0f &&
+            faceFragmentA.size() == globalFaceCount &&
+            faceFragmentB.size() == globalFaceCount &&
+            faceAreas.size() == globalFaceCount &&
+            faceOrthogonalDistancesA.size() == globalFaceCount &&
+            faceOrthogonalDistancesB.size() == globalFaceCount &&
+            contactFaceFragmentA.size() == globalContactFaceCount &&
+            contactFaceFragmentB.size() == globalContactFaceCount &&
+            contactFaceAreas.size() == globalContactFaceCount &&
+            contactFaceOrthogonalDistancesA.size() == globalContactFaceCount &&
+            contactFaceOrthogonalDistancesB.size() == globalContactFaceCount &&
+            contactFaceGaps.size() == globalContactFaceCount &&
+            boundaryFaceFragments.size() == globalBoundaryFaceCount &&
+            boundaryFaceDomainFaces.size() == globalBoundaryFaceCount &&
+            boundaryFaceAreas.size() == globalBoundaryFaceCount &&
+            boundaryFaceOrthogonalDistances.size() == globalBoundaryFaceCount &&
+            !instanceFragmentCounts.empty();
     }
-
 };
 
 struct PointProduct {
@@ -290,6 +244,10 @@ struct HeatProduct {
     std::vector<uint32_t> modelSurfacePointCounts;
     std::vector<VkBuffer> modelSurfaceGradientBuffers;
     std::vector<VkDeviceSize> modelSurfaceGradientBufferOffsets;
+
+    VkImageView fluidTemperatureVolumeView = VK_NULL_HANDLE;
+    VkSampler fluidTemperatureVolumeSampler = VK_NULL_HANDLE;
+    bool hasFluidVolume = false;
 
     HashValues hashes{};
 

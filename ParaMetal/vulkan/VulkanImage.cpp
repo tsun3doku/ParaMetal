@@ -6,6 +6,7 @@
 #include "VulkanImage.hpp"
 #include "VulkanBuffer.hpp"
 #include <iostream>
+#include <cstring>
 
 VkResult createImage(const VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
     VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory, VkSampleCountFlagBits samples, uint32_t mipLevels) {
@@ -455,4 +456,90 @@ VkResult createTextureSampler(const VulkanDevice& vulkanDevice, VkSampler& textu
     samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 
     return vkCreateSampler(vulkanDevice.getDevice(), &samplerInfo, nullptr, &textureSampler);
+}
+
+VkResult uploadR32FloatImage3D(
+    VulkanDevice& vulkanDevice,
+    MemoryAllocator& memoryAllocator,
+    CommandPool& commandPool,
+    const float* data,
+    const glm::ivec3& gridDim,
+    VkImage& outImage,
+    VkDeviceMemory& outMemory,
+    VkImageView& outView) {
+    if (!data || gridDim.x < 1 || gridDim.y < 1 || gridDim.z < 1) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    const size_t voxelCount = static_cast<size_t>(gridDim.x) * gridDim.y * gridDim.z;
+    const VkDeviceSize byteSize = voxelCount * sizeof(float);
+
+    VkResult imgRes = createImage3D(
+        vulkanDevice, memoryAllocator,
+        static_cast<uint32_t>(gridDim.x), static_cast<uint32_t>(gridDim.y), static_cast<uint32_t>(gridDim.z),
+        VK_FORMAT_R32_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        outImage, outMemory);
+    if (imgRes != VK_SUCCESS) {
+        return imgRes;
+    }
+
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    VkDeviceSize stagingOffset = 0;
+    void* mappedData = nullptr;
+    if (createStagingBuffer(memoryAllocator, byteSize, stagingBuffer, stagingOffset, &mappedData) != VK_SUCCESS || !mappedData) {
+        vkDestroyImage(vulkanDevice.getDevice(), outImage, nullptr);
+        memoryAllocator.freeImageMemory(outMemory);
+        outImage = VK_NULL_HANDLE;
+        outMemory = VK_NULL_HANDLE;
+        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+    }
+
+    std::memcpy(mappedData, data, static_cast<size_t>(byteSize));
+
+    VkCommandBuffer cmd = commandPool.beginCommands();
+
+    VkImageMemoryBarrier barrierToDst{};
+    barrierToDst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrierToDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrierToDst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrierToDst.srcAccessMask = 0;
+    barrierToDst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrierToDst.image = outImage;
+    barrierToDst.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToDst);
+
+    VkBufferImageCopy copyRegion{};
+    copyRegion.bufferOffset = stagingOffset;
+    copyRegion.bufferRowLength = 0;
+    copyRegion.bufferImageHeight = 0;
+    copyRegion.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+    copyRegion.imageOffset = { 0, 0, 0 };
+    copyRegion.imageExtent = { static_cast<uint32_t>(gridDim.x), static_cast<uint32_t>(gridDim.y), static_cast<uint32_t>(gridDim.z) };
+    vkCmdCopyBufferToImage(cmd, stagingBuffer, outImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+
+    VkImageMemoryBarrier barrierToShader{};
+    barrierToShader.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrierToShader.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrierToShader.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrierToShader.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrierToShader.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrierToShader.image = outImage;
+    barrierToShader.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToShader);
+
+    commandPool.endCommands(cmd);
+    freeBuffer(memoryAllocator, stagingBuffer, stagingOffset);
+
+    VkResult viewRes = createImageView3D(vulkanDevice, outImage, VK_FORMAT_R32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, outView);
+    if (viewRes != VK_SUCCESS) {
+        vkDestroyImage(vulkanDevice.getDevice(), outImage, nullptr);
+        memoryAllocator.freeImageMemory(outMemory);
+        outImage = VK_NULL_HANDLE;
+        outMemory = VK_NULL_HANDLE;
+        return viewRes;
+    }
+
+    return VK_SUCCESS;
 }

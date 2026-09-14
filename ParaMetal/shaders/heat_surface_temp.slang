@@ -21,14 +21,6 @@ struct GMLSSurfaceWeight
     float weight;
 };
 
-struct BoundaryState
-{
-    uint conditionType;
-    float temperatureC;
-    float heatFlux;
-    float heatTransferCoefficient;
-};
-
 struct HeatModelPushConstant {
     uint elementCount;
     float metersPerUnit;
@@ -36,8 +28,6 @@ struct HeatModelPushConstant {
 
 [[vk::binding(0)]] StructuredBuffer<float> nodeTemperatureReadBuffer;
 [[vk::binding(1)]] RWStructuredBuffer<SurfacePoint> surfaceBuffer;
-[[vk::binding(8)]] StructuredBuffer<uint> surfaceBoundaryIndexBuffer;
-[[vk::binding(9)]] StructuredBuffer<BoundaryState> boundaryStateBuffer;
 
 [[vk::binding(10)]] StructuredBuffer<GMLSSurfaceStencil> gmlsSurfaceStencilBuffer;
 [[vk::binding(11)]] StructuredBuffer<GMLSSurfaceWeight> gmlsSurfaceWeightBuffer;
@@ -95,15 +85,6 @@ void main(uint3 dtid : SV_DispatchThreadID)
     }
 
     float temperatureC = weightedTemperature / weightSum;
-    uint boundaryIndex = surfaceBoundaryIndexBuffer[vertexID];
-    if (boundaryIndex != 0xffffffffu)
-    {
-        BoundaryState boundary = boundaryStateBuffer[boundaryIndex];
-        if (boundary.conditionType == 1u)
-        {
-            temperatureC = boundary.temperatureC;
-        }
-    }
 
     SurfacePoint p = surfaceBuffer[vertexID];
     p.temperatureC = temperatureC;

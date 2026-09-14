@@ -15,6 +15,14 @@ static void combineVkDeviceSize(uint64_t& hash, VkDeviceSize handle) {
     HashBuilder::combine(hash, static_cast<uint64_t>(handle));
 }
 
+static void combineVkImageView(uint64_t& hash, VkImageView handle) {
+    HashBuilder::combine(hash, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(handle)));
+}
+
+static void combineVkSampler(uint64_t& hash, VkSampler handle) {
+    HashBuilder::combine(hash, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(handle)));
+}
+
 void HashProduct::seal(ModelProduct& p) {
     uint64_t geometryHash = HashBuilder::start();
     HashBuilder::combine(geometryHash, p.runtimeModelId);
@@ -93,64 +101,46 @@ void HashProduct::seal(RemeshProduct& p) {
 void HashProduct::seal(VoronoiProduct& p) {
     uint64_t hash = HashBuilder::start();
     HashBuilder::combine(hash, p.candidateNodeCount);
-    HashBuilder::combine(hash, p.nodeCount);
-    HashBuilder::combine(hash, p.couplingCount);
-    HashBuilder::combine(hash, static_cast<uint64_t>(p.isPointDomain ? 1u : 0u));
-    HashBuilder::combine(hash, p.runtimeModelId);
-    HashBuilder::combinePodVector(hash, p.nodes);
-    HashBuilder::combinePodVector(hash, p.couplings);
-    HashBuilder::combinePodVector(hash, p.surfacePatchAreas);
-    HashBuilder::combinePodVector(hash, p.surfaceNodeIds);
-    HashBuilder::combinePodVector(hash, p.nodePositions);
-    HashBuilder::combinePodVector(hash, p.surfaceStencils);
-    HashBuilder::combinePodVector(hash, p.surfaceValueWeights);
-    HashBuilder::combinePodVector(hash, p.surfaceGradientWeights);
-    HashBuilder::combine(hash, p.occupancyPointCount);
-    combineVkBuffer(hash, p.candidateNodeBuffer);
-    HashBuilder::combine(hash, p.candidateNodeBufferOffset);
     combineVkBuffer(hash, p.candidateNeighborIndicesBuffer);
     HashBuilder::combine(hash, p.candidateNeighborIndicesBufferOffset);
-    combineVkBuffer(hash, p.nodeBuffer);
-    HashBuilder::combine(hash, p.nodeBufferOffset);
-    combineVkBuffer(hash, p.couplingBuffer);
-    HashBuilder::combine(hash, p.couplingBufferOffset);
-    HashBuilder::combine(hash, p.couplingCount);
     combineVkBuffer(hash, p.seedPositionBuffer);
     HashBuilder::combine(hash, p.seedPositionBufferOffset);
-    combineVkBuffer(hash, p.occupancyPointBuffer);
-    HashBuilder::combine(hash, p.occupancyPointBufferOffset);
-    combineVkBuffer(hash, p.candidateBuffer);
-    HashBuilder::combine(hash, p.candidateBufferOffset);
-    combineVkBuffer(hash, p.gmlsSurfaceStencilBuffer);
-    HashBuilder::combine(hash, p.gmlsSurfaceStencilBufferOffset);
-    combineVkBuffer(hash, p.gmlsSurfaceWeightBuffer);
-    HashBuilder::combine(hash, p.gmlsSurfaceWeightBufferOffset);
-    HashBuilder::combine(hash, p.gmlsSurfaceWeightCount);
-    combineVkBuffer(hash, p.gmlsSurfaceGradientWeightBuffer);
-    HashBuilder::combine(hash, p.gmlsSurfaceGradientWeightBufferOffset);
-    HashBuilder::combine(hash, p.gmlsSurfaceGradientWeightCount);
-    HashBuilder::combine(hash, static_cast<uint64_t>(p.isGlobalDomain ? 1u : 0u));
+    combineVkBuffer(hash, p.candidatePointVertexBuffer);
+    HashBuilder::combine(hash, p.candidatePointVertexBufferOffset);
+    combineVkBuffer(hash, p.contactVertexBuffer);
+    HashBuilder::combine(hash, p.contactVertexBufferOffset);
+    HashBuilder::combine(hash, uint64_t(p.contactVertexCount));
     HashBuilder::combinePodVector(hash, p.globalSeedPositions);
     HashBuilder::combinePodVector(hash, p.fragmentInstanceIds);
     HashBuilder::combinePodVector(hash, p.fragmentSeedIds);
-    HashBuilder::combinePodVector(hash, p.fragmentSurfaceBoundaryAreas);
+    HashBuilder::combinePodVector(hash, p.fragmentCentroids);
     HashBuilder::combinePodVector(hash, p.fragmentVolumes);
-    HashBuilder::combinePodVector(hash, p.faceInstanceIds);
+    HashBuilder::combineFloat(hash, p.nominalCellSize);
     HashBuilder::combinePodVector(hash, p.faceFragmentA);
     HashBuilder::combinePodVector(hash, p.faceFragmentB);
     HashBuilder::combinePodVector(hash, p.faceAreas);
-    HashBuilder::combinePodVector(hash, p.cutFaceFragmentA);
-    HashBuilder::combinePodVector(hash, p.cutFaceFragmentB);
-    HashBuilder::combinePodVector(hash, p.cutFaceAreas);
-    HashBuilder::combinePodVector(hash, p.cutFaceGaps);
+    HashBuilder::combinePodVector(hash, p.faceOrthogonalDistancesA);
+    HashBuilder::combinePodVector(hash, p.faceOrthogonalDistancesB);
+    HashBuilder::combinePodVector(hash, p.faceNormals);
+    HashBuilder::combinePodVector(hash, p.contactFaceFragmentA);
+    HashBuilder::combinePodVector(hash, p.contactFaceFragmentB);
+    HashBuilder::combinePodVector(hash, p.contactFaceAreas);
+    HashBuilder::combinePodVector(hash, p.contactFaceOrthogonalDistancesA);
+    HashBuilder::combinePodVector(hash, p.contactFaceOrthogonalDistancesB);
+    HashBuilder::combinePodVector(hash, p.contactFaceGaps);
+    HashBuilder::combinePodVector(hash, p.boundaryFaceFragments);
+    HashBuilder::combinePodVector(hash, p.boundaryFaceDomainFaces);
+    HashBuilder::combinePodVector(hash, p.boundaryFaceAreas);
+    HashBuilder::combinePodVector(hash, p.boundaryFaceOrthogonalDistances);
     HashBuilder::combinePodVector(hash, p.instanceFragmentCounts);
     HashBuilder::combinePodVector(hash, p.globalSdfValues);
     HashBuilder::combine(hash, uint64_t(p.globalFragmentCount));
     HashBuilder::combine(hash, uint64_t(p.globalFaceCount));
-    HashBuilder::combine(hash, uint64_t(p.globalCutFaceCount));
+    HashBuilder::combine(hash, uint64_t(p.globalContactFaceCount));
+    HashBuilder::combine(hash, uint64_t(p.globalBoundaryFaceCount));
     HashBuilder::combinePod(hash, p.globalSdfGridMin);
     HashBuilder::combinePod(hash, p.globalSdfGridDim);
-    HashBuilder::combine(hash, p.globalSdfCellSize);
+    HashBuilder::combineFloat(hash, p.globalSdfCellSize);
     HashBuilder::combine(hash, static_cast<uint64_t>(p.globalDisplayRuntimeModelIds.size()));
     for (size_t i = 0; i < p.globalDisplayRuntimeModelIds.size(); ++i) {
         HashBuilder::combine(hash, p.globalDisplayRuntimeModelIds[i]);
@@ -196,6 +186,8 @@ void HashProduct::seal(HeatProduct& p) {
         combineVkBuffer(hash, p.modelSurfaceGradientBuffers[i]);
         HashBuilder::combine(hash, p.modelSurfaceGradientBufferOffsets[i]);
     }
+    HashBuilder::combine(hash, static_cast<uint64_t>(p.hasFluidVolume ? 1u : 0u));
+    HashBuilder::combine(hash, reinterpret_cast<uint64_t>(p.fluidTemperatureVolumeView));
 
     p.hashes.full = hash;
     p.hashes.simulation = hash;

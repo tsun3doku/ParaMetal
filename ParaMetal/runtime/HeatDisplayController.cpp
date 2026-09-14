@@ -1,11 +1,16 @@
 #include "HeatDisplayController.hpp"
 
 #include "render/HeatOverlayRenderer.hpp"
+#include "renderers/HeatVolumeRenderer.hpp"
 
 #include <iostream>
 
 void HeatDisplayController::setOverlayRenderer(render::HeatOverlayRenderer* updatedOverlayRenderer) {
     overlayRenderer = updatedOverlayRenderer;
+}
+
+void HeatDisplayController::setVolumeRenderer(render::HeatVolumeRenderer* updatedVolumeRenderer) {
+    volumeRenderer = updatedVolumeRenderer;
 }
 
 void HeatDisplayController::apply(uint64_t socketKey, const Config& config) {
@@ -33,6 +38,28 @@ void HeatDisplayController::apply(uint64_t socketKey, const Config& config) {
         overlayRenderer->apply(socketKey, config);
     }
 
+    if (volumeRenderer) {
+        if (config.showFluidVolume && config.hasFluidVolume && config.fluidTemperatureVolumeView != VK_NULL_HANDLE) {
+            volumeRenderer->setEnabled(true);
+            volumeRenderer->setOpacity(config.fluidVolumeOpacity);
+            if (overlayRenderer) {
+                volumeRenderer->setPalette(overlayRenderer->getPalette());
+                volumeRenderer->setRange(overlayRenderer->getMinTemperature(), overlayRenderer->getMaxTemperature());
+            }
+            if (config.hasGlobalDomain) {
+                volumeRenderer->setVolumeDomain(config.globalDomainCorners);
+            }
+            volumeRenderer->setVolumeTexture(
+                config.fluidTemperatureVolumeView,
+                config.fluidTemperatureVolumeSampler,
+                config.globalSdfGridMin,
+                config.globalSdfGridDim,
+                config.globalSdfCellSize);
+        } else {
+            volumeRenderer->setEnabled(false);
+        }
+    }
+
     configsBySocket[socketKey] = config;
 }
 
@@ -43,6 +70,10 @@ void HeatDisplayController::remove(uint64_t socketKey) {
 
     if (overlayRenderer) {
         overlayRenderer->remove(socketKey);
+    }
+
+    if (volumeRenderer) {
+        volumeRenderer->setEnabled(false);
     }
 
     configsBySocket.erase(socketKey);

@@ -192,6 +192,7 @@ void OverlayPass::record(const FrameContext& context, const SceneView& view, con
     const VkExtent2D extent = context.extent;
     heatOverlayRenderer.renderOverlay(commandBuffer, currentFrame);
     voronoiOverlayRenderer.renderPoints(commandBuffer, currentFrame, extent);
+    voronoiOverlayRenderer.renderContacts(commandBuffer, currentFrame);
     if (pointOverlayRenderer) {
         pointOverlayRenderer->render(commandBuffer, currentFrame, extent);
     }

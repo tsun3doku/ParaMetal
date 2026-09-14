@@ -5,6 +5,7 @@
 #include "NodeGraphUtils.hpp"
 
 #include "NodePayloadRegistry.hpp"
+#include "domain/HeatFluidData.hpp"
 #include "domain/HeatModelData.hpp"
 #include "domain/SerialTemperatureData.hpp"
 
@@ -53,10 +54,6 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodeGraphTypeRegistry* typ
 
     if (dataBlock.dataType == payloadtypes::HeatModel) {
         const HeatModelData* heatModel = registry ? registry->get<HeatModelData>(dataBlock.payloadHandle) : nullptr;
-        dataBlock.metadata["heat_model.boundary_condition"] =
-            heatModel ? std::to_string(static_cast<uint32_t>(heatModel->boundaryCondition.type)) : std::string();
-        dataBlock.metadata["heat_model.dirichlet_temperature_c"] =
-            heatModel ? std::to_string(heatModel->boundaryCondition.temperatureC) : std::string();
         dataBlock.metadata["heat_model.initial_temperature_c"] =
             heatModel ? std::to_string(heatModel->initialTemperatureC) : std::string();
     } else {
@@ -65,6 +62,20 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodeGraphTypeRegistry* typ
         dataBlock.metadata.erase("heat_model.initial_temperature");
         dataBlock.metadata.erase("heat_model.dirichlet_temperature_c");
         dataBlock.metadata.erase("heat_model.initial_temperature_c");
+    }
+
+    if (dataBlock.dataType == payloadtypes::HeatFluid) {
+        const HeatFluidData* fluid = registry ? registry->get<HeatFluidData>(dataBlock.payloadHandle) : nullptr;
+        dataBlock.metadata["heat_fluid.density"] = fluid ? std::to_string(fluid->density) : std::string();
+        dataBlock.metadata["heat_fluid.specific_heat"] = fluid ? std::to_string(fluid->specificHeat) : std::string();
+        dataBlock.metadata["heat_fluid.conductivity"] = fluid ? std::to_string(fluid->conductivity) : std::string();
+        dataBlock.metadata["heat_fluid.initial_temperature_c"] =
+            fluid ? std::to_string(fluid->initialTemperatureC) : std::string();
+    } else {
+        dataBlock.metadata.erase("heat_fluid.density");
+        dataBlock.metadata.erase("heat_fluid.specific_heat");
+        dataBlock.metadata.erase("heat_fluid.conductivity");
+        dataBlock.metadata.erase("heat_fluid.initial_temperature_c");
     }
 
     if (dataBlock.dataType == payloadtypes::SerialTemperature) {
@@ -97,10 +108,13 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodeGraphTypeRegistry* typ
             voronoiData ? std::to_string(voronoiData->cellSize) : std::string();
         dataBlock.metadata["voronoi.voxel_resolution"] =
             voronoiData ? std::to_string(voronoiData->voxelResolution) : std::string();
+        dataBlock.metadata["voronoi.contact_range"] =
+            voronoiData ? std::to_string(voronoiData->contactRange) : std::string();
     } else {
         dataBlock.metadata.erase("voronoi.active");
         dataBlock.metadata.erase("voronoi.receiver_count");
         dataBlock.metadata.erase("voronoi.cell_size");
         dataBlock.metadata.erase("voronoi.voxel_resolution");
+        dataBlock.metadata.erase("voronoi.contact_range");
     }
 }

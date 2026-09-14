@@ -1,6 +1,7 @@
 #include "VoronoiCandidate.hpp"
 
 #include "VoronoiGpuStructs.hpp"
+#include "runtime/RuntimeProducts.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/VulkanBuffer.hpp"
 #include "vulkan/VulkanDevice.hpp"
@@ -91,6 +92,18 @@ bool VoronoiCandidate::build(
     }
 
     return true;
+}
+
+void VoronoiCandidate::releaseGpuResources(VoronoiProduct& product) {
+    product.globalDisplayRuntimeModelIds.swap(runtimeModelIds);
+    product.globalDisplayVertexBuffers.swap(vertexBuffers);
+    product.globalDisplayVertexBufferOffsets.swap(vertexBufferOffsets);
+    product.globalDisplayFaceIndexBuffers.swap(faceIndexBuffers);
+    product.globalDisplayFaceIndexBufferOffsets.swap(faceIndexBufferOffsets);
+    product.globalDisplayCandidateBuffers.swap(candidateBuffers);
+    product.globalDisplayCandidateBufferOffsets.swap(candidateBufferOffsets);
+
+    faceCounts.clear();
 }
 
 void VoronoiCandidate::cleanup() {

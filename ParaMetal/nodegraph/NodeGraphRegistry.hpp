@@ -13,6 +13,7 @@ inline constexpr const char* Transform = "transform";
 inline constexpr const char* Group = "group";
 inline constexpr const char* Remesh = "remesh";
 inline constexpr const char* HeatModel = "heat_model";
+inline constexpr const char* HeatFluid = "heat_fluid";
 inline constexpr const char* Voronoi = "voronoi";
 inline constexpr const char* HeatSolve = "heat_solve";
 inline constexpr const char* Points = "points";
@@ -71,14 +72,20 @@ constexpr uint32_t Enabled = 1;
 constexpr uint32_t Paused = 2;
 constexpr uint32_t ResetRequested = 3;
 constexpr uint32_t ShowHeatOverlay = 5;
-constexpr uint32_t ContactThermalConductance = 6;
 constexpr uint32_t ShowFluxVectors = 7;
 constexpr uint32_t FluxVectorScale = 8;
 constexpr uint32_t ShowHeatPalette = 9;
 constexpr uint32_t RewindFrame = 10;
 constexpr uint32_t SimulationDuration = 11;
-constexpr uint32_t ShowContactLevelSet = 12;
-constexpr uint32_t ContactLevelSetRange = 13;
+constexpr uint32_t ShowDomainBox = 14;
+constexpr uint32_t ShowFluidVolume = 15;
+constexpr uint32_t FluidVolumeOpacity = 16;
+
+// Domain Boundary Conditions (6 faces: 0=-X, 1=+X, 2=-Y, 3=+Y, 4=-Z, 5=+Z)
+inline constexpr uint32_t domainBoundaryTypeParam(uint32_t face) { return 100 + face * 4; }
+inline constexpr uint32_t domainBoundaryTempParam(uint32_t face) { return 101 + face * 4; }
+inline constexpr uint32_t domainBoundaryFluxParam(uint32_t face) { return 102 + face * 4; }
+inline constexpr uint32_t domainBoundaryHtcParam(uint32_t face)  { return 103 + face * 4; }
 }
 
 namespace voronoi {
@@ -87,6 +94,8 @@ constexpr uint32_t VoxelResolution = 2;
 constexpr uint32_t ShowVoronoi = 3;
 constexpr uint32_t ShowPoints = 4;
 constexpr uint32_t SDFPadding = 5;
+constexpr uint32_t ContactRange = 6;
+constexpr uint32_t ShowContactManifold = 8;
 }
 
 namespace heatsource {
@@ -98,12 +107,10 @@ constexpr uint32_t Density = 1;
 constexpr uint32_t SpecificHeat = 2;
 constexpr uint32_t Conductivity = 3;
 constexpr uint32_t InitialTemperatureC = 4;
-constexpr uint32_t BoundaryCondition = 5;
-constexpr uint32_t DirichletTemperatureC = 6;
 constexpr uint32_t MaterialPreset = 7;
-constexpr uint32_t HeatFlux = 8;
-constexpr uint32_t HeatTransferCoefficient = 9;
 constexpr uint32_t VolumetricPowerDensity = 10;
+constexpr uint32_t PrescribedTemperatureEnabled = 11;
+constexpr uint32_t PrescribedTemperatureC = 12;
 }
 
 namespace serialtemperature {
@@ -117,10 +124,27 @@ constexpr uint32_t PointCount = 1;
 constexpr uint32_t DimX = 2;
 constexpr uint32_t DimY = 3;
 constexpr uint32_t DimZ = 4;
+constexpr uint32_t Distribution = 5;
+constexpr uint32_t Seed = 6;
 }
 
 namespace heatpoints {
 constexpr uint32_t InitialTemperature = 1;
+}
+
+namespace heatfluid {
+constexpr uint32_t Density = 1;
+constexpr uint32_t SpecificHeat = 2;
+constexpr uint32_t Conductivity = 3;
+constexpr uint32_t InitialTemperatureC = 4;
+constexpr uint32_t VelocityX = 5;
+constexpr uint32_t VelocityY = 6;
+constexpr uint32_t VelocityZ = 7;
+constexpr uint32_t InletTemperatureC = 8;
+}
+
+namespace merge {
+constexpr uint32_t MergeDistance = 1;
 }
 }
 

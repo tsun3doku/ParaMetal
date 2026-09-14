@@ -178,19 +178,14 @@ void KNNNeighbors::Implementation::cleanup() {
   cellOffsetCount = 0;
 }
 
-bool KNNNeighbors::Implementation::build(
-    const std::vector<glm::vec4> &seedsIn, uint32_t k,
-    const std::vector<uint32_t> &queryIds) {
-  if (!initialized || seedsIn.empty() || queryIds.empty() || k == 0 ||
-      k >= seedsIn.size())
+bool KNNNeighbors::Implementation::buildSpatialIndex(
+    const std::vector<glm::vec4> &seedsIn) {
+  if (!initialized || seedsIn.empty() ||
+      seedsIn.size() > std::numeric_limits<uint32_t>::max())
     return false;
-  for (uint32_t queryId : queryIds) {
-    if (queryId >= seedsIn.size())
-      return false;
-  }
 
   seedCountValue = uint32_t(seedsIn.size());
-  neighborStrideValue = k;
+  neighborStrideValue = 0;
   HostAabb aabb{};
   if (!computeAabb(seedsIn, aabb)) {
     std::cerr << "[KNN] non-finite seed in input" << std::endl;
@@ -202,10 +197,7 @@ bool KNNNeighbors::Implementation::build(
   }
 
   if (!seeds.allocate(seedCountValue) ||
-      !neighbors.allocate(size_t(seedCountValue) * neighborStrideValue) ||
-      !distanceHeap.allocate(
-          size_t(std::min<uint32_t>(uint32_t(queryIds.size()), 8192u)) * k) ||
-      !searchFailure.allocate(1) || !bucketEntries.allocate(seedCountValue) ||
+      !bucketEntries.allocate(seedCountValue) ||
       !cellStart.allocate(grid.totalCells + 1))
     return false;
 
@@ -213,15 +205,15 @@ bool KNNNeighbors::Implementation::build(
   if (!seeds.uploadAsync(reinterpret_cast<const float4 *>(seedsIn.data()),
                          seedCountValue, stream))
     return false;
-  if (!cudaOk(cudaMemsetAsync(neighbors.get(), 0xff,
-                              size_t(seedCountValue) * neighborStrideValue *
-                                  sizeof(uint32_t),
-                              stream),
-              "clear KNN rows"))
-    return false;
 
-  return buildGrid(seedsIn) && buildCellOffsets() &&
-         buildNeighbors(k, queryIds);
+  const bool ok =
+      buildGrid(seedsIn) &&
+      buildCellOffsets() &&
+      cudaOk(
+          cudaStreamSynchronize(stream),
+          "synchronize KNN spatial index build");
+
+  return ok;
 }
 
 bool KNNNeighbors::Implementation::buildCellOffsets() {
@@ -319,6 +311,28 @@ DeviceKnn KNNNeighbors::Implementation::makeDeviceKnn() const {
 
 bool KNNNeighbors::Implementation::buildNeighbors(
     uint32_t k, const std::vector<uint32_t> &queryIds) {
+  if (!initialized || seedCountValue == 0 || queryIds.empty() || k == 0 ||
+      k >= seedCountValue)
+    return false;
+  for (uint32_t queryId : queryIds) {
+    if (queryId >= seedCountValue)
+      return false;
+  }
+
+  neighborStrideValue = k;
+  if (!neighbors.allocate(size_t(seedCountValue) * neighborStrideValue) ||
+      !distanceHeap.allocate(
+          size_t(std::min<uint32_t>(uint32_t(queryIds.size()), 8192u)) * k) ||
+      !searchFailure.allocate(1))
+    return false;
+
+  if (!cudaOk(cudaMemsetAsync(neighbors.get(), 0xff,
+                              size_t(seedCountValue) * neighborStrideValue *
+                                  sizeof(uint32_t),
+                              stream),
+              "clear KNN rows"))
+    return false;
+
   const DeviceKnn knn = makeDeviceKnn();
   DeviceBuffer<uint32_t> deviceQueryIds;
   if (!deviceQueryIds.allocate(queryIds.size()) ||
@@ -347,45 +361,6 @@ bool KNNNeighbors::Implementation::buildNeighbors(
   return true;
 }
 
-std::unique_ptr<KNNBatch::Implementation>
-KNNNeighbors::Implementation::query(const uint32_t *deviceQueryIds,
-                                    uint32_t count, uint32_t targetK) {
-  if (!initialized || !deviceQueryIds || count == 0 || targetK == 0 ||
-      targetK >= seedCountValue)
-    return {};
-
-  auto batch = std::make_unique<KNNBatch::Implementation>();
-  batch->neighborStride = targetK;
-  if (!batch->neighbors.allocate(size_t(count) * targetK))
-    return {};
-
-  const DeviceKnn knn = makeDeviceKnn();
-  const size_t requiredDistanceHeap = size_t(std::min(count, 256u)) * targetK;
-  if (distanceHeap.size() < requiredDistanceHeap &&
-      !distanceHeap.allocate(requiredDistanceHeap))
-    return {};
-  if (!cudaOk(cudaMemsetAsync(searchFailure.get(), 0, sizeof(uint32_t), stream),
-              "clear KNN search status"))
-    return {};
-
-  if (!launchKnnChunks(knn, batch->neighbors.get(), distanceHeap.get(),
-                       searchFailure.get(), deviceQueryIds, count, targetK, 256,
-                       targetK, false, stream))
-    return {};
-
-  uint32_t failed = 0;
-  if (!cudaOk(cudaMemcpy(&failed, searchFailure.get(), sizeof(failed),
-                         cudaMemcpyDeviceToHost),
-              "read KNN search status"))
-    return {};
-  if (failed != 0) {
-    std::cerr << "[KNN] exact shell search found too few query neighbors"
-              << std::endl;
-    return {};
-  }
-  return batch;
-}
-
 bool KNNNeighbors::Implementation::downloadPrefix(
     uint32_t maxNeighbors, std::vector<uint32_t> &out) const {
   if (!initialized || seedCountValue == 0 || maxNeighbors == 0 ||
@@ -409,37 +384,8 @@ bool KNNNeighbors::Implementation::downloadPrefix(
                 "download KNN prefix");
 }
 
-const float *KNNNeighbors::Implementation::deviceSeeds() const {
-  return reinterpret_cast<const float *>(seeds.get());
-}
-
-const uint32_t *KNNNeighbors::Implementation::deviceNeighborIds() const {
-  return neighbors.get();
-}
-
-uint32_t KNNNeighbors::Implementation::neighborStride() const {
-  return neighborStrideValue;
-}
-
 uint32_t KNNNeighbors::Implementation::seedCount() const {
   return seedCountValue;
-}
-
-KNNBatch::KNNBatch() = default;
-KNNBatch::~KNNBatch() = default;
-KNNBatch::KNNBatch(KNNBatch &&) noexcept = default;
-KNNBatch &KNNBatch::operator=(KNNBatch &&) noexcept = default;
-
-const uint32_t *KNNBatch::deviceNeighborIds() const {
-  if (!implementation)
-    return nullptr;
-  return implementation->neighbors.get();
-}
-
-uint32_t KNNBatch::neighborStride() const {
-  if (!implementation)
-    return 0;
-  return implementation->neighborStride;
 }
 
 KNNNeighbors::KNNNeighbors()
@@ -449,30 +395,19 @@ bool KNNNeighbors::initialize(VulkanDevice &vulkanDevice) {
   return implementation->initialize(vulkanDevice);
 }
 void KNNNeighbors::cleanup() { implementation->cleanup(); }
-bool KNNNeighbors::build(const std::vector<glm::vec4> &seeds, uint32_t k,
-                         const std::vector<uint32_t> &queryIds) {
-  return implementation->build(seeds, k, queryIds);
+bool KNNNeighbors::buildNeighbors(uint32_t k,
+                                  const std::vector<uint32_t> &queryIds) {
+  return implementation ? implementation->buildNeighbors(k, queryIds) : false;
 }
-bool KNNNeighbors::query(const uint32_t *deviceQueryIds, uint32_t count,
-                         uint32_t k, KNNBatch &batch) {
-  auto queried = implementation->query(deviceQueryIds, count, k);
-  if (!queried)
-    return false;
-  batch.implementation.swap(queried);
-  return true;
+bool KNNNeighbors::buildSpatialIndex(const std::vector<glm::vec4> &seeds) {
+  return implementation ? implementation->buildSpatialIndex(seeds) : false;
 }
 bool KNNNeighbors::downloadPrefix(uint32_t maxNeighbors,
                                   std::vector<uint32_t> &out) const {
   return implementation->downloadPrefix(maxNeighbors, out);
 }
-const float *KNNNeighbors::deviceSeeds() const {
-  return implementation->deviceSeeds();
-}
-const uint32_t *KNNNeighbors::deviceNeighborIds() const {
-  return implementation->deviceNeighborIds();
-}
-uint32_t KNNNeighbors::neighborStride() const {
-  return implementation->neighborStride();
+DeviceKnn KNNNeighbors::deviceKnn() const {
+  return implementation ? implementation->makeDeviceKnn() : DeviceKnn{};
 }
 uint32_t KNNNeighbors::seedCount() const { return implementation->seedCount(); }
 

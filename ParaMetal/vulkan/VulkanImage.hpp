@@ -7,6 +7,7 @@
 #include "MemoryAllocator.hpp"
 #include <string>
 #include <vector>
+#include <glm/glm.hpp>
 
 VkResult createImage(const VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
     VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory, VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT, uint32_t mipLevels = 1);
@@ -28,3 +29,5 @@ VkResult createTextureImage(VulkanDevice& vulkanDevice, MemoryAllocator& memoryA
 VkResult createTextureImage16(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, CommandPool& commandPool, const char* imagePath, VkImage& textureImage, VkDeviceMemory& textureImageMemory);
 VkResult createTextureImageView(const VulkanDevice& vulkanDevice, VkImage textureImage, VkImageView& outImageView, uint32_t mipLevels = 1);
 VkResult createTextureSampler(const VulkanDevice& vulkanDevice, VkSampler& textureSampler);
+
+VkResult uploadR32FloatImage3D(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, CommandPool& commandPool, const float* data, const glm::ivec3& gridDim, VkImage& outImage, VkDeviceMemory& outMemory, VkImageView& outView);

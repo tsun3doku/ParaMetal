@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../VoronoiConfig.hpp"
 #include "../VoronoiGpuStructs.hpp"
 
 #include <array>
@@ -16,55 +17,81 @@ namespace voronoi {
 
 class KNNNeighbors;
 
-constexpr uint32_t RVDNormalCandidateCount = 50;
-constexpr uint32_t RVDRetryCandidateCount = 192;
-constexpr uint32_t RVDMaximumCandidateCount = UINT16_MAX;
 constexpr uint32_t RVDRetryPlaneCount = 256;
 constexpr uint32_t RVDRetryVertexCount = 256;
 constexpr uint32_t RVDRetryTriangleCount = 768;
-constexpr uint32_t RVDMaximumInterfaces = RVDRetryPlaneCount;
-
-enum class RVDPredicateMode : uint32_t {
-    Adaptive,
-    Float,
-    Double
-};
 
 struct RVDConfig {
-    struct Capacity {
-        uint32_t K = RVDRetryCandidateCount;
-        uint32_t P = RVDRetryPlaneCount;
-        uint32_t V = RVDRetryVertexCount;
-        uint32_t T = RVDRetryTriangleCount;
-    };
-
-    struct AdaptivePolicy {
-        Capacity initial{};
-        Capacity maximum{RVDMaximumCandidateCount, RVDRetryPlaneCount,
-                         RVDRetryVertexCount, RVDRetryTriangleCount};
-        float growthFactor = 1.5f;
-        uint32_t maximumPasses = 5;
-    } adaptive;
-
-    RVDPredicateMode predicateMode = RVDPredicateMode::Adaptive;
     uint32_t baseChunkSize = 8192;
     uint32_t restrictedChunkSize = 1024;
+    float contactRange = DefaultContactRange;
+};
+
+struct ModelGeometry {
+    uint32_t runtimeModelId = 0;
+    const VoxelGrid* voxelGrid = nullptr;
+    const std::vector<std::array<glm::vec4, 3>>* triangles = nullptr;
 };
 
 struct RVDInput {
     const std::vector<glm::vec4>* seeds = nullptr;
-    const std::vector<uint32_t>* seedFlags = nullptr;
-    KNNNeighbors* candidateNeighbors = nullptr;
+    KNNNeighbors* seedSpatialIndex = nullptr;
     const std::array<glm::vec3, 8>* domainCorners = nullptr;
+    const std::vector<ModelGeometry>* geometries = nullptr;
     float nominalCellSize = 0.0f;
 };
 
+inline constexpr uint32_t InvalidId = 0xffffffffu;
+
+struct RestrictedSurface {
+    uint32_t cellId = 0;
+    uint32_t firstVertex = 0;
+    uint32_t vertexCount = 0;
+};
+
+enum class FragmentFaceSource : uint8_t {
+    VoronoiInterface,
+    ModelSurface,
+    DomainBoundary
+};
+
+struct FragmentFace {
+    uint32_t fragmentA = InvalidId;
+    uint32_t fragmentB = InvalidId;
+
+    glm::vec3 normal{0.0f}; // Consistently oriented fragmentA -> fragmentB
+
+    double area = 0.0;
+    double orthogonalDistanceA = 0.0;
+    double orthogonalDistanceB = 0.0;
+
+    FragmentFaceSource source = FragmentFaceSource::VoronoiInterface;
+    uint32_t domainFace = InvalidId;
+};
+
+struct SurfaceMeasure {
+    double area = 0.0;
+    glm::dvec3 moment{0.0};
+};
+
+struct ContactFace {
+    uint32_t fragmentA = InvalidId;
+    uint32_t fragmentB = InvalidId;
+
+    double area = 0.0;
+    double distanceA = 0.0;
+    double distanceB = 0.0;
+    double gap = 0.0;
+};
+
 struct RVDResult {
-    std::vector<Node> nodes;
-    std::vector<uint32_t> nodeFlags;
-    std::vector<float> surfacePatchAreas;
-    std::vector<float> interfaceAreas;
-    std::vector<uint32_t> interfaceNeighborIds;
+    std::vector<RestrictedSurface> surfaces;
+    std::vector<SurfaceMeasure> surfaceExposure;
+
+    std::vector<Fragment> fragments;
+    std::vector<FragmentFace> fragmentFaces;
+    std::vector<ContactFace> contactFaces;
+    std::vector<ContactMeshVertex> contactMesh;
 };
 
 class RVD {
@@ -76,16 +103,6 @@ public:
     RVD& operator=(const RVD&) = delete;
 
     bool initialize(VulkanDevice& vulkanDevice);
-    bool prepareMeshGeometry(
-        const std::vector<std::array<glm::vec4, 3>>& meshTriangles,
-        const VoxelGrid& voxelGrid,
-        const std::vector<glm::vec4>& seeds,
-        const glm::vec3& sdfGridMin,
-        const glm::ivec3& sdfGridDim,
-        float nominalCellSize,
-        std::vector<uint32_t>& seedFlags);
-    bool hasPreparedMeshGeometry() const;
-    void clearMeshGeometry();
     bool build(const RVDInput& input, const RVDConfig& config, RVDResult& result);
     void cleanup();
 

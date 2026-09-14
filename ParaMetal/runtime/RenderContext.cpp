@@ -141,6 +141,7 @@ bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, Win
         *transferCommandPool,
         renderconfig::MaxFramesInFlight);
     heatDisplayControllerState->setOverlayRenderer(renderRuntime->getSceneRenderer().getHeatOverlayRenderer());
+    heatDisplayControllerState->setVolumeRenderer(renderRuntime->getSceneRenderer().getHeatVolumeRenderer());
     runtimeHeatComputeTransportState->setController(heatSystemComputeControllerState.get());
     runtimeHeatDisplayTransportState->setController(heatDisplayControllerState.get());
     runtimePointComputeTransportState->setRuntime(pointComputeRuntimeState.get());

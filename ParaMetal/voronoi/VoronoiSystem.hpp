@@ -23,12 +23,7 @@ public:
 
     bool isReady() const { return runtime.isReady(); }
 
-    void setPointGeometry(
-        const std::vector<glm::vec4>& positions,
-        const std::array<glm::vec3, 8>& domainCorners);
-    void setSeedPositions(
-        const std::vector<glm::vec4>& positions,
-        const std::array<glm::vec3, 8>& domainCorners);
+    void setSeedPositions(const std::vector<glm::vec4>& positions, const std::array<glm::vec3, 8>& domainCorners);
     void setGlobalGeometry(
         const std::vector<uint32_t>& runtimeModelIds,
         const std::vector<std::vector<glm::vec3>>& positions,
@@ -38,17 +33,14 @@ public:
         float sdfPadding);
     void clearGeometry();
     void setParams(float cellSize, int voxelResolution);
+    void setContactRange(float range);
     bool ensureConfigured();
 
-    VoronoiDomainRuntime* getDomainRuntime() const { return runtime.getDomainRuntime(); }
-    bool isGlobalDomain() const { return runtime.isGlobalDomain(); }
     uint32_t getCandidateNodeCount() const { return voronoiSystemBuildStage->getCandidateNodeCount(); }
+    VoronoiSystemBuildStage& getBuildStage() { return *voronoiSystemBuildStage; }
     const VoronoiSystemBuildStage& getBuildStage() const { return *voronoiSystemBuildStage; }
     VoronoiRuntime& runtimeRef() { return runtime; }
     const VoronoiRuntime& runtimeRef() const { return runtime; }
-
-    void cleanupResources();
-    void cleanup();
 
 private:
     bool rebuildVoronoiRuntime();
@@ -61,6 +53,4 @@ private:
 
     std::unique_ptr<VoronoiSystemBuildStage> voronoiSystemBuildStage;
     std::unique_ptr<VoronoiCandidateCompute> voronoiCandidateCompute;
-
-    static constexpr int K_NEIGHBORS = 50;
 };

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "voronoi/VoronoiSystem.hpp"
+#include "voronoi/VoronoiConfig.hpp"
 #include "runtime/RuntimeProducts.hpp"
 #include "util/Units.hpp"
 
@@ -24,12 +25,10 @@ public:
         bool active = false;
         float cellSize = 0.005f;
         int voxelResolution = 128;
-        bool isPointDomain = false;
+        float contactRange = voronoi::DefaultContactRange;
         std::vector<glm::vec4> pointPositions;
         std::array<glm::vec3, 8> pointDomainCorners{};
 
-        // Global path
-        bool isGlobalDomain = false;
         float sdfPadding = 0.0f;
         std::vector<uint32_t> globalRemeshRuntimeModelIds;
         std::vector<std::vector<glm::vec3>> globalRemeshPositions;
@@ -46,18 +45,18 @@ public:
         CommandPool& commandPool);
 
     void apply(uint64_t socketKey, const Config& config);
-    bool buildProduct(uint64_t socketKey, VoronoiProduct& product) const;
+    bool buildProduct(uint64_t socketKey, VoronoiProduct& product);
     void remove(uint64_t socketKey);
     void disableAll();
-    std::vector<VoronoiSystem*> getActiveSystems() const;
+    VoronoiSystem* getSystem(uint64_t socketKey);
     const VoronoiSystem* getSystem(uint64_t socketKey) const;
-    const Config* getConfig(uint64_t socketKey) const;
+    bool isConfigured(uint64_t socketKey) const { return configuredHashes.find(socketKey) != configuredHashes.end(); }
 
 private:
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
     CommandPool& commandPool;
     std::unordered_map<uint64_t, std::unique_ptr<VoronoiSystem>> systemsBySocket;
-    std::unordered_map<uint64_t, Config> configuredConfigs;
+    std::unordered_map<uint64_t, uint64_t> configuredHashes;
     std::unordered_map<uint64_t, uint64_t> failedComputeHashes;
 };

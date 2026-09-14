@@ -2,6 +2,9 @@
 #include <Windows.h>
 #include "../HeatGlobalSolver.hpp"
 #include "HeatGlobalSolverKernels.cuh"
+#include "../../cuda/CudaBuffer.cuh"
+#include "../../cuda/CudaCheck.cuh"
+#include "../../cuda/CudaPcg.cuh"
 #include "../../cuda/CudaExternalBuffer.hpp"
 #include "../../cuda/CudaVulkanDevice.hpp"
 #include "../../vulkan/VulkanDevice.hpp"
@@ -11,13 +14,19 @@
 #include <vulkan/vulkan_win32.h>
 
 #include <algorithm>
-#include <cmath>
-#include <cstring>
 #include <iostream>
 #include <vector>
 
 class HeatGlobalSolver::Implementation {
 public:
+    struct DeviceTemperatureNodes {
+        float* d_temperatureA = nullptr;
+        float* d_temperatureB = nullptr;
+        cudaUtils::CudaBuffer<uint32_t> localNodeIds;
+        uint32_t solverNodeOffset = 0;
+        uint32_t nodeCount = 0;
+    };
+
     ~Implementation() { cleanup(); }
 
     bool initialize(
@@ -26,25 +35,23 @@ public:
         const std::vector<int>& columnIndices,
         const std::vector<float>& values,
         const std::vector<float>& masses,
-        const std::vector<ModelNodes>& inputModels,
-        const std::vector<heat::FixedRow>& inputFixedRows,
-        const std::vector<heat::FixedContribution>& inputFixedContributions,
-        uint32_t inputBoundaryValueCount) {
+        const std::vector<TemperatureNodes>& inputTemperatureNodes,
+        const std::vector<float>& rhsAdditions) {
         cleanup();
         if (masses.empty() || rowOffsets.size() != masses.size() + 1 ||
-            columnIndices.size() != values.size() || inputModels.empty()) {
+            columnIndices.size() != values.size() || inputTemperatureNodes.empty() ||
+            (!rhsAdditions.empty() && rhsAdditions.size() != masses.size())) {
             return false;
         }
 
         device = vulkanDevice.getDevice();
         nodeCount = static_cast<uint32_t>(masses.size());
-        boundaryValueCount = inputBoundaryValueCount;
 
         cudaDevice = cudaVulkan::findDevice(vulkanDevice.getPhysicalDevice());
-        if (cudaDevice < 0 || !cudaOk(cudaSetDevice(cudaDevice), "cudaSetDevice")) return false;
+        if (cudaDevice < 0 || !cudaUtils::cudaCheck(cudaSetDevice(cudaDevice), "cudaSetDevice")) return false;
 
-        if (!cudaOk(cudaStreamCreateWithFlags(&solveStream, cudaStreamNonBlocking), "create solveStream") ||
-            !cudaOk(cudaEventCreateWithFlags(&solveCompleteEvent, cudaEventDisableTiming), "create completeEvent")) {
+        if (!cudaUtils::cudaCheck(cudaStreamCreateWithFlags(&solveStream, cudaStreamNonBlocking), "create solveStream") ||
+            !cudaUtils::cudaCheck(cudaEventCreateWithFlags(&solveCompleteEvent, cudaEventDisableTiming), "create completeEvent")) {
             cleanup();
             return false;
         }
@@ -57,89 +64,70 @@ public:
             return false;
         }
 
-        // Import model CUDA external memory
-        models.reserve(inputModels.size());
-        for (const auto& inputModel : inputModels) {
-            if (!inputModel.externalA || !inputModel.externalB || !inputModel.temperatureA || !inputModel.temperatureB) {
+        // Import temperature CUDA external memory
+        temperatureNodes.reserve(inputTemperatureNodes.size());
+        for (const auto& inputNode : inputTemperatureNodes) {
+            if (!inputNode.externalA || !inputNode.externalB || !inputNode.temperatureA || !inputNode.temperatureB) {
                 cleanup();
                 return false;
             }
-            if (!inputModel.temperatureA->ensureMapped(*inputModel.externalA, cudaDevice) ||
-                !inputModel.temperatureB->ensureMapped(*inputModel.externalB, cudaDevice)) {
+            if (!inputNode.temperatureA->ensureMapped(*inputNode.externalA, cudaDevice) ||
+                !inputNode.temperatureB->ensureMapped(*inputNode.externalB, cudaDevice)) {
                 cleanup();
                 return false;
             }
 
-            DeviceModelNodes modelNode{};
-            modelNode.d_temperatureA = inputModel.temperatureA->getPointer();
-            modelNode.d_temperatureB = inputModel.temperatureB->getPointer();
-            modelNode.solverNodeOffset = inputModel.solverNodeOffset;
-            modelNode.nodeCount = static_cast<uint32_t>(inputModel.localNodeIds.size());
+            temperatureNodes.emplace_back();
+            auto& devNode = temperatureNodes.back();
+            devNode.d_temperatureA = inputNode.temperatureA->getPointer();
+            devNode.d_temperatureB = inputNode.temperatureB->getPointer();
+            devNode.solverNodeOffset = inputNode.solverNodeOffset;
+            devNode.nodeCount = static_cast<uint32_t>(inputNode.localNodeIds.size());
 
-            if (modelNode.nodeCount > 0) {
-                const size_t bytes = modelNode.nodeCount * sizeof(uint32_t);
-                if (!cudaOk(cudaMalloc(&modelNode.d_localNodeIds, bytes), "alloc localNodeIds") ||
-                    !cudaOk(cudaMemcpy(modelNode.d_localNodeIds, inputModel.localNodeIds.data(), bytes, cudaMemcpyHostToDevice), "upload localNodeIds")) {
+            if (devNode.nodeCount > 0) {
+                if (!devNode.localNodeIds.allocate(devNode.nodeCount) ||
+                    !devNode.localNodeIds.upload(inputNode.localNodeIds.data(), devNode.nodeCount)) {
                     cleanup();
                     return false;
                 }
             }
-            models.push_back(modelNode);
         }
 
         // Allocate CSR matrix and vector memory
         matrixValueCount = static_cast<uint32_t>(values.size());
-        const size_t rowOffsetBytes = rowOffsets.size() * sizeof(int);
-        const size_t colIndexBytes = columnIndices.size() * sizeof(int);
-        const size_t valueBytes = values.size() * sizeof(float);
-        const size_t nodeBytes = nodeCount * sizeof(float);
 
-        if (!cudaOk(cudaMalloc(&d_rowOffsets, rowOffsetBytes), "alloc d_rowOffsets") ||
-            !cudaOk(cudaMalloc(&d_columnIndices, colIndexBytes), "alloc d_columnIndices") ||
-            !cudaOk(cudaMalloc(&d_values, valueBytes), "alloc d_values") ||
-            !cudaOk(cudaMalloc(&d_invDiag, nodeBytes), "alloc d_invDiag") ||
-            !cudaOk(cudaMalloc(&d_thermalMasses, nodeBytes), "alloc d_thermalMasses") ||
-            !cudaOk(cudaMalloc(&d_rhs, nodeBytes), "alloc d_rhs") ||
-            !cudaOk(cudaMalloc(&d_x, nodeBytes), "alloc d_x") ||
-            !cudaOk(cudaMalloc(&d_r, nodeBytes), "alloc d_r") ||
-            !cudaOk(cudaMalloc(&d_z, nodeBytes), "alloc d_z") ||
-            !cudaOk(cudaMalloc(&d_p, nodeBytes), "alloc d_p") ||
-            !cudaOk(cudaMalloc(&d_Ap, nodeBytes), "alloc d_Ap") ||
-            !cudaOk(cudaMalloc(&d_status, sizeof(heat::globalsolver::PcgStatus)), "alloc d_status")) {
+        if (!d_rowOffsets.allocate(static_cast<uint32_t>(rowOffsets.size())) ||
+            !d_columnIndices.allocate(matrixValueCount) ||
+            !d_values.allocate(matrixValueCount) ||
+            !d_invDiag.allocate(nodeCount) ||
+            !d_thermalMasses.allocate(nodeCount) ||
+            !d_rhsAdditions.allocate(nodeCount) ||
+            !d_rhs.allocate(nodeCount) ||
+            !d_x.allocate(nodeCount) ||
+            !d_r.allocate(nodeCount) ||
+            !d_z.allocate(nodeCount) ||
+            !d_p.allocate(nodeCount) ||
+            !d_Ap.allocate(nodeCount) ||
+            !d_status.allocate(1)) {
             cleanup();
             return false;
         }
 
-        if (!cudaOk(cudaMemcpy(d_rowOffsets, rowOffsets.data(), rowOffsetBytes, cudaMemcpyHostToDevice), "upload d_rowOffsets") ||
-            !cudaOk(cudaMemcpy(d_columnIndices, columnIndices.data(), colIndexBytes, cudaMemcpyHostToDevice), "upload d_columnIndices") ||
-            !cudaOk(cudaMemcpy(d_values, values.data(), valueBytes, cudaMemcpyHostToDevice), "upload d_values") ||
-            !cudaOk(cudaMemcpy(d_thermalMasses, masses.data(), nodeBytes, cudaMemcpyHostToDevice), "upload d_thermalMasses")) {
+        if (!d_rowOffsets.upload(rowOffsets.data(), static_cast<uint32_t>(rowOffsets.size())) ||
+            !d_columnIndices.upload(columnIndices.data(), matrixValueCount) ||
+            !d_values.upload(values.data(), matrixValueCount) ||
+            !d_thermalMasses.upload(masses.data(), nodeCount)) {
             cleanup();
             return false;
         }
 
-        // Allocate dynamic capacity buffers
-        bool pointersReallocated = false;
-        if (!ensureDynamicCapacity(
-                static_cast<uint32_t>(inputFixedRows.size()),
-                static_cast<uint32_t>(inputFixedContributions.size()),
-                boundaryValueCount,
-                pointersReallocated)) {
-            cleanup();
-            return false;
-        }
-
-        if (!inputFixedRows.empty()) {
-            const size_t bytes = inputFixedRows.size() * sizeof(heat::FixedRow);
-            if (!cudaOk(cudaMemcpy(d_fixedRows, inputFixedRows.data(), bytes, cudaMemcpyHostToDevice), "upload d_fixedRows")) {
+        if (!rhsAdditions.empty()) {
+            if (!d_rhsAdditions.upload(rhsAdditions.data(), nodeCount)) {
                 cleanup();
                 return false;
             }
-        }
-
-        if (!inputFixedContributions.empty()) {
-            const size_t bytes = inputFixedContributions.size() * sizeof(heat::FixedContribution);
-            if (!cudaOk(cudaMemcpy(d_fixedContributions, inputFixedContributions.data(), bytes, cudaMemcpyHostToDevice), "upload d_fixedContributions")) {
+        } else {
+            if (!cudaUtils::cudaCheck(cudaMemset(d_rhsAdditions.get(), 0, nodeCount * sizeof(float)), "zero d_rhsAdditions")) {
                 cleanup();
                 return false;
             }
@@ -148,8 +136,8 @@ public:
         // Compute initial Jacobi inverse diagonal
         const uint32_t gridNodes = (nodeCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
         heat::globalsolver::computeInvDiagKernel<<<gridNodes, heat::globalsolver::BlockSize, 0, solveStream>>>(
-            nodeCount, d_rowOffsets, d_columnIndices, d_values, d_invDiag);
-        if (!cudaOk(cudaStreamSynchronize(solveStream), "computeInvDiagKernel")) {
+            nodeCount, d_rowOffsets.get(), d_columnIndices.get(), d_values.get(), d_invDiag.get());
+        if (!cudaUtils::cudaCheck(cudaStreamSynchronize(solveStream), "computeInvDiagKernel")) {
             cleanup();
             return false;
         }
@@ -164,98 +152,97 @@ public:
         return true;
     }
 
-    bool ensureDynamicCapacity(uint32_t rowCount, uint32_t contribCount, uint32_t bCount, bool& pointersReallocated) {
-        pointersReallocated = false;
-        if (rowCount > fixedRowCapacity) {
-            if (d_fixedRows) cudaFree(d_fixedRows);
-            d_fixedRows = nullptr;
-            fixedRowCapacity = rowCount + 64;
-            if (!cudaOk(cudaMalloc(&d_fixedRows, fixedRowCapacity * sizeof(heat::FixedRow)), "alloc d_fixedRows")) return false;
-            pointersReallocated = true;
-        }
-        if (contribCount > fixedContributionCapacity) {
-            if (d_fixedContributions) cudaFree(d_fixedContributions);
-            d_fixedContributions = nullptr;
-            fixedContributionCapacity = contribCount + 128;
-            if (!cudaOk(cudaMalloc(&d_fixedContributions, fixedContributionCapacity * sizeof(heat::FixedContribution)), "alloc d_fixedContributions")) return false;
-            pointersReallocated = true;
-        }
-        if (bCount > boundaryCapacity) {
-            if (d_boundaryTemperatures) cudaFree(d_boundaryTemperatures);
-            d_boundaryTemperatures = nullptr;
-            boundaryCapacity = bCount + 16;
-            if (!cudaOk(cudaMalloc(&d_boundaryTemperatures, boundaryCapacity * sizeof(float)), "alloc d_boundaryTemperatures")) return false;
-            pointersReallocated = true;
-        }
-        if (bCount > pinnedBoundaryCapacity) {
-            if (h_pinnedBoundary) cudaFreeHost(h_pinnedBoundary);
-            h_pinnedBoundary = nullptr;
-            pinnedBoundaryCapacity = bCount + 16;
-            if (!cudaOk(cudaHostAlloc(&h_pinnedBoundary, pinnedBoundaryCapacity * sizeof(float), cudaHostAllocDefault), "alloc h_pinnedBoundary")) return false;
-        }
-        return true;
-    }
-
     bool updateValues(
         const std::vector<float>& values,
         const std::vector<float>& masses,
-        const std::vector<heat::FixedRow>& inputFixedRows,
-        const std::vector<heat::FixedContribution>& inputFixedContributions,
-        uint32_t inputBoundaryValueCount) {
+        const std::vector<float>& rhsAdditions) {
         if (!initialized) return false;
         waitIdle();
         cudaSetDevice(cudaDevice);
 
-        if (values.size() != matrixValueCount) return false;
-        if (!cudaOk(cudaMemcpy(d_values, values.data(), values.size() * sizeof(float), cudaMemcpyHostToDevice), "update d_values")) {
+        if (values.size() != matrixValueCount || masses.size() != nodeCount ||
+            (!rhsAdditions.empty() && rhsAdditions.size() != nodeCount)) {
             return false;
         }
 
-        if (masses.size() == nodeCount) {
-            if (!cudaOk(cudaMemcpyAsync(d_thermalMasses, masses.data(), nodeCount * sizeof(float), cudaMemcpyHostToDevice, solveStream), "upload d_thermalMasses")) {
+        if (!d_values.upload(values.data(), matrixValueCount)) {
+            return false;
+        }
+
+        if (!d_thermalMasses.uploadAsync(masses.data(), nodeCount, solveStream)) {
+            return false;
+        }
+
+        if (!rhsAdditions.empty()) {
+            if (!d_rhsAdditions.uploadAsync(rhsAdditions.data(), nodeCount, solveStream)) {
+                return false;
+            }
+        } else {
+            if (!cudaUtils::cudaCheck(cudaMemsetAsync(d_rhsAdditions.get(), 0, nodeCount * sizeof(float), solveStream), "zero d_rhsAdditions")) {
                 return false;
             }
         }
 
         const uint32_t gridNodes = (nodeCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
         heat::globalsolver::computeInvDiagKernel<<<gridNodes, heat::globalsolver::BlockSize, 0, solveStream>>>(
-            nodeCount, d_rowOffsets, d_columnIndices, d_values, d_invDiag);
+            nodeCount, d_rowOffsets.get(), d_columnIndices.get(), d_values.get(), d_invDiag.get());
 
-        bool pointersReallocated = false;
-        if (!ensureDynamicCapacity(
-                static_cast<uint32_t>(inputFixedRows.size()),
-                static_cast<uint32_t>(inputFixedContributions.size()),
-                inputBoundaryValueCount,
-                pointersReallocated)) {
-            return false;
-        }
+        return cudaUtils::cudaCheck(cudaStreamSynchronize(solveStream), "sync updateValues");
+    }
 
-        boundaryValueCount = inputBoundaryValueCount;
+    bool configureAdvectionTopology(
+        const std::vector<heat::AdvectionFace>& faces,
+        const std::vector<heat::AdvectionBoundaryFace>& boundaryFaces,
+        const float* deviceFaceFlux,
+        const float* deviceBoundaryFlux) {
+        if (!initialized) return false;
+        waitIdle();
+        cudaSetDevice(cudaDevice);
 
-        if (!inputFixedRows.empty()) {
-            const size_t bytes = inputFixedRows.size() * sizeof(heat::FixedRow);
-            if (!cudaOk(cudaMemcpyAsync(d_fixedRows, inputFixedRows.data(), bytes, cudaMemcpyHostToDevice, solveStream), "upload d_fixedRows")) {
+        advectionFaceCount = static_cast<uint32_t>(faces.size());
+        advectionBoundaryFaceCount = static_cast<uint32_t>(boundaryFaces.size());
+        d_advectionFaceFlux = deviceFaceFlux;
+        d_advectionBoundaryFlux = deviceBoundaryFlux;
+
+        d_advectionFaces.reset();
+        if (advectionFaceCount > 0) {
+            if (!d_advectionFaces.allocate(advectionFaceCount) ||
+                !d_advectionFaces.uploadAsync(faces.data(), advectionFaceCount, solveStream)) {
                 return false;
             }
         }
-        if (!inputFixedContributions.empty()) {
-            const size_t bytes = inputFixedContributions.size() * sizeof(heat::FixedContribution);
-            if (!cudaOk(cudaMemcpyAsync(d_fixedContributions, inputFixedContributions.data(), bytes, cudaMemcpyHostToDevice, solveStream), "upload d_fixedContributions")) {
+
+        d_advectionBoundaryFaces.reset();
+        if (advectionBoundaryFaceCount > 0) {
+            if (!d_advectionBoundaryFaces.allocate(advectionBoundaryFaceCount) ||
+                !d_advectionBoundaryFaces.uploadAsync(boundaryFaces.data(), advectionBoundaryFaceCount, solveStream)) {
                 return false;
             }
         }
 
-        if (pointersReallocated) {
-            destroyGraphs();
-            if (!buildGraphs()) return false;
+        if (nodeCount > 0) {
+            if (d_advectionDeltaT.size() < nodeCount && !d_advectionDeltaT.allocate(nodeCount)) {
+                return false;
+            }
+            if (!cudaUtils::cudaCheck(cudaMemsetAsync(d_advectionDeltaT.get(), 0, nodeCount * sizeof(float), solveStream), "zero d_advectionDeltaT")) {
+                return false;
+            }
         }
 
-        return cudaOk(cudaStreamSynchronize(solveStream), "sync updateValues");
+        return cudaUtils::cudaCheck(cudaStreamSynchronize(solveStream), "sync configureAdvectionTopology");
+    }
+
+    void updateAdvectionStep(
+        float inletTemperatureC,
+        uint32_t subcycleCount,
+        float subcycleDt) {
+        advectionInletTemperatureC = inletTemperatureC;
+        advectionSubcycleCount = std::max(1u, subcycleCount);
+        advectionSubcycleDt = subcycleDt;
     }
 
     bool launch(
         bool sourceIsA,
-        const std::vector<float>& boundaryTemperatures,
         uint64_t destinationVulkanReleaseValue,
         uint64_t cudaReadyValue) {
         if (!initialized) return false;
@@ -265,30 +252,53 @@ public:
         if (destinationVulkanReleaseValue > 0) {
             cudaExternalSemaphoreWaitParams waitParams{};
             waitParams.params.fence.value = destinationVulkanReleaseValue;
-            if (!cudaOk(cudaWaitExternalSemaphoresAsync(&vulkanReleaseSemaphore, &waitParams, 1, solveStream), "wait Vulkan release")) {
+            if (!cudaUtils::cudaCheck(cudaWaitExternalSemaphoresAsync(&vulkanReleaseSemaphore, &waitParams, 1, solveStream), "wait Vulkan release")) {
                 return false;
             }
         }
 
-        // Upload boundary temperatures 
-        if (boundaryValueCount > 0 && !boundaryTemperatures.empty() && h_pinnedBoundary && d_boundaryTemperatures) {
-            const size_t count = std::min(size_t(boundaryValueCount), boundaryTemperatures.size());
-            std::memcpy(h_pinnedBoundary, boundaryTemperatures.data(), count * sizeof(float));
-            if (!cudaOk(cudaMemcpyAsync(
-                    d_boundaryTemperatures, h_pinnedBoundary, count * sizeof(float),
-                    cudaMemcpyHostToDevice, solveStream), "upload boundary temps")) {
-                return false;
+        const uint32_t gridNodes = (nodeCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
+
+        // Gather source temperature into d_x
+        for (const auto& node : temperatureNodes) {
+            const uint32_t blocks = (node.nodeCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
+            heat::globalsolver::gatherTemperaturesKernel<<<blocks, heat::globalsolver::BlockSize, 0, solveStream>>>(
+                sourceIsA ? node.d_temperatureA : node.d_temperatureB,
+                node.localNodeIds.get(), node.nodeCount, node.solverNodeOffset,
+                d_x.get());
+        }
+
+        // Subcycled explicit upwind advection on fluid temperature components of d_x
+        if ((advectionFaceCount > 0 || advectionBoundaryFaceCount > 0) && d_advectionDeltaT.get()) {
+            const uint32_t faceBlocks = (advectionFaceCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
+            const uint32_t bfaceBlocks = (advectionBoundaryFaceCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
+
+            for (uint32_t sub = 0; sub < advectionSubcycleCount; ++sub) {
+                if (advectionFaceCount > 0 && d_advectionFaceFlux) {
+                    heat::globalsolver::advectFluidKernel<<<faceBlocks, heat::globalsolver::BlockSize, 0, solveStream>>>(
+                        advectionFaceCount, d_advectionFaces.get(), d_advectionFaceFlux, d_advectionDeltaT.get(), d_x.get(), advectionSubcycleDt);
+                }
+                if (advectionBoundaryFaceCount > 0 && d_advectionBoundaryFlux) {
+                    heat::globalsolver::advectBoundaryKernel<<<bfaceBlocks, heat::globalsolver::BlockSize, 0, solveStream>>>(
+                        advectionBoundaryFaceCount, d_advectionBoundaryFaces.get(), d_advectionBoundaryFlux, d_advectionDeltaT.get(), d_x.get(), advectionInletTemperatureC, advectionSubcycleDt);
+                }
+                heat::globalsolver::applyAdvectionUpdatesKernel<<<gridNodes, heat::globalsolver::BlockSize, 0, solveStream>>>(
+                    nodeCount, d_x.get(), d_advectionDeltaT.get());
             }
         }
 
-        // Launch the solver graph
+        // Build authoritative RHS: rhs = thermalMasses * x + rhsAdditions
+        heat::globalsolver::buildRhsKernel<<<gridNodes, heat::globalsolver::BlockSize, 0, solveStream>>>(
+            nodeCount, d_thermalMasses.get(), d_x.get(), d_rhsAdditions.get(), d_rhs.get());
+
+        // Launch the PCG solver graph
         cudaGraphExec_t graphExec = sourceIsA ? graphExecAToB : graphExecBToA;
         if (graphExec) {
-            if (!cudaOk(cudaGraphLaunch(graphExec, solveStream), "launch CUDA graph")) {
+            if (!cudaUtils::cudaCheck(cudaGraphLaunch(graphExec, solveStream), "launch CUDA graph")) {
                 return false;
             }
         } else {
-            recordSolveSequence(sourceIsA, solveStream);
+            recordPcgSequence(sourceIsA, solveStream);
         }
 
         // Record completion polling event
@@ -298,7 +308,7 @@ public:
         if (cudaReadyValue > 0) {
             cudaExternalSemaphoreSignalParams signalParams{};
             signalParams.params.fence.value = cudaReadyValue;
-            if (!cudaOk(cudaSignalExternalSemaphoresAsync(&cudaReadySemaphore, &signalParams, 1, solveStream), "signal CUDA ready")) {
+            if (!cudaUtils::cudaCheck(cudaSignalExternalSemaphoresAsync(&cudaReadySemaphore, &signalParams, 1, solveStream), "signal CUDA ready")) {
                 return false;
             }
         }
@@ -306,7 +316,7 @@ public:
         return true;
     }
 
-    SolvePollResult poll() {
+    SolvePollResult poll() const {
         if (!initialized || !solveCompleteEvent) return SolvePollResult::Complete;
         const cudaError_t status = cudaEventQuery(solveCompleteEvent);
         if (status == cudaSuccess) {
@@ -327,10 +337,12 @@ public:
     }
 
     bool hasSolveFailed() const {
-        if (!d_status) return false;
-        heat::globalsolver::PcgStatus hostStatus{};
-        if (cudaMemcpy(&hostStatus, d_status, sizeof(heat::globalsolver::PcgStatus), cudaMemcpyDeviceToHost) == cudaSuccess) {
-            return hostStatus.failed != 0;
+        if (!d_status.get()) return false;
+        cudaPcg::PcgStatus hostStatus{};
+        if (cudaMemcpy(&hostStatus, d_status.get(), sizeof(cudaPcg::PcgStatus), cudaMemcpyDeviceToHost) == cudaSuccess) {
+            return hostStatus.failed != 0 ||
+                   (hostStatus.converged == 0 &&
+                    hostStatus.iterationCount >= heat::globalsolver::MaxIterations);
         }
         return false;
     }
@@ -346,37 +358,40 @@ public:
     }
 
     void cleanup() {
+        if (cudaDevice >= 0) {
+            cudaSetDevice(cudaDevice);
+        }
         waitIdle();
         destroyGraphs();
         if (solveCompleteEvent) { cudaEventDestroy(solveCompleteEvent); solveCompleteEvent = nullptr; }
         if (solveStream) { cudaStreamDestroy(solveStream); solveStream = nullptr; }
 
-        if (d_rowOffsets) { cudaFree(d_rowOffsets); d_rowOffsets = nullptr; }
-        if (d_columnIndices) { cudaFree(d_columnIndices); d_columnIndices = nullptr; }
-        if (d_values) { cudaFree(d_values); d_values = nullptr; }
-        if (d_invDiag) { cudaFree(d_invDiag); d_invDiag = nullptr; }
-        if (d_thermalMasses) { cudaFree(d_thermalMasses); d_thermalMasses = nullptr; }
-        if (d_rhs) { cudaFree(d_rhs); d_rhs = nullptr; }
-        if (d_x) { cudaFree(d_x); d_x = nullptr; }
-        if (d_r) { cudaFree(d_r); d_r = nullptr; }
-        if (d_z) { cudaFree(d_z); d_z = nullptr; }
-        if (d_p) { cudaFree(d_p); d_p = nullptr; }
-        if (d_Ap) { cudaFree(d_Ap); d_Ap = nullptr; }
-        if (d_status) { cudaFree(d_status); d_status = nullptr; }
-        if (d_fixedRows) { cudaFree(d_fixedRows); d_fixedRows = nullptr; }
-        if (d_fixedContributions) { cudaFree(d_fixedContributions); d_fixedContributions = nullptr; }
-        if (d_boundaryTemperatures) { cudaFree(d_boundaryTemperatures); d_boundaryTemperatures = nullptr; }
-        if (h_pinnedBoundary) { cudaFreeHost(h_pinnedBoundary); h_pinnedBoundary = nullptr; }
+        d_rowOffsets.reset();
+        d_columnIndices.reset();
+        d_values.reset();
+        d_invDiag.reset();
+        d_thermalMasses.reset();
+        d_rhs.reset();
+        d_x.reset();
+        d_r.reset();
+        d_z.reset();
+        d_p.reset();
+        d_Ap.reset();
+        d_status.reset();
+        d_rhsAdditions.reset();
+        d_advectionFaces.reset();
+        d_advectionBoundaryFaces.reset();
+        d_advectionDeltaT.reset();
 
-        fixedRowCapacity = 0;
-        fixedContributionCapacity = 0;
-        boundaryCapacity = 0;
-        pinnedBoundaryCapacity = 0;
+        advectionFaceCount = 0;
+        advectionBoundaryFaceCount = 0;
+        d_advectionFaceFlux = nullptr;
+        d_advectionBoundaryFlux = nullptr;
+        advectionInletTemperatureC = 0.0f;
+        advectionSubcycleCount = 1;
+        advectionSubcycleDt = 0.0f;
 
-        for (auto& model : models) {
-            if (model.d_localNodeIds) { cudaFree(model.d_localNodeIds); model.d_localNodeIds = nullptr; }
-        }
-        models.clear();
+        temperatureNodes.clear();
 
         if (cudaReadySemaphore) { cudaDestroyExternalSemaphore(cudaReadySemaphore); cudaReadySemaphore = nullptr; }
         if (vulkanReleaseSemaphore) { cudaDestroyExternalSemaphore(vulkanReleaseSemaphore); vulkanReleaseSemaphore = nullptr; }
@@ -393,91 +408,38 @@ public:
         }
 
         device = VK_NULL_HANDLE;
+        cudaDevice = -1;
         nodeCount = 0;
         matrixValueCount = 0;
-        boundaryValueCount = 0;
         initialized = false;
     }
 
 private:
-    struct DeviceModelNodes {
-        float* d_temperatureA = nullptr;
-        float* d_temperatureB = nullptr;
-        uint32_t* d_localNodeIds = nullptr;
-        uint32_t solverNodeOffset = 0;
-        uint32_t nodeCount = 0;
-    };
-
-    static bool cudaOk(cudaError_t result, const char* operation) {
-        if (result == cudaSuccess) return true;
-        std::cerr << "[HeatGlobalSolver] CUDA " << operation << " failed: " << cudaGetErrorString(result) << std::endl;
-        return false;
-    }
-
-    void recordSolveSequence(bool sourceIsA, cudaStream_t stream) {
-        const uint32_t gridNodes = (nodeCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
-        const uint32_t reduceBlocks = std::min(gridNodes, 64u);
-
-        // Gather source temperature and build initial RHS
-        for (const auto& model : models) {
-            const uint32_t blocks = (model.nodeCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
-            heat::globalsolver::gatherTemperaturesAndBuildRhsKernel<<<blocks, heat::globalsolver::BlockSize, 0, stream>>>(
-                sourceIsA ? model.d_temperatureA : model.d_temperatureB,
-                model.d_localNodeIds, model.nodeCount, model.solverNodeOffset,
-                d_thermalMasses, d_x, d_rhs);
-        }
-
-        // Add fixed boundary contributions
-        if (boundaryValueCount > 0 && d_fixedContributions && d_fixedRows) {
-            heat::globalsolver::addFixedContributionsKernel<<<gridNodes, heat::globalsolver::BlockSize, 0, stream>>>(
-                nodeCount, d_fixedRows, d_fixedContributions, d_boundaryTemperatures, d_rhs);
-        }
-
-        // Compute initial Ap0 = A * x0
-        heat::globalsolver::csrSpmvKernel<<<gridNodes, heat::globalsolver::BlockSize, 0, stream>>>(
-            nodeCount, d_rowOffsets, d_columnIndices, d_values, d_x, d_Ap, nullptr);
-
-        // Initialize r = rhs - Ap0, z = invDiag * r, p = z
-        heat::globalsolver::initResidualAndJacobiKernel<<<gridNodes, heat::globalsolver::BlockSize, 0, stream>>>(
-            nodeCount, d_rhs, d_Ap, d_invDiag, d_r, d_z, d_p, d_status);
-
-        // Initial dot products: rz = r^T z, residual0 = ||r||_2
-        heat::globalsolver::reduceInitDotProductsKernel<<<reduceBlocks, heat::globalsolver::BlockSize, 0, stream>>>(
-            nodeCount, d_r, d_z, d_status);
-        heat::globalsolver::finalizeInitDotKernel<<<1, 1, 0, stream>>>(d_status);
-
-        // PCG Iterations
-        for (uint32_t iter = 0; iter < heat::globalsolver::MaxIterations; ++iter) {
-            // Ap = A * p
-            heat::globalsolver::csrSpmvKernel<<<gridNodes, heat::globalsolver::BlockSize, 0, stream>>>(
-                nodeCount, d_rowOffsets, d_columnIndices, d_values, d_p, d_Ap, d_status);
-
-            // pAp = p^T * Ap
-            heat::globalsolver::reducePApKernel<<<reduceBlocks, heat::globalsolver::BlockSize, 0, stream>>>(
-                nodeCount, d_p, d_Ap, d_status);
-
-            // alpha = rz / pAp
-            heat::globalsolver::computeAlphaKernel<<<1, 1, 0, stream>>>(d_status);
-
-            // x = x + alpha * p, r = r - alpha * Ap, z = invDiag * r, sum(rzNew), sum(r^2)
-            heat::globalsolver::updateXAndRKernel<<<reduceBlocks, heat::globalsolver::BlockSize, 0, stream>>>(
-                nodeCount, d_p, d_Ap, d_invDiag, d_x, d_r, d_z, d_status);
-
-            // Check convergence & compute beta = rzNew / rz
-            heat::globalsolver::checkConvergenceAndComputeBetaKernel<<<1, 1, 0, stream>>>(
-                d_status, heat::globalsolver::ConvergenceTolerance, iter);
-
-            // p = z + beta * p
-            heat::globalsolver::updatePKernel<<<gridNodes, heat::globalsolver::BlockSize, 0, stream>>>(
-                nodeCount, d_z, d_p, d_status);
-        }
+    void recordPcgSequence(bool sourceIsA, cudaStream_t stream) {
+        cudaPcg::recordPcgSolve(
+            stream,
+            nodeCount,
+            d_rowOffsets.get(),
+            d_columnIndices.get(),
+            d_values.get(),
+            d_invDiag.get(),
+            d_x.get(),
+            d_rhs.get(),
+            d_Ap.get(),
+            d_r.get(),
+            d_z.get(),
+            d_p.get(),
+            d_status.get(),
+            heat::globalsolver::MaxIterations,
+            heat::globalsolver::ConvergenceTolerance,
+            true);
 
         // Scatter solution into alternate destination buffer
-        for (const auto& model : models) {
-            const uint32_t blocks = (model.nodeCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
+        for (const auto& node : temperatureNodes) {
+            const uint32_t blocks = (node.nodeCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
             heat::globalsolver::scatterTemperaturesKernel<<<blocks, heat::globalsolver::BlockSize, 0, stream>>>(
-                d_x, model.solverNodeOffset, model.d_localNodeIds, model.nodeCount,
-                sourceIsA ? model.d_temperatureB : model.d_temperatureA);
+                d_x.get(), node.solverNodeOffset, node.localNodeIds.get(), node.nodeCount,
+                sourceIsA ? node.d_temperatureB : node.d_temperatureA);
         }
     }
 
@@ -485,16 +447,16 @@ private:
         if (!solveStream) return false;
 
         // Capture Graph A -> B
-        if (!cudaOk(cudaStreamBeginCapture(solveStream, cudaStreamCaptureModeGlobal), "begin capture A->B")) return false;
-        recordSolveSequence(true, solveStream);
-        if (!cudaOk(cudaStreamEndCapture(solveStream, &graphAToB), "end capture A->B")) return false;
-        if (!cudaOk(cudaGraphInstantiate(&graphExecAToB, graphAToB, nullptr, nullptr, 0), "instantiate graph A->B")) return false;
+        if (!cudaUtils::cudaCheck(cudaStreamBeginCapture(solveStream, cudaStreamCaptureModeGlobal), "begin capture A->B")) return false;
+        recordPcgSequence(true, solveStream);
+        if (!cudaUtils::cudaCheck(cudaStreamEndCapture(solveStream, &graphAToB), "end capture A->B")) return false;
+        if (!cudaUtils::cudaCheck(cudaGraphInstantiate(&graphExecAToB, graphAToB, nullptr, nullptr, 0), "instantiate graph A->B")) return false;
 
         // Capture Graph B -> A
-        if (!cudaOk(cudaStreamBeginCapture(solveStream, cudaStreamCaptureModeGlobal), "begin capture B->A")) return false;
-        recordSolveSequence(false, solveStream);
-        if (!cudaOk(cudaStreamEndCapture(solveStream, &graphBToA), "end capture B->A")) return false;
-        if (!cudaOk(cudaGraphInstantiate(&graphExecBToA, graphBToA, nullptr, nullptr, 0), "instantiate graph B->A")) return false;
+        if (!cudaUtils::cudaCheck(cudaStreamBeginCapture(solveStream, cudaStreamCaptureModeGlobal), "begin capture B->A")) return false;
+        recordPcgSequence(false, solveStream);
+        if (!cudaUtils::cudaCheck(cudaStreamEndCapture(solveStream, &graphBToA), "end capture B->A")) return false;
+        if (!cudaUtils::cudaCheck(cudaGraphInstantiate(&graphExecBToA, graphBToA, nullptr, nullptr, 0), "instantiate graph B->A")) return false;
 
         return true;
     }
@@ -528,9 +490,8 @@ private:
         descriptor.type = cudaExternalSemaphoreHandleTypeTimelineSemaphoreWin32;
         descriptor.handle.win32.handle = handle;
         const cudaError_t result = cudaImportExternalSemaphore(&cudaSem, &descriptor);
-        DWORD handleFlags = 0;
-        if (GetHandleInformation(handle, &handleFlags)) CloseHandle(handle);
-        return cudaOk(result, "import timeline semaphore");
+        if (handle) CloseHandle(handle);
+        return cudaUtils::cudaCheck(result, "import timeline semaphore");
     }
 
     VkDevice device = VK_NULL_HANDLE;
@@ -549,34 +510,35 @@ private:
     cudaGraph_t graphBToA = nullptr;
     cudaGraphExec_t graphExecBToA = nullptr;
 
-    int* d_rowOffsets = nullptr;
-    int* d_columnIndices = nullptr;
-    float* d_values = nullptr;
-    float* d_invDiag = nullptr;
-    float* d_thermalMasses = nullptr;
-    float* d_rhs = nullptr;
-    float* d_x = nullptr;
-    float* d_r = nullptr;
-    float* d_z = nullptr;
-    float* d_p = nullptr;
-    float* d_Ap = nullptr;
-    heat::globalsolver::PcgStatus* d_status = nullptr;
+    cudaUtils::CudaBuffer<int> d_rowOffsets;
+    cudaUtils::CudaBuffer<int> d_columnIndices;
+    cudaUtils::CudaBuffer<float> d_values;
+    cudaUtils::CudaBuffer<float> d_invDiag;
+    cudaUtils::CudaBuffer<float> d_thermalMasses;
+    cudaUtils::CudaBuffer<float> d_rhsAdditions;
+    cudaUtils::CudaBuffer<float> d_rhs;
+    cudaUtils::CudaBuffer<float> d_x;
+    cudaUtils::CudaBuffer<float> d_r;
+    cudaUtils::CudaBuffer<float> d_z;
+    cudaUtils::CudaBuffer<float> d_p;
+    cudaUtils::CudaBuffer<float> d_Ap;
+    cudaUtils::CudaBuffer<cudaPcg::PcgStatus> d_status;
 
-    heat::FixedRow* d_fixedRows = nullptr;
-    heat::FixedContribution* d_fixedContributions = nullptr;
-    float* d_boundaryTemperatures = nullptr;
-    float* h_pinnedBoundary = nullptr;
+    cudaUtils::CudaBuffer<heat::AdvectionFace> d_advectionFaces;
+    uint32_t advectionFaceCount = 0;
+    cudaUtils::CudaBuffer<heat::AdvectionBoundaryFace> d_advectionBoundaryFaces;
+    uint32_t advectionBoundaryFaceCount = 0;
+    const float* d_advectionFaceFlux = nullptr;
+    const float* d_advectionBoundaryFlux = nullptr;
+    float advectionInletTemperatureC = 0.0f;
+    cudaUtils::CudaBuffer<float> d_advectionDeltaT;
+    uint32_t advectionSubcycleCount = 1;
+    float advectionSubcycleDt = 0.0f;
 
-    uint32_t fixedRowCapacity = 0;
-    uint32_t fixedContributionCapacity = 0;
-    uint32_t boundaryCapacity = 0;
-    uint32_t pinnedBoundaryCapacity = 0;
-
-    std::vector<DeviceModelNodes> models;
+    std::vector<DeviceTemperatureNodes> temperatureNodes;
 
     uint32_t nodeCount = 0;
     uint32_t matrixValueCount = 0;
-    uint32_t boundaryValueCount = 0;
     bool initialized = false;
 };
 
@@ -589,22 +551,19 @@ bool HeatGlobalSolver::initialize(
     const std::vector<int>& columnIndices,
     const std::vector<float>& values,
     const std::vector<float>& thermalMasses,
-    const std::vector<ModelNodes>& models,
-    const std::vector<FixedRow>& fixedRows,
-    const std::vector<FixedContribution>& fixedContributions,
-    uint32_t boundaryValueCount) {
+    const std::vector<TemperatureNodes>& temperatureNodes,
+    const std::vector<float>& rhsAdditions) {
     return implementation->initialize(
         vulkanDevice, rowOffsets, columnIndices, values, thermalMasses,
-        models, fixedRows, fixedContributions, boundaryValueCount);
+        temperatureNodes, rhsAdditions);
 }
 
 bool HeatGlobalSolver::launch(
     bool sourceIsA,
-    const std::vector<float>& boundaryTemperaturesC,
     uint64_t destinationVulkanReleaseValue,
     uint64_t cudaReadyValue) {
     return implementation->launch(
-        sourceIsA, boundaryTemperaturesC, destinationVulkanReleaseValue, cudaReadyValue);
+        sourceIsA, destinationVulkanReleaseValue, cudaReadyValue);
 }
 
 HeatGlobalSolver::SolvePollResult HeatGlobalSolver::poll() const {
@@ -618,10 +577,8 @@ void HeatGlobalSolver::waitIdle() {
 bool HeatGlobalSolver::updateValues(
     const std::vector<float>& values,
     const std::vector<float>& thermalMasses,
-    const std::vector<FixedRow>& fixedRows,
-    const std::vector<FixedContribution>& fixedContributions,
-    uint32_t boundaryValueCount) {
-    return implementation->updateValues(values, thermalMasses, fixedRows, fixedContributions, boundaryValueCount);
+    const std::vector<float>& rhsAdditions) {
+    return implementation->updateValues(values, thermalMasses, rhsAdditions);
 }
 
 VkSemaphore HeatGlobalSolver::getCudaReadySemaphore() const {
@@ -638,4 +595,21 @@ bool HeatGlobalSolver::hasSolveFailed() const {
 
 void HeatGlobalSolver::cleanup() {
     implementation->cleanup();
+}
+
+bool HeatGlobalSolver::configureAdvectionTopology(
+    const std::vector<heat::AdvectionFace>& faces,
+    const std::vector<heat::AdvectionBoundaryFace>& boundaryFaces,
+    const float* deviceFaceFlux,
+    const float* deviceBoundaryFlux) {
+    return implementation ? implementation->configureAdvectionTopology(faces, boundaryFaces, deviceFaceFlux, deviceBoundaryFlux) : false;
+}
+
+void HeatGlobalSolver::updateAdvectionStep(
+    float inletTemperatureC,
+    uint32_t subcycleCount,
+    float subcycleDt) {
+    if (implementation) {
+        implementation->updateAdvectionStep(inletTemperatureC, subcycleCount, subcycleDt);
+    }
 }

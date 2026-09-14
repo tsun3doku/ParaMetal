@@ -26,6 +26,17 @@ HeatSystemComputeController::HeatSystemComputeController(VulkanDevice& vulkanDev
 
 void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const Config& config) {
     system.clearGlobalVoronoiInput();
+    if (config.hasFluid) {
+        system.setHeatFluid(
+            config.fluidDensity,
+            config.fluidSpecificHeat,
+            config.fluidConductivity,
+            config.fluidInitialTemperatureC,
+            config.fluidInletTemperatureC,
+            config.fluidVelocity);
+    } else {
+        system.clearHeatFluid();
+    }
     if (config.domainVoronoiProduct.isValid()) {
         system.setGlobalVoronoiInput(config.domainVoronoiProduct, config.modelLocalToWorldByModelId);
     }
@@ -35,21 +46,23 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
         config.modelSurfaceTriangleIndices,
         config.modelRuntimeModelIds,
         config.modelInitialTemperaturesCByRuntimeId,
-        config.modelBoundaryConditionTypesByRuntimeId,
-        config.modelBoundaryTemperaturesCByRuntimeId,
-        config.modelBoundaryHeatFluxesByRuntimeId,
-        config.modelBoundaryHeatTransferCoefficientsByRuntimeId,
         config.modelVolumetricPowerDensitiesByRuntimeId,
+        config.modelPrescribedTemperatureEnabledByRuntimeId,
+        config.modelPrescribedTemperaturesCByRuntimeId,
         config.modelDensity,
         config.modelSpecificHeat,
         config.modelConductivity,
         config.worldUnit);
-    system.setParams(config.contactThermalConductance, config.simulationDuration);
+    system.setParams(config.simulationDuration);
+    system.setDomainBoundaryConditions(
+        config.domainBoundaryTypes,
+        config.domainBoundaryTemperaturesC,
+        config.domainBoundaryHeatFluxes,
+        config.domainBoundaryHeatTransferCoefficients);
 }
 
 void HeatSystemComputeController::applyRuntimeState(HeatSystem& system, const Config& config) {
     system.setActive(config.active);
-    system.setSyntheticDirichletTestEnabled(config.syntheticDirichletTestEnabled);
     system.setPlaybackState(!timelinePlaying, timelineResetCounter);
     system.setRewindFrame(timelineScrubFrame);
 }
@@ -106,41 +119,29 @@ void HeatSystemComputeController::apply(uint64_t socketKey, const Config& config
         return;
     }
 
-    if (configIt != configuredConfigs.end() && configIt->second.authoredSimulationHash != 0 &&
-        configIt->second.authoredSimulationHash == config.authoredSimulationHash) {
-        for (const auto& [runtimeModelId, sourceKey] : config.modelRobinSourceKeys) {
-            const auto temperatureIt = config.modelBoundaryTemperaturesCByRuntimeId.find(runtimeModelId);
-            if (temperatureIt != config.modelBoundaryTemperaturesCByRuntimeId.end()) {
-                system->setRuntimeRobinTemperatureC(runtimeModelId, 0u, temperatureIt->second);
-            }
-        }
-        configuredConfigs[socketKey] = config;
-        syncSerialInputs();
-        applyRuntimeState(*system, config);
-        return;
-    }
-
     if (configIt != configuredConfigs.end() && config.structuralHash != 0 &&
         configIt->second.structuralHash == config.structuralHash) {
         bool updated = true;
         for (uint32_t runtimeModelId : config.modelRuntimeModelIds) {
-            const uint32_t conditionType = config.modelBoundaryConditionTypesByRuntimeId.at(runtimeModelId);
-            if (conditionType == 1u) {
-                updated = system->setRuntimeDirichletTemperatureC(
-                    runtimeModelId, 0u,
-                    config.modelBoundaryTemperaturesCByRuntimeId.at(runtimeModelId)) && updated;
-            } else if (conditionType == 2u) {
-                updated = system->setRuntimeNeumannHeatFlux(
-                    runtimeModelId, 0u, config.modelBoundaryHeatFluxesByRuntimeId.at(runtimeModelId)) && updated;
-            } else if (conditionType == 3u) {
-                updated = system->setRuntimeRobinState(
-                    runtimeModelId, 0u,
-                    config.modelBoundaryTemperaturesCByRuntimeId.at(runtimeModelId),
-                    config.modelBoundaryHeatTransferCoefficientsByRuntimeId.at(runtimeModelId)) && updated;
-            }
             updated = system->setRuntimeVolumetricPowerDensity(
                 runtimeModelId, config.modelVolumetricPowerDensitiesByRuntimeId.at(runtimeModelId)) && updated;
+            const auto prescribedIt = config.modelPrescribedTemperaturesCByRuntimeId.find(runtimeModelId);
+            if (prescribedIt != config.modelPrescribedTemperaturesCByRuntimeId.end()) {
+                updated = system->setRuntimePrescribedTemperature(runtimeModelId, prescribedIt->second) && updated;
+            }
         }
+        system->setInitialTemperatures(config.modelInitialTemperaturesCByRuntimeId);
+        if (config.hasFluid) {
+            system->setRuntimeFluidInitialTemperature(config.fluidInitialTemperatureC);
+            system->setRuntimeFluidInletTemperature(config.fluidInletTemperatureC);
+            system->setFluidPrescribedVelocity(config.fluidVelocity);
+        }
+        system->setDomainBoundaryConditions(
+            config.domainBoundaryTypes,
+            config.domainBoundaryTemperaturesC,
+            config.domainBoundaryHeatFluxes,
+            config.domainBoundaryHeatTransferCoefficients);
+        system->setParams(config.simulationDuration);
         if (updated) {
             configuredConfigs[socketKey] = config;
             syncSerialInputs();
@@ -227,29 +228,6 @@ void HeatSystemComputeController::syncSerialInputs() {
 void HeatSystemComputeController::updateSerialInputs() {
     for (auto& [sourceKey, runtime] : serialRuntimes) {
         if (runtime) runtime->update();
-    }
-
-    for (const auto& [socketKey, config] : configuredConfigs) {
-        const auto systemIt = systemsBySocket.find(socketKey);
-        if (systemIt == systemsBySocket.end() || !systemIt->second) continue;
-
-        for (const auto& [runtimeModelId, sourceKey] : config.modelRobinSourceKeys) {
-            const auto sourceIt = serialRuntimes.find(sourceKey);
-            if (sourceIt == serialRuntimes.end() || !sourceIt->second) continue;
-            const SerialTemperatureRuntime::Reading* reading = sourceIt->second->latestReading();
-            if (!reading) continue;
-
-            uint64_t bindingKey = HashBuilder::start();
-            HashBuilder::combine(bindingKey, socketKey);
-            HashBuilder::combine(bindingKey, runtimeModelId);
-            HashBuilder::combine(bindingKey, sourceKey);
-            if (lastSerialRevisions[bindingKey] == reading->revision) continue;
-
-            if (systemIt->second->setRuntimeRobinTemperatureC(
-                    runtimeModelId, 0u, reading->temperatureC)) {
-                lastSerialRevisions[bindingKey] = reading->revision;
-            }
-        }
     }
 }
 
@@ -418,6 +396,10 @@ bool HeatSystemComputeController::buildProduct(uint64_t socketKey, HeatProduct& 
         freeProduct();
         return false;
     }
+
+    outProduct.fluidTemperatureVolumeView = system.getFluidTemperatureVolumeView();
+    outProduct.fluidTemperatureVolumeSampler = system.getFluidTemperatureVolumeSampler();
+    outProduct.hasFluidVolume = (outProduct.fluidTemperatureVolumeView != VK_NULL_HANDLE);
 
     HashProduct::seal(outProduct);
     return true;

@@ -3,6 +3,7 @@
 #include "NodeGraphUtils.hpp"
 
 #include "NodeHeatModel.hpp"
+#include "NodeHeatFluid.hpp"
 #include "NodeHeatSolve.hpp"
 #include "NodeMeshPoints.hpp"
 #include "NodePoints.hpp"
@@ -61,6 +62,7 @@ void NodeGraphKernels::registerDefaultKernels() {
     registerKernel(std::make_unique<NodeGroup>());
     registerKernel(std::make_unique<NodeRemesh>());
     registerKernel(std::make_unique<NodeHeatModel>());
+    registerKernel(std::make_unique<NodeHeatFluid>());
     registerKernel(std::make_unique<NodeVoronoi>());
     registerKernel(std::make_unique<NodeHeatSolve>());
     registerKernel(std::make_unique<NodeMeshPoints>());

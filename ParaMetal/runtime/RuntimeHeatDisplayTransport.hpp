@@ -80,29 +80,30 @@ private:
         outConfig.showHeatOverlay = package.display.showHeatOverlay;
         outConfig.showFluxVectors = package.display.showFluxVectors;
         outConfig.showHeatPalette = package.display.showHeatPalette;
-        outConfig.showContactLevelSet = package.display.showContactLevelSet;
+        outConfig.showDomainBox = package.display.showDomainBox;
+        outConfig.showFluidVolume = package.display.showFluidVolume;
+        outConfig.fluidVolumeOpacity = package.display.fluidVolumeOpacity;
         outConfig.fluxVectorScale = package.display.fluxVectorScale;
-        outConfig.contactLevelSetRange = package.display.contactLevelSetRange;
         outConfig.authoredActive = package.authored.active;
         outConfig.active = package.authored.active;
         outConfig.canonicalToWorldScale = package.canonicalToWorldScale;
+        if (computeProduct->hasFluidVolume) {
+            outConfig.fluidTemperatureVolumeView = computeProduct->fluidTemperatureVolumeView;
+            outConfig.fluidTemperatureVolumeSampler = computeProduct->fluidTemperatureVolumeSampler;
+            outConfig.hasFluidVolume = true;
+        }
         uint64_t productDisplayHash = computeProduct->hashes.display;
 
         if (package.domainVoronoiProduct.isValid()) {
             const VoronoiProduct* voronoi = products->resolve<VoronoiProduct>(package.domainVoronoiProduct);
-            if (voronoi && voronoi->isGlobalDomain) {
+            if (voronoi && voronoi->isValid()) {
+                outConfig.globalDomainCorners = voronoi->globalDomainCorners;
+                outConfig.hasGlobalDomain = true;
                 outConfig.globalSdfGridMin = voronoi->globalSdfGridMin;
                 outConfig.globalSdfGridDim = voronoi->globalSdfGridDim;
                 outConfig.globalSdfCellSize = voronoi->globalSdfCellSize;
-                outConfig.globalSdfImageViews = voronoi->globalSdfImageViews;
-                outConfig.globalPsiImageViews = voronoi->globalPsiImageViews;
-                outConfig.globalSdfSampler = voronoi->globalSdfSampler;
-                outConfig.contactRegionBuffer = voronoi->contactRegionBuffer;
-                outConfig.contactRegionBufferOffset = voronoi->contactRegionBufferOffset;
-                outConfig.contactRegionBufferSize = voronoi->contactRegionBufferSize;
-                outConfig.indirectDrawBuffer = voronoi->indirectDrawBuffer;
-                outConfig.indirectDrawBufferOffset = voronoi->indirectDrawBufferOffset;
                 HashBuilder::combine(productDisplayHash, voronoi->hashes.geometry);
+                HashBuilder::combine(productDisplayHash, voronoi->hashes.display);
             }
         }
 
@@ -147,8 +148,6 @@ private:
             outConfig.modelRenderIndexCounts.push_back(modelProduct->renderIndexCount);
             outConfig.modelMatrices.push_back(toMat4(model.localToWorld));
             outConfig.modelInitialTemperaturesC.push_back(model.initialTemperatureC);
-            outConfig.modelBoundaryTemperaturesC.push_back(model.boundaryTemperatureC);
-            outConfig.modelBoundaryConditionTypes.push_back(model.boundaryConditionType);
             outConfig.modelBufferViews.push_back(modelBufferViews);
             HashBuilder::combine(productDisplayHash, modelProduct->hashes.display);
 

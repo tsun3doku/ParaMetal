@@ -20,7 +20,7 @@
 namespace render {
 
 BlendPass::BlendPass(VulkanDevice& device, MemoryAllocator& memoryAllocator, CommandPool& commandPool, VkFrameGraphRuntime& runtime, uint32_t framesInFlight, framegraph::PassId passId,
-    framegraph::ResourceId lineResolveId, framegraph::ResourceId lightingResolveId, framegraph::ResourceId albedoResolveId)
+    framegraph::ResourceId lineResolveId, framegraph::ResourceId lightingResolveId, framegraph::ResourceId volumeResolveId)
     : vulkanDevice(device),
       memoryAllocator(memoryAllocator),
       commandPool(commandPool),
@@ -29,7 +29,7 @@ BlendPass::BlendPass(VulkanDevice& device, MemoryAllocator& memoryAllocator, Com
       passId(passId),
       lineResolveId(lineResolveId),
       lightingResolveId(lightingResolveId),
-      albedoResolveId(albedoResolveId) {
+      volumeResolveId(volumeResolveId) {
 }
 
 const char* BlendPass::name() const {
@@ -78,7 +78,7 @@ void BlendPass::updateDescriptors() {
         imageInfos[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         imageInfos[1].imageView = frameGraphRuntime.getResourceViews(lightingResolveId)[i];
         imageInfos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfos[2].imageView = frameGraphRuntime.getResourceViews(albedoResolveId)[i];
+        imageInfos[2].imageView = frameGraphRuntime.getResourceViews(volumeResolveId)[i];
         imageInfos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         imageInfos[3].imageView = backgroundImageView;
         imageInfos[3].sampler = backgroundSampler;
@@ -231,7 +231,7 @@ bool BlendPass::createBlendDescriptorSets(uint32_t maxFramesInFlight) {
         imageInfos[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         imageInfos[1].imageView = frameGraphRuntime.getResourceViews(lightingResolveId)[i];
         imageInfos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfos[2].imageView = frameGraphRuntime.getResourceViews(albedoResolveId)[i];
+        imageInfos[2].imageView = frameGraphRuntime.getResourceViews(volumeResolveId)[i];
         imageInfos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         imageInfos[3].imageView = backgroundImageView;
         imageInfos[3].sampler = backgroundSampler;

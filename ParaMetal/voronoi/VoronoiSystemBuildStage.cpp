@@ -1,14 +1,17 @@
 #include "VoronoiSystemBuildStage.hpp"
 
+#include "renderers/PointRenderer.hpp"
+#include "runtime/RuntimeProducts.hpp"
 #include "spatial/VoxelGrid.hpp"
 #include "spatial/TriangleHashGrid.hpp"
-#include "heat/GlobalContactLevelSet.hpp"
-#include "voronoi/VoronoiDomainRuntime.hpp"
+#include "voronoi/VoronoiCandidate.hpp"
+#include "voronoi/VoronoiGpuStructs.hpp"
 #include "voronoi/VoronoiRuntime.hpp"
 #include "voronoi/cuda/KNNNeighbors.hpp"
 #include "voronoi/cuda/RVD.hpp"
-#include "voronoi/cuda/GlobalCutCell.cuh"
 #include "voronoi/cuda/GlobalSdf.cuh"
+#include "voronoi/cuda/VoronoiCellField.cuh"
+#include "cuda/CudaBuffer.cuh"
 
 #include "vulkan/CommandBufferManager.hpp"
 #include "vulkan/MemoryAllocator.hpp"
@@ -17,63 +20,24 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstring>
 #include <iostream>
 #include <limits>
-#include <map>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
-#include <glm/gtc/constants.hpp>
 
 VoronoiSystemBuildStage::VoronoiSystemBuildStage(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, CommandPool& commandPool)
     : vulkanDevice(vulkanDevice), memoryAllocator(memoryAllocator), commandPool(commandPool) {
     knn = std::make_unique<voronoi::KNNNeighbors>();
     if (!knn->initialize(vulkanDevice)) knn.reset();
 
-    globalCutCell = std::make_unique<voronoi::GlobalCutCell>();
-    if (!globalCutCell->initialize(vulkanDevice)) globalCutCell.reset();
+    rvd = std::make_unique<voronoi::RVD>();
+    if (!rvd->initialize(vulkanDevice)) rvd.reset();
 
-    contactLevelSet = std::make_unique<heat::GlobalContactLevelSet>(vulkanDevice, memoryAllocator, commandPool);
     candidate = std::make_unique<voronoi::VoronoiCandidate>(vulkanDevice, memoryAllocator, commandPool);
 }
 
-VoronoiSystemBuildStage::~VoronoiSystemBuildStage() = default;
-
-bool VoronoiSystemBuildStage::buildNodeDomain(VoronoiRuntime& runtime, uint32_t maxNeighbors) {
-    VoronoiDomainRuntime* domainRuntime = runtime.getDomainRuntime();
-    const auto& positions = runtime.getSeedPositions();
-    if (!domainRuntime || !knn || positions.empty() ||
-        runtime.getSeedFlags().size() != positions.size()) return false;
-
-    candidateNodeCount = static_cast<uint32_t>(positions.size());
-    if (candidateNodeCount < 2) return false;
-
-    uint32_t neighborCount = std::min(maxNeighbors, candidateNodeCount - 1u);
-    if (neighborCount == 0) return false;
-
-    std::vector<uint32_t> knnRows;
-    knnRows.reserve(candidateNodeCount);
-    for (uint32_t cell = 0; cell < candidateNodeCount; ++cell) {
-        knnRows.push_back(cell);
-    }
-    if (knnRows.empty()) return false;
-    if (!knn->build(positions, neighborCount, knnRows)) return false;
-
-    std::vector<uint32_t> neighborIndices;
-    if (!knn->downloadPrefix(neighborCount, neighborIndices)) return false;
-
-    std::vector<voronoi::Node> candidateNodes;
-    std::vector<voronoi::NodeCoupling> candidateCouplings;
-    std::vector<float> surfacePatchAreas;
-
-    if (!buildPointTopology(
-            positions, neighborIndices, neighborCount, candidateNodes,
-            candidateCouplings, surfacePatchAreas)) return false;
-
-    if (!uploadCandidateInputs(positions, neighborIndices)) return false;
-    if (!uploadCandidateNodes(candidateNodes)) return false;
-    return compactAndUploadNodeDomain(runtime, candidateNodes, candidateCouplings, surfacePatchAreas);
+VoronoiSystemBuildStage::~VoronoiSystemBuildStage() {
+    cleanup();
 }
 
 bool VoronoiSystemBuildStage::buildGlobalDomain(VoronoiRuntime& runtime) {
@@ -82,14 +46,18 @@ bool VoronoiSystemBuildStage::buildGlobalDomain(VoronoiRuntime& runtime) {
     const auto& triangleIndices = runtime.getGlobalRemeshTriangleIndices();
     const std::vector<glm::vec4>& seeds = runtime.getSeedPositions();
     const std::array<glm::vec3, 8>& corners = runtime.getPointDomainCorners();
-    if (!globalCutCell || runtimeModelIds.empty() ||
-        seeds.size() < voronoi::RVDNormalCandidateCount + 1u) {
+    if (!rvd ||
+        runtimeModelIds.empty() ||
+        seeds.size() < 4u ||
+        positions.size() != runtimeModelIds.size() ||
+        triangleIndices.size() != runtimeModelIds.size()) {
         if (runtimeModelIds.empty()) {
             std::cerr << "[VoronoiBuild] Global domain requires at least one remesh instance"
                       << std::endl;
+        } else if (seeds.size() < 4u) {
+            std::cerr << "[VoronoiBuild] Global domain requires at least 4 seeds" << std::endl;
         } else {
-            std::cerr << "[VoronoiBuild] Global domain requires at least "
-                      << voronoi::RVDNormalCandidateCount + 1u << " seeds" << std::endl;
+            std::cerr << "[VoronoiBuild] Global domain input size mismatch" << std::endl;
         }
         return false;
     }
@@ -116,16 +84,12 @@ bool VoronoiSystemBuildStage::buildGlobalDomain(VoronoiRuntime& runtime) {
         std::max(2, int(std::ceil(gridSize.z / spacing))));
     const glm::vec3 gridMax = gridMin + glm::vec3(gridDim) * spacing;
 
-    runtime.getSeedFlags().assign(seeds.size(), 0u);
-
     std::vector<VoxelGrid> instanceGrids;
     std::vector<std::vector<std::array<glm::vec4, 3>>> instanceTriangles;
     instanceGrids.reserve(runtimeModelIds.size());
     instanceTriangles.reserve(runtimeModelIds.size());
-    std::vector<voronoi::GlobalCutCell::InstanceInput> instanceInputs;
-    instanceInputs.reserve(runtimeModelIds.size());
-    std::vector<voronoi::globalsdf::Instance> sdfInstances;
-    sdfInstances.reserve(runtimeModelIds.size());
+    std::vector<voronoi::ModelGeometry> geometries;
+    geometries.reserve(runtimeModelIds.size());
 
     for (size_t i = 0; i < runtimeModelIds.size(); ++i) {
         TriangleHashGrid triangleGrid;
@@ -136,48 +100,190 @@ bool VoronoiSystemBuildStage::buildGlobalDomain(VoronoiRuntime& runtime) {
         extractMeshTriangles(positions[i], triangleIndices[i], triangles);
         instanceGrids.push_back(std::move(instanceGrid));
         instanceTriangles.push_back(std::move(triangles));
-        instanceInputs.push_back({runtimeModelIds[i], &instanceGrids.back(), &instanceTriangles.back()});
-        sdfInstances.push_back({instanceInputs.back().voxelGrid, instanceInputs.back().triangles});
+        geometries.push_back({runtimeModelIds[i], &instanceGrids.back(), &instanceTriangles.back()});
     }
+    const size_t sampleCount64 = size_t(gridDim.x) * gridDim.y * gridDim.z;
+    cudaUtils::CudaBuffer<float> devUnionSdf;
+    if (!devUnionSdf.allocate(sampleCount64)) {
+        std::cerr << "[VoronoiBuild] failed to allocate devUnionSdf" << std::endl;
+        return false;
+    }
+
     voronoi::globalsdf::BuildInput sdfInput{};
-    sdfInput.instances = &sdfInstances;
+    sdfInput.geometries = &geometries;
     sdfInput.gridMin = gridMin;
     sdfInput.gridDim = gridDim;
     sdfInput.cellSize = spacing;
+    sdfInput.outDevUnionSdf = devUnionSdf.get();
     voronoi::globalsdf::BuildResult sdfResult;
     if (!voronoi::globalsdf::build(sdfInput, sdfResult, 0)) {
         std::cerr << "[VoronoiBuild] GlobalSdf build failed" << std::endl;
         return false;
     }
 
-    voronoi::GlobalCutCell::BuildInput input{};
-    input.instances = &instanceInputs;
-    input.seeds = &seeds;
-    input.domainCorners = &corners;
-    input.sdfGridMin = gridMin;
-    input.sdfGridDim = gridDim;
-    input.sdfSpacing = spacing;
-    input.nominalCellSize = runtime.getCellSize();
-    input.maxNeighbors = voronoi::RVDNormalCandidateCount;
-    voronoi::GlobalCutCell::BuildResult result;
-    if (!globalCutCell->build(input, result)) {
-        std::cerr << "[VoronoiBuild] GlobalCutCell build failed" << std::endl;
+    if (!knn || !knn->buildSpatialIndex(seeds)) {
+        std::cerr << "[VoronoiBuild] KNN buildSpatialIndex failed" << std::endl;
         return false;
     }
 
-    globalFragmentInstanceIds = std::move(result.fragmentInstanceIds);
-    globalFragmentSeedIds = std::move(result.fragmentSeedIds);
-    globalSurfaceBoundaryAreas = std::move(result.surfaceBoundaryAreas);
-    globalFragmentVolumes = std::move(result.fragmentVolumes);
-    globalFaceInstanceIds = std::move(result.faceInstanceIds);
-    globalFaceFragmentA = std::move(result.faceFragmentA);
-    globalFaceFragmentB = std::move(result.faceFragmentB);
-    globalFaceAreas = std::move(result.faceAreas);
-    globalCutFaceFragmentA = result.cutFaceFragmentA;
-    globalCutFaceFragmentB = result.cutFaceFragmentB;
-    globalCutFaceAreas = result.cutFaceAreas;
-    globalCutFaceGaps = result.cutFaceGaps;
-    globalInstanceFragmentCounts = std::move(result.instanceFragmentCounts);
+    if (globalSeedIdGridBuffer != VK_NULL_HANDLE) {
+        freeBuffer(memoryAllocator, globalSeedIdGridBuffer, globalSeedIdGridBufferOffset);
+        globalSeedIdGridBuffer = VK_NULL_HANDLE;
+        globalSeedIdGridBufferOffset = 0;
+        globalSeedIdGridCount = 0;
+    }
+
+    std::vector<uint32_t> seedIds;
+    if (voronoi::buildSeedIdGrid(knn->deviceKnn(), devUnionSdf.get(), seeds, gridMin, gridDim, spacing, seedIds, 0)) {
+        VkBuffer newSeedGridBuffer = VK_NULL_HANDLE;
+        VkDeviceSize newSeedGridOffset = 0;
+        if (uploadDeviceBuffer(memoryAllocator, commandPool, seedIds.data(),
+                               seedIds.size() * sizeof(uint32_t),
+                               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                               sizeof(uint32_t),
+                               newSeedGridBuffer, newSeedGridOffset) == VK_SUCCESS) {
+            globalSeedIdGridBuffer = newSeedGridBuffer;
+            globalSeedIdGridBufferOffset = newSeedGridOffset;
+            globalSeedIdGridCount = static_cast<uint32_t>(seedIds.size());
+        } else {
+            std::cerr << "[VoronoiBuild] failed to upload seed ID grid buffer" << std::endl;
+        }
+    } else {
+        std::cerr << "[VoronoiBuild] warning: buildSeedIdGrid failed or disabled; fluid volume visualization unavailable" << std::endl;
+    }
+
+    devUnionSdf.reset();
+
+    voronoi::RVDConfig config{};
+    config.restrictedChunkSize = 512;
+    config.contactRange = runtime.getContactRange();
+
+    voronoi::RVDInput input{};
+    input.seeds = &seeds;
+    input.seedSpatialIndex = knn.get();
+    input.domainCorners = &corners;
+    input.geometries = &geometries;
+    input.nominalCellSize = runtime.getCellSize();
+
+    voronoi::RVDResult result;
+    if (!rvd->build(input, config, result)) {
+        std::cerr << "[VoronoiBuild] RVD build failed" << std::endl;
+        return false;
+    }
+
+    if (contactVertexBuffer != VK_NULL_HANDLE) {
+        freeBuffer(memoryAllocator, contactVertexBuffer, contactVertexBufferOffset);
+        contactVertexBuffer = VK_NULL_HANDLE;
+        contactVertexBufferOffset = 0;
+        contactVertexCount = 0;
+    }
+
+    if (!result.contactMesh.empty()) {
+        VkBuffer newContactBuffer = VK_NULL_HANDLE;
+        VkDeviceSize newContactOffset = 0;
+        if (uploadDeviceBuffer(memoryAllocator, commandPool, result.contactMesh.data(),
+                               result.contactMesh.size() * sizeof(voronoi::ContactMeshVertex),
+                               VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                               alignof(voronoi::ContactMeshVertex),
+                               newContactBuffer, newContactOffset) == VK_SUCCESS) {
+            contactVertexBuffer = newContactBuffer;
+            contactVertexBufferOffset = newContactOffset;
+            contactVertexCount = static_cast<uint32_t>(result.contactMesh.size());
+        } else {
+            std::cerr << "[VoronoiBuild] failed to upload contact mesh vertex buffer" << std::endl;
+        }
+    }
+
+    const size_t fragmentCount = result.fragments.size();
+    globalFragmentInstanceIds.resize(fragmentCount);
+    globalFragmentSeedIds.resize(fragmentCount);
+    globalFragmentCentroids.resize(fragmentCount);
+    globalFragmentVolumes.resize(fragmentCount);
+    for (size_t i = 0; i < fragmentCount; ++i) {
+        globalFragmentInstanceIds[i] = result.fragments[i].ownerModelId;
+        globalFragmentSeedIds[i] = result.fragments[i].cellId;
+        globalFragmentCentroids[i] = result.fragments[i].centroid;
+        globalFragmentVolumes[i] = static_cast<float>(result.fragments[i].volume);
+    }
+
+    globalNominalCellSize = input.nominalCellSize;
+
+    globalFaceFragmentA.clear();
+    globalFaceFragmentB.clear();
+    globalFaceAreas.clear();
+    globalFaceOrthogonalDistancesA.clear();
+    globalFaceOrthogonalDistancesB.clear();
+    globalFaceNormals.clear();
+
+    globalBoundaryFaceFragments.clear();
+    globalBoundaryFaceDomainFaces.clear();
+    globalBoundaryFaceAreas.clear();
+    globalBoundaryFaceOrthogonalDistances.clear();
+
+    for (const auto& f : result.fragmentFaces) {
+        if (f.source == voronoi::FragmentFaceSource::DomainBoundary) {
+            globalBoundaryFaceFragments.push_back(f.fragmentA);
+            globalBoundaryFaceDomainFaces.push_back(f.domainFace);
+            globalBoundaryFaceAreas.push_back(static_cast<float>(f.area));
+            globalBoundaryFaceOrthogonalDistances.push_back(static_cast<float>(f.orthogonalDistanceA));
+        } else {
+            uint32_t a = f.fragmentA;
+            uint32_t b = f.fragmentB;
+            float dA = static_cast<float>(f.orthogonalDistanceA);
+            float dB = static_cast<float>(f.orthogonalDistanceB);
+            glm::vec3 normal = f.normal;
+            if (b < a) {
+                std::swap(a, b);
+                std::swap(dA, dB);
+                normal = -normal;
+            }
+            globalFaceFragmentA.push_back(a);
+            globalFaceFragmentB.push_back(b);
+            globalFaceAreas.push_back(static_cast<float>(f.area));
+            globalFaceOrthogonalDistancesA.push_back(dA);
+            globalFaceOrthogonalDistancesB.push_back(dB);
+            globalFaceNormals.push_back(normal);
+        }
+    }
+
+    const size_t contactFaceCount = result.contactFaces.size();
+    globalContactFaceFragmentA.resize(contactFaceCount);
+    globalContactFaceFragmentB.resize(contactFaceCount);
+    globalContactFaceAreas.resize(contactFaceCount);
+    globalContactFaceOrthogonalDistancesA.resize(contactFaceCount);
+    globalContactFaceOrthogonalDistancesB.resize(contactFaceCount);
+    globalContactFaceGaps.resize(contactFaceCount);
+    for (size_t i = 0; i < contactFaceCount; ++i) {
+        uint32_t a = result.contactFaces[i].fragmentA;
+        uint32_t b = result.contactFaces[i].fragmentB;
+        float dA = static_cast<float>(result.contactFaces[i].distanceA);
+        float dB = static_cast<float>(result.contactFaces[i].distanceB);
+        if (b < a) {
+            std::swap(a, b);
+            std::swap(dA, dB);
+        }
+        globalContactFaceFragmentA[i] = a;
+        globalContactFaceFragmentB[i] = b;
+        globalContactFaceAreas[i] = static_cast<float>(result.contactFaces[i].area);
+        globalContactFaceOrthogonalDistancesA[i] = dA;
+        globalContactFaceOrthogonalDistancesB[i] = dB;
+        globalContactFaceGaps[i] = static_cast<float>(result.contactFaces[i].gap);
+    }
+
+    std::unordered_map<uint32_t, uint32_t> runtimeModelIdToInstanceIndex;
+    for (size_t i = 0; i < runtimeModelIds.size(); ++i) {
+        runtimeModelIdToInstanceIndex[runtimeModelIds[i]] = static_cast<uint32_t>(i);
+    }
+    globalInstanceFragmentCounts.assign(runtimeModelIds.size(), 0);
+    for (const auto& frag : result.fragments) {
+        if (frag.ownerModelId != voronoi::InvalidModelId) {
+            const auto it = runtimeModelIdToInstanceIndex.find(frag.ownerModelId);
+            if (it != runtimeModelIdToInstanceIndex.end()) {
+                globalInstanceFragmentCounts[it->second]++;
+            }
+        }
+    }
+
     globalSdfValues = sdfResult.values;
     globalSdfRuntimeModelIds = runtimeModelIds;
     globalSdfGridMin = gridMin;
@@ -185,13 +291,6 @@ bool VoronoiSystemBuildStage::buildGlobalDomain(VoronoiRuntime& runtime) {
     globalSdfCellSize = spacing;
     globalSeedPositions = seeds;
     globalDomainCorners = corners;
-
-    const uint32_t channelCount = static_cast<uint32_t>(runtimeModelIds.size());
-    if (!contactLevelSet || !contactLevelSet->build(sdfResult, result, channelCount, gridMin, gridDim, spacing)) {
-        std::cerr << "[VoronoiBuild] GlobalContactLevelSet build failed." << std::endl;
-        cleanupResources();
-        return false;
-    }
 
     return true;
 }
@@ -201,7 +300,13 @@ bool VoronoiSystemBuildStage::buildGlobalDisplayCandidates(VoronoiRuntime& runti
     const auto& runtimeModelIds = runtime.getGlobalRemeshRuntimeModelIds();
     const auto& surfacePositions = runtime.getGlobalRemeshSurfacePositions();
     const auto& surfaceTriangleIndices = runtime.getGlobalRemeshSurfaceTriangleIndices();
-    if (!knn || seeds.size() < 2 || runtimeModelIds.empty()) return false;
+    if (!knn ||
+        seeds.size() < 2u ||
+        runtimeModelIds.empty() ||
+        surfacePositions.size() != runtimeModelIds.size() ||
+        surfaceTriangleIndices.size() != runtimeModelIds.size()) {
+        return false;
+    }
 
     candidateNodeCount = static_cast<uint32_t>(seeds.size());
     const uint32_t neighborCount = std::min(uint32_t{50}, candidateNodeCount - 1u);
@@ -212,19 +317,12 @@ bool VoronoiSystemBuildStage::buildGlobalDisplayCandidates(VoronoiRuntime& runti
     for (uint32_t cell = 0; cell < candidateNodeCount; ++cell) {
         knnRows.push_back(cell);
     }
-    if (!knn->build(seeds, neighborCount, knnRows)) return false;
+    if (!knn->buildNeighbors(neighborCount, knnRows)) return false;
 
     std::vector<uint32_t> neighborIndices;
     if (!knn->downloadPrefix(neighborCount, neighborIndices)) return false;
 
-    std::vector<voronoi::Node> candidateNodes;
-    std::vector<voronoi::NodeCoupling> candidateCouplings;
-    std::vector<float> surfacePatchAreas;
-    if (!buildPointTopology(
-            seeds, neighborIndices, neighborCount, candidateNodes,
-            candidateCouplings, surfacePatchAreas)) return false;
     if (!uploadCandidateInputs(seeds, neighborIndices)) return false;
-    if (!uploadCandidateNodes(candidateNodes)) return false;
 
     if (!candidate || !candidate->build(runtimeModelIds, surfacePositions, surfaceTriangleIndices)) {
         return false;
@@ -232,121 +330,44 @@ bool VoronoiSystemBuildStage::buildGlobalDisplayCandidates(VoronoiRuntime& runti
     return candidate->getModelCount() > 0;
 }
 
-
-const std::vector<VkImageView>& VoronoiSystemBuildStage::getGlobalSdfImageViews() const {
-    static const std::vector<VkImageView> empty;
-    return contactLevelSet ? contactLevelSet->getSdfImageViews() : empty;
+const std::vector<uint32_t>& VoronoiSystemBuildStage::getGlobalDisplayRuntimeModelIds() const {
+    static const std::vector<uint32_t> empty;
+    return candidate ? candidate->getRuntimeModelIds() : empty;
 }
 
-const std::vector<VkImageView>& VoronoiSystemBuildStage::getGlobalPsiImageViews() const {
-    static const std::vector<VkImageView> empty;
-    return contactLevelSet ? contactLevelSet->getPsiImageViews() : empty;
+const std::vector<uint32_t>& VoronoiSystemBuildStage::getGlobalDisplayFaceCounts() const {
+    static const std::vector<uint32_t> empty;
+    return candidate ? candidate->getFaceCounts() : empty;
 }
 
-VkSampler VoronoiSystemBuildStage::getGlobalSdfSampler() const {
-    return contactLevelSet ? contactLevelSet->getSampler() : VK_NULL_HANDLE;
+const std::vector<VkBuffer>& VoronoiSystemBuildStage::getGlobalDisplayVertexBuffers() const {
+    static const std::vector<VkBuffer> empty;
+    return candidate ? candidate->getVertexBuffers() : empty;
 }
 
-VkBuffer VoronoiSystemBuildStage::getContactRegionBuffer() const {
-    return contactLevelSet ? contactLevelSet->getContactRegionBuffer() : VK_NULL_HANDLE;
+const std::vector<VkDeviceSize>& VoronoiSystemBuildStage::getGlobalDisplayVertexBufferOffsets() const {
+    static const std::vector<VkDeviceSize> empty;
+    return candidate ? candidate->getVertexBufferOffsets() : empty;
 }
 
-VkDeviceSize VoronoiSystemBuildStage::getContactRegionBufferOffset() const {
-    return contactLevelSet ? contactLevelSet->getContactRegionBufferOffset() : 0;
+const std::vector<VkBuffer>& VoronoiSystemBuildStage::getGlobalDisplayFaceIndexBuffers() const {
+    static const std::vector<VkBuffer> empty;
+    return candidate ? candidate->getFaceIndexBuffers() : empty;
 }
 
-VkDeviceSize VoronoiSystemBuildStage::getContactRegionBufferSize() const {
-    return contactLevelSet ? contactLevelSet->getContactRegionBufferSize() : 0;
+const std::vector<VkDeviceSize>& VoronoiSystemBuildStage::getGlobalDisplayFaceIndexBufferOffsets() const {
+    static const std::vector<VkDeviceSize> empty;
+    return candidate ? candidate->getFaceIndexBufferOffsets() : empty;
 }
 
-VkBuffer VoronoiSystemBuildStage::getIndirectDrawBuffer() const {
-    return contactLevelSet ? contactLevelSet->getIndirectDrawBuffer() : VK_NULL_HANDLE;
+const std::vector<VkBuffer>& VoronoiSystemBuildStage::getGlobalDisplayCandidateBuffers() const {
+    static const std::vector<VkBuffer> empty;
+    return candidate ? candidate->getCandidateBuffers() : empty;
 }
 
-VkDeviceSize VoronoiSystemBuildStage::getIndirectDrawBufferOffset() const {
-    return contactLevelSet ? contactLevelSet->getIndirectDrawBufferOffset() : 0;
-}
-
-bool VoronoiSystemBuildStage::buildPointTopology(
-    const std::vector<glm::vec4>& positions,
-    const std::vector<uint32_t>& neighborIndices,
-    uint32_t neighborCount,
-    std::vector<voronoi::Node>& nodes,
-    std::vector<voronoi::NodeCoupling>& couplings,
-    std::vector<float>& surfacePatchAreas) {
-    const size_t nodeCount = positions.size();
-
-    nodes.assign(nodeCount, {});
-    surfacePatchAreas.assign(nodeCount, 0.0f);
-    couplings.clear();
-    couplings.reserve(neighborIndices.size());
-    std::vector<voronoi::NodeCoupling> nodeCouplings;
-    nodeCouplings.reserve(neighborCount);
-
-    for (uint32_t nodeId = 0; nodeId < static_cast<uint32_t>(nodeCount); ++nodeId) {
-        voronoi::Node& node = nodes[nodeId];
-        node.volume = 1.0f;
-        nodeCouplings.clear();
-
-        const glm::vec3 nodePosition(positions[nodeId]);
-        const uint32_t* neighbors = neighborIndices.data() + static_cast<size_t>(nodeId) * neighborCount;
-        for (uint32_t candidate = 0; candidate < neighborCount; ++candidate) {
-            const uint32_t neighborId = neighbors[candidate];
-            const float distance = glm::length(glm::vec3(positions[neighborId]) - nodePosition);
-            if (!(distance > 0.0f) || !std::isfinite(distance)) continue;
-            nodeCouplings.push_back({neighborId, 1.0f / distance});
-        }
-        node.neighborOffset = static_cast<uint32_t>(couplings.size());
-        node.neighborCount = static_cast<uint32_t>(nodeCouplings.size());
-        node.interfaceNeighborCount = node.neighborCount;
-        couplings.insert(couplings.end(), nodeCouplings.begin(), nodeCouplings.end());
-    }
-    return !couplings.empty();
-}
-
-bool VoronoiSystemBuildStage::compactAndUploadNodeDomain(
-    VoronoiRuntime& runtime,
-    const std::vector<voronoi::Node>& candidateNodes,
-    const std::vector<voronoi::NodeCoupling>& candidateCouplings,
-    const std::vector<float>& surfacePatchAreas) {
-    runtime.getNodeDomain().rebuild(runtime.getSeedFlags(), runtime.getSeedPositions(), candidateNodes,
-                                    candidateCouplings, surfacePatchAreas);
-    const VoronoiNodeDomain& domain = runtime.getNodeDomain();
-    if (domain.getNodeCount() == 0) return false;
-    return uploadNodeDomainBuffers(domain);
-}
-
-bool VoronoiSystemBuildStage::uploadNodeDomainBuffers(const VoronoiNodeDomain& domain) {
-    if (domain.getNodes().empty() || domain.getCouplings().empty()) return false;
-    constexpr VkDeviceSize alignment = 16;
-    VkBuffer newNodeBuffer = VK_NULL_HANDLE;
-    VkDeviceSize newNodeOffset = 0;
-    if (uploadDeviceBuffer(memoryAllocator, commandPool, domain.getNodes().data(),
-                           domain.getNodes().size() * sizeof(voronoi::Node),
-                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                           alignment, newNodeBuffer, newNodeOffset) != VK_SUCCESS) return false;
-    VkBuffer newCouplingBuffer = VK_NULL_HANDLE;
-    VkDeviceSize newCouplingOffset = 0;
-    if (uploadDeviceBuffer(memoryAllocator, commandPool, domain.getCouplings().data(),
-                           domain.getCouplings().size() * sizeof(voronoi::NodeCoupling),
-                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                           alignment, newCouplingBuffer, newCouplingOffset) != VK_SUCCESS) {
-        memoryAllocator.free(newNodeBuffer, newNodeOffset);
-        return false;
-    }
-    if (nodeBuffer != VK_NULL_HANDLE) {
-        freeBuffer(memoryAllocator, nodeBuffer, nodeBufferOffset);
-    }
-    if (couplingBuffer != VK_NULL_HANDLE) {
-        freeBuffer(memoryAllocator, couplingBuffer, couplingBufferOffset);
-    }
-
-    nodeBuffer = newNodeBuffer;
-    nodeBufferOffset = newNodeOffset;
-    couplingBuffer = newCouplingBuffer;
-    couplingBufferOffset = newCouplingOffset;
-    couplingCount = static_cast<uint32_t>(domain.getCouplings().size());
-    return true;
+const std::vector<VkDeviceSize>& VoronoiSystemBuildStage::getGlobalDisplayCandidateBufferOffsets() const {
+    static const std::vector<VkDeviceSize> empty;
+    return candidate ? candidate->getCandidateBufferOffsets() : empty;
 }
 
 bool VoronoiSystemBuildStage::uploadCandidateInputs(const std::vector<glm::vec4>& positions, const std::vector<uint32_t>& neighborIndices) {
@@ -368,36 +389,43 @@ bool VoronoiSystemBuildStage::uploadCandidateInputs(const std::vector<glm::vec4>
         return false;
     }
 
+    std::vector<PointRenderer::PointVertex> pointVertices;
+    pointVertices.reserve(positions.size());
+    for (const glm::vec4& p : positions) {
+        pointVertices.push_back({
+            glm::vec3(p),
+            glm::vec3(1.0f, 0.0f, 0.0f)
+        });
+    }
+
+    VkBuffer newPointVertexBuffer = VK_NULL_HANDLE;
+    VkDeviceSize newPointVertexOffset = 0;
+    if (uploadDeviceBuffer(memoryAllocator, commandPool, pointVertices.data(),
+                           pointVertices.size() * sizeof(PointRenderer::PointVertex),
+                           VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                           alignof(PointRenderer::PointVertex),
+                           newPointVertexBuffer, newPointVertexOffset) != VK_SUCCESS) {
+        memoryAllocator.free(newNeighborBuffer, newNeighborOffset);
+        memoryAllocator.free(newSeedBuffer, newSeedOffset);
+        return false;
+    }
+
     if (candidateNeighborIndicesBuffer != VK_NULL_HANDLE) {
         freeBuffer(memoryAllocator, candidateNeighborIndicesBuffer, candidateNeighborIndicesBufferOffset);
     }
     if (seedPositionBuffer != VK_NULL_HANDLE) {
         freeBuffer(memoryAllocator, seedPositionBuffer, seedPositionBufferOffset);
     }
+    if (candidatePointVertexBuffer != VK_NULL_HANDLE) {
+        freeBuffer(memoryAllocator, candidatePointVertexBuffer, candidatePointVertexBufferOffset);
+    }
 
     candidateNeighborIndicesBuffer = newNeighborBuffer;
     candidateNeighborIndicesBufferOffset = newNeighborOffset;
     seedPositionBuffer = newSeedBuffer;
     seedPositionBufferOffset = newSeedOffset;
-    return true;
-}
-
-bool VoronoiSystemBuildStage::uploadCandidateNodes(const std::vector<voronoi::Node>& nodes) {
-    if (nodes.empty()) return false;
-    const VkDeviceSize alignment = vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
-    VkBuffer newBuffer = VK_NULL_HANDLE;
-    VkDeviceSize newOffset = 0;
-    if (uploadDeviceBuffer(memoryAllocator, commandPool, nodes.data(),
-                           nodes.size() * sizeof(voronoi::Node),
-                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                           alignment, newBuffer, newOffset) != VK_SUCCESS) return false;
-
-    if (candidateNodeBuffer != VK_NULL_HANDLE) {
-        freeBuffer(memoryAllocator, candidateNodeBuffer, candidateNodeBufferOffset);
-    }
-
-    candidateNodeBuffer = newBuffer;
-    candidateNodeBufferOffset = newOffset;
+    candidatePointVertexBuffer = newPointVertexBuffer;
+    candidatePointVertexBufferOffset = newPointVertexOffset;
     return true;
 }
 
@@ -417,10 +445,47 @@ void VoronoiSystemBuildStage::extractMeshTriangles(
     }
 }
 
-void VoronoiSystemBuildStage::cleanupResources() {
+void VoronoiSystemBuildStage::releaseGpuResources(VoronoiProduct& product) {
+    product.candidateNodeCount = candidateNodeCount;
+    candidateNodeCount = 0;
+
+    product.candidateNeighborIndicesBuffer = candidateNeighborIndicesBuffer;
+    product.candidateNeighborIndicesBufferOffset = candidateNeighborIndicesBufferOffset;
+    candidateNeighborIndicesBuffer = VK_NULL_HANDLE;
+    candidateNeighborIndicesBufferOffset = 0;
+
+    product.seedPositionBuffer = seedPositionBuffer;
+    product.seedPositionBufferOffset = seedPositionBufferOffset;
+    seedPositionBuffer = VK_NULL_HANDLE;
+    seedPositionBufferOffset = 0;
+
+    product.candidatePointVertexBuffer = candidatePointVertexBuffer;
+    product.candidatePointVertexBufferOffset = candidatePointVertexBufferOffset;
+    candidatePointVertexBuffer = VK_NULL_HANDLE;
+    candidatePointVertexBufferOffset = 0;
+
+    product.contactVertexBuffer = contactVertexBuffer;
+    product.contactVertexBufferOffset = contactVertexBufferOffset;
+    product.contactVertexCount = contactVertexCount;
+    contactVertexBuffer = VK_NULL_HANDLE;
+    contactVertexBufferOffset = 0;
+    contactVertexCount = 0;
+
+    product.globalSeedIdGridBuffer = globalSeedIdGridBuffer;
+    product.globalSeedIdGridBufferOffset = globalSeedIdGridBufferOffset;
+    product.globalSeedIdGridCount = globalSeedIdGridCount;
+    globalSeedIdGridBuffer = VK_NULL_HANDLE;
+    globalSeedIdGridBufferOffset = 0;
+    globalSeedIdGridCount = 0;
+
+    if (candidate) {
+        candidate->releaseGpuResources(product);
+    }
+}
+
+void VoronoiSystemBuildStage::cleanup() {
     if (knn) knn->cleanup();
-    if (globalCutCell) globalCutCell->cleanup();
-    if (contactLevelSet) contactLevelSet->cleanup();
+    if (rvd) rvd->cleanup();
 
     if (candidateNeighborIndicesBuffer != VK_NULL_HANDLE) {
         freeBuffer(memoryAllocator, candidateNeighborIndicesBuffer, candidateNeighborIndicesBufferOffset);
@@ -432,44 +497,50 @@ void VoronoiSystemBuildStage::cleanupResources() {
         seedPositionBuffer = VK_NULL_HANDLE;
         seedPositionBufferOffset = 0;
     }
-    if (candidateNodeBuffer != VK_NULL_HANDLE) {
-        freeBuffer(memoryAllocator, candidateNodeBuffer, candidateNodeBufferOffset);
-        candidateNodeBuffer = VK_NULL_HANDLE;
-        candidateNodeBufferOffset = 0;
+    if (candidatePointVertexBuffer != VK_NULL_HANDLE) {
+        freeBuffer(memoryAllocator, candidatePointVertexBuffer, candidatePointVertexBufferOffset);
+        candidatePointVertexBuffer = VK_NULL_HANDLE;
+        candidatePointVertexBufferOffset = 0;
     }
-    if (nodeBuffer != VK_NULL_HANDLE) {
-        freeBuffer(memoryAllocator, nodeBuffer, nodeBufferOffset);
-        nodeBuffer = VK_NULL_HANDLE;
-        nodeBufferOffset = 0;
+    if (contactVertexBuffer != VK_NULL_HANDLE) {
+        freeBuffer(memoryAllocator, contactVertexBuffer, contactVertexBufferOffset);
+        contactVertexBuffer = VK_NULL_HANDLE;
+        contactVertexBufferOffset = 0;
+        contactVertexCount = 0;
     }
-    if (couplingBuffer != VK_NULL_HANDLE) {
-        freeBuffer(memoryAllocator, couplingBuffer, couplingBufferOffset);
-        couplingBuffer = VK_NULL_HANDLE;
-        couplingBufferOffset = 0;
+    if (globalSeedIdGridBuffer != VK_NULL_HANDLE) {
+        freeBuffer(memoryAllocator, globalSeedIdGridBuffer, globalSeedIdGridBufferOffset);
+        globalSeedIdGridBuffer = VK_NULL_HANDLE;
+        globalSeedIdGridBufferOffset = 0;
+        globalSeedIdGridCount = 0;
     }
 
     if (candidate) {
         candidate->cleanup();
     }
-}
-
-void VoronoiSystemBuildStage::cleanup() {
-    cleanupResources();
 
     candidateNodeCount = 0;
-    couplingCount = 0;
     globalFragmentInstanceIds.clear();
     globalFragmentSeedIds.clear();
-    globalSurfaceBoundaryAreas.clear();
+    globalFragmentCentroids.clear();
     globalFragmentVolumes.clear();
-    globalFaceInstanceIds.clear();
+    globalNominalCellSize = 0.0f;
     globalFaceFragmentA.clear();
     globalFaceFragmentB.clear();
     globalFaceAreas.clear();
-    globalCutFaceFragmentA.clear();
-    globalCutFaceFragmentB.clear();
-    globalCutFaceAreas.clear();
-    globalCutFaceGaps.clear();
+    globalFaceOrthogonalDistancesA.clear();
+    globalFaceOrthogonalDistancesB.clear();
+    globalFaceNormals.clear();
+    globalContactFaceFragmentA.clear();
+    globalContactFaceFragmentB.clear();
+    globalContactFaceAreas.clear();
+    globalContactFaceOrthogonalDistancesA.clear();
+    globalContactFaceOrthogonalDistancesB.clear();
+    globalContactFaceGaps.clear();
+    globalBoundaryFaceFragments.clear();
+    globalBoundaryFaceDomainFaces.clear();
+    globalBoundaryFaceAreas.clear();
+    globalBoundaryFaceOrthogonalDistances.clear();
     globalInstanceFragmentCounts.clear();
     globalSdfValues.clear();
     globalSdfRuntimeModelIds.clear();

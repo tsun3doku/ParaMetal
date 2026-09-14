@@ -12,34 +12,19 @@
 //                                                          backend/controller objects or GPU resources
 //                                                        - This header must not be included in any backend ]
 
-struct BoundaryCondition {
-    enum class Type : uint32_t {
-        Adiabatic = 0,
-        DirichletTemperature = 1,
-        NeumannHeatFlux = 2,
-        RobinConvection = 3,
-    };
-
-    Type type = Type::Adiabatic;
-    float temperatureC = HeatSimDefaults::ambientTemperatureC;
-    float heatFlux = 0.0f;
-    float heatTransferCoefficient = 0.0f;
-};
-
 struct VolumetricHeatSource {
     float powerDensity = 0.0f;
 };
 
 struct HeatModelData {
     NodeDataHandle meshHandle{};
-    NodeDataHandle robinTemperatureSourceHandle{};
 
     float density = HeatSimDefaults::density;
     float specificHeat = HeatSimDefaults::specificHeat;
     float conductivity = HeatSimDefaults::conductivity;
     float initialTemperatureC = HeatSimDefaults::ambientTemperatureC;
 
-    BoundaryCondition boundaryCondition;
     VolumetricHeatSource volumetricHeatSource;
-
+    bool prescribedTemperatureEnabled = false;
+    float prescribedTemperatureC = HeatSimDefaults::ambientTemperatureC;
 };

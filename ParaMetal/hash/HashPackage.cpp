@@ -62,10 +62,10 @@ void HashPackage::seal(VoronoiPackage& pkg, const HashValues& authoredHashes) {
     uint64_t geometryHash = HashBuilder::start();
     HashBuilder::combine(geometryHash, authoredHashes.full);
 
-    HashBuilder::combine(geometryHash, static_cast<uint64_t>(pkg.domainType));
     HashBuilder::combineFloat(geometryHash, pkg.authored.cellSize);
     HashBuilder::combine(geometryHash, static_cast<uint64_t>(pkg.authored.voxelResolution));
     HashBuilder::combineFloat(geometryHash, pkg.authored.sdfPadding);
+    HashBuilder::combineFloat(geometryHash, pkg.authored.contactRange);
     HashBuilder::combinePod(geometryHash, pkg.localToWorld);
     HashBuilder::combine(geometryHash, pkg.pointsPayloadHandle.key);
     HashBuilder::combine(geometryHash, static_cast<uint64_t>(pkg.globalRemeshProducts.size()));
@@ -81,6 +81,7 @@ void HashPackage::seal(VoronoiPackage& pkg, const HashValues& authoredHashes) {
     uint64_t displayHash = HashBuilder::start();
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showVoronoi ? 1u : 0u));
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showPoints ? 1u : 0u));
+    HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showContactManifold ? 1u : 0u));
 
     uint64_t fullHash = HashBuilder::start();
     HashBuilder::combine(fullHash, geometryHash);
@@ -123,12 +124,9 @@ void HashPackage::seal(HeatPackage& pkg, const HashValues& authoredHashes) {
         HashBuilder::combineFloat(simulationHash, model.specificHeat);
         HashBuilder::combineFloat(simulationHash, model.conductivity);
         HashBuilder::combineFloat(simulationHash, model.initialTemperatureC);
-        HashBuilder::combine(simulationHash, static_cast<uint64_t>(model.boundaryConditionType));
-        HashBuilder::combineFloat(simulationHash, model.boundaryTemperatureC);
-        HashBuilder::combineFloat(simulationHash, model.boundaryHeatFlux);
-        HashBuilder::combineFloat(simulationHash, model.boundaryHeatTransferCoefficient);
         HashBuilder::combineFloat(simulationHash, model.volumetricPowerDensity);
-        HashBuilder::combine(simulationHash, model.robinSourceKey);
+        HashBuilder::combine(simulationHash, model.prescribedTemperatureEnabled ? 1u : 0u);
+        HashBuilder::combineFloat(simulationHash, model.prescribedTemperatureC);
     }
     std::vector<uint64_t> serialKeys;
     serialKeys.reserve(pkg.resolvedSerialSources.size());
@@ -144,16 +142,35 @@ void HashPackage::seal(HeatPackage& pkg, const HashValues& authoredHashes) {
         HashBuilder::combineString(simulationHash, source.portName);
         HashBuilder::combine(simulationHash, source.baudRate);
     }
+    HashBuilder::combine(simulationHash, pkg.hasFluid ? 1u : 0u);
+    if (pkg.hasFluid) {
+        HashBuilder::combineFloat(simulationHash, pkg.fluidDensity);
+        HashBuilder::combineFloat(simulationHash, pkg.fluidSpecificHeat);
+        HashBuilder::combineFloat(simulationHash, pkg.fluidConductivity);
+        HashBuilder::combineFloat(simulationHash, pkg.fluidInitialTemperatureC);
+        HashBuilder::combineFloat(simulationHash, pkg.fluidInletTemperatureC);
+        HashBuilder::combineFloat(simulationHash, pkg.fluidVelocity.x);
+        HashBuilder::combineFloat(simulationHash, pkg.fluidVelocity.y);
+        HashBuilder::combineFloat(simulationHash, pkg.fluidVelocity.z);
+    }
     HashBuilder::combine(simulationHash, pkg.domainVoronoiHandle.key);
     combineHandleHash(simulationHash, pkg.domainVoronoiProduct, HashDomain::Geometry);
+
+    for (uint32_t face = 0; face < 6; ++face) {
+        HashBuilder::combine(simulationHash, static_cast<uint64_t>(pkg.domainBoundaryTypes[face]));
+        HashBuilder::combineFloat(simulationHash, pkg.domainBoundaryTemperaturesC[face]);
+        HashBuilder::combineFloat(simulationHash, pkg.domainBoundaryHeatFluxes[face]);
+        HashBuilder::combineFloat(simulationHash, pkg.domainBoundaryHeatTransferCoefficients[face]);
+    }
 
     uint64_t displayHash = HashBuilder::start();
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showHeatOverlay ? 1u : 0u));
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showFluxVectors ? 1u : 0u));
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showHeatPalette ? 1u : 0u));
-    HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showContactLevelSet ? 1u : 0u));
+    HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showDomainBox ? 1u : 0u));
+    HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showFluidVolume ? 1u : 0u));
+    HashBuilder::combineFloat(displayHash, pkg.display.fluidVolumeOpacity);
     HashBuilder::combineFloat(displayHash, pkg.display.fluxVectorScale);
-    HashBuilder::combineFloat(displayHash, pkg.display.contactLevelSetRange);
     HashBuilder::combineFloat(displayHash, pkg.canonicalToWorldScale);
     for (const HeatModelPackage& model : pkg.models) {
         HashBuilder::combinePod(displayHash, model.localToWorld);

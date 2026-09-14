@@ -228,10 +228,15 @@ void RuntimeSystems::setWorldUnit(int unit) {
 }
 
 void RuntimeSystems::setHeatPaletteRange(float minimum, float maximum) {
-    if (render.runtime()) render.runtime()->getSceneRenderer().getHeatOverlayRenderer()->setPaletteRange(minimum, maximum);
+    if (render.runtime()) {
+        render.runtime()->getSceneRenderer().setHeatPaletteRange(minimum, maximum);
+    }
 }
+
 void RuntimeSystems::setHeatPalette(int palette) {
-    if (render.runtime()) render.runtime()->getSceneRenderer().getHeatOverlayRenderer()->setPalette(palette);
+    if (render.runtime()) {
+        render.runtime()->getSceneRenderer().setHeatPalette(palette);
+    }
 }
 
 bool RuntimeSystems::isHeatPaletteVisible() const {

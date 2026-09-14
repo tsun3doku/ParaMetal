@@ -31,87 +31,42 @@ struct HeatModelPushConstant {
 };
 static_assert(sizeof(HeatModelPushConstant) == 8);
 
-struct BoundaryState {
-    uint32_t conditionType;
-    float temperatureC;
-    float heatFlux;
-    float heatTransferCoefficient;
-};
 
-struct BoundaryNode {
-    uint32_t contributionOffset;
-    uint32_t contributionCount;
-    uint32_t dirichletStateIndex;
+struct GMLSSurfaceStencil {
+    uint32_t valueWeightOffset;
+    uint32_t valueWeightCount;
+    uint32_t gradientWeightOffset;
+    uint32_t gradientWeightCount;
 };
+static_assert(sizeof(GMLSSurfaceStencil) == 16, "GMLSSurfaceStencil must match GPU stride");
 
-struct BoundaryContribution {
-    uint32_t stateIndex;
-    float area;
+struct GMLSSurfaceWeight {
+    uint32_t cellIndex;
+    float weight;
 };
+static_assert(sizeof(GMLSSurfaceWeight) == 8, "GMLSSurfaceWeight must match GPU stride");
 
-struct FixedContribution {
-    uint32_t boundaryValueIndex = 0;
-    float coefficient = 0.0f;
+struct GMLSSurfaceGradientWeight {
+    uint32_t cellIndex;
+    float dTdxWeight;
+    float dTdyWeight;
+    float dTdzWeight;
 };
+static_assert(sizeof(GMLSSurfaceGradientWeight) == 16, "GMLSSurfaceGradientWeight must match GPU stride");
 
-struct FixedRow {
-    uint32_t contributionOffset = 0;
-    uint32_t contributionCount = 0;
+struct AdvectionFace {
+    uint32_t nodeA = 0;
+    uint32_t nodeB = 0;
+    float invVolA = 0.0f;
+    float invVolB = 0.0f;
 };
+static_assert(sizeof(AdvectionFace) == 16, "AdvectionFace must match GPU stride");
 
-static_assert(sizeof(BoundaryState) == 16, "BoundaryState must match GPU stride");
-static_assert(sizeof(BoundaryNode) == 12, "BoundaryNode must match GPU stride");
-static_assert(sizeof(BoundaryContribution) == 8, "BoundaryContribution must match GPU stride");
-static_assert(sizeof(FixedContribution) == 8, "FixedContribution must match GPU stride");
-static_assert(sizeof(FixedRow) == 8, "FixedRow must match GPU stride");
-
-struct ContactCameraUbo {
-    glm::mat4 view;
-    glm::mat4 proj;
-    glm::mat4 invView;
+struct AdvectionBoundaryFace {
+    uint32_t node = 0;
+    float invVol = 0.0f;
 };
-static_assert(sizeof(ContactCameraUbo) == 192);
-
-struct ContactLevelSetPushConstant {
-    glm::vec3 gridMin;
-    float cellSize;
-    glm::ivec3 gridDim;
-    float range;
-};
-static_assert(sizeof(ContactLevelSetPushConstant) == 32);
-
-struct ContactFace {
-    glm::vec4 centroidArea{0.0f};  // xyz = contact centroid, w = face area
-    glm::vec4 normalGap{0.0f};     // xyz = contact normal,   w = physical gap
-    uint32_t channelA{0};          // runtime SDF channel A
-    uint32_t channelB{0};          // runtime SDF channel B
-    uint32_t pad0{0};
-    uint32_t pad1{0};
-};
-static_assert(sizeof(ContactFace) == 48);
-static_assert(offsetof(ContactFace, centroidArea) == 0);
-static_assert(offsetof(ContactFace, normalGap) == 16);
-static_assert(offsetof(ContactFace, channelA) == 32);
-static_assert(offsetof(ContactFace, channelB) == 36);
-
-struct ContactRegion {
-    glm::vec4 centerExtentW{0.0f}; // xyz = region center, w = extentW 
-    glm::vec4 normalExtentU{0.0f}; // xyz = region normal, w = extentU 
-    glm::vec4 uAxisExtentV{0.0f};  // xyz = uAxis,         w = extentV 
-    glm::vec4 vAxis{0.0f};         // xyz = vAxis,         w = 0.0
-    uint32_t channelA{0};          // SDF channel A index
-    uint32_t channelB{0};          // SDF channel B index
-    uint32_t psiChannel{0};        // Precomputed Psi (sdfA - sdfB)
-    uint32_t pad0{0};
-};
-static_assert(sizeof(ContactRegion) == 80);
-static_assert(offsetof(ContactRegion, centerExtentW) == 0);
-static_assert(offsetof(ContactRegion, normalExtentU) == 16);
-static_assert(offsetof(ContactRegion, uAxisExtentV) == 32);
-static_assert(offsetof(ContactRegion, vAxis) == 48);
-static_assert(offsetof(ContactRegion, channelA) == 64);
-static_assert(offsetof(ContactRegion, channelB) == 68);
-static_assert(offsetof(ContactRegion, psiChannel) == 72);
+static_assert(sizeof(AdvectionBoundaryFace) == 8, "AdvectionBoundaryFace must match GPU stride");
 
 }
 

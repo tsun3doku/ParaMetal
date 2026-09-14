@@ -83,38 +83,32 @@ static __device__ uint32_t queryExactKnn(const DeviceKnn& knn, uint32_t queryId,
                                          uint32_t* neighborIds) {
     const float4 queryPosition = knn.seeds[queryId];
     const float3 query = make_float3(queryPosition.x, queryPosition.y, queryPosition.z);
-    const int3 queryCell = cellIndexOf(query, knn.grid);
     int neighborCount = 0;
 
-    for (uint32_t offsetIndex = 0; offsetIndex < knn.cellOffsetCount; ++offsetIndex) {
-        if (neighborCount >= int(k) &&
-            distanceHeap[0] < knn.cellOffsetDistances[offsetIndex]) {
-            break;
+    struct ExactKnnVisitor {
+        float3 query;
+        uint32_t queryId;
+        uint32_t k;
+        double* distanceHeap;
+        uint32_t* neighborIds;
+        int& neighborCount;
+        const DeviceKnn& knn;
+
+        __device__ bool shouldContinue(double cellLowerBoundDistSq) const {
+            return neighborCount < int(k) || distanceHeap[0] >= cellLowerBoundDistSq;
         }
 
-        const int3 offset = knn.cellOffsets[offsetIndex];
-        const int x = queryCell.x + offset.x;
-        const int y = queryCell.y + offset.y;
-        const int z = queryCell.z + offset.z;
-        if (x < 0 || x >= knn.grid.gridDim.x ||
-            y < 0 || y >= knn.grid.gridDim.y ||
-            z < 0 || z >= knn.grid.gridDim.z) continue;
-
-        const uint32_t cell = linearCell(x, y, z, knn.grid);
-        const uint32_t begin = min(knn.cellStart[cell], knn.seedCount);
-        const uint32_t end = min(max(knn.cellStart[cell + 1], begin), knn.seedCount);
-        for (uint32_t index = begin; index < end; ++index) {
-            const BucketEntry entry = knn.bucketEntries[index];
-            if (entry.id >= knn.seedCount || entry.id == queryId) continue;
-
+        __device__ void visit(const BucketEntry& entry) {
+            if (entry.id >= knn.seedCount || entry.id == queryId) return;
             const double dx = double(query.x) - double(entry.position.x);
             const double dy = double(query.y) - double(entry.position.y);
             const double dz = double(query.z) - double(entry.position.z);
             insertCandidate(distanceHeap, neighborIds, neighborCount, int(k),
                             dx * dx + dy * dy + dz * dz, entry.id);
         }
-    }
+    } visitor{query, queryId, k, distanceHeap, neighborIds, neighborCount, knn};
 
+    traverseKnnCells(knn, query, visitor);
     sortCandidates(distanceHeap, neighborIds, neighborCount);
     return uint32_t(neighborCount);
 }

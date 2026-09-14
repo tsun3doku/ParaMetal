@@ -6,57 +6,32 @@ namespace voronoi {
 
 enum class RVDStatus : uint32_t {
     Success,
-    RestrictedPending,
-    Ghost,
     EmptyCell,
     VertexOverflow,
     PlaneOverflow,
     TriangleOverflow,
-    InterfaceOverflow,
-    SecurityRadiusNotReached,
     NeedsRobustPredicate,
     InconsistentBoundary,
-    FindAnotherBeginningVertex,
     NonFiniteGeometry,
     InvalidIndex,
+    NegativeVolume,
     Count
 };
 
-#if defined(__CUDACC__)
-#define RVD_STATUS_HD __host__ __device__
-#else
-#define RVD_STATUS_HD
-#endif
-
-RVD_STATUS_HD constexpr uint32_t rvdStatusBit(RVDStatus status) {
-    return 1u << static_cast<uint32_t>(status);
+inline const char* rvdStatusName(RVDStatus status) {
+    switch (status) {
+    case RVDStatus::Success: return "Success";
+    case RVDStatus::EmptyCell: return "EmptyCell";
+    case RVDStatus::VertexOverflow: return "VertexOverflow";
+    case RVDStatus::PlaneOverflow: return "PlaneOverflow";
+    case RVDStatus::TriangleOverflow: return "TriangleOverflow";
+    case RVDStatus::NeedsRobustPredicate: return "NeedsRobustPredicate";
+    case RVDStatus::InconsistentBoundary: return "InconsistentBoundary";
+    case RVDStatus::NonFiniteGeometry: return "NonFiniteGeometry";
+    case RVDStatus::InvalidIndex: return "InvalidIndex";
+    case RVDStatus::NegativeVolume: return "NegativeVolume";
+    default: return "Unknown";
+    }
 }
-
-#undef RVD_STATUS_HD
-
-inline constexpr uint32_t RVDRestrictedPassMask =
-    rvdStatusBit(RVDStatus::RestrictedPending) |
-    rvdStatusBit(RVDStatus::VertexOverflow) |
-    rvdStatusBit(RVDStatus::PlaneOverflow) |
-    rvdStatusBit(RVDStatus::TriangleOverflow) |
-    rvdStatusBit(RVDStatus::SecurityRadiusNotReached);
-
-inline constexpr uint32_t RVDPredicateRetryMask =
-    rvdStatusBit(RVDStatus::NeedsRobustPredicate) |
-    rvdStatusBit(RVDStatus::InconsistentBoundary) |
-    rvdStatusBit(RVDStatus::NonFiniteGeometry);
-
-inline constexpr uint32_t RVDTerminalFailureMask =
-    rvdStatusBit(RVDStatus::RestrictedPending) |
-    rvdStatusBit(RVDStatus::VertexOverflow) |
-    rvdStatusBit(RVDStatus::PlaneOverflow) |
-    rvdStatusBit(RVDStatus::TriangleOverflow) |
-    rvdStatusBit(RVDStatus::InterfaceOverflow) |
-    rvdStatusBit(RVDStatus::SecurityRadiusNotReached) |
-    rvdStatusBit(RVDStatus::NeedsRobustPredicate) |
-    rvdStatusBit(RVDStatus::InconsistentBoundary) |
-    rvdStatusBit(RVDStatus::FindAnotherBeginningVertex) |
-    rvdStatusBit(RVDStatus::NonFiniteGeometry) |
-    rvdStatusBit(RVDStatus::InvalidIndex);
 
 } // namespace voronoi

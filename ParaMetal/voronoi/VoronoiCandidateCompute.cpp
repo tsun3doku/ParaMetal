@@ -21,9 +21,9 @@ VoronoiCandidateCompute::~VoronoiCandidateCompute() {
     cleanup();
 }
 
-void VoronoiCandidateCompute::initialize() {
+bool VoronoiCandidateCompute::initialize() {
     if (initialized) {
-        return;
+        return true;
     }
 
     if (!createDescriptorSetLayout() ||
@@ -31,10 +31,11 @@ void VoronoiCandidateCompute::initialize() {
         !createDescriptorSet() ||
         !createPipeline()) {
         cleanupResources();
-        return;
+        return false;
     }
 
     initialized = true;
+    return true;
 }
 
 void VoronoiCandidateCompute::updateDescriptors(

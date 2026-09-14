@@ -57,6 +57,67 @@ __host__ __device__ inline uint32_t linearCell(int x, int y, int z,
            uint32_t(y) * uint32_t(grid.gridDim.x) + uint32_t(x);
 }
 
+template<typename T>
+__host__ __device__ inline T knnMin(T a, T b) { return (a < b) ? a : b; }
+
+template<typename T>
+__host__ __device__ inline T knnMax(T a, T b) { return (a > b) ? a : b; }
+
+template<typename TVisitor>
+__host__ __device__ inline void traverseKnnCells(const DeviceKnn& knn, float3 queryPoint, TVisitor&& visitor) {
+    const int3 queryCell = cellIndexOf(queryPoint, knn.grid);
+    for (uint32_t offsetIndex = 0; offsetIndex < knn.cellOffsetCount; ++offsetIndex) {
+        if (!visitor.shouldContinue(knn.cellOffsetDistances[offsetIndex])) {
+            break;
+        }
+
+        const int3 offset = knn.cellOffsets[offsetIndex];
+        const int x = queryCell.x + offset.x;
+        const int y = queryCell.y + offset.y;
+        const int z = queryCell.z + offset.z;
+        if (x < 0 || x >= knn.grid.gridDim.x ||
+            y < 0 || y >= knn.grid.gridDim.y ||
+            z < 0 || z >= knn.grid.gridDim.z) continue;
+
+        const uint32_t cell = linearCell(x, y, z, knn.grid);
+        const uint32_t begin = knnMin(knn.cellStart[cell], knn.seedCount);
+        const uint32_t end = knnMin(knnMax(knn.cellStart[cell + 1], begin), knn.seedCount);
+        for (uint32_t index = begin; index < end; ++index) {
+            visitor.visit(knn.bucketEntries[index]);
+        }
+    }
+}
+
+__device__ inline uint32_t nearestSeed(float3 point, const DeviceKnn& knn) {
+    uint32_t bestSeed = InvalidNeighborId;
+    double bestDistSq = 1e30;
+
+    struct NearestVisitor {
+        float3 query;
+        uint32_t& bestSeed;
+        double& bestDistSq;
+
+        __device__ bool shouldContinue(double cellLowerBoundDistSq) const {
+            return bestDistSq > cellLowerBoundDistSq;
+        }
+
+        __device__ void visit(const BucketEntry& entry) {
+            if (entry.id >= 0xffffffffu) return;
+            const double dx = double(query.x) - double(entry.position.x);
+            const double dy = double(query.y) - double(entry.position.y);
+            const double dz = double(query.z) - double(entry.position.z);
+            const double d2 = dx * dx + dy * dy + dz * dz;
+            if (d2 < bestDistSq) {
+                bestDistSq = d2;
+                bestSeed = entry.id;
+            }
+        }
+    } visitor{point, bestSeed, bestDistSq};
+
+    traverseKnnCells(knn, point, visitor);
+    return bestSeed;
+}
+
 __global__ void knnKernel(DeviceKnn knn, uint32_t* neighbors, double* distanceHeap,
                           uint32_t k, uint32_t* searchFailure,
                           const uint32_t* deviceQueryIds, uint32_t queryCount,

@@ -5,6 +5,7 @@
 
 #include "renderers/PointRenderer.hpp"
 #include "renderers/VoronoiRenderer.hpp"
+#include "renderers/VoronoiContactRenderer.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/UniformBufferManager.hpp"
 #include "vulkan/VulkanDevice.hpp"
@@ -13,7 +14,8 @@ namespace render {
 
 VoronoiOverlayRenderer::VoronoiOverlayRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, CommandPool& renderCommandPool)
     : voronoiRenderer(std::make_unique<VoronoiRenderer>(device, allocator, uniformBufferManager, renderCommandPool)),
-      pointRenderer(std::make_unique<PointRenderer>(device, uniformBufferManager)) {
+      pointRenderer(std::make_unique<PointRenderer>(device, uniformBufferManager)),
+      contactRenderer(std::make_unique<VoronoiContactRenderer>(device, uniformBufferManager)) {
 }
 
 VoronoiOverlayRenderer::~VoronoiOverlayRenderer() {
@@ -32,11 +34,16 @@ void VoronoiOverlayRenderer::initializeSurface(VkRenderPass renderPass, uint32_t
 }
 
 void VoronoiOverlayRenderer::initializeOverlay(VkRenderPass renderPass, uint32_t overlaySubpass, uint32_t maxFramesInFlight) {
-    if (!pointRenderer || overlayInitialized) {
+    if ((!pointRenderer && !contactRenderer) || overlayInitialized) {
         return;
     }
 
-    pointRenderer->initialize(renderPass, overlaySubpass, maxFramesInFlight);
+    if (pointRenderer) {
+        pointRenderer->initialize(renderPass, overlaySubpass, maxFramesInFlight);
+    }
+    if (contactRenderer) {
+        contactRenderer->initialize(renderPass, overlaySubpass, maxFramesInFlight);
+    }
     this->maxFramesInFlight = maxFramesInFlight;
     overlayInitialized = true;
     rebuildBindings();
@@ -134,18 +141,38 @@ void VoronoiOverlayRenderer::renderPoints(VkCommandBuffer commandBuffer, uint32_
 
     for (const auto& [socketKey, config] : configsBySocket) {
         (void)socketKey;
-        if (!config.showPoints || config.occupancyPointBuffer == VK_NULL_HANDLE || config.occupancyPointCount == 0) {
+        if (!config.showPoints || config.pointVertexBuffer == VK_NULL_HANDLE || config.candidateNodeCount == 0) {
             continue;
         }
 
         pointRenderer->render(
             commandBuffer,
             frameIndex,
-            config.occupancyPointBuffer,
-            config.occupancyPointBufferOffset,
-            config.occupancyPointCount,
+            config.pointVertexBuffer,
+            config.pointVertexBufferOffset,
+            config.candidateNodeCount,
             glm::mat4(1.0f),
             extent);
+    }
+}
+
+void VoronoiOverlayRenderer::renderContacts(VkCommandBuffer commandBuffer, uint32_t frameIndex) {
+    if (!overlayInitialized || !contactRenderer) {
+        return;
+    }
+
+    for (const auto& [socketKey, config] : configsBySocket) {
+        (void)socketKey;
+        if (!config.showContactManifold || config.contactVertexBuffer == VK_NULL_HANDLE || config.contactVertexCount == 0) {
+            continue;
+        }
+
+        contactRenderer->render(
+            commandBuffer,
+            frameIndex,
+            config.contactVertexBuffer,
+            config.contactVertexBufferOffset,
+            config.contactVertexCount);
     }
 }
 
@@ -160,6 +187,9 @@ void VoronoiOverlayRenderer::cleanup() {
     }
     if (pointRenderer) {
         pointRenderer->cleanup();
+    }
+    if (contactRenderer) {
+        contactRenderer->cleanup();
     }
 }
 

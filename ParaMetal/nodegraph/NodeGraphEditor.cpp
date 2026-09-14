@@ -2,7 +2,10 @@
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
 #include "NodePointsParams.hpp"
+#include "NodeMergeParams.hpp"
 #include "NodeTransformParams.hpp"
+#include "NodeHeatFluidParams.hpp"
+#include "voronoi/VoronoiConfig.hpp"
 
 #include "NodeGraph.hpp"
 #include "nodegraph/ui/scene/NodeGraphSceneUtils.hpp"
@@ -91,12 +94,13 @@ void NodeGraphEditor::resetToDefaultGraph() {
     const CreatedNode sourceMeshPoints = createNode(nodegraphtypes::MeshPoints, "Mesh Points", farRightColumnX, row4Y);
     const CreatedNode merge = createNode(nodegraphtypes::Merge, "Merge", centerColumnX, row5Y);
     const CreatedNode voronoi = createNode(nodegraphtypes::Voronoi, "Voronoi", centerColumnX, row6Y);
+    const CreatedNode heatFluid = createNode(nodegraphtypes::HeatFluid, "Heat Fluid", rightColumnX, row6Y);
     const CreatedNode heatSolve = createNode(nodegraphtypes::HeatSolve, "Ember", centerColumnX, row7Y);
 
     if (!receiverModel.id.isValid() || !receiverTransform.id.isValid() || !receiverRemesh.id.isValid() ||
         !sourceModel.id.isValid() || !sourceTransform.id.isValid() || !sourceRemesh.id.isValid() ||
         !receiverHeatModel.id.isValid() || !sourceHeatModel.id.isValid() ||
-        !voronoi.id.isValid() || !heatSolve.id.isValid() ||
+        !voronoi.id.isValid() || !heatFluid.id.isValid() || !heatSolve.id.isValid() ||
         !points.id.isValid() || !pointsTransform.id.isValid() ||
         !receiverMeshPoints.id.isValid() || !sourceMeshPoints.id.isValid() || !merge.id.isValid()) {
         return;
@@ -128,10 +132,16 @@ void NodeGraphEditor::resetToDefaultGraph() {
 
     PointsNodeParams pointsParams{};
     pointsParams.pointCount = 30000;
-    pointsParams.dimX = 0.25f;
-    pointsParams.dimY = 0.20f;
-    pointsParams.dimZ = 0.25f;
+    pointsParams.dimX = 0.2f;
+    pointsParams.dimY = 0.2f;
+    pointsParams.dimZ = 0.2f;
+    pointsParams.distribution = PointsDistribution::BlueNoise;
+    pointsParams.seed = 1;
     writePointsNodeParams(*this, points.id, pointsParams);
+
+    MergeNodeParams mergeParams{};
+    mergeParams.mergeDistance = 0.01f;
+    writeMergeNodeParams(*this, merge.id, mergeParams);
 
     const NodeGraphSocketId receiverModelOutputId = outputSocketByType(receiverModel.node, NodeGraphValueType::Mesh);
     const NodeGraphSocketId receiverTransformInputId = inputSocketByName(receiverTransform.node, "Geometry");
@@ -149,6 +159,8 @@ void NodeGraphEditor::resetToDefaultGraph() {
     const NodeGraphSocketId voronoiPointsInputId = inputSocketByType(voronoi.node, NodeGraphValueType::Points);
     const NodeGraphSocketId heatSolveVoronoiInputId = inputSocketByType(heatSolve.node, NodeGraphValueType::Volume);
     const NodeGraphSocketId heatSolveHeatModelInputId = inputSocketByType(heatSolve.node, NodeGraphValueType::HeatModel);
+    const NodeGraphSocketId heatSolveHeatFluidInputId = inputSocketByType(heatSolve.node, NodeGraphValueType::HeatFluid);
+    const NodeGraphSocketId heatFluidOutputId = firstOutputSocket(heatFluid.node);
     const NodeGraphSocketId receiverHeatModelOutputId = firstOutputSocket(receiverHeatModel.node);
     const NodeGraphSocketId sourceHeatModelOutputId = firstOutputSocket(sourceHeatModel.node);
     const NodeGraphSocketId voronoiOutputId = firstOutputSocket(voronoi.node);
@@ -168,6 +180,7 @@ void NodeGraphEditor::resetToDefaultGraph() {
         !sourceRemeshOutputId.isValid() || !receiverHeatModelInputId.isValid() || !sourceHeatModelInputId.isValid() ||
         !voronoiRemeshesInputId.isValid() || !voronoiPointsInputId.isValid() ||
         !heatSolveVoronoiInputId.isValid() || !heatSolveHeatModelInputId.isValid() ||
+        !heatSolveHeatFluidInputId.isValid() || !heatFluidOutputId.isValid() ||
         !receiverHeatModelOutputId.isValid() || !sourceHeatModelOutputId.isValid() || !voronoiOutputId.isValid() ||
         !pointsOutputId.isValid() || !pointsTransformInputId.isValid() || !pointsTransformOutputId.isValid() ||
         !receiverMeshPointsInputId.isValid() || !receiverMeshPointsOutputId.isValid() ||
@@ -187,30 +200,6 @@ void NodeGraphEditor::resetToDefaultGraph() {
     sourceModelPath.type = NodeGraphParamType::String;
     sourceModelPath.stringValue = "models/heatsource_torus.obj";
     setNodeParameter(sourceModel.id, sourceModelPath);
-
-    // Set receiver heat model to an adiabatic boundary.
-    NodeGraphParamValue receiverHeatModelBC{};
-    receiverHeatModelBC.id = nodegraphparams::heatmodel::BoundaryCondition;
-    receiverHeatModelBC.type = NodeGraphParamType::Enum;
-    receiverHeatModelBC.enumValue = "Adiabatic";
-    setNodeParameter(receiverHeatModel.id, receiverHeatModelBC);
-
-    // Set source heat model to a Robin Convection boundary condition with 500 HTC.
-    NodeGraphParamValue sourceHeatModelBC{};
-    sourceHeatModelBC.id = nodegraphparams::heatmodel::BoundaryCondition;
-    sourceHeatModelBC.type = NodeGraphParamType::Enum;
-    sourceHeatModelBC.enumValue = "Robin Convection";
-    setNodeParameter(sourceHeatModel.id, sourceHeatModelBC);
-    NodeGraphParamValue sourceHeatModelTemp{};
-    sourceHeatModelTemp.id = nodegraphparams::heatmodel::DirichletTemperatureC;
-    sourceHeatModelTemp.type = NodeGraphParamType::Float;
-    sourceHeatModelTemp.floatValue = 100.0;
-    setNodeParameter(sourceHeatModel.id, sourceHeatModelTemp);
-    NodeGraphParamValue sourceHeatModelHTC{};
-    sourceHeatModelHTC.id = nodegraphparams::heatmodel::HeatTransferCoefficient;
-    sourceHeatModelHTC.type = NodeGraphParamType::Float;
-    sourceHeatModelHTC.floatValue = 500.0;
-    setNodeParameter(sourceHeatModel.id, sourceHeatModelHTC);
 
     NodeGraphParamValue receiverHeatModelDensity{};
     receiverHeatModelDensity.id = nodegraphparams::heatmodel::Density;
@@ -254,11 +243,14 @@ void NodeGraphEditor::resetToDefaultGraph() {
     voronoiSDFSize.floatValue = 0.005f;
     setNodeParameter(voronoi.id, voronoiSDFSize);
 
-    NodeGraphParamValue heatOverlayParam{};
-    heatOverlayParam.id = nodegraphparams::heatsolve::ShowHeatOverlay;
-    heatOverlayParam.type = NodeGraphParamType::Bool;
-    heatOverlayParam.boolValue = true;
-    setNodeParameter(heatSolve.id, heatOverlayParam);
+    NodeGraphParamValue voronoiContactRange{};
+    voronoiContactRange.id = nodegraphparams::voronoi::ContactRange;
+    voronoiContactRange.type = NodeGraphParamType::Float;
+    voronoiContactRange.floatValue = voronoi::DefaultContactRange;
+    setNodeParameter(voronoi.id, voronoiContactRange);
+
+    HeatFluidNodeParams fluidParams{};
+    writeHeatFluidNodeParams(*this, heatFluid.id, fluidParams);
 
     std::string errorMessage;
     connectSockets(receiverModel.id, receiverModelOutputId, receiverTransform.id, receiverTransformInputId, errorMessage);
@@ -271,6 +263,7 @@ void NodeGraphEditor::resetToDefaultGraph() {
     connectSockets(sourceRemesh.id, sourceRemeshOutputId, voronoi.id, voronoiRemeshesInputId, errorMessage);
     connectSockets(receiverHeatModel.id, receiverHeatModelOutputId, heatSolve.id, heatSolveHeatModelInputId, errorMessage);
     connectSockets(sourceHeatModel.id, sourceHeatModelOutputId, heatSolve.id, heatSolveHeatModelInputId, errorMessage);
+    connectSockets(heatFluid.id, heatFluidOutputId, heatSolve.id, heatSolveHeatFluidInputId, errorMessage);
     connectSockets(points.id, pointsOutputId, pointsTransform.id, pointsTransformInputId, errorMessage);
     connectSockets(receiverRemesh.id, receiverRemeshOutputId, receiverMeshPoints.id, receiverMeshPointsInputId, errorMessage);
     connectSockets(sourceRemesh.id, sourceRemeshOutputId, sourceMeshPoints.id, sourceMeshPointsInputId, errorMessage);

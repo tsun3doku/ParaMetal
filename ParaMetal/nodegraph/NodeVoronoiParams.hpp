@@ -1,6 +1,7 @@
 #pragma once
 
 #include "NodeGraphTypes.hpp"
+#include "voronoi/VoronoiConfig.hpp"
 
 class NodeGraphEditor;
 struct NodeGraphNode;
@@ -8,12 +9,14 @@ struct NodeGraphNode;
 struct VoronoiPreviewSettings {
     bool showVoronoi = false;
     bool showPoints = false;
+    bool showContactManifold = false;
 };
 
 struct VoronoiNodeParams {
     double sdfSize = 0.005;
     int voxelResolution = 128;
     double sdfPadding = 0.01;
+    double contactRange = voronoi::DefaultContactRange;
     VoronoiPreviewSettings preview{};
 };
 

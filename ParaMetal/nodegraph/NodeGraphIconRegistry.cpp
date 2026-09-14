@@ -8,6 +8,7 @@ const char* NodeGraphIconRegistry::iconFolderForType(const NodeTypeId& typeId) {
     if (typeId == "heat_solve") return "HeatSystem";
     if (typeId == "model") return "Model";
     if (typeId == "heat_model") return "HeatModel";
+    if (typeId == "heat_fluid") return "HeatModel";
     if (typeId == "remesh") return "Remesh";
     if (typeId == "transform") return "Transform";
     if (typeId == "voronoi") return "VoronoiSystem";

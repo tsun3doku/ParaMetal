@@ -21,7 +21,7 @@ HeatOverlayRenderer::HeatOverlayRenderer(
       memoryAllocator(allocator),
       surfaceRenderer(std::make_unique<HeatSurfaceRenderer>(device, allocator, uniformBufferManager, commandPool)),
       vectorArrowRenderer(std::make_unique<VectorArrowRenderer>(device, allocator, uniformBufferManager, commandPool)),
-      contactLevelSetRenderer(std::make_unique<HeatContactLevelSetRenderer>(device, allocator, uniformBufferManager)) {
+      boxRenderer(std::make_unique<HeatBoxRenderer>(device, allocator, uniformBufferManager)) {
 }
 
 HeatOverlayRenderer::~HeatOverlayRenderer() {
@@ -40,7 +40,7 @@ void HeatOverlayRenderer::initializeSurface(VkRenderPass renderPass, uint32_t su
 }
 
 void HeatOverlayRenderer::initializeOverlay(VkRenderPass renderPass, uint32_t overlaySubpass, uint32_t updatedMaxFramesInFlight) {
-    if ((!vectorArrowRenderer && !contactLevelSetRenderer) || overlayInitialized) {
+    if ((!vectorArrowRenderer && !boxRenderer) || overlayInitialized) {
         return;
     }
 
@@ -48,8 +48,8 @@ void HeatOverlayRenderer::initializeOverlay(VkRenderPass renderPass, uint32_t ov
     if (vectorArrowRenderer) {
         vectorArrowRenderer->initialize(renderPass, overlaySubpass, maxFramesInFlight);
     }
-    if (contactLevelSetRenderer) {
-        contactLevelSetRenderer->initialize(renderPass, overlaySubpass, maxFramesInFlight);
+    if (boxRenderer) {
+        boxRenderer->initialize(renderPass, overlaySubpass, maxFramesInFlight);
     }
     overlayInitialized = true;
     rebuildBindings();
@@ -83,7 +83,7 @@ void HeatOverlayRenderer::rebuildBindings() {
 
     surfaceBindings.clear();
     fluxVectorBindings.clear();
-    contactLevelSetBindings.clear();
+    boxBindings.clear();
 
     paletteVisible = false;
 
@@ -164,26 +164,11 @@ void HeatOverlayRenderer::rebuildBindings() {
             }
         }
 
-        if (config.showContactLevelSet &&
-            config.contactRegionBuffer != VK_NULL_HANDLE &&
-            config.indirectDrawBuffer != VK_NULL_HANDLE &&
-            !config.globalSdfImageViews.empty() &&
-            config.globalSdfSampler != VK_NULL_HANDLE) {
-            HeatContactLevelSetRenderer::RenderBinding contactBinding{};
-            contactBinding.sdfImageViews = config.globalSdfImageViews;
-            contactBinding.psiImageViews = config.globalPsiImageViews;
-            contactBinding.sdfSampler = config.globalSdfSampler;
-            contactBinding.regionBuffer = config.contactRegionBuffer;
-            contactBinding.regionBufferOffset = config.contactRegionBufferOffset;
-            contactBinding.regionBufferSize = config.contactRegionBufferSize;
-            contactBinding.indirectDrawBuffer = config.indirectDrawBuffer;
-            contactBinding.indirectDrawOffset = config.indirectDrawBufferOffset;
-            contactBinding.gridMin = config.globalSdfGridMin;
-            contactBinding.gridDim = config.globalSdfGridDim;
-            contactBinding.cellSize = config.globalSdfCellSize;
-            contactBinding.range = config.contactLevelSetRange;
+        if (config.showDomainBox && config.hasGlobalDomain) {
+            HeatBoxRenderer::RenderBinding boxBinding{};
+            boxBinding.corners = config.globalDomainCorners;
 
-            contactLevelSetBindings.push_back(contactBinding);
+            boxBindings.push_back(boxBinding);
         }
     }
 }
@@ -205,6 +190,18 @@ void HeatOverlayRenderer::setPalette(int palette) {
     if (surfaceRenderer) surfaceRenderer->setPalette(palette);
 }
 
+uint32_t HeatOverlayRenderer::getPalette() const {
+    return surfaceRenderer ? surfaceRenderer->getPalette() : 0u;
+}
+
+float HeatOverlayRenderer::getMinTemperature() const {
+    return surfaceRenderer ? surfaceRenderer->getMinTemperature() : 0.0f;
+}
+
+float HeatOverlayRenderer::getMaxTemperature() const {
+    return surfaceRenderer ? surfaceRenderer->getMaxTemperature() : 100.0f;
+}
+
 void HeatOverlayRenderer::renderOverlay(VkCommandBuffer commandBuffer, uint32_t frameIndex) {
     if (!overlayInitialized) {
         return;
@@ -213,8 +210,8 @@ void HeatOverlayRenderer::renderOverlay(VkCommandBuffer commandBuffer, uint32_t 
     if (vectorArrowRenderer) {
         vectorArrowRenderer->render(commandBuffer, frameIndex, fluxVectorBindings);
     }
-    if (contactLevelSetRenderer) {
-        contactLevelSetRenderer->render(commandBuffer, frameIndex, contactLevelSetBindings);
+    if (boxRenderer) {
+        boxRenderer->render(commandBuffer, frameIndex, boxBindings);
     }
 }
 
@@ -222,7 +219,7 @@ void HeatOverlayRenderer::cleanup() {
     configsBySocket.clear();
     surfaceBindings.clear();
     fluxVectorBindings.clear();
-    contactLevelSetBindings.clear();
+    boxBindings.clear();
     maxFramesInFlight = 0;
     surfaceInitialized = false;
     overlayInitialized = false;
@@ -232,8 +229,8 @@ void HeatOverlayRenderer::cleanup() {
     if (vectorArrowRenderer) {
         vectorArrowRenderer->cleanup();
     }
-    if (contactLevelSetRenderer) {
-        contactLevelSetRenderer->cleanup();
+    if (boxRenderer) {
+        boxRenderer->cleanup();
     }
 }
 

@@ -23,16 +23,23 @@ const HeatMaterialPreset& heatMaterialPresetById(HeatMaterialPresetId id);
 const char* heatMaterialPresetName(HeatMaterialPresetId id);
 
 struct HeatSimDefaults {
-    // Physical Constants
     static constexpr float ambientTemperatureC = 5.0f;
-    
-    // Default Material Properties
-    static constexpr float density = 1000.0f;       
-    static constexpr float specificHeat = 1000.0f;  
-    static constexpr float conductivity = 1.0f;   
-    
-    // Simulation Parameters
-    static constexpr float contactThermalConductance = 16000.0f;
+
+    static constexpr float density = 1000.0f;
+    static constexpr float specificHeat = 1000.0f;
+    static constexpr float conductivity = 1.0f;
+
+    static constexpr float fluidDensity = 1.225f;
+    static constexpr float fluidSpecificHeat = 1005.0f;
+    static constexpr float fluidConductivity = 0.026f;
+
     static constexpr float minNormalDot = -0.65f;
     static constexpr float contactRadius = 0.01f;
 };
+
+namespace heat::bc {
+inline constexpr uint32_t Adiabatic = 0;
+inline constexpr uint32_t Dirichlet = 1;
+inline constexpr uint32_t Neumann = 2;
+inline constexpr uint32_t Robin = 3;
+}

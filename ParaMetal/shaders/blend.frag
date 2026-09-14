@@ -1,9 +1,8 @@
 #version 450
-#extension GL_KHR_vulkan_glsl:enable
 
 layout(input_attachment_index=0, set=0, binding=0) uniform subpassInput lineOverlayInput;
 layout(input_attachment_index=1, set=0, binding=1) uniform subpassInput lightingInput;
-layout(input_attachment_index=2, set=0, binding=2) uniform subpassInput albedoCoverageInput;
+layout(input_attachment_index=2, set=0, binding=2) uniform subpassInput volumeInput;
 layout(set=0, binding=3) uniform sampler2D backgroundTexture;
 layout(push_constant) uniform BlendSettings {
     uint backgroundMode;
@@ -25,6 +24,7 @@ vec3 linearToSrgb(vec3 c)
 
 void main() {
     vec4 lighting = subpassLoad(lightingInput);
+    vec4 volume = subpassLoad(volumeInput);
     vec4 lineOverlay = subpassLoad(lineOverlayInput);
 
     vec3 clearColor = settings.backgroundMode == 0u
@@ -32,7 +32,8 @@ void main() {
         : vec3(1.0);
 
     float coverage = clamp(lighting.a, 0.0, 1.0);
-    vec3 color = lighting.rgb + clearColor.rgb * (1.0 - coverage);
+    vec3 sceneColor = lighting.rgb + clearColor.rgb * (1.0 - coverage);
+    vec3 color = volume.rgb + sceneColor * (1.0 - volume.a);
     color = color * (1.0 - lineOverlay.a) + lineOverlay.rgb;
 
     outColor = vec4(linearToSrgb(color), 1.0);

@@ -248,6 +248,26 @@ void MainRenderGraph::buildMainRenderGraph(FrameGraph& frameGraph) {
         makeAttachmentOps(framegraph::AttachmentLoadOp::DontCare, framegraph::AttachmentStoreOp::Store),
         framegraph::ResourceLayout::ShaderReadOnly);
 
+    const framegraph::ResourceId resVolumeMSAA = addColorImage(
+        frameGraph,
+        framegraph::resources::VolumeMSAA,
+        framegraph::ImageFormat::R16G16B16A16Sfloat,
+        false,
+        framegraph::SampleCount::Count8,
+        framegraph::ImageUsage::ColorAttachment | framegraph::ImageUsage::TransientAttachment,
+        makeAttachmentOps(framegraph::AttachmentLoadOp::Clear, framegraph::AttachmentStoreOp::DontCare),
+        framegraph::ResourceLayout::ColorAttachment);
+
+    const framegraph::ResourceId resVolumeResolve = addColorImage(
+        frameGraph,
+        framegraph::resources::VolumeResolve,
+        framegraph::ImageFormat::R16G16B16A16Sfloat,
+        false,
+        framegraph::SampleCount::Count1,
+        framegraph::ImageUsage::ColorAttachment | framegraph::ImageUsage::InputAttachment,
+        makeAttachmentOps(framegraph::AttachmentLoadOp::DontCare, framegraph::AttachmentStoreOp::Store),
+        framegraph::ResourceLayout::ShaderReadOnly);
+
     const framegraph::ResourceId resPickId = addColorImage(
         frameGraph,
         framegraph::resources::PickID,
@@ -332,6 +352,17 @@ void MainRenderGraph::buildMainRenderGraph(FrameGraph& frameGraph) {
     lightingPass.depthReadOnly = true;
     frameGraph.addPassDesc(std::move(lightingPass));
 
+    framegraph::PassDescription volumePass{};
+    volumePass.name = framegraph::passes::Volume;
+    volumePass.colors = { makeRef(resVolumeMSAA) };
+    volumePass.resolves = { makeRef(resVolumeResolve) };
+    volumePass.depthStencil = makeRef(
+        resDepthMSAA,
+        framegraph::ImageAspect::Depth | framegraph::ImageAspect::Stencil,
+        framegraph::ResourceLayout::DepthStencilReadOnly);
+    volumePass.depthReadOnly = true;
+    frameGraph.addPassDesc(std::move(volumePass));
+
     framegraph::PassDescription overlayPass{};
     overlayPass.name = framegraph::passes::Overlay;
     overlayPass.colors = {
@@ -363,7 +394,7 @@ void MainRenderGraph::buildMainRenderGraph(FrameGraph& frameGraph) {
     blendPass.inputs = {
         makeRef(resLineResolve),
         makeRef(resLightingResolve),
-        makeRef(resAlbedoResolve),
+        makeRef(resVolumeResolve),
     };
     blendPass.colors = { makeRef(resViewport) };
     frameGraph.addPassDesc(std::move(blendPass));

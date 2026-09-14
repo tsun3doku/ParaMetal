@@ -199,6 +199,7 @@ bool ProjectFile::valueTypeFromString(const QString& text, NodeGraphValueType& o
     else if (text == "Mesh") outValue = NodeGraphValueType::Mesh;
     else if (text == "Remesh") outValue = NodeGraphValueType::Remesh;
     else if (text == "HeatModel") outValue = NodeGraphValueType::HeatModel;
+    else if (text == "HeatFluid") outValue = NodeGraphValueType::HeatFluid;
     else if (text == "Points") outValue = NodeGraphValueType::Points;
     else if (text == "Volume") outValue = NodeGraphValueType::Volume;
     else if (text == "Field") outValue = NodeGraphValueType::Field;

@@ -31,11 +31,13 @@ class ScreenTextRenderer;
 namespace render { class HeatOverlayRenderer; }
 namespace render { class PointOverlayRenderer; }
 namespace render { class VoronoiOverlayRenderer; }
+namespace render { class HeatVolumeRenderer; }
 
 namespace render {
 class GeometryPass;
 class SurfacePass;
 class LightingPass;
+class VolumePass;
 class OverlayPass;
 class PickPass;
 class BlendPass;
@@ -74,6 +76,9 @@ public:
     render::HeatOverlayRenderer* getHeatOverlayRenderer() const;
     render::PointOverlayRenderer* getPointOverlayRenderer() const;
     render::VoronoiOverlayRenderer* getVoronoiOverlayRenderer() const;
+    render::HeatVolumeRenderer* getHeatVolumeRenderer() const;
+    void setHeatPaletteRange(float minimum, float maximum);
+    void setHeatPalette(int palette);
 
     void setTimingOverlayLines(const std::vector<std::string>& lines);
     void updateGrid(uint32_t frameIndex, const render::SceneView& sceneView, const glm::vec3& sceneExtent);
@@ -148,6 +153,7 @@ private:
     render::GeometryPass* geometryPass = nullptr;
     render::SurfacePass* surfacePass = nullptr;
     render::LightingPass* lightingPass = nullptr;
+    render::VolumePass* volumePass = nullptr;
     render::OverlayPass* overlayPass = nullptr;
     render::PickPass* pickPass = nullptr;
     render::BlendPass* blendPass = nullptr;

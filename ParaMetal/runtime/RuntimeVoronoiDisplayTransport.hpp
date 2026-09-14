@@ -66,7 +66,7 @@ private:
         if (!controller || !products || socketKey == 0) {
             return false;
         }
-        if (!package.display.showVoronoi && !package.display.showPoints) {
+        if (!package.display.showVoronoi && !package.display.showPoints && !package.display.showContactManifold) {
             return false;
         }
 
@@ -76,35 +76,26 @@ private:
             return false;
         }
         if (!computeProduct->isValid()) {
-            std::cerr << "[VoronoiDisplayTransport] computeProduct invalid: candidateNodeCount=" << computeProduct->candidateNodeCount
-                      << " nodeCount=" << computeProduct->nodeCount
-                      << " candidateNodeBuffer=" << computeProduct->candidateNodeBuffer
-                      << " nodeBuffer=" << computeProduct->nodeBuffer
-                      << " neighborIndicesBuffer=" << computeProduct->candidateNeighborIndicesBuffer
-                      << " seedPositionBuffer=" << computeProduct->seedPositionBuffer
-                      << " candidateBuffer=" << computeProduct->candidateBuffer
-                      << " isPointDomain=" << computeProduct->isPointDomain
-                      << " runtimeModelId=" << computeProduct->runtimeModelId << std::endl;
+            std::cerr << "[VoronoiDisplayTransport] computeProduct invalid for socketKey=" << socketKey << std::endl;
             return false;
         }
 
         outConfig = {};
         outConfig.showVoronoi = package.display.showVoronoi &&
-            package.domainType == DomainType::Global &&
             computeProduct->candidateNodeCount != 0 &&
-            computeProduct->candidateNodeBuffer != VK_NULL_HANDLE;
+            computeProduct->seedPositionBuffer != VK_NULL_HANDLE;
         outConfig.showPoints = package.display.showPoints;
+        outConfig.showContactManifold = package.display.showContactManifold;
+        outConfig.contactVertexBuffer = computeProduct->contactVertexBuffer;
+        outConfig.contactVertexBufferOffset = computeProduct->contactVertexBufferOffset;
+        outConfig.contactVertexCount = computeProduct->contactVertexCount;
         outConfig.candidateNodeCount = computeProduct->candidateNodeCount;
-        outConfig.mappedCandidateNodes = nullptr;
-        outConfig.candidateNodeBuffer = computeProduct->candidateNodeBuffer;
-        outConfig.candidateNodeBufferOffset = computeProduct->candidateNodeBufferOffset;
         outConfig.seedPositionBuffer = computeProduct->seedPositionBuffer;
         outConfig.seedPositionBufferOffset = computeProduct->seedPositionBufferOffset;
+        outConfig.pointVertexBuffer = computeProduct->candidatePointVertexBuffer;
+        outConfig.pointVertexBufferOffset = computeProduct->candidatePointVertexBufferOffset;
         outConfig.candidateNeighborIndicesBuffer = computeProduct->candidateNeighborIndicesBuffer;
         outConfig.candidateNeighborIndicesBufferOffset = computeProduct->candidateNeighborIndicesBufferOffset;
-        outConfig.occupancyPointBuffer = computeProduct->occupancyPointBuffer;
-        outConfig.occupancyPointBufferOffset = computeProduct->occupancyPointBufferOffset;
-        outConfig.occupancyPointCount = computeProduct->occupancyPointCount;
         if (outConfig.showVoronoi) {
             if (package.globalRemeshProducts.size() != computeProduct->globalDisplayCandidateBuffers.size()) {
                 std::cerr << "[VoronoiDisplayTransport] display instance mismatch for socketKey=" << socketKey

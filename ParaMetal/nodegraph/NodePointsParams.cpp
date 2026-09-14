@@ -28,6 +28,24 @@ PointsNodeParams readPointsNodeParams(const NodeGraphNode& node) {
         params.dimZ = static_cast<float>(dimZParam->floatValue);
     }
 
+    const NodeGraphParamValue* distParam = findNodeParamValue(node, nodegraphparams::points::Distribution);
+    if (distParam) {
+        if (distParam->type == NodeGraphParamType::Enum || distParam->type == NodeGraphParamType::String) {
+            if (distParam->stringValue == "Uniform Grid") {
+                params.distribution = PointsDistribution::UniformGrid;
+            } else {
+                params.distribution = PointsDistribution::BlueNoise;
+            }
+        } else if (distParam->type == NodeGraphParamType::Int) {
+            params.distribution = static_cast<PointsDistribution>(distParam->intValue);
+        }
+    }
+
+    const NodeGraphParamValue* seedParam = findNodeParamValue(node, nodegraphparams::points::Seed);
+    if (seedParam && seedParam->type == NodeGraphParamType::Int) {
+        params.seed = static_cast<uint32_t>(seedParam->intValue);
+    }
+
     return params;
 }
 
@@ -35,8 +53,11 @@ bool writePointsNodeParams(
     NodeGraphEditor& editor,
     NodeGraphNodeId nodeId,
     const PointsNodeParams& params) {
+    const char* distStr = (params.distribution == PointsDistribution::UniformGrid) ? "Uniform Grid" : "Blue Noise";
     return editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::points::PointCount, NodeGraphParamType::Int, 0.0, static_cast<int64_t>(params.pointCount)}) &&
            editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::points::DimX, NodeGraphParamType::Float, static_cast<double>(params.dimX)}) &&
            editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::points::DimY, NodeGraphParamType::Float, static_cast<double>(params.dimY)}) &&
-           editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::points::DimZ, NodeGraphParamType::Float, static_cast<double>(params.dimZ)});
+           editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::points::DimZ, NodeGraphParamType::Float, static_cast<double>(params.dimZ)}) &&
+           editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::points::Distribution, NodeGraphParamType::Enum, 0.0, static_cast<int64_t>(params.distribution), false, distStr}) &&
+           editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::points::Seed, NodeGraphParamType::Int, 0.0, static_cast<int64_t>(params.seed)});
 }

@@ -17,9 +17,21 @@
 struct HeatData {
     NodeDataHandle domainVoronoiHandle;
     std::vector<NodeDataHandle> heatModelHandles;
+    NodeDataHandle heatFluidHandle{};
     uint32_t activeVoronoiCount = 0;
-    uint32_t activeGlobalVoronoiCount = 0;
-    float contactThermalConductance = 16000.0f;
     float simulationDuration = 5.0f;
+    bool hasFluid = false;
     bool active = false;
+
+    uint32_t domainBoundaryTypes[6] = {};
+    float domainBoundaryTemperaturesC[6] = {
+        HeatSimDefaults::ambientTemperatureC,
+        HeatSimDefaults::ambientTemperatureC,
+        HeatSimDefaults::ambientTemperatureC,
+        HeatSimDefaults::ambientTemperatureC,
+        HeatSimDefaults::ambientTemperatureC,
+        HeatSimDefaults::ambientTemperatureC
+    };
+    float domainBoundaryHeatFluxes[6] = {};
+    float domainBoundaryHeatTransferCoefficients[6] = {};
 };

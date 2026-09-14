@@ -18,10 +18,6 @@ void NodeHeatModel::execute(NodeKernelEval& eval) const {
     const NodeDataBlock* inputMeshValue =
         (meshSocketIndex < eval.inputs.size() && !eval.inputs[meshSocketIndex].empty())
             ? eval.inputs[meshSocketIndex].front() : nullptr;
-    const std::size_t temperatureSocketIndex = inputIndexOf(eval.node, NodeGraphValueType::ScalarFloat);
-    const NodeDataBlock* temperatureValue =
-        (temperatureSocketIndex < eval.inputs.size() && !eval.inputs[temperatureSocketIndex].empty())
-            ? eval.inputs[temperatureSocketIndex].front() : nullptr;
     NodePayloadRegistry* const payloadRegistry = eval.runtime.payloadRegistry;
 
     NodeDataHandle meshHandle{};
@@ -45,19 +41,13 @@ void NodeHeatModel::execute(NodeKernelEval& eval) const {
 
         HeatModelData payload{};
         payload.meshHandle = meshHandle;
-        if (temperatureValue && temperatureValue->dataType == payloadtypes::SerialTemperature &&
-            payloadRegistry->get<SerialTemperatureData>(temperatureValue->payloadHandle)) {
-            payload.robinTemperatureSourceHandle = temperatureValue->payloadHandle;
-        }
         payload.density = static_cast<float>(params.density);
         payload.specificHeat = static_cast<float>(params.specificHeat);
         payload.conductivity = static_cast<float>(params.conductivity);
         payload.initialTemperatureC = static_cast<float>(params.initialTemperatureC);
-        payload.boundaryCondition.type = params.boundaryConditionType;
-        payload.boundaryCondition.temperatureC = static_cast<float>(params.boundaryTemperatureC);
-        payload.boundaryCondition.heatFlux = static_cast<float>(params.heatFlux);
-        payload.boundaryCondition.heatTransferCoefficient = static_cast<float>(params.heatTransferCoefficient);
         payload.volumetricHeatSource.powerDensity = static_cast<float>(params.volumetricPowerDensity);
+        payload.prescribedTemperatureEnabled = params.prescribedTemperatureEnabled;
+        payload.prescribedTemperatureC = static_cast<float>(params.prescribedTemperatureC);
         const uint64_t payloadKey = NodeSocketKey(eval.node.id, outputSocket.id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, eval.outputHashes);
         populateMetadata(outputValue, nullptr, payloadRegistry);
@@ -75,12 +65,9 @@ HashValues NodeHeatModel::computeOutputHashes(const NodeKernelHash& hash) const 
     HashBuilder::combineFloat(thermalHash, static_cast<float>(params.specificHeat));
     HashBuilder::combineFloat(thermalHash, static_cast<float>(params.conductivity));
     HashBuilder::combineFloat(thermalHash, static_cast<float>(params.initialTemperatureC));
-    HashBuilder::combine(thermalHash, static_cast<uint64_t>(params.boundaryConditionType));
-    HashBuilder::combineFloat(thermalHash, static_cast<float>(params.boundaryTemperatureC));
-    HashBuilder::combineFloat(thermalHash, static_cast<float>(params.heatFlux));
-    HashBuilder::combineFloat(thermalHash, static_cast<float>(params.heatTransferCoefficient));
     HashBuilder::combineFloat(thermalHash, static_cast<float>(params.volumetricPowerDensity));
-    HashNodeCache::combineOptionalSocket(thermalHash, hash, NodeGraphValueType::ScalarFloat, HashDomain::Thermal);
+    HashBuilder::combine(thermalHash, params.prescribedTemperatureEnabled ? 1u : 0u);
+    HashBuilder::combineFloat(thermalHash, static_cast<float>(params.prescribedTemperatureC));
 
     uint64_t simulationHash = HashBuilder::start();
     HashBuilder::combine(simulationHash, geometryHash);

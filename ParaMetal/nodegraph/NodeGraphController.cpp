@@ -229,8 +229,11 @@ bool NodeGraphController::runtimeModelIdsForSocket(
         return true;
     }
     if (const VoronoiPackage* package = packages.findAny<VoronoiPackage>(socketKey)) {
-        if (const VoronoiProduct* product = products->resolve<VoronoiProduct>(package->productHandle))
-            addRuntimeModelId(outIds, product->runtimeModelId);
+        if (const VoronoiProduct* product = products->resolve<VoronoiProduct>(package->productHandle)) {
+            for (uint32_t modelId : product->globalDisplayRuntimeModelIds) {
+                addRuntimeModelId(outIds, modelId);
+            }
+        }
         return true;
     }
     if (const HeatPackage* package = packages.findAny<HeatPackage>(socketKey)) {

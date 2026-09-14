@@ -1,6 +1,7 @@
 #pragma once
 
 #include "framegraph/ComputePass.hpp"
+#include "voronoi/GlobalDomainTopology.hpp"
 
 #include <cstdint>
 #include <glm/glm.hpp>
@@ -10,57 +11,16 @@
 #include <vector>
 
 #include "heat/HeatGlobalSolver.hpp"
+#include "heat/HeatSystemPresets.hpp"
+#include "heat/HeatFluidFlow.hpp"
 
 class HeatModelRuntime;
+class HeatFluidRuntime;
 class VulkanDevice;
 
 class HeatDomainRuntime {
 public:
     static constexpr uint32_t InvalidSolverNode = 0xFFFFFFFFu;
-
-    struct GlobalFragment {
-        uint32_t instanceId = 0;
-        uint32_t materialId = 0;
-        uint32_t seedId = 0;
-        float surfaceBoundaryArea = 0.0f;
-        float volume = 0.0f;
-    };
-
-    struct GlobalFace {
-        uint32_t instanceId = 0;
-        uint32_t fragmentA = 0;
-        uint32_t fragmentB = 0;
-        float area = 0.0f;
-    };
-
-    struct GlobalCutFace {
-        uint32_t fragmentA = 0;
-        uint32_t fragmentB = 0;
-        float area = 0.0f;
-        float gap = 0.0f;
-    };
-
-    struct GlobalThermalDomain {
-        std::vector<GlobalFragment> fragments;
-        std::vector<GlobalFace> faces;
-        std::vector<GlobalCutFace> cutFaces;
-        std::vector<uint32_t> instanceFragmentCounts;
-        std::vector<uint32_t> sdfRuntimeModelIds;
-        std::vector<glm::vec3> seedPositions;
-        glm::vec3 domainCorners{0.0f, 0.0f, 0.0f};
-        glm::vec3 sdfGridMin{0.0f, 0.0f, 0.0f};
-        glm::ivec3 sdfGridDim{0, 0, 0};
-        float sdfCellSize = 0.0f;
-        std::vector<float> sdfValues;
-
-        bool isValid() const {
-            return !fragments.empty() && !faces.empty() &&
-                sdfGridDim.x > 0 && sdfGridDim.y > 0 && sdfGridDim.z > 0 && sdfCellSize > 0.0f &&
-                sdfValues.size() ==
-                    static_cast<size_t>(sdfGridDim.x) * static_cast<size_t>(sdfGridDim.y) *
-                        static_cast<size_t>(sdfGridDim.z) * instanceFragmentCounts.size();
-        }
-    };
 
     ~HeatDomainRuntime();
 
@@ -72,27 +32,42 @@ public:
 
     void cleanup();
 
-    const GlobalThermalDomain& getGlobalDomain() const { return globalDomain; }
+    const topology::GlobalDomain& getGlobalDomain() const { return globalDomain; }
     bool isGlobalDomain() const { return globalDomain.isValid(); }
-    void setGlobalDomain(GlobalThermalDomain domain);
+    void setGlobalDomain(topology::GlobalDomain domain);
     void clearGlobalDomain();
 
     bool hasGlobalSolver() const { return globalSolver != nullptr; }
-    bool allGlobalFragmentsFixed() const { return allGlobalFragmentsFixedFlag; }
     bool globalTopologyDirty() const { return globalTopologyDirtyFlag; }
     bool globalValuesDirty() const { return globalValuesDirtyFlag; }
+    bool globalAdvectionDirty() const { return globalAdvectionDirtyFlag; }
     void markGlobalTopologyDirty() { globalTopologyDirtyFlag = true; }
     void markGlobalValuesDirty() { globalValuesDirtyFlag = true; }
+    void markAdvectionDirty() { globalAdvectionDirtyFlag = true; }
+
+    void setDomainBoundaryConditions(
+        const uint32_t types[6],
+        const float temperaturesC[6],
+        const float heatFluxes[6],
+        const float heatTransferCoefficients[6]) {
+        for (int i = 0; i < 6; ++i) {
+            domainBoundaryTypes[i] = types[i];
+            domainBoundaryTemperaturesC[i] = temperaturesC[i];
+            domainBoundaryHeatFluxes[i] = heatFluxes[i];
+            domainBoundaryHeatTransferCoefficients[i] = heatTransferCoefficients[i];
+        }
+    }
 
     bool rebuildGlobalSolver(
         const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& models,
+        HeatFluidRuntime* fluidRuntime,
         VulkanDevice& vulkanDevice,
-        float fixedTimeStep,
-        float contactThermalConductance);
+        float fixedTimeStep);
     bool updateGlobalValues(
         const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& models,
-        float fixedTimeStep,
-        float contactThermalConductance);
+        HeatFluidRuntime* fluidRuntime,
+        float fixedTimeStep);
+    bool updateGlobalAdvection(HeatFluidRuntime* fluidRuntime, float fixedTimeStep);
     bool launchGlobalSolve(bool sourceIsA);
     bool pollGlobalSolve(bool& completedDestinationIsA);
     bool isGlobalSolveInFlight() const { return globalSolveInFlight; }
@@ -103,41 +78,42 @@ public:
     ComputePass::Synchronization getGlobalSynchronization() const { return globalSynchronization; }
     void clearGlobalSynchronization() { globalSynchronization = ComputePass::Synchronization{}; }
 
+    const std::vector<uint32_t>& getGlobalFragmentToFluidNode() const { return globalFragmentToFluidNode; }
+
 private:
-    struct GlobalBoundaryRegion {
-        const HeatModelRuntime* model = nullptr;
-        uint32_t regionId = 0;
-        bool dirichlet = false;
-    };
-
-    struct SolverModelNodes {
-        uint32_t runtimeModelId = 0;
-        uint32_t solverNodeOffset = 0;
-        std::vector<uint32_t> localNodeIds;
-    };
-
     bool assembleGlobalMatrix(
         const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& models,
+        HeatFluidRuntime* fluidRuntime,
         float fixedTimeStep,
-        float contactThermalConductance,
         std::vector<int>& rowOffsets,
         std::vector<int>& columnIndices,
         std::vector<float>& values,
         std::vector<float>& thermalMasses,
-        std::vector<SolverModelNodes>& solverModelNodes,
-        std::vector<HeatGlobalSolver::FixedRow>& fixedRows,
-        std::vector<HeatGlobalSolver::FixedContribution>& fixedContributions,
-        uint32_t& boundaryValueCount);
+        std::vector<HeatGlobalSolver::TemperatureNodes>& temperatureNodes,
+        std::vector<float>& rhsAdditions);
+
+    bool updateFluidFlow(HeatFluidRuntime* fluidRuntime, float fixedTimeStep);
 
     std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>> activeModels;
 
-    GlobalThermalDomain globalDomain;
+    topology::GlobalDomain globalDomain;
+    uint32_t domainBoundaryTypes[6] = {};
+    float domainBoundaryTemperaturesC[6] = {
+        HeatSimDefaults::ambientTemperatureC,
+        HeatSimDefaults::ambientTemperatureC,
+        HeatSimDefaults::ambientTemperatureC,
+        HeatSimDefaults::ambientTemperatureC,
+        HeatSimDefaults::ambientTemperatureC,
+        HeatSimDefaults::ambientTemperatureC
+    };
+    float domainBoundaryHeatFluxes[6] = {};
+    float domainBoundaryHeatTransferCoefficients[6] = {};
+
     bool globalTopologyDirtyFlag = false;
     bool globalValuesDirtyFlag = false;
+    bool globalAdvectionDirtyFlag = false;
 
     std::unique_ptr<HeatGlobalSolver> globalSolver;
-    bool allGlobalFragmentsFixedFlag = false;
-    std::vector<GlobalBoundaryRegion> globalBoundaryRegions;
     ComputePass::Synchronization globalSynchronization;
     bool globalSolveInFlight = false;
     bool pendingDestinationIsA = false;
@@ -145,4 +121,8 @@ private:
     uint64_t vulkanReleaseCounter = 0;
     uint64_t pendingCudaReadyValue = 0;
     uint64_t lastVulkanReleaseValue[2]{0, 0};
+    std::vector<uint32_t> fragmentSolverNodes;
+    std::vector<uint32_t> fluidNodeToGlobalFragment;
+    std::vector<uint32_t> globalFragmentToFluidNode;
+    heat::HeatFluidFlow heatFluidFlow;
 };

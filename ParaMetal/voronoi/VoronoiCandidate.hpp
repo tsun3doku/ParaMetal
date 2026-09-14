@@ -8,6 +8,7 @@
 class VulkanDevice;
 class MemoryAllocator;
 class CommandPool;
+struct VoronoiProduct;
 
 namespace voronoi {
 
@@ -24,6 +25,7 @@ public:
         const std::vector<std::vector<glm::vec3>>& surfacePositions,
         const std::vector<std::vector<uint32_t>>& surfaceTriangleIndices);
 
+    void releaseGpuResources(VoronoiProduct& product);
     void cleanup();
 
     size_t getModelCount() const { return runtimeModelIds.size(); }

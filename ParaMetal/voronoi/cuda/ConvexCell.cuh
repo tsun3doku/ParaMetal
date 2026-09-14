@@ -2,14 +2,28 @@
 
 #include "RVD.hpp"
 #include "RVDStatus.cuh"
+#include "RVDPredicates.cuh"
 
 #include <cuda_runtime.h>
-
 #include <cstdint>
 
 namespace voronoi::rvdDevice {
 
 constexpr uint32_t EndOfList = 0xffffffffu;
+
+static constexpr int NoPlaneNeighbor = -1;
+static constexpr int DomainFaceBase = -2;
+
+__host__ __device__ inline int domainFaceTag(uint32_t face) {
+    return DomainFaceBase - static_cast<int>(face); // -2 .. -7
+}
+
+__host__ __device__ inline int domainFaceFromTag(int tag) {
+    if (tag > DomainFaceBase || tag < DomainFaceBase - 5) {
+        return -1;
+    }
+    return DomainFaceBase - tag;
+}
 
 struct NormalLimits {
     static constexpr int P = 50;
@@ -38,76 +52,27 @@ __device__ inline float3 max3(float3 a, float3 b) {
 }
 __device__ inline bool finite3(float3 a) { return isfinite(a.x) && isfinite(a.y) && isfinite(a.z); }
 
-__device__ inline double determinant4x4Double(float4 p0, float4 p1, float4 p2, float4 equation) {
-    const double m12 = double(p1.x) * p0.y - double(p0.x) * p1.y;
-    const double m13 = double(p2.x) * p0.y - double(p0.x) * p2.y;
-    const double m14 = double(equation.x) * p0.y - double(p0.x) * equation.y;
-    const double m23 = double(p2.x) * p1.y - double(p1.x) * p2.y;
-    const double m24 = double(equation.x) * p1.y - double(p1.x) * equation.y;
-    const double m34 = double(equation.x) * p2.y - double(p2.x) * equation.y;
-    const double m123 = m23 * p0.z - m13 * p1.z + m12 * p2.z;
-    const double m124 = m24 * p0.z - m14 * p1.z + m12 * equation.z;
-    const double m134 = m34 * p0.z - m14 * p2.z + m13 * equation.z;
-    const double m234 = m34 * p1.z - m24 * p2.z + m23 * equation.z;
-    return m234 * p0.w - m134 * p1.w + m124 * p2.w - m123 * equation.w;
-}
-
-__device__ inline float determinant4x4Float(float4 p0, float4 p1, float4 p2, float4 equation,
-                                            float& magnitude) {
-    const float m12a = p1.x * p0.y, m12b = -p0.x * p1.y;
-    const float m13a = p2.x * p0.y, m13b = -p0.x * p2.y;
-    const float m14a = equation.x * p0.y, m14b = -p0.x * equation.y;
-    const float m23a = p2.x * p1.y, m23b = -p1.x * p2.y;
-    const float m24a = equation.x * p1.y, m24b = -p1.x * equation.y;
-    const float m34a = equation.x * p2.y, m34b = -p2.x * equation.y;
-    const float M12 = fmaxf(fabsf(m12a), fabsf(m12b));
-    const float M13 = fmaxf(fabsf(m13a), fabsf(m13b));
-    const float M14 = fmaxf(fabsf(m14a), fabsf(m14b));
-    const float M23 = fmaxf(fabsf(m23a), fabsf(m23b));
-    const float M24 = fmaxf(fabsf(m24a), fabsf(m24b));
-    const float M34 = fmaxf(fabsf(m34a), fabsf(m34b));
-    const float m12 = m12a + m12b, m13 = m13a + m13b, m14 = m14a + m14b;
-    const float m23 = m23a + m23b, m24 = m24a + m24b, m34 = m34a + m34b;
-    const float m123 = m23 * p0.z - m13 * p1.z + m12 * p2.z;
-    const float m124 = m24 * p0.z - m14 * p1.z + m12 * equation.z;
-    const float m134 = m34 * p0.z - m14 * p2.z + m13 * equation.z;
-    const float m234 = m34 * p1.z - m24 * p2.z + m23 * equation.z;
-    const float M123 = fmaxf(fabsf(M23 * p0.z), fmaxf(fabsf(M13 * p1.z), fabsf(M12 * p2.z)));
-    const float M124 = fmaxf(fabsf(M24 * p0.z), fmaxf(fabsf(M14 * p1.z), fabsf(M12 * equation.z)));
-    const float M134 = fmaxf(fabsf(M34 * p0.z), fmaxf(fabsf(M14 * p2.z), fabsf(M13 * equation.z)));
-    const float M234 = fmaxf(fabsf(M34 * p1.z), fmaxf(fabsf(M24 * p2.z), fabsf(M23 * equation.z)));
-    magnitude = fmaxf(fabsf(M234 * p0.w), fmaxf(fabsf(M134 * p1.w),
-                      fmaxf(fabsf(M124 * p2.w), fabsf(M123 * equation.w))));
-    return m234 * p0.w - m134 * p1.w + m124 * p2.w - m123 * equation.w;
-}
-
 template <class Limits>
 struct ConvexCellStorage {
     alignas(16) uint3 vertices[Limits::V];
     alignas(16) float4 planes[Limits::P];
     int planeNeighborIds[Limits::P];
     uint32_t boundaryNext[Limits::P];
-    float planeAreas[Limits::P];
+    double planeAreas[Limits::P];
+    uint32_t vertexCount = 0;
+    uint32_t planeCount = 0;
 };
 
-struct RestrictedConvexCellStorage {
-    ConvexCellStorage<DiscoveryLimits> cell;
-    int32_t uniqueTriangles[DiscoveryLimits::T];
-    alignas(16) uint3 backupVertices[DiscoveryLimits::V];
-};
-
-template <bool RobustPredicate, bool FilterPredicate>
+template <PredicateMode Mode>
 struct ConvexCell {
     float4* planes = nullptr;
     int* planeNeighborIds = nullptr;
     uint32_t* boundaryNext = nullptr;
     uint3* vertices = nullptr;
-    uint3* backupVertices = nullptr;
-    float* planeAreas = nullptr;
-    int32_t* uniqueTriangles = nullptr;
+    double* planeAreas = nullptr;
+    uint32_t cellId = 0;
     uint32_t planeCapacity = 0;
     uint32_t vertexCapacity = 0;
-    uint32_t triangleCapacity = 0;
     int vertexCount = 0;
     int planeCount = 0;
     RVDStatus status = RVDStatus::Success;
@@ -121,93 +86,96 @@ struct ConvexCell {
         boundaryNext = storage.boundaryNext;
         vertices = storage.vertices;
         planeAreas = storage.planeAreas;
-        backupVertices = nullptr;
-        uniqueTriangles = nullptr;
-        planeCapacity = planeLimit > uint32_t(Limits::P) ? uint32_t(Limits::P) : planeLimit;
-        vertexCapacity = vertexLimit > uint32_t(Limits::V) ? uint32_t(Limits::V) : vertexLimit;
-        triangleCapacity = 0;
+        planeCapacity = planeLimit;
+        vertexCapacity = vertexLimit;
     }
 
-    __device__ void attachStorage(RestrictedConvexCellStorage& storage,
-                                  uint32_t planeLimit,
-                                  uint32_t vertexLimit,
-                                  uint32_t triangleLimit) {
-        attachStorage(storage.cell, planeLimit, vertexLimit);
-        backupVertices = storage.backupVertices;
-        uniqueTriangles = storage.uniqueTriangles;
-        triangleCapacity = triangleLimit > uint32_t(DiscoveryLimits::T)
-            ? uint32_t(DiscoveryLimits::T)
-            : triangleLimit;
-    }
-
-    __device__ void fail(RVDStatus value) {
-        if (status == RVDStatus::Success) status = value;
-    }
-
-    __device__ void initialize(const float4* domainPlanes) {
-        for (uint32_t i = 0; i < planeCapacity; ++i) {
-            planeNeighborIds[i] = -1;
-            planeAreas[i] = 0.0f;
+    template <class Limits>
+    __device__ bool loadStorage(const ConvexCellStorage<Limits>& source) {
+        if (source.planeCount > planeCapacity || source.vertexCount > vertexCapacity) {
+            fail(RVDStatus::InvalidIndex);
+            return false;
         }
-        for (uint32_t i = 0; i < 6; ++i) planes[i] = domainPlanes[i];
+
+        planeCount = int(source.planeCount);
+        vertexCount = int(source.vertexCount);
+
+        for (int p = 0; p < planeCount; ++p) {
+            planes[p] = source.planes[p];
+            planeNeighborIds[p] = source.planeNeighborIds[p];
+        }
+
+        for (int v = 0; v < vertexCount; ++v) {
+            vertices[v] = source.vertices[v];
+        }
+
+        return true;
+    }
+
+    template <class Limits>
+    __device__ bool saveStorage(ConvexCellStorage<Limits>& target) const {
+        if (planeCount > int(Limits::P) || vertexCount > int(Limits::V)) {
+            return false;
+        }
+        target.planeCount = uint32_t(planeCount);
+        target.vertexCount = uint32_t(vertexCount);
+        for (int p = 0; p < planeCount; ++p) {
+            target.planes[p] = planes[p];
+            target.planeNeighborIds[p] = planeNeighborIds[p];
+            target.planeAreas[p] = planeAreas[p];
+        }
+        for (int v = 0; v < vertexCount; ++v) {
+            target.vertices[v] = vertices[v];
+        }
+        return true;
+    }
+
+    __device__ bool initializeDomainBox(const float4* domainPlanes) {
+        if (planeCapacity < 6 || vertexCapacity < 8) {
+            fail(RVDStatus::InvalidIndex);
+            return false;
+        }
+
+        status = RVDStatus::Success;
         planeCount = 6;
-        vertices[0] = make_uint3(2, 5, 0); vertices[1] = make_uint3(5, 3, 0);
-        vertices[2] = make_uint3(1, 5, 2); vertices[3] = make_uint3(5, 1, 3);
-        vertices[4] = make_uint3(4, 2, 0); vertices[5] = make_uint3(4, 0, 3);
-        vertices[6] = make_uint3(2, 4, 1); vertices[7] = make_uint3(4, 3, 1);
         vertexCount = 8;
-    }
 
-    __device__ uint32_t planeAt(uint3 triplet, int index) const {
-        return index == 0 ? triplet.x : (index == 1 ? triplet.y : triplet.z);
-    }
-
-    __device__ bool compactPlanes() {
-        if (status != RVDStatus::Success || vertexCount <= 0) return false;
-        for (int plane = 0; plane < planeCount; ++plane) boundaryNext[plane] = EndOfList;
-        for (int vertex = 0; vertex < vertexCount; ++vertex) {
-            const uint3 triplet = vertices[vertex];
-            if (triplet.x >= uint32_t(planeCount) || triplet.y >= uint32_t(planeCount) ||
-                triplet.z >= uint32_t(planeCount)) {
-                fail(RVDStatus::InvalidIndex);
-                return false;
-            }
-            boundaryNext[triplet.x] = 0;
-            boundaryNext[triplet.y] = 0;
-            boundaryNext[triplet.z] = 0;
+        for (uint32_t i = 0; i < 6; ++i) {
+            planes[i] = domainPlanes[i];
+            planeNeighborIds[i] = domainFaceTag(i);
+            planeAreas[i] = 0.0;
         }
 
-        uint32_t compactCount = 0;
-        for (int oldPlane = 0; oldPlane < planeCount; ++oldPlane) {
-            if (boundaryNext[oldPlane] == EndOfList) continue;
-            if (uint32_t(oldPlane) != compactCount) {
-                planes[compactCount] = planes[oldPlane];
-                planeNeighborIds[compactCount] = planeNeighborIds[oldPlane];
-            }
-            boundaryNext[oldPlane] = compactCount++;
-        }
-        for (int vertex = 0; vertex < vertexCount; ++vertex) {
-            const uint3 old = vertices[vertex];
-            vertices[vertex] = make_uint3(boundaryNext[old.x], boundaryNext[old.y],
-                                          boundaryNext[old.z]);
-        }
-        planeCount = int(compactCount);
-        return status == RVDStatus::Success;
+        vertices[0] = make_uint3(2, 5, 0);
+        vertices[1] = make_uint3(5, 3, 0);
+        vertices[2] = make_uint3(1, 5, 2);
+        vertices[3] = make_uint3(5, 1, 3);
+        vertices[4] = make_uint3(4, 2, 0);
+        vertices[5] = make_uint3(4, 0, 3);
+        vertices[6] = make_uint3(2, 4, 1);
+        vertices[7] = make_uint3(4, 3, 1);
+
+        return true;
     }
 
-    __device__ float3 vertexPosition(uint3 triplet) {
+    __device__ void fail(RVDStatus newStatus) {
+        if (status == RVDStatus::Success) {
+            status = newStatus;
+        }
+    }
+
+    __device__ float3 vertexPosition(uint3 triplet) const {
         if (triplet.x >= uint32_t(planeCount) || triplet.y >= uint32_t(planeCount) ||
             triplet.z >= uint32_t(planeCount)) {
-            fail(RVDStatus::InvalidIndex);
-            return make_float3(0, 0, 0);
+            return make_float3(0.0f, 0.0f, 0.0f);
         }
         const float4 p0 = planes[triplet.x], p1 = planes[triplet.y], p2 = planes[triplet.z];
-        const double m12 = double(p1.x) * p2.y - double(p1.y) * p2.x;
-        const double m13 = double(p1.x) * p2.z - double(p1.z) * p2.x;
-        const double m14 = double(p1.x) * p2.w - double(p1.w) * p2.x;
-        const double m23 = double(p1.y) * p2.z - double(p1.z) * p2.y;
-        const double m24 = double(p1.y) * p2.w - double(p1.w) * p2.y;
-        const double m34 = double(p1.z) * p2.w - double(p1.w) * p2.z;
+        const double m12 = double(p1.x) * double(p2.y) - double(p1.y) * double(p2.x);
+        const double m13 = double(p1.x) * double(p2.z) - double(p1.z) * double(p2.x);
+        const double m14 = double(p1.x) * double(p2.w) - double(p1.w) * double(p2.x);
+        const double m23 = double(p1.y) * double(p2.z) - double(p1.z) * double(p2.y);
+        const double m24 = double(p1.y) * double(p2.w) - double(p1.w) * double(p2.y);
+        const double m34 = double(p1.z) * double(p2.w) - double(p1.w) * double(p2.z);
         const double x = -double(p0.w) * m23 - double(p0.y) * m34 + double(p0.z) * m24;
         const double y = double(p0.x) * m34 + double(p0.w) * m13 - double(p0.z) * m14;
         const double z = -double(p0.x) * m24 + double(p0.y) * m14 - double(p0.w) * m12;
@@ -215,26 +183,25 @@ struct ConvexCell {
         return make_float3(float(x / w), float(y / w), float(z / w));
     }
 
-    __device__ bool vertexOutside(uint3 triplet, float4 equation) {
+    __device__ bool vertexOutside(uint3 triplet, uint32_t newPlane) {
         if (triplet.x >= uint32_t(planeCount) || triplet.y >= uint32_t(planeCount) ||
-            triplet.z >= uint32_t(planeCount)) {
+            triplet.z >= uint32_t(planeCount) || newPlane >= uint32_t(planeCount)) {
             fail(RVDStatus::InvalidIndex);
             return false;
         }
         const float4 p0 = planes[triplet.x], p1 = planes[triplet.y], p2 = planes[triplet.z];
-        if constexpr (RobustPredicate) {
-            const double determinant = determinant4x4Double(p0, p1, p2, equation);
-            return determinant > 0.0;
-        } else {
-            float magnitude = 0.0f;
-            const float determinant = determinant4x4Float(p0, p1, p2, equation, magnitude);
-            if constexpr (FilterPredicate) {
-                if (fabsf(determinant) < 3.0e-6f * magnitude) {
-                    fail(RVDStatus::NeedsRobustPredicate);
-                    return determinant > -2.0e-7f * magnitude;
-                }
+        const float4 cut = planes[newPlane];
+
+        if constexpr (Mode == PredicateMode::FilteredFloat) {
+            const PredicateResult res = determinant4x4FilteredFloat(p0, p1, p2, cut);
+            if (fabs(res.value) > res.errorBound) {
+                return res.value > 0.0;
             }
-            return determinant > 0.0f;
+            fail(RVDStatus::NeedsRobustPredicate);
+            return false;
+        } else {
+            const PredicateResult res = determinant4x4FilteredDouble(p0, p1, p2, cut);
+            return res.value > res.errorBound;
         }
     }
 
@@ -251,31 +218,31 @@ struct ConvexCell {
         return true;
     }
 
-    __device__ uint32_t computeBoundary(int removedCount) {
+    __device__ static inline uint32_t planeAt(uint3 triplet, int index) {
+        return index == 0 ? triplet.x : (index == 1 ? triplet.y : triplet.z);
+    }
+
+    __device__ uint32_t computeBoundary(int removedCount, uint32_t newPlane) {
         for (uint32_t i = 0; i < planeCapacity; ++i) boundaryNext[i] = EndOfList;
         uint32_t firstBoundary = EndOfList;
-        int iterations = 0;
+        int rejected = 0;
         int triangle = vertexCount;
         while (removedCount > 0) {
-            if (iterations++ > 1000) {
-                fail(RVDStatus::InconsistentBoundary);
-                return firstBoundary;
-            }
             bool isInBorder[3];
             bool nextIsOpposite[3];
-            for (int edge = 0; edge < 3; ++edge)
+            for (int edge = 0; edge < 3; edge++)
                 isInBorder[edge] = boundaryNext[planeAt(vertices[triangle], edge)] != EndOfList;
-            for (int edge = 0; edge < 3; ++edge)
+            for (int edge = 0; edge < 3; edge++)
                 nextIsOpposite[edge] = boundaryNext[planeAt(vertices[triangle], (edge + 1) % 3)] ==
                                        planeAt(vertices[triangle], edge);
             bool simple = true;
-            for (int edge = 0; edge < 3; ++edge) {
+            for (int edge = 0; edge < 3; edge++) {
                 if (!nextIsOpposite[edge] && !nextIsOpposite[(edge + 1) % 3] &&
                     isInBorder[(edge + 1) % 3]) simple = false;
             }
             if (!nextIsOpposite[0] && !nextIsOpposite[1] && !nextIsOpposite[2]) {
                 if (firstBoundary == EndOfList) {
-                    for (int edge = 0; edge < 3; ++edge)
+                    for (int edge = 0; edge < 3; edge++)
                         boundaryNext[planeAt(vertices[triangle], edge)] =
                             planeAt(vertices[triangle], (edge + 1) % 3);
                     firstBoundary = vertices[triangle].x;
@@ -284,14 +251,19 @@ struct ConvexCell {
             if (!simple) {
                 ++triangle;
                 if (triangle == vertexCount + removedCount) triangle = vertexCount;
+                if (++rejected >= removedCount) {
+                    fail(RVDStatus::InconsistentBoundary);
+                    return firstBoundary;
+                }
                 continue;
             }
-            for (int edge = 0; edge < 3; ++edge) {
+            rejected = 0;
+            for (int edge = 0; edge < 3; edge++) {
                 if (!nextIsOpposite[edge])
                     boundaryNext[planeAt(vertices[triangle], edge)] =
                         planeAt(vertices[triangle], (edge + 1) % 3);
             }
-            for (int edge = 0; edge < 3; ++edge) {
+            for (int edge = 0; edge < 3; edge++) {
                 if (nextIsOpposite[edge] && nextIsOpposite[(edge + 1) % 3]) {
                     const uint32_t plane = planeAt(vertices[triangle], (edge + 1) % 3);
                     if (firstBoundary == plane) firstBoundary = boundaryNext[plane];
@@ -314,11 +286,10 @@ struct ConvexCell {
             return false;
         }
         const uint32_t newPlane = uint32_t(planeCount - 1);
-        const float4 equation = planes[newPlane];
         int removedCount = 0;
         int vertex = 0;
         while (vertex < vertexCount) {
-            if (vertexOutside(vertices[vertex], equation)) {
+            if (vertexOutside(vertices[vertex], newPlane)) {
                 --vertexCount;
                 const uint3 temp = vertices[vertex];
                 vertices[vertex] = vertices[vertexCount];
@@ -338,7 +309,7 @@ struct ConvexCell {
             return true;
         }
         if (changed) *changed = true;
-        const uint32_t firstBoundary = computeBoundary(removedCount);
+        const uint32_t firstBoundary = computeBoundary(removedCount, newPlane);
         if (status != RVDStatus::Success) return false;
         if (firstBoundary == EndOfList) return true;
         uint32_t current = firstBoundary;
@@ -350,7 +321,45 @@ struct ConvexCell {
         return true;
     }
 
-    __device__ bool addPlane(float4 plane, int neighborId = -1, bool* changed = nullptr) {
+    __device__ bool compactPlanes() {
+        if (planeCount <= 0) return true;
+        for (uint32_t i = 0; i < planeCapacity; ++i) boundaryNext[i] = 0;
+        for (int v = 0; v < vertexCount; ++v) {
+            const uint3 t = vertices[v];
+            boundaryNext[t.x] = 1;
+            boundaryNext[t.y] = 1;
+            boundaryNext[t.z] = 1;
+        }
+        int newPlaneCount = 0;
+        for (int p = 0; p < planeCount; ++p) {
+            if (boundaryNext[p]) {
+                if (newPlaneCount != p) {
+                    planes[newPlaneCount] = planes[p];
+                    planeNeighborIds[newPlaneCount] = planeNeighborIds[p];
+                    boundaryNext[p] = uint32_t(newPlaneCount);
+                } else {
+                    boundaryNext[p] = uint32_t(p);
+                }
+                ++newPlaneCount;
+            } else {
+                boundaryNext[p] = EndOfList;
+            }
+        }
+        planeCount = newPlaneCount;
+        for (int v = 0; v < vertexCount; ++v) {
+            uint3& t = vertices[v];
+            t.x = boundaryNext[t.x];
+            t.y = boundaryNext[t.y];
+            t.z = boundaryNext[t.z];
+            if (t.x == EndOfList || t.y == EndOfList || t.z == EndOfList) {
+                fail(RVDStatus::InvalidIndex);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    __device__ bool addPlane(float4 plane, int neighborId = NoPlaneNeighbor, bool* changed = nullptr) {
         if (uint32_t(planeCount) >= planeCapacity) {
             fail(RVDStatus::PlaneOverflow);
             return false;
@@ -361,6 +370,7 @@ struct ConvexCell {
         }
         planes[planeCount] = plane;
         planeNeighborIds[planeCount] = neighborId;
+        planeAreas[planeCount] = 0.0;
         ++planeCount;
         return clipLastPlane(changed);
     }
@@ -376,97 +386,189 @@ struct ConvexCell {
     }
 };
 
-__device__ inline float determinant3(float3 a, float3 b, float3 c) {
-    return a.x * (b.y * c.z - b.z * c.y) - b.x * (a.y * c.z - a.z * c.y) +
-           c.x * (a.y * b.z - a.z * b.y);
-}
-
 __device__ inline double determinant3Double(float3 a, float3 b, float3 c) {
     return double(a.x) * (double(b.y) * c.z - double(b.z) * c.y) -
            double(b.x) * (double(a.y) * c.z - double(a.z) * c.y) +
            double(c.x) * (double(a.y) * b.z - double(a.z) * b.y);
 }
 
-__device__ inline float4 planeFromPoints(float3 a, float3 b, float3 c) {
-    const float3 normal = cross3(sub(b, a), sub(c, a));
-    return make_float4(normal.x, normal.y, normal.z, -dot3(normal, a));
-}
+template <PredicateMode Mode>
+__device__ double4 integrateCell(
+    ConvexCell<Mode>& cell,
+    float3 seed,
+    int basePlaneCount = -1,
+    double sign = 1.0)
+{
+    double4 bary = make_double4(0.0, 0.0, 0.0, 0.0);
 
-template <bool RobustPredicate, bool FilterPredicate>
-__device__ float4 integrateCell(ConvexCell<RobustPredicate, FilterPredicate>& cell, float3 seed,
-                                int staticPlaneCount, float factor) {
-    float4 bary = make_float4(0, 0, 0, 0);
-    for (int vertex = 0; vertex < cell.vertexCount && cell.status == RVDStatus::Success; ++vertex) {
+    for (int vertex = 0;
+         vertex < cell.vertexCount && cell.status == RVDStatus::Success;
+         ++vertex) {
+
         const float3 a = cell.vertexPosition(cell.vertices[vertex]);
         const float3 ac = sub(seed, a);
         const uint3 planeIds = cell.vertices[vertex];
         const uint32_t ids[3] = {planeIds.x, planeIds.y, planeIds.z};
+
         float3 projected[3];
         float3 lines[3];
+
         for (int i = 0; i < 3; ++i) {
             const float4 p = cell.planes[ids[i]];
             const float3 normal = make_float3(p.x, p.y, p.z);
             const float n2 = lengthSquared(normal);
-            projected[i] = n2 > 1e-30f ? sub(ac, mul(normal, dot3(ac, normal) / n2)) : make_float3(0, 0, 0);
+
+            projected[i] = n2 > 1e-30f
+                ? sub(ac, mul(normal, dot3(ac, normal) / n2))
+                : make_float3(0, 0, 0);
         }
+
         for (int i = 0; i < 3; ++i) {
             const float4 p0 = cell.planes[ids[i]];
             const float4 p1 = cell.planes[ids[(i + 1) % 3]];
-            const float3 line = cross3(make_float3(p0.x, p0.y, p0.z), make_float3(p1.x, p1.y, p1.z));
+
+            const float3 line = cross3(
+                make_float3(p0.x, p0.y, p0.z),
+                make_float3(p1.x, p1.y, p1.z));
+
             const float line2 = lengthSquared(line);
-            lines[i] = line2 > 1e-30f ? mul(line, dot3(ac, line) / line2) : make_float3(0, 0, 0);
+            const float n0Sq = p0.x*p0.x + p0.y*p0.y + p0.z*p0.z;
+            const float n1Sq = p1.x*p1.x + p1.y*p1.y + p1.z*p1.z;
+            constexpr float ParallelEpsilon2 = 1e-12f;
+            lines[i] = line2 > ParallelEpsilon2 * n0Sq * n1Sq
+                ? mul(line, dot3(ac, line) / line2)
+                : make_float3(0, 0, 0);
         }
+
         for (int i = 0; i < 3; ++i) {
             for (int step = 0; step < 2; ++step) {
                 const int j = (i + 3 - step) % 3;
-                const float sign = step ? 1.0f : -1.0f;
-                const float weight = sign * determinant3(ac, projected[i], lines[j]);
+                const double orientation = step ? 1.0 : -1.0;
+
+                const double weight =
+                    sign * orientation * determinant3Double(ac, projected[i], lines[j]);
+
                 bary.w += weight;
-                const float3 sum = add(add(ac, projected[i]), lines[j]);
-                bary.x += weight * (a.x + 0.25f * sum.x);
-                bary.y += weight * (a.y + 0.25f * sum.y);
-                bary.z += weight * (a.z + 0.25f * sum.z);
-                if (ids[i] < uint32_t(staticPlaneCount) &&
-                    cell.planeNeighborIds[ids[i]] >= 0) {
+
+                const double rx =
+                    0.25 * (
+                        double(ac.x) +
+                        double(projected[i].x) +
+                        double(lines[j].x)) -
+                    double(ac.x);
+
+                const double ry =
+                    0.25 * (
+                        double(ac.y) +
+                        double(projected[i].y) +
+                        double(lines[j].y)) -
+                    double(ac.y);
+
+                const double rz =
+                    0.25 * (
+                        double(ac.z) +
+                        double(projected[i].z) +
+                        double(lines[j].z)) -
+                    double(ac.z);
+
+                bary.x += weight * rx;
+                bary.y += weight * ry;
+                bary.z += weight * rz;
+
+                const int tag = cell.planeNeighborIds[ids[i]];
+
+                if (ids[i] < uint32_t(basePlaneCount) &&
+                    (tag >= 0 || domainFaceFromTag(tag) >= 0)) {
+
                     const float4 plane = cell.planes[ids[i]];
-                    const float3 normal = make_float3(plane.x, plane.y, plane.z);
-                    cell.planeAreas[ids[i]] +=
-                        float(0.5 * double(sign) *
-                              determinant3Double(projected[i], lines[j], normal)) * factor;
+                    const float3 normal =
+                        make_float3(plane.x, plane.y, plane.z);
+
+                    const double nx = double(plane.x);
+                    const double ny = double(plane.y);
+                    const double nz = double(plane.z);
+
+                    const double normalLength =
+                        sqrt(nx * nx + ny * ny + nz * nz);
+
+                    if (!(normalLength > 0.0) || !isfinite(normalLength)) {
+                        cell.fail(RVDStatus::NonFiniteGeometry);
+                        return bary;
+                    }
+
+                    const double dArea =
+                        0.5 *
+                        sign *
+                        orientation *
+                        determinant3Double(
+                            projected[i],
+                            lines[j],
+                            normal) /
+                        normalLength;
+
+                    cell.planeAreas[ids[i]] += dArea;
                 }
             }
         }
     }
-    if (!isfinite(bary.x) || !isfinite(bary.y) || !isfinite(bary.z) || !isfinite(bary.w)) {
+
+    if (!isfinite(bary.x) ||
+        !isfinite(bary.y) ||
+        !isfinite(bary.z) ||
+        !isfinite(bary.w)) {
         cell.fail(RVDStatus::NonFiniteGeometry);
     }
+
     return bary;
 }
 
-template <bool RobustPredicate, bool FilterPredicate>
-__device__ float clippedTriangleArea(float3 v0, float3 v1, float3 v2,
-                                     const ConvexCell<RobustPredicate, FilterPredicate>& cell,
-                                     int staticPlaneCount) {
-    float3 polygon[64];
-    float3 clipped[64];
-    polygon[0] = v0; polygon[1] = v1; polygon[2] = v2;
-    int polygonCount = 3;
-    for (int planeIndex = 0; planeIndex < staticPlaneCount && polygonCount >= 3; ++planeIndex) {
-        const float4 plane = cell.planes[planeIndex];
+static constexpr int MaxClippedPolygonVertices = DiscoveryLimits::P + 3;
+
+template <int MaxVertices = MaxClippedPolygonVertices>
+__device__ inline int clipPolygonByPlanes(
+    const float3* inPolygon,
+    int inCount,
+    const float4* planes,
+    int planeCount,
+    float3* outPolygon,
+    int maxOutVertices) {
+    if (inCount < 3 || planeCount <= 0) return 0;
+    float3 polygon[MaxClippedPolygonVertices];
+    float3 clipped[MaxClippedPolygonVertices];
+    const int initialCount = (inCount < MaxClippedPolygonVertices) ? inCount : MaxClippedPolygonVertices;
+    for (int i = 0; i < initialCount; ++i) {
+        polygon[i] = inPolygon[i];
+    }
+    int polygonCount = initialCount;
+
+    for (int planeIndex = 0; planeIndex < planeCount && polygonCount >= 3; ++planeIndex) {
+        const float4 plane = planes[planeIndex];
+        const float normalLength = sqrtf(
+            plane.x * plane.x +
+            plane.y * plane.y +
+            plane.z * plane.z);
+        const float planeEpsilon = 1e-6f * normalLength;
+
         int clippedCount = 0;
         float3 previous = polygon[polygonCount - 1];
         float previousValue = plane.x * previous.x + plane.y * previous.y + plane.z * previous.z + plane.w;
-        bool previousInside = previousValue >= -1e-6f;
+        bool previousInside = previousValue >= -planeEpsilon;
         for (int vertex = 0; vertex < polygonCount; ++vertex) {
             const float3 current = polygon[vertex];
             const float currentValue = plane.x * current.x + plane.y * current.y + plane.z * current.z + plane.w;
-            const bool currentInside = currentValue >= -1e-6f;
-            if (currentInside != previousInside && clippedCount < 64) {
+            const bool currentInside = currentValue >= -planeEpsilon;
+            if (currentInside != previousInside) {
+                if (clippedCount >= MaxClippedPolygonVertices) return -1; // Hard geometry capacity error
                 const float denominator = previousValue - currentValue;
-                const float t = fabsf(denominator) > 1e-12f ? fminf(fmaxf(previousValue / denominator, 0.0f), 1.0f) : 0.0f;
+                const float t = fabsf(denominator) > 1e-12f * normalLength
+                    ? fminf(fmaxf(previousValue / denominator, 0.0f), 1.0f)
+                    : 0.0f;
                 clipped[clippedCount++] = add(previous, mul(sub(current, previous), t));
             }
-            if (currentInside && clippedCount < 64) clipped[clippedCount++] = current;
+            if (currentInside) {
+                if (clippedCount >= MaxClippedPolygonVertices) return -1; // Hard geometry capacity error
+                clipped[clippedCount++] = current;
+            }
             previous = current;
             previousValue = currentValue;
             previousInside = currentInside;
@@ -474,12 +576,52 @@ __device__ float clippedTriangleArea(float3 v0, float3 v1, float3 v2,
         polygonCount = clippedCount;
         for (int i = 0; i < polygonCount; ++i) polygon[i] = clipped[i];
     }
+    if (polygonCount < 3) return 0;
+    const int writeCount = (maxOutVertices > 0 && polygonCount < maxOutVertices) ? polygonCount : (maxOutVertices > 0 ? maxOutVertices : polygonCount);
+    if (outPolygon) {
+        for (int i = 0; i < writeCount; ++i) {
+            outPolygon[i] = polygon[i];
+        }
+    }
+    return polygonCount;
+}
+
+template <PredicateMode Mode>
+__device__ inline int clipTriangleToCell(
+    float3 v0, float3 v1, float3 v2,
+    const ConvexCell<Mode>& cell,
+    int staticPlaneCount,
+    float3* outPolygon,
+    int maxOutVertices) {
+    float3 tri[3] = { v0, v1, v2 };
+    return clipPolygonByPlanes(tri, 3, cell.planes, staticPlaneCount, outPolygon, maxOutVertices);
+}
+
+__device__ inline float polygonArea(const float3* polygon, int polygonCount) {
     if (polygonCount < 3) return 0.0f;
     float doubleArea = 0.0f;
     for (int i = 1; i + 1 < polygonCount; ++i) {
         doubleArea += sqrtf(lengthSquared(cross3(sub(polygon[i], polygon[0]), sub(polygon[i + 1], polygon[0]))));
     }
     return 0.5f * doubleArea;
+}
+
+__device__ inline float3 polygonCentroid(const float3* polygon, int polygonCount, float totalArea) {
+    if (polygonCount < 3 || totalArea <= 1e-12f) return make_float3(0.0f, 0.0f, 0.0f);
+    double3 sum = make_double3(0.0, 0.0, 0.0);
+    const float3 v0 = polygon[0];
+    for (int i = 1; i + 1 < polygonCount; ++i) {
+        const float3 v1 = polygon[i];
+        const float3 v2 = polygon[i + 1];
+        const float3 c = cross3(sub(v1, v0), sub(v2, v0));
+        const float a = 0.5f * sqrtf(lengthSquared(c));
+        if (a > 1e-12f) {
+            sum.x += (double(v0.x) + double(v1.x) + double(v2.x)) * (double(a) / 3.0);
+            sum.y += (double(v0.y) + double(v1.y) + double(v2.y)) * (double(a) / 3.0);
+            sum.z += (double(v0.z) + double(v1.z) + double(v2.z)) * (double(a) / 3.0);
+        }
+    }
+    return make_float3(float(sum.x / totalArea), float(sum.y / totalArea), float(sum.z / totalArea));
 }
 
 } // namespace voronoi::rvdDevice

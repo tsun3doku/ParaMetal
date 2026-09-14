@@ -17,10 +17,12 @@
 #include "GeometryPass.hpp"
 #include "SurfacePass.hpp"
 #include "LightingPass.hpp"
+#include "VolumePass.hpp"
 #include "OverlayPass.hpp"
 #include "PickPass.hpp"
 #include "BlendPass.hpp"
 #include "HeatOverlayRenderer.hpp"
+#include "renderers/HeatVolumeRenderer.hpp"
 #include "VoronoiOverlayRenderer.hpp"
 #include "renderers/IntrinsicRenderer.hpp"
 #include "renderers/GizmoRenderer.hpp"
@@ -62,6 +64,7 @@ bool SceneRenderer::initializePasses() {
     const framegraph::PassId geometryPassId = frameGraph.getPassId(framegraph::passes::Geometry);
     const framegraph::PassId surfacePassId = frameGraph.getPassId(framegraph::passes::Surface);
     const framegraph::PassId lightingPassId = frameGraph.getPassId(framegraph::passes::Lighting);
+    const framegraph::PassId volumePassId = frameGraph.getPassId(framegraph::passes::Volume);
     const framegraph::PassId overlayPassId = frameGraph.getPassId(framegraph::passes::Overlay);
     const framegraph::PassId pickPassId = frameGraph.getPassId(framegraph::passes::Pick);
     const framegraph::PassId blendPassId = frameGraph.getPassId(framegraph::passes::Blend);
@@ -74,10 +77,12 @@ bool SceneRenderer::initializePasses() {
     const framegraph::ResourceId depthMsaaId = frameGraph.getResourceId(framegraph::resources::DepthMSAA);
     const framegraph::ResourceId lineResolveId = frameGraph.getResourceId(framegraph::resources::LineResolve);
     const framegraph::ResourceId lightingResolveId = frameGraph.getResourceId(framegraph::resources::LightingResolve);
+    const framegraph::ResourceId volumeResolveId = frameGraph.getResourceId(framegraph::resources::VolumeResolve);
 
     if (!geometryPassId.isValid() ||
         !surfacePassId.isValid() ||
         !lightingPassId.isValid() ||
+        !volumePassId.isValid() ||
         !overlayPassId.isValid() ||
         !pickPassId.isValid() ||
         !blendPassId.isValid()) {
@@ -91,7 +96,8 @@ bool SceneRenderer::initializePasses() {
         !depthResolveId.isValid() ||
         !depthMsaaId.isValid() ||
         !lineResolveId.isValid() ||
-        !lightingResolveId.isValid()) {
+        !lightingResolveId.isValid() ||
+        !volumeResolveId.isValid()) {
         std::cerr << "[SceneRenderer] Failed to resolve resource ids" << std::endl;
         return false;
     }
@@ -170,6 +176,17 @@ bool SceneRenderer::initializePasses() {
     lightingPass = lighting.get();
     addPass(std::move(lighting));
 
+    auto volume = std::make_unique<render::VolumePass>(
+        vulkanDevice,
+        memoryAllocator,
+        frameGraphRuntime,
+        uniformBufferManager,
+        renderCommandPool,
+        maxFramesInFlight,
+        volumePassId);
+    volumePass = volume.get();
+    addPass(std::move(volume));
+
     auto overlay = std::make_unique<render::OverlayPass>(
         vulkanDevice,
         memoryAllocator,
@@ -210,7 +227,7 @@ bool SceneRenderer::initializePasses() {
         blendPassId,
         lineResolveId,
         lightingResolveId,
-        albedoResolveId);
+        volumeResolveId);
     blendPass = blend.get();
     addPass(std::move(blend));
     return true;
@@ -316,6 +333,13 @@ void SceneRenderer::destroyPasses() {
     }
     orderedPasses.clear();
     passes.clear();
+    geometryPass = nullptr;
+    surfacePass = nullptr;
+    lightingPass = nullptr;
+    volumePass = nullptr;
+    overlayPass = nullptr;
+    pickPass = nullptr;
+    blendPass = nullptr;
 }
 
 bool SceneRenderer::createCommandBuffers() {
@@ -366,6 +390,34 @@ render::PointOverlayRenderer* SceneRenderer::getPointOverlayRenderer() const {
 
 render::VoronoiOverlayRenderer* SceneRenderer::getVoronoiOverlayRenderer() const {
     return voronoiOverlayRenderer.get();
+}
+
+render::HeatVolumeRenderer* SceneRenderer::getHeatVolumeRenderer() const {
+    return volumePass ? volumePass->getHeatVolumeRenderer() : nullptr;
+}
+
+void SceneRenderer::setHeatPaletteRange(float minimum, float maximum) {
+    if (heatOverlayRenderer) {
+        heatOverlayRenderer->setPaletteRange(minimum, maximum);
+    }
+
+    if (volumePass) {
+        if (auto* renderer = volumePass->getHeatVolumeRenderer()) {
+            renderer->setRange(minimum, maximum);
+        }
+    }
+}
+
+void SceneRenderer::setHeatPalette(int palette) {
+    if (heatOverlayRenderer) {
+        heatOverlayRenderer->setPalette(palette);
+    }
+
+    if (volumePass) {
+        if (auto* renderer = volumePass->getHeatVolumeRenderer()) {
+            renderer->setPalette(static_cast<uint32_t>(palette));
+        }
+    }
 }
 
 void SceneRenderer::setTimingOverlayLines(const std::vector<std::string>& lines) {

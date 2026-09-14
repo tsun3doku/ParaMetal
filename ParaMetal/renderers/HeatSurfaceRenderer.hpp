@@ -43,6 +43,9 @@ public:
     void cleanup();
     void setPalette(uint32_t updatedPalette) { palette = updatedPalette < 4 ? updatedPalette : 0u; }
     void setRange(float minimum, float maximum) { minTemperature = minimum; maxTemperature = maximum; }
+    uint32_t getPalette() const { return palette; }
+    float getMinTemperature() const { return minTemperature; }
+    float getMaxTemperature() const { return maxTemperature; }
     void render(VkCommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<SurfaceRenderBinding>& surfaces);
 
 private:

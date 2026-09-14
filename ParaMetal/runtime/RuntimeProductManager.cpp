@@ -67,16 +67,11 @@ void RuntimeProductManager::destroy(VoronoiProduct& product) {
         freeBuffer(memoryAllocator, product.globalDisplayFaceIndexBuffers[i], product.globalDisplayFaceIndexBufferOffsets[i]);
         freeBuffer(memoryAllocator, product.globalDisplayCandidateBuffers[i], product.globalDisplayCandidateBufferOffsets[i]);
     }
-    freeBuffer(memoryAllocator, product.candidateNodeBuffer, product.candidateNodeBufferOffset);
     freeBuffer(memoryAllocator, product.candidateNeighborIndicesBuffer, product.candidateNeighborIndicesBufferOffset);
-    freeBuffer(memoryAllocator, product.nodeBuffer, product.nodeBufferOffset);
-    freeBuffer(memoryAllocator, product.couplingBuffer, product.couplingBufferOffset);
     freeBuffer(memoryAllocator, product.seedPositionBuffer, product.seedPositionBufferOffset);
-    freeBuffer(memoryAllocator, product.occupancyPointBuffer, product.occupancyPointBufferOffset);
-    freeBuffer(memoryAllocator, product.candidateBuffer, product.candidateBufferOffset);
-    freeBuffer(memoryAllocator, product.gmlsSurfaceStencilBuffer, product.gmlsSurfaceStencilBufferOffset);
-    freeBuffer(memoryAllocator, product.gmlsSurfaceWeightBuffer, product.gmlsSurfaceWeightBufferOffset);
-    freeBuffer(memoryAllocator, product.gmlsSurfaceGradientWeightBuffer, product.gmlsSurfaceGradientWeightBufferOffset);
+    freeBuffer(memoryAllocator, product.candidatePointVertexBuffer, product.candidatePointVertexBufferOffset);
+    freeBuffer(memoryAllocator, product.contactVertexBuffer, product.contactVertexBufferOffset);
+    freeBuffer(memoryAllocator, product.globalSeedIdGridBuffer, product.globalSeedIdGridBufferOffset);
 
     product = {};
 }

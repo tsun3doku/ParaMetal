@@ -1,5 +1,6 @@
 #include "RuntimePackageCompiler.hpp"
 
+#include "domain/HeatFluidData.hpp"
 #include "domain/HeatModelData.hpp"
 #include "domain/PointData.hpp"
 #include "hash/HashPackage.hpp"
@@ -189,37 +190,35 @@ bool RuntimePackageCompiler::compileVoronoiPackage(
     package.productHandle = previous ? previous->productHandle : ProductHandle{};
     package.authored = *voronoi;
     package.voronoiHandle = output.payloadHandle;
-    package.domainType = voronoi->domainType;
     package.pointsPayloadHandle = voronoi->pointsPayloadHandle;
     const VoronoiNodeParams params = readVoronoiNodeParams(node);
     package.display.showVoronoi = params.preview.showVoronoi;
     package.display.showPoints = params.preview.showPoints;
+    package.display.showContactManifold = params.preview.showContactManifold;
 
-    if (package.domainType == DomainType::Global) {
-        if (voronoi->modelMeshHandles.empty()) {
-            errors.push_back("Voronoi Global domain requires at least one unique Remeshes input.");
+    if (voronoi->modelMeshHandles.empty()) {
+        errors.push_back("Voronoi domain requires at least one unique Remeshes input.");
+        return false;
+    }
+    std::unordered_set<uint64_t> seenRemeshKeys;
+    for (const NodeDataHandle& remeshHandle : voronoi->modelMeshHandles) {
+        if (remeshHandle.key == 0 ||
+            !seenRemeshKeys.insert(remeshHandle.key).second) {
+            errors.push_back("Voronoi domain contains an empty or duplicate remesh payload.");
             return false;
         }
-        std::unordered_set<uint64_t> seenRemeshKeys;
-        for (const NodeDataHandle& remeshHandle : voronoi->modelMeshHandles) {
-            if (remeshHandle.key == 0 ||
-                !seenRemeshKeys.insert(remeshHandle.key).second) {
-                errors.push_back("Voronoi Global domain contains an empty or duplicate remesh payload.");
-                return false;
-            }
-            const RemeshPackage* remesh = packages.findAny<RemeshPackage>(remeshHandle.key);
-            const ModelPackage* model = remesh
-                ? packages.findAny<ModelPackage>(remesh->sourceMeshHandle.key)
-                : nullptr;
-            if (!remesh || !model ||
-                !remesh->productHandle.isValid() || !model->productHandle.isValid()) {
-                errors.push_back("Voronoi Global domain is missing an upstream remesh product.");
-                return false;
-            }
-            package.globalRemeshHandles.push_back(remeshHandle);
-            package.globalRemeshProducts.push_back(remesh->productHandle);
-            package.globalModelProducts.push_back(model->productHandle);
+        const RemeshPackage* remesh = packages.findAny<RemeshPackage>(remeshHandle.key);
+        const ModelPackage* model = remesh
+            ? packages.findAny<ModelPackage>(remesh->sourceMeshHandle.key)
+            : nullptr;
+        if (!remesh || !model ||
+            !remesh->productHandle.isValid() || !model->productHandle.isValid()) {
+            errors.push_back("Voronoi domain is missing an upstream remesh product.");
+            return false;
         }
+        package.globalRemeshHandles.push_back(remeshHandle);
+        package.globalRemeshProducts.push_back(remesh->productHandle);
+        package.globalModelProducts.push_back(model->productHandle);
     }
 
     runtimepackage::CoordinatePass{}.run(package, worldUnit);
@@ -242,58 +241,56 @@ bool RuntimePackageCompiler::compileVoronoiPackage(
         worldDomainMax = glm::max(worldDomainMax, worldCorner);
     }
 
-    if (package.domainType == DomainType::Global) {
-        if (package.authored.voxelResolution < 2) {
-            errors.push_back("Voronoi Global domain requires voxelResolution >= 2.");
+    if (package.authored.voxelResolution < 2) {
+        errors.push_back("Voronoi domain requires voxelResolution >= 2.");
+        return false;
+    }
+    const glm::vec3 physicalExtent = worldDomainMax - worldDomainMin;
+    const float longestExtent = std::max(std::max(physicalExtent.x, physicalExtent.y), physicalExtent.z);
+    const float spacing = longestExtent /
+        static_cast<float>(package.authored.voxelResolution - 1);
+    if (spacing > 0.5f * package.authored.cellSize) {
+        errors.push_back(
+            "Voronoi domain violates the resolution rule: spacing (" +
+            std::to_string(spacing) +
+            ") must be <= 0.5 * cell size (" +
+            std::to_string(0.5f * package.authored.cellSize) + ").");
+        return false;
+    }
+
+    const glm::mat4 worldToPoint = glm::inverse(pointTransform);
+    constexpr float epsilon = 1e-4f;
+    const glm::vec3 localDomainMin = points->domainMinimum - glm::vec3(epsilon);
+    const glm::vec3 localDomainMax = points->domainMaximum + glm::vec3(epsilon);
+
+    for (std::size_t i = 0; i < package.globalRemeshHandles.size(); ++i) {
+        std::array<float, 16> remeshToWorld{};
+        if (!payloads.resolveLocalToWorld(package.globalRemeshHandles[i], remeshToWorld)) {
+            errors.push_back("Voronoi domain cannot resolve a model placement.");
             return false;
         }
-        const glm::vec3 physicalExtent = worldDomainMax - worldDomainMin;
-        const float longestExtent = std::max(std::max(physicalExtent.x, physicalExtent.y), physicalExtent.z);
-        const float spacing = longestExtent /
-            static_cast<float>(package.authored.voxelResolution - 1);
-        if (spacing > 0.5f * package.authored.cellSize) {
-            errors.push_back(
-                "Voronoi Global domain violates the resolution rule: spacing (" +
-                std::to_string(spacing) +
-                ") must be <= 0.5 * cell size (" +
-                std::to_string(0.5f * package.authored.cellSize) + ").");
+        package.globalRemeshLocalToWorld.push_back(remeshToWorld);
+        const RemeshPackage* remesh = packages.findAny<RemeshPackage>(
+            package.globalRemeshHandles[i].key);
+        if (!remesh) {
+            errors.push_back("Voronoi domain cannot resolve remesh package.");
             return false;
         }
 
-        const glm::mat4 worldToPoint = glm::inverse(pointTransform);
-        constexpr float epsilon = 1e-4f;
-        const glm::vec3 localDomainMin = points->domainMinimum - glm::vec3(epsilon);
-        const glm::vec3 localDomainMax = points->domainMaximum + glm::vec3(epsilon);
+        const glm::mat4 remeshToWorldMat = toMat4(remeshToWorld);
+        const glm::mat4 remeshToPointLocal = worldToPoint * remeshToWorldMat;
+        const std::vector<float>& positions = remesh->sourceGeometry.pointPositions;
 
-        for (std::size_t i = 0; i < package.globalRemeshHandles.size(); ++i) {
-            std::array<float, 16> remeshToWorld{};
-            if (!payloads.resolveLocalToWorld(package.globalRemeshHandles[i], remeshToWorld)) {
-                errors.push_back("Voronoi Global domain cannot resolve a model placement.");
+        for (std::size_t p = 0; p + 2 < positions.size(); p += 3) {
+            const glm::vec3 pointLocalPos = glm::vec3(
+                remeshToPointLocal * glm::vec4(positions[p], positions[p + 1], positions[p + 2], 1.0f));
+
+            if (glm::any(glm::lessThan(pointLocalPos, localDomainMin)) ||
+                glm::any(glm::greaterThan(pointLocalPos, localDomainMax))) {
+                errors.push_back(
+                    "Voronoi domain remesh " + std::to_string(package.globalRemeshHandles[i].key) +
+                    " lies outside the PointData domain bounds.");
                 return false;
-            }
-            package.globalRemeshLocalToWorld.push_back(remeshToWorld);
-            const RemeshPackage* remesh = packages.findAny<RemeshPackage>(
-                package.globalRemeshHandles[i].key);
-            if (!remesh) {
-                errors.push_back("Voronoi Global domain cannot resolve remesh package.");
-                return false;
-            }
-
-            const glm::mat4 remeshToWorldMat = toMat4(remeshToWorld);
-            const glm::mat4 remeshToPointLocal = worldToPoint * remeshToWorldMat;
-            const std::vector<float>& positions = remesh->sourceGeometry.pointPositions;
-
-            for (std::size_t p = 0; p + 2 < positions.size(); p += 3) {
-                const glm::vec3 pointLocalPos = glm::vec3(
-                    remeshToPointLocal * glm::vec4(positions[p], positions[p + 1], positions[p + 2], 1.0f));
-
-                if (glm::any(glm::lessThan(pointLocalPos, localDomainMin)) ||
-                    glm::any(glm::greaterThan(pointLocalPos, localDomainMax))) {
-                    errors.push_back(
-                        "Voronoi Global domain remesh " + std::to_string(package.globalRemeshHandles[i].key) +
-                        " lies outside the PointData domain bounds.");
-                    return false;
-                }
             }
         }
     }
@@ -323,9 +320,17 @@ bool RuntimePackageCompiler::compileHeatPackage(
     package.display.showHeatOverlay = params.preview.showHeatOverlay;
     package.display.showFluxVectors = params.preview.showFluxVectors;
     package.display.showHeatPalette = params.preview.showHeatPalette;
-    package.display.showContactLevelSet = params.preview.showContactLevelSet;
+    package.display.showDomainBox = params.preview.showDomainBox;
+    package.display.showFluidVolume = params.preview.showFluidVolume;
+    package.display.fluidVolumeOpacity = static_cast<float>(params.preview.fluidVolumeOpacity);
     package.display.fluxVectorScale = static_cast<float>(params.preview.fluxVectorScale);
-    package.display.contactLevelSetRange = static_cast<float>(params.preview.contactLevelSetRange);
+
+    for (uint32_t face = 0; face < 6; ++face) {
+        package.domainBoundaryTypes[face] = heat->domainBoundaryTypes[face];
+        package.domainBoundaryTemperaturesC[face] = heat->domainBoundaryTemperaturesC[face];
+        package.domainBoundaryHeatFluxes[face] = heat->domainBoundaryHeatFluxes[face];
+        package.domainBoundaryHeatTransferCoefficients[face] = heat->domainBoundaryHeatTransferCoefficients[face];
+    }
 
     std::unordered_map<uint64_t, const HeatModelData*> modelsByRemesh;
     for (const NodeDataHandle& handle : heat->heatModelHandles) {
@@ -336,21 +341,16 @@ bool RuntimePackageCompiler::compileHeatPackage(
     }
 
     const bool canResolveDomain = heat->domainVoronoiHandle.key != 0 &&
-        heat->activeGlobalVoronoiCount == 1 &&
-        heat->activeVoronoiCount == heat->activeGlobalVoronoiCount;
+        heat->activeVoronoiCount == 1;
 
     if (heat->active) {
         if (!canResolveDomain) {
-            if (heat->activeVoronoiCount == 0) {
-                errors.push_back("HeatSolve requires exactly one active DomainType::Global Voronoi input (none found).");
-            } else {
-                errors.push_back("HeatSolve requires a DomainType::Global Voronoi input; Mesh and Points domain products are rejected.");
-            }
+            errors.push_back("HeatSolve requires exactly one active Voronoi input.");
             return false;
         }
 
         const VoronoiData* voronoi = payloads.get<VoronoiData>(heat->domainVoronoiHandle);
-        if (!voronoi || !voronoi->active || voronoi->domainType != DomainType::Global) {
+        if (!voronoi || !voronoi->active) {
             errors.push_back("HeatSolve's domain Voronoi input is invalid.");
             return false;
         }
@@ -359,10 +359,9 @@ bool RuntimePackageCompiler::compileHeatPackage(
     const VoronoiPackage* domainPackage = canResolveDomain
         ? packages.findAny<VoronoiPackage>(heat->domainVoronoiHandle.key)
         : nullptr;
-    if (canResolveDomain && (!domainPackage || !domainPackage->productHandle.isValid() ||
-        domainPackage->domainType != DomainType::Global)) {
+    if (canResolveDomain && (!domainPackage || !domainPackage->productHandle.isValid())) {
         if (heat->active) {
-            errors.push_back("HeatSolve is missing its global Voronoi domain product.");
+            errors.push_back("HeatSolve is missing its Voronoi domain product.");
             return false;
         }
         domainPackage = nullptr;
@@ -425,26 +424,28 @@ bool RuntimePackageCompiler::compileHeatPackage(
         compiledModel.specificHeat = model->specificHeat;
         compiledModel.conductivity = model->conductivity;
         compiledModel.initialTemperatureC = model->initialTemperatureC;
-        compiledModel.boundaryConditionType = static_cast<uint32_t>(
-            model->boundaryCondition.type);
-        compiledModel.boundaryTemperatureC = model->boundaryCondition.temperatureC;
-        compiledModel.boundaryHeatFlux = model->boundaryCondition.heatFlux;
-        compiledModel.boundaryHeatTransferCoefficient =
-            model->boundaryCondition.heatTransferCoefficient;
         compiledModel.volumetricPowerDensity =
             model->volumetricHeatSource.powerDensity;
-
-        if (model->boundaryCondition.type == BoundaryCondition::Type::RobinConvection &&
-            model->robinTemperatureSourceHandle.key != 0) {
-            const SerialTemperatureData* serial = payloads.get<SerialTemperatureData>(
-                model->robinTemperatureSourceHandle);
-            if (serial) {
-                compiledModel.robinSourceKey = model->robinTemperatureSourceHandle.key;
-                package.resolvedSerialSources[compiledModel.robinSourceKey] = *serial;
-            }
-        }
+        compiledModel.prescribedTemperatureEnabled =
+            model->prescribedTemperatureEnabled;
+        compiledModel.prescribedTemperatureC =
+            model->prescribedTemperatureC;
 
         package.models.push_back(compiledModel);
+    }
+
+    package.hasFluid = false;
+    if (heat->hasFluid && heat->heatFluidHandle.key != 0) {
+        const HeatFluidData* fluid = payloads.get<HeatFluidData>(heat->heatFluidHandle);
+        if (fluid) {
+            package.hasFluid = true;
+            package.fluidDensity = fluid->density;
+            package.fluidSpecificHeat = fluid->specificHeat;
+            package.fluidConductivity = fluid->conductivity;
+            package.fluidInitialTemperatureC = fluid->initialTemperatureC;
+            package.fluidInletTemperatureC = fluid->inletTemperatureC;
+            package.fluidVelocity = fluid->velocity;
+        }
     }
 
     runtimepackage::CoordinatePass{}.run(package, worldUnit);

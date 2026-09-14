@@ -14,6 +14,7 @@ enum class NodeGraphValueType : uint8_t {
     Mesh,
     Remesh,
     HeatModel,
+    HeatFluid,
     Points,
     Volume,
     Field,

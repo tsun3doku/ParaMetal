@@ -8,36 +8,21 @@
 namespace heat::globalsolver {
 
 constexpr uint32_t BlockSize = 256;
-constexpr uint32_t MaxIterations = 40;
-constexpr float ConvergenceTolerance = 1e-6f;
+constexpr uint32_t MaxIterations = 100;
+constexpr float ConvergenceTolerance = 1e-9f;
 
-struct PcgStatus {
-    float rz;
-    float rzNew;
-    float pAp;
-    float residual0;
-    float residual;
-    float alpha;
-    float beta;
-    int converged;
-    int failed;
-    int iterationCount;
-};
-
-__global__ void gatherTemperaturesAndBuildRhsKernel(
+__global__ void gatherTemperaturesKernel(
     const float* __restrict__ sourceTemp,
     const uint32_t* __restrict__ localNodeIds,
     uint32_t nodeCount,
     uint32_t solverNodeOffset,
-    const float* __restrict__ thermalMasses,
-    float* __restrict__ x,
-    float* __restrict__ rhs);
+    float* __restrict__ x);
 
-__global__ void addFixedContributionsKernel(
+__global__ void buildRhsKernel(
     uint32_t totalNodes,
-    const heat::FixedRow* __restrict__ fixedRows,
-    const heat::FixedContribution* __restrict__ fixedContributions,
-    const float* __restrict__ boundaryTemperatures,
+    const float* __restrict__ thermalMasses,
+    const float* __restrict__ x,
+    const float* __restrict__ rhsAdditions,
     float* __restrict__ rhs);
 
 __global__ void computeInvDiagKernel(
@@ -47,69 +32,33 @@ __global__ void computeInvDiagKernel(
     const float* __restrict__ values,
     float* __restrict__ invDiag);
 
-__global__ void csrSpmvKernel(
-    uint32_t totalNodes,
-    const int* __restrict__ rowOffsets,
-    const int* __restrict__ columnIndices,
-    const float* __restrict__ values,
-    const float* __restrict__ x,
-    float* __restrict__ y,
-    const PcgStatus* __restrict__ status);
-
-__global__ void initResidualAndJacobiKernel(
-    uint32_t totalNodes,
-    const float* __restrict__ rhs,
-    const float* __restrict__ Ap0,
-    const float* __restrict__ invDiag,
-    float* __restrict__ r,
-    float* __restrict__ z,
-    float* __restrict__ p,
-    PcgStatus* __restrict__ status);
-
-__global__ void reduceInitDotProductsKernel(
-    uint32_t totalNodes,
-    const float* __restrict__ r,
-    const float* __restrict__ z,
-    PcgStatus* __restrict__ status);
-
-__global__ void finalizeInitDotKernel(
-    PcgStatus* __restrict__ status);
-
-__global__ void reducePApKernel(
-    uint32_t totalNodes,
-    const float* __restrict__ p,
-    const float* __restrict__ Ap,
-    PcgStatus* __restrict__ status);
-
-__global__ void computeAlphaKernel(
-    PcgStatus* __restrict__ status);
-
-__global__ void updateXAndRKernel(
-    uint32_t totalNodes,
-    const float* __restrict__ p,
-    const float* __restrict__ Ap,
-    const float* __restrict__ invDiag,
-    float* __restrict__ x,
-    float* __restrict__ r,
-    float* __restrict__ z,
-    PcgStatus* __restrict__ status);
-
-__global__ void checkConvergenceAndComputeBetaKernel(
-    PcgStatus* __restrict__ status,
-    float tolerance,
-    int iterIndex);
-
-__global__ void updatePKernel(
-    uint32_t totalNodes,
-    const float* __restrict__ z,
-    float* __restrict__ p,
-    const PcgStatus* __restrict__ status);
-
 __global__ void scatterTemperaturesKernel(
     const float* __restrict__ x,
     uint32_t solverNodeOffset,
     const uint32_t* __restrict__ localNodeIds,
     uint32_t count,
     float* __restrict__ destination);
+
+__global__ void advectFluidKernel(
+    uint32_t faceCount,
+    const heat::AdvectionFace* __restrict__ faces,
+    const float* __restrict__ faceFluxes,
+    float* __restrict__ deltaT,
+    const float* __restrict__ x,
+    float subcycleDt);
+
+__global__ void advectBoundaryKernel(
+    uint32_t boundaryFaceCount,
+    const heat::AdvectionBoundaryFace* __restrict__ boundaryFaces,
+    const float* __restrict__ boundaryFluxes,
+    float* __restrict__ deltaT,
+    const float* __restrict__ x,
+    float inletTemp,
+    float subcycleDt);
+
+__global__ void applyAdvectionUpdatesKernel(
+    uint32_t totalNodes,
+    float* __restrict__ x,
+    float* __restrict__ deltaT);
 
 } // namespace heat::globalsolver

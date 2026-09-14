@@ -23,7 +23,7 @@ public:
         framegraph::PassId passId,
         framegraph::ResourceId lineResolveId,
         framegraph::ResourceId lightingResolveId,
-        framegraph::ResourceId albedoResolveId);
+        framegraph::ResourceId volumeResolveId);
 
     const char* name() const override;
     void create() override;
@@ -50,7 +50,7 @@ private:
     framegraph::PassId passId{};
     framegraph::ResourceId lineResolveId{};
     framegraph::ResourceId lightingResolveId{};
-    framegraph::ResourceId albedoResolveId{};
+    framegraph::ResourceId volumeResolveId{};
 
     VkDescriptorPool blendDescriptorPool = VK_NULL_HANDLE;
     VkDescriptorSetLayout blendDescriptorSetLayout = VK_NULL_HANDLE;

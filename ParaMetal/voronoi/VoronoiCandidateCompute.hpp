@@ -11,7 +11,7 @@ public:
     VoronoiCandidateCompute(VulkanDevice& device, CommandPool& commandPool);
     ~VoronoiCandidateCompute();
 
-    void initialize();
+    bool initialize();
     void updateDescriptors(
         VkBuffer vertexBuffer, VkDeviceSize vertexBufferOffset,
         VkBuffer faceIndexBuffer, VkDeviceSize faceIndexBufferOffset,

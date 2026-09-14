@@ -8,6 +8,7 @@
 #include "heat/HeatGpuStructs.hpp"
 #include "NodeHeatSolveParams.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
+#include "domain/HeatFluidData.hpp"
 #include "domain/HeatModelData.hpp"
 #include "domain/VoronoiData.hpp"
 
@@ -22,7 +23,6 @@ void NodeHeatSolve::execute(NodeKernelEval& eval) const {
     NodeDataHandle domainVoronoiHandle;
     std::vector<NodeDataHandle> heatModelHandles;
     uint32_t activeVoronoiCount = 0;
-    uint32_t activeGlobalVoronoiCount = 0;
     const HeatSolveNodeParams params = readHeatSolveNodeParams(eval.node);
 
     const NodeGraphNodeId activeNodeId = selectHeatSolveNode(eval.runtime.graph);
@@ -37,11 +37,8 @@ void NodeHeatSolve::execute(NodeKernelEval& eval) const {
             const VoronoiData* voronoi = payloadRegistry->get<VoronoiData>(block->payloadHandle);
             if (voronoi && voronoi->active) {
                 ++activeVoronoiCount;
-                if (voronoi->domainType == DomainType::Global) {
-                    ++activeGlobalVoronoiCount;
-                    if (domainVoronoiHandle.key == 0) {
-                        domainVoronoiHandle = block->payloadHandle;
-                    }
+                if (domainVoronoiHandle.key == 0) {
+                    domainVoronoiHandle = block->payloadHandle;
                 }
             }
         }
@@ -60,17 +57,38 @@ void NodeHeatSolve::execute(NodeKernelEval& eval) const {
         }
     }
 
+    NodeDataHandle heatFluidHandle{};
+    bool hasFluid = false;
+    const std::size_t heatFluidSocketIndex = inputIndexOf(eval.node, NodeGraphValueType::HeatFluid);
+    if (heatFluidSocketIndex < eval.inputs.size() && !eval.inputs[heatFluidSocketIndex].empty()) {
+        const NodeDataBlock* block = eval.inputs[heatFluidSocketIndex].front();
+        if (block && block->dataType == payloadtypes::HeatFluid && block->payloadHandle.key != 0) {
+            const HeatFluidData* fluid = payloadRegistry->get<HeatFluidData>(block->payloadHandle);
+            if (fluid) {
+                heatFluidHandle = block->payloadHandle;
+                hasFluid = true;
+            }
+        }
+    }
+
     const bool active = activeNodeId.isValid() && activeNodeId == eval.node.id;
     const bool hasValidInputs = domainVoronoiHandle.key != 0 && !heatModelHandles.empty();
 
     HeatData heatData{};
     heatData.domainVoronoiHandle = domainVoronoiHandle;
     heatData.heatModelHandles = heatModelHandles;
+    heatData.heatFluidHandle = heatFluidHandle;
     heatData.activeVoronoiCount = activeVoronoiCount;
-    heatData.activeGlobalVoronoiCount = activeGlobalVoronoiCount;
-    heatData.contactThermalConductance = static_cast<float>(params.contactThermalConductance);
     heatData.simulationDuration = static_cast<float>(params.simulationDuration);
+    heatData.hasFluid = hasFluid;
     heatData.active = hasValidInputs && active;
+
+    for (uint32_t face = 0; face < 6; ++face) {
+        heatData.domainBoundaryTypes[face] = params.domainBoundaryTypes[face];
+        heatData.domainBoundaryTemperaturesC[face] = params.domainBoundaryTemperaturesC[face];
+        heatData.domainBoundaryHeatFluxes[face] = params.domainBoundaryHeatFluxes[face];
+        heatData.domainBoundaryHeatTransferCoefficients[face] = params.domainBoundaryHeatTransferCoefficients[face];
+    }
 
     for (std::size_t outputIndex = 0; outputIndex < eval.outputs.size() && outputIndex < eval.node.outputs.size(); ++outputIndex) {
         NodeDataBlock& outputValue = eval.outputs[outputIndex];
@@ -95,10 +113,16 @@ HashValues NodeHeatSolve::computeOutputHashes(const NodeKernelHash& hash) const 
     HashBuilder::combineString(simulationHash, nodegraphtypes::HeatSolve);
     HashNodeCache::combineSocket(simulationHash, hash, NodeGraphValueType::Volume, HashDomain::Simulation);
     HashNodeCache::combineOptionalSocketList(simulationHash, hash, NodeGraphValueType::HeatModel, HashDomain::Simulation);
+    HashNodeCache::combineOptionalSocket(simulationHash, hash, NodeGraphValueType::HeatFluid, HashDomain::Simulation);
 
     const HeatSolveNodeParams params = readHeatSolveNodeParams(hash.node);
-    HashBuilder::combineFloat(simulationHash, static_cast<float>(params.contactThermalConductance));
     HashBuilder::combineFloat(simulationHash, static_cast<float>(params.simulationDuration));
+    for (uint32_t face = 0; face < 6; ++face) {
+        HashBuilder::combine(simulationHash, static_cast<uint64_t>(params.domainBoundaryTypes[face]));
+        HashBuilder::combineFloat(simulationHash, params.domainBoundaryTemperaturesC[face]);
+        HashBuilder::combineFloat(simulationHash, params.domainBoundaryHeatFluxes[face]);
+        HashBuilder::combineFloat(simulationHash, params.domainBoundaryHeatTransferCoefficients[face]);
+    }
     const bool active = activeNodeId.isValid() && activeNodeId == hash.node.id;
     HashBuilder::combine(simulationHash, static_cast<uint64_t>(active ? 1u : 0u));
 

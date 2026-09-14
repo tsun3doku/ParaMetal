@@ -82,9 +82,10 @@ struct VoronoiPackage {
     struct DisplaySettings {
         bool showVoronoi = false;
         bool showPoints = false;
+        bool showContactManifold = false;
 
         bool anyVisible() const {
-            return showVoronoi || showPoints;
+            return showVoronoi || showPoints || showContactManifold;
         }
     };
 
@@ -99,7 +100,6 @@ struct VoronoiPackage {
         0.0f, 0.0f, 1.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f
     };
-    DomainType domainType = DomainType::Points;
     NodeDataHandle pointsPayloadHandle{};
     std::vector<glm::vec4> pointPositions;
     std::array<glm::vec3, 8> pointDomainCorners{};
@@ -153,13 +153,9 @@ struct HeatModelPackage {
     float specificHeat = 0.0f;
     float conductivity = 0.0f;
     float initialTemperatureC = 0.0f;
-
-    uint32_t boundaryConditionType = 0;
-    float boundaryTemperatureC = 0.0f;
-    float boundaryHeatFlux = 0.0f;
-    float boundaryHeatTransferCoefficient = 0.0f;
     float volumetricPowerDensity = 0.0f;
-    uint64_t robinSourceKey = 0;
+    bool prescribedTemperatureEnabled = false;
+    float prescribedTemperatureC = HeatSimDefaults::ambientTemperatureC;
 };
 
 struct HeatPackage {
@@ -167,12 +163,13 @@ struct HeatPackage {
         bool showHeatOverlay = false;
         bool showFluxVectors = false;
         bool showHeatPalette = false;
-        bool showContactLevelSet = false;
+        bool showDomainBox = false;
+        bool showFluidVolume = false;
+        float fluidVolumeOpacity = 0.25f;
         float fluxVectorScale = 1.0f;
-        float contactLevelSetRange = 1.0f;
 
         bool anyVisible() const {
-            return showHeatOverlay || showFluxVectors || showHeatPalette || showContactLevelSet;
+            return showHeatOverlay || showFluxVectors || showHeatPalette || showDomainBox || showFluidVolume;
         }
     };
 
@@ -185,9 +182,29 @@ struct HeatPackage {
     DisplaySettings display{};
 
     std::vector<HeatModelPackage> models;
+    bool hasFluid = false;
+    float fluidDensity = 0.0f;
+    float fluidSpecificHeat = 0.0f;
+    float fluidConductivity = 0.0f;
+    float fluidInitialTemperatureC = 0.0f;
+    float fluidInletTemperatureC = HeatSimDefaults::ambientTemperatureC;
+    glm::vec3 fluidVelocity{0.0f};
+
     NodeDataHandle domainVoronoiHandle{};
     ProductHandle domainVoronoiProduct{};
     std::unordered_map<uint64_t, SerialTemperatureData> resolvedSerialSources;
+
+    uint32_t domainBoundaryTypes[6] = {};
+    float domainBoundaryTemperaturesC[6] = {
+        HeatSimDefaults::ambientTemperatureC,
+        HeatSimDefaults::ambientTemperatureC,
+        HeatSimDefaults::ambientTemperatureC,
+        HeatSimDefaults::ambientTemperatureC,
+        HeatSimDefaults::ambientTemperatureC,
+        HeatSimDefaults::ambientTemperatureC
+    };
+    float domainBoundaryHeatFluxes[6] = {};
+    float domainBoundaryHeatTransferCoefficients[6] = {};
 
     uint64_t computeHash() const { return hashes.full; }
     uint64_t displayHash() const { return hashes.display; }

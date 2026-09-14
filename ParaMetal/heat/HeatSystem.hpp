@@ -6,8 +6,9 @@
 #include "util/Units.hpp"
 #include "HeatPlaybackRuntime.hpp"
 #include "HeatDomainRuntime.hpp"
-#include "HeatSystemPresets.hpp"
-#include "voronoi/VoronoiGpuStructs.hpp"
+#include "HeatFluidRuntime.hpp"
+#include "heat/HeatFluidVolumeStage.hpp"
+#include "voronoi/GlobalDomainTopology.hpp"
 
 #include <chrono>
 #include <memory>
@@ -39,19 +40,16 @@ public:
     void setActive(bool active);
     void setRewindFrame(uint32_t frame);
     void setPlaybackState(bool paused, uint32_t resetCounter);
-    void setSyntheticDirichletTestEnabled(bool enabled) { syntheticDirichletTestEnabled = enabled; }
-    void setParams(float contactThermalConductance, float simulationDuration);
+    void setParams(float simulationDuration);
     void setHeatModels(
         const std::vector<std::vector<glm::vec3>>& modelSurfacePositions,
         const std::vector<std::vector<glm::vec3>>& modelSurfaceNormals,
         const std::vector<std::vector<uint32_t>>& modelSurfaceTriangleIndices,
         const std::vector<uint32_t>& modelRuntimeModelIds,
         const std::unordered_map<uint32_t, float>& modelInitialTemperaturesCByRuntimeId,
-        const std::unordered_map<uint32_t, uint32_t>& modelBoundaryConditionTypesByRuntimeId,
-        const std::unordered_map<uint32_t, float>& modelBoundaryTemperaturesCByRuntimeId,
-        const std::unordered_map<uint32_t, float>& modelBoundaryHeatFluxesByRuntimeId,
-        const std::unordered_map<uint32_t, float>& modelBoundaryHeatTransferCoefficientsByRuntimeId,
         const std::unordered_map<uint32_t, float>& modelVolumetricPowerDensitiesByRuntimeId,
+        const std::unordered_map<uint32_t, bool>& modelPrescribedTemperatureEnabledByRuntimeId,
+        const std::unordered_map<uint32_t, float>& modelPrescribedTemperaturesCByRuntimeId,
         const std::unordered_map<uint32_t, float>& modelDensity,
         const std::unordered_map<uint32_t, float>& modelSpecificHeat,
         const std::unordered_map<uint32_t, float>& modelConductivity,
@@ -59,16 +57,31 @@ public:
 
     void clearGlobalVoronoiInput();
 
+    void setHeatFluid(
+        float density,
+        float specificHeat,
+        float conductivity,
+        float initialTemperatureC,
+        float inletTemperatureC,
+        const glm::vec3& prescribedVelocity = glm::vec3{0.0f});
+    void clearHeatFluid();
+    void setFluidPrescribedVelocity(const glm::vec3& prescribedVelocity);
+    bool setRuntimeFluidInletTemperature(float temperatureC);
+
     void setGlobalVoronoiInput(
-        const HeatDomainRuntime::GlobalThermalDomain& domain,
+        const topology::GlobalDomain& domain,
         const std::unordered_map<uint32_t, std::array<float, 16>>& modelLocalToWorld);
 
     void resetSimulationState();
-    bool setRuntimeDirichletTemperatureC(uint32_t runtimeModelId, uint32_t regionId, float temperatureC);
-    bool setRuntimeNeumannHeatFlux(uint32_t runtimeModelId, uint32_t regionId, float heatFlux);
-    bool setRuntimeRobinState(uint32_t runtimeModelId, uint32_t regionId, float ambientTemperatureC, float heatTransferCoefficient);
-    bool setRuntimeRobinTemperatureC(uint32_t runtimeModelId, uint32_t regionId, float ambientTemperatureC);
+    void setDomainBoundaryConditions(
+        const uint32_t types[6],
+        const float temperaturesC[6],
+        const float heatFluxes[6],
+        const float heatTransferCoefficients[6]);
+    void setInitialTemperatures(const std::unordered_map<uint32_t, float>& temperatures);
+    bool setRuntimeFluidInitialTemperature(float temperatureC);
     bool setRuntimeVolumetricPowerDensity(uint32_t runtimeModelId, float powerDensity);
+    bool setRuntimePrescribedTemperature(uint32_t runtimeModelId, float tempC);
 
     bool getIsActive() const { return isActive; }
     bool getIsPaused() const { return timeline.isPaused(); }
@@ -87,6 +100,14 @@ public:
     ComputePass::Synchronization getSynchronization() const override;
     const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& getActiveModels() const { return domainRuntime.getActiveModels(); }
     HeatModelRuntime* getModelByRuntimeId(uint32_t runtimeModelId) const { return domainRuntime.getModelByRuntimeId(runtimeModelId); }
+    HeatFluidRuntime* getFluidRuntime() { return fluidRuntime.get(); }
+    const HeatFluidRuntime* getFluidRuntime() const { return fluidRuntime.get(); }
+    VkImageView getFluidTemperatureVolumeView() const {
+        return fluidVolumeStage ? fluidVolumeStage->getTemperatureVolumeView() : VK_NULL_HANDLE;
+    }
+    VkSampler getFluidTemperatureVolumeSampler() const {
+        return fluidVolumeStage ? fluidVolumeStage->getTemperatureVolumeSampler() : VK_NULL_HANDLE;
+    }
 
 private:
     static constexpr float TimelineFPS = 60.0f;
@@ -107,7 +128,6 @@ private:
     void configureGMLSSurfaceWeights(bool heatVoronoiReady);
     bool recreateDescriptorPools();
     void configureModelSimResources();
-    bool buildModelBoundaryBuffers();
 
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
@@ -123,29 +143,26 @@ private:
 
     HeatDomainRuntime domainRuntime;
     HeatPlaybackRuntime playbackRuntime;
+    std::unique_ptr<HeatFluidRuntime> fluidRuntime;
 
     std::vector<std::vector<glm::vec3>> modelSurfacePositions;
     std::vector<std::vector<glm::vec3>> modelSurfaceNormals;
     std::vector<std::vector<uint32_t>> modelSurfaceTriangleIndices;
     std::vector<uint32_t> modelRuntimeModelIds;
     std::unordered_map<uint32_t, float> modelInitialTemperaturesCByRuntimeId;
-    std::unordered_map<uint32_t, uint32_t> modelBoundaryConditionTypesByRuntimeId;
-    std::unordered_map<uint32_t, float> modelBoundaryTemperaturesCByRuntimeId;
-    std::unordered_map<uint32_t, float> modelBoundaryHeatFluxesByRuntimeId;
-    std::unordered_map<uint32_t, float> modelBoundaryHeatTransferCoefficientsByRuntimeId;
     std::unordered_map<uint32_t, float> modelVolumetricPowerDensitiesByRuntimeId;
+    std::unordered_map<uint32_t, bool> modelPrescribedTemperatureEnabledByRuntimeId;
+    std::unordered_map<uint32_t, float> modelPrescribedTemperaturesCByRuntimeId;
     std::unordered_map<uint32_t, float> modelDensity;
     std::unordered_map<uint32_t, float> modelSpecificHeat;
     std::unordered_map<uint32_t, float> modelConductivity;
     units::LengthUnit worldUnit = units::defaultLengthUnit();
-    float contactThermalConductance = 16000.0f;
 
     TimelineSimulation timeline;
     float simulatedTime = 0.0f;
     bool shouldStepPhysics = false;
     bool physicsStepCompletedThisFrame = false;
     bool needsInitialCapture = false;
-    bool syntheticDirichletTestEnabled = false;
     float physicsAccumulator = 0.0f;
     bool temperatureBufferAIsCurrent = true;
     std::chrono::steady_clock::time_point lastUpdateTime = std::chrono::steady_clock::now();
@@ -157,6 +174,18 @@ private:
     bool heatParamsDirty = true;
     uint32_t processedResetCounter = 0;
 
+    uint32_t domainBoundaryTypes[6] = {};
+    float domainBoundaryTemperaturesC[6] = {
+        HeatSimDefaults::ambientTemperatureC,
+        HeatSimDefaults::ambientTemperatureC,
+        HeatSimDefaults::ambientTemperatureC,
+        HeatSimDefaults::ambientTemperatureC,
+        HeatSimDefaults::ambientTemperatureC,
+        HeatSimDefaults::ambientTemperatureC
+    };
+    float domainBoundaryHeatFluxes[6] = {};
+    float domainBoundaryHeatTransferCoefficients[6] = {};
+
     std::unordered_map<uint32_t, uint32_t> simNodeCounts;
     std::unordered_map<uint32_t, std::array<float, 16>> modelLocalToWorldByModelId;
     std::unordered_map<uint32_t, VkBuffer> modelGMLSSurfaceStencilBufferByModelId;
@@ -167,4 +196,9 @@ private:
     std::unordered_map<uint32_t, VkBuffer> modelGMLSSurfaceGradientWeightBufferByModelId;
     std::unordered_map<uint32_t, VkDeviceSize> modelGMLSSurfaceGradientWeightBufferOffsetByModelId;
     std::unordered_map<uint32_t, size_t> modelGMLSSurfaceGradientWeightCountByModelId;
+
+    std::unique_ptr<HeatFluidVolumeStage> fluidVolumeStage;
+    bool fluidVolumeDirty = false;
+    bool lastFluidReplayFromHistory = false;
+    uint32_t lastFluidDisplayFrame = 0;
 };
