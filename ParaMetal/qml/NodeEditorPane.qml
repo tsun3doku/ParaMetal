@@ -10,7 +10,7 @@ Rectangle {
     required property QtObject theme
     required property QtObject graphModel
     required property QtObject runtimeNotifier
-    color: theme.panelBackground
+    color: "transparent"
 
     function nodeIconFolder(typeId) {
         switch (String(typeId)) {
@@ -43,9 +43,12 @@ Rectangle {
             SplitView.preferredHeight: 260
             SplitView.minimumHeight: 150
             color: theme.panelBackground
+            border.width: 1
+            border.color: theme.subtleBorder
 
             ColumnLayout {
                 anchors.fill: parent
+                anchors.margins: 1
                 spacing: 0
 
                 Rectangle {
@@ -157,6 +160,8 @@ Rectangle {
             id: graphViewport
             SplitView.fillHeight: true
             color: theme.panelBackground
+            border.width: 1
+            border.color: theme.subtleBorder
             clip: true
             property int contextNodeId: 0
             property real createX: 0
@@ -164,6 +169,7 @@ Rectangle {
 
             NodeGraphCanvasItem {
                 anchors.fill: parent
+                anchors.margins: 1
                 model: graphModel
                 focus: true
                 onCreateMenuRequested: function(graphX, graphY) {

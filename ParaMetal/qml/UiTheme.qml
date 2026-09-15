@@ -7,7 +7,7 @@ QtObject {
     readonly property color panelBackground: "#2e2e34"
     readonly property color splitterCenter: windowBackground
     readonly property color splitterBorder: subtleBorder
-    readonly property int splitterWidth: 6
+    readonly property int splitterWidth: 2
     readonly property int splitterBorderWidth: 2
     readonly property color cardBackground: "#2d2c32"
     readonly property color border: "#3a393c"
@@ -71,8 +71,8 @@ QtObject {
     readonly property color welcomeOptionBackground: "#24242c"
     readonly property color welcomeOptionHover: "#303047"
     readonly property color welcomeCardBorder: "#5b5b69"
-    readonly property color welcomeText: "#ffffff"
-    readonly property color welcomeSubtext: "#e8e7ef"
+    readonly property color welcomeText: "#25252b"
+    readonly property color welcomeSubtext: "#63626e"
 
     readonly property string fontFamily: UiTypography.fontFamily
     readonly property string monoFamily: UiTypography.monoFamily

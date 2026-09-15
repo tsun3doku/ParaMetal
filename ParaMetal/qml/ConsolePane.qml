@@ -7,9 +7,12 @@ Rectangle {
     required property QtObject theme
     required property QtObject bridge
     color: theme.panelBackground
+    border.width: 1
+    border.color: theme.subtleBorder
 
     ColumnLayout {
         anchors.fill: parent
+        anchors.margins: 1
         spacing: 0
 
         Rectangle {

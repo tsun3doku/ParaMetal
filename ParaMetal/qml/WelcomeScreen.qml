@@ -78,11 +78,11 @@ Item {
                 Layout.fillWidth: true
                 Layout.preferredHeight: root.choiceTitleHeight
                 text: choice.titleText
-                color: root.theme.welcomeText
+                color: root.theme.welcomeSubtext
                 font.family: root.theme.fontFamily
                 font.pixelSize: root.theme.regularFontSize
                 font.weight: Font.Medium
-                horizontalAlignment: Text.AlignRight
+                horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
             }
 
@@ -91,7 +91,7 @@ Item {
         background: Rectangle {
             width: parent.width
             height: root.choicePreviewSize
-            radius: 6
+            radius: 0
             color: choice.hovered ? root.theme.welcomeOptionHover : root.theme.welcomeOptionBackground
             border.width: choice.hovered ? 2 : 1
             border.color: choice.hovered ? root.theme.accent : root.theme.border
@@ -104,45 +104,22 @@ Item {
         y: Math.round((parent.height - height) / 2)
         width: Math.min(780, parent.width - 80)
         height: Math.min(510, parent.height - 80)
-        radius: 12
+        radius: 0
         color: "transparent"
         clip: true
 
         Image {
-            id: welcomeImageSource
             anchors.fill: parent
-            source: "../textures/welcome.jpg"
+            source: "../textures/welcome2.jpg"
             fillMode: Image.PreserveAspectCrop
-            visible: false
-        }
-
-        MultiEffect {
-            anchors.fill: parent
-            source: welcomeImageSource
-            maskEnabled: true
-            maskSource: welcomeImageMask
-            maskThresholdMin: 0.5
-            maskSpreadAtMin: 1.0
             opacity: 0.75
-        }
-
-        Item {
-            id: welcomeImageMask
-            anchors.fill: parent
-            layer.enabled: true
-            layer.smooth: true
-            visible: false
-
-            Rectangle {
-                anchors.fill: parent
-                radius: 12
-                color: "black"
-            }
+            smooth: true
+            mipmap: true
         }
 
         Rectangle {
             anchors.fill: parent
-            radius: 12
+            radius: 0
             color: "transparent"
             border.width: 1
             border.color: root.theme.welcomeCardBorder
@@ -193,8 +170,8 @@ Item {
 
                 Image {
                     anchors.centerIn: parent
-                    width: 12
-                    height: 12
+                    width: 13
+                    height: 13
                     source: "../textures/icons/Menu/x/128w/Artboard 1.png"
                     sourceSize.width: width
                     sourceSize.height: height
@@ -213,48 +190,41 @@ Item {
         }
 
         ColumnLayout {
-            anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: titleBar.bottom
             anchors.bottom: parent.bottom
-            anchors.leftMargin: 48
             anchors.rightMargin: 48
             anchors.topMargin: 48
             anchors.bottomMargin: 48
             spacing: 2
 
             ColumnLayout {
-                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignLeft
                 spacing: 0
 
                 Text {
-                    Layout.fillWidth: true
                     text: qsTr("Start a Project")
                     color: root.theme.welcomeText
                     font.family: root.theme.fontFamily
                     font.pixelSize: root.theme.titleFontSize + 40
                     font.weight: Font.DemiBold
-                    horizontalAlignment: Text.AlignRight
+                    horizontalAlignment: Text.AlignLeft
                 }
 
                 Text {
-                    Layout.fillWidth: true
                     id: subtitleText
                     text: qsTr("Choose a starting point for your workspace")
                     color: root.theme.welcomeSubtext
                     font.family: root.theme.fontFamily
-                    font.pixelSize: root.theme.regularFontSize
+                    font.pixelSize: root.theme.regularFontSize + 2
                     font.weight: Font.Normal
-                    horizontalAlignment: Text.AlignRight
+                    horizontalAlignment: Text.AlignLeft
                 }
             }
 
             Button {
                 id: openProjectButton
-                Layout.alignment: Qt.AlignRight
-                Layout.preferredWidth: subtitleText.implicitWidth
-                Layout.minimumWidth: subtitleText.implicitWidth
-                Layout.maximumWidth: subtitleText.implicitWidth
+                Layout.alignment: Qt.AlignLeft
                 Layout.preferredHeight: 32
                 padding: 0
                 onClicked: root.openProjectRequested()
@@ -270,10 +240,12 @@ Item {
                         sourceSize.width: width
                         sourceSize.height: height
                         anchors.verticalCenter: parent.verticalCenter
-                        layer.enabled: openProjectButton.hovered || openProjectButton.pressed
+                        layer.enabled: true
                         layer.effect: MultiEffect {
-                            colorization: 1.0
+                            colorization: openProjectButton.hovered || openProjectButton.pressed ? 1.0 : 0.0
                             colorizationColor: root.theme.accent
+                            brightness: openProjectButton.hovered || openProjectButton.pressed ? 0.0 : -0.55
+                            contrast: openProjectButton.hovered || openProjectButton.pressed ? 0.0 : 0.1
                         }
                     }
 
@@ -294,7 +266,7 @@ Item {
             Item { Layout.preferredHeight: 10 }
 
             RowLayout {
-                Layout.alignment: Qt.AlignRight
+                Layout.alignment: Qt.AlignLeft
                 spacing: 16
 
                 ChoiceButton {

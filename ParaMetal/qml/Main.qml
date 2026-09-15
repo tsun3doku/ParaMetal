@@ -90,7 +90,7 @@ Rectangle {
 
             ConsolePane {
                 id: consolePane
-                SplitView.preferredWidth: 327
+                SplitView.preferredWidth: 250
                 SplitView.minimumWidth: 0
                 SplitView.maximumWidth: 520
                 theme: root.theme

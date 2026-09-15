@@ -7,10 +7,13 @@ Rectangle {
     required property QtObject bridge
     required property QtObject heatPalette
     color: theme.windowBackground
+    border.width: 1
+    border.color: theme.subtleBorder
 
     ViewportItem {
         objectName: "viewportItem"
         anchors.fill: parent
+        anchors.margins: 1
         focus: true
     }
 

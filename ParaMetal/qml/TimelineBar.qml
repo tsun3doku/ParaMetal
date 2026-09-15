@@ -5,6 +5,8 @@ Rectangle {
     required property QtObject theme
     required property QtObject bridge
     color: theme.timelineBackground
+    border.width: 1
+    border.color: theme.subtleBorder
 
     readonly property int marginX: 18
     readonly property int buttonSize: 20
