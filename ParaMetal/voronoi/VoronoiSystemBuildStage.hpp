@@ -127,7 +127,6 @@ class VoronoiSystemBuildStage {
 
     VkBuffer globalSeedIdGridBuffer = VK_NULL_HANDLE;
     VkDeviceSize globalSeedIdGridBufferOffset = 0;
-    uint32_t globalSeedIdGridCount = 0;
     VulkanExternalBuffer globalSeedIdGridExternal;
     CudaExternalBuffer globalSeedIdGridCuda;
 

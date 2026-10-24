@@ -62,7 +62,6 @@ struct GlobalDomain {
     float nominalCellSize = 0.0f;
     VkBuffer seedIdGridBuffer = VK_NULL_HANDLE;
     VkDeviceSize seedIdGridBufferOffset = 0;
-    uint32_t seedIdGridCount = 0;
 
     bool isValid() const {
         return !fragments.empty() && !faces.empty() &&

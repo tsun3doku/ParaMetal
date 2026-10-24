@@ -339,6 +339,8 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <CudaCompile Include="voronoi\cuda\RVDContact.cu" />
     <CudaCompile Include="voronoi\cuda\TriangleBvh.cu" />
     <CudaCompile Include="voronoi\cuda\RVDGeometry.cu" />
+    <CudaCompile Include="voronoi\cuda\RVDDiagnostics.cu" />
+    <CudaCompile Include="voronoi\cuda\RVDValidation.cu" />
     <CudaCompile Include="voronoi\cuda\KNNNeighbors.cu">
       <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</GPUDebugInfo>
     </CudaCompile>
@@ -838,6 +840,9 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="voronoi\cuda\RVDPredicates.cuh" />
     <ClInclude Include="voronoi\cuda\RVDGeometry.cuh" />
     <ClInclude Include="voronoi\cuda\RVDStatus.cuh" />
+    <ClInclude Include="voronoi\cuda\RVDHostUtils.cuh" />
+    <ClInclude Include="voronoi\cuda\RVDDiagnostics.hpp" />
+    <ClInclude Include="voronoi\cuda\RVDValidation.hpp" />
     <ClInclude Include="voronoi\cuda\ConvexCell.cuh" />
     <ClInclude Include="voronoi\cuda\KNNNeighbors.hpp" />
     <ClInclude Include="voronoi\cuda\KNNNeighbors.cuh" />

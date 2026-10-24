@@ -150,7 +150,6 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(uint64_t socketKey, const HeatP
     globalDomain.nominalCellSize = domainProduct->nominalCellSize;
     globalDomain.seedIdGridBuffer = domainProduct->globalSeedIdGridBuffer;
     globalDomain.seedIdGridBufferOffset = domainProduct->globalSeedIdGridBufferOffset;
-    globalDomain.seedIdGridCount = domainProduct->globalSeedIdGridCount;
 
     const size_t modelCount = package.models.size();
     outConfig.modelSurfacePositions.reserve(modelCount);

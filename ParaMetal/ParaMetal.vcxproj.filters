@@ -401,6 +401,12 @@
     <CudaCompile Include="voronoi\cuda\RVDGeometry.cu">
       <Filter>Source Files</Filter>
     </CudaCompile>
+    <CudaCompile Include="voronoi\cuda\RVDDiagnostics.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
+    <CudaCompile Include="voronoi\cuda\RVDValidation.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
     <CudaCompile Include="voronoi\cuda\KNNNeighbors.cu">
       <Filter>Source Files</Filter>
     </CudaCompile>
@@ -1308,6 +1314,15 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="voronoi\cuda\RVDStatus.cuh">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="voronoi\cuda\RVDHostUtils.cuh">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="voronoi\cuda\RVDDiagnostics.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="voronoi\cuda\RVDValidation.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="cuda\CudaBuffer.cuh">

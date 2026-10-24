@@ -1,1482 +1,1323 @@
 #include "RVDContact.cuh"
+#include "RVDHostUtils.cuh"
 #include "TriangleBvh.cuh"
-#include "RVDBaseCells.cuh"
-#include "RVDGeometry.cuh"
-#include "../../cuda/CudaBuffer.cuh"
-#include "../../cuda/CudaMath.cuh"
 
-#include <cub/cub.cuh>
+#include "../../cuda/CudaMath.cuh"
+#include "../../cuda/CudaBuffer.cuh"
+
+#include <cfloat>
+#include <cmath>
+#include <cuda_runtime.h>
 #include <iostream>
 #include <vector>
-#include <cmath>
-#include <algorithm>
-#include <cuda_runtime.h>
 
 namespace voronoi {
 
-using cudaMath::add3;
-using cudaMath::sub3;
-using cudaMath::mul3;
-using cudaMath::dot3;
-using cudaMath::cross3;
-using cudaMath::length3;
-using cudaMath::normalize3;
+namespace {
 
-static constexpr uint32_t BlockSize = 256;
-static constexpr int MaxMortarScratchVertices = 128;
+using cudaMath::add3;
+using cudaMath::cross3;
+using cudaMath::dot3;
+using cudaMath::length3;
+using cudaMath::mul3;
+using cudaMath::normalize3;
+using cudaMath::sub3;
+
+constexpr uint32_t BlockSize = rvdHost::BlockSize;
+constexpr int MaxMortarScratchVertices = 128;
+constexpr uint64_t InvalidCouplingKey = 0xFFFFFFFFFFFFFFFFull;
 
 struct MortarBasis {
-    double3 origin;
-    double3 u;
-    double3 v;
-    double3 normal;
+  double3 origin;
+  double3 u;
+  double3 v;
+  double3 normal;
 };
 
 struct DeviceModelInfo {
-    uint32_t modelIndex = 0;
-    uint32_t surfaceBase = 0;
-    uint32_t totalPatches = 0;
-    const RestrictedSurfaceGeometry* geom = nullptr;
-    const RestrictedSurface* surfaces = nullptr;
-    const double3* vertices = nullptr;
+  uint32_t surfaceBase = 0;
+  uint32_t totalPatches = 0;
+  const RestrictedSurfaceGeometry *geom = nullptr;
+  const RestrictedSurface *surfaces = nullptr;
+  const double3 *vertices = nullptr;
 };
 
-static cudaUtils::CudaBuffer<double2> overlapVertices;
-static cudaUtils::CudaBuffer<uint32_t> overlapVertexOffsets;
-static cudaUtils::CudaBuffer<uint32_t> overlapVertexCounts;
-static cudaUtils::CudaBuffer<MortarBasis> mortarBases;
+struct MortarMeshBuffers {
+  cudaUtils::CudaBuffer<double2> vertices;
+  cudaUtils::CudaBuffer<uint32_t> vertexOffsets;
+  cudaUtils::CudaBuffer<uint32_t> vertexCounts;
+  cudaUtils::CudaBuffer<MortarBasis> bases;
+  uint32_t vertexCount = 0;
 
-static __host__ __device__ inline double polygonSignedArea2D(const double2* poly, int count) {
-    if (count < 3) return 0.0;
-    double sum = 0.0;
-    for (int i = 0; i < count; ++i) {
-        int next = (i + 1 == count) ? 0 : i + 1;
-        sum += poly[i].x * poly[next].y - poly[next].x * poly[i].y;
-    }
-    return 0.5 * sum;
+  void reset() {
+    vertices.reset();
+    vertexOffsets.reset();
+    vertexCounts.reset();
+    bases.reset();
+    vertexCount = 0;
+  }
+};
+
+MortarMeshBuffers gMortarMeshBuffers;
+
+struct PairOverlapBuffers {
+  cudaUtils::CudaBuffer<MortarOverlap> overlaps;
+  cudaUtils::CudaBuffer<MortarBasis> bases;
+  cudaUtils::CudaBuffer<uint32_t> vertexCounts;
+  cudaUtils::CudaBuffer<double2> vertices;
+  uint32_t overlapCount = 0;
+  uint32_t vertexCount = 0;
+};
+
+struct PairWorkBuffers {
+  cudaUtils::CudaBuffer<uint32_t> triangleKeysIn;
+  cudaUtils::CudaBuffer<uint32_t> triangleKeysOut;
+  cudaUtils::CudaBuffer<uint32_t> patchIndicesIn;
+  cudaUtils::CudaBuffer<uint32_t> patchIndicesOut;
+  cudaUtils::CudaBuffer<uint32_t> countsA;
+  cudaUtils::CudaBuffer<uint32_t> offsetsA;
+  cudaUtils::CudaBuffer<uint2> candidatePairs;
+  cudaUtils::CudaBuffer<uint32_t> overlapValid;
+  cudaUtils::CudaBuffer<uint32_t> overlapOffsets;
+  cudaUtils::CudaBuffer<uint32_t> vertexCounts;
+  cudaUtils::CudaBuffer<uint32_t> vertexOffsets;
+  cudaUtils::CudaBuffer<uint8_t> scratch;
+};
+
+__host__ __device__ inline double polygonSignedArea2D(const double2 *polygon, int count) {
+  if (count < 3) return 0.0;
+
+  double sum = 0.0;
+  for (int i = 0; i < count; ++i) {
+    const int next = (i + 1 == count) ? 0 : i + 1;
+    sum += polygon[i].x * polygon[next].y - polygon[next].x * polygon[i].y;
+  }
+  return 0.5 * sum;
 }
 
-static __host__ __device__ inline void reversePolygon2D(double2* poly, int count) {
-    for (int i = 0; i < count / 2; ++i) {
-        double2 tmp = poly[i];
-        poly[i] = poly[count - 1 - i];
-        poly[count - 1 - i] = tmp;
-    }
+__host__ __device__ inline void reversePolygon2D(double2 *polygon, int count) {
+  for (int i = 0; i < count / 2; ++i) {
+    const double2 temporary = polygon[i];
+    polygon[i] = polygon[count - 1 - i];
+    polygon[count - 1 - i] = temporary;
+  }
 }
 
-static __device__ inline int clipPolygon2DByHalfPlane(
-    const double2* inPoly,
-    int inCount,
+__host__ __device__ inline void ensureCounterClockwise(double2 *polygon, int count) {
+  if (polygonSignedArea2D(polygon, count) < 0.0) {
+    reversePolygon2D(polygon, count);
+  }
+}
+
+__device__ inline int clipPolygon2DByHalfPlane(
+    const double2 *input,
+    int inputCount,
     double a,
     double b,
     double c,
-    double2* outPoly,
-    int* outCapacityError = nullptr)
-{
-    if (inCount < 3) return 0;
-    int outCount = 0;
+    double2 *output,
+    int *capacityError = nullptr) {
+  if (inputCount < 3) return 0;
 
-    double2 prev = inPoly[inCount - 1];
-    double dPrev = a * prev.x + b * prev.y + c;
+  int outputCount = 0;
+  double2 previous = input[inputCount - 1];
+  double previousDistance = a * previous.x + b * previous.y + c;
 
-    for (int i = 0; i < inCount; ++i) {
-        double2 curr = inPoly[i];
-        double dCurr = a * curr.x + b * curr.y + c;
+  for (int i = 0; i < inputCount; ++i) {
+    const double2 current = input[i];
+    const double currentDistance = a * current.x + b * current.y + c;
 
-        if ((dPrev < 0.0 && dCurr >= 0.0) ||
-            (dPrev >= 0.0 && dCurr < 0.0)) {
+    if ((previousDistance < 0.0 && currentDistance >= 0.0) ||
+        (previousDistance >= 0.0 && currentDistance < 0.0)) {
+      if (outputCount >= MaxMortarScratchVertices) {
+        if (capacityError) atomicExch(capacityError, 1);
+        return -1;
+      }
 
-            if (outCount >= MaxMortarScratchVertices) {
-                if (outCapacityError) atomicExch(outCapacityError, 1);
-                return -1;
-            }
-
-            double t = dPrev / (dPrev - dCurr);
-            outPoly[outCount++] = make_double2(
-                prev.x + t * (curr.x - prev.x),
-                prev.y + t * (curr.y - prev.y)
-            );
-        }
-
-        if (dCurr >= 0.0) {
-            if (outCount >= MaxMortarScratchVertices) {
-                if (outCapacityError) atomicExch(outCapacityError, 1);
-                return -1;
-            }
-            outPoly[outCount++] = curr;
-        }
-
-        prev = curr;
-        dPrev = dCurr;
+      const double t = previousDistance / (previousDistance - currentDistance);
+      output[outputCount++] = make_double2(
+          previous.x + t * (current.x - previous.x),
+          previous.y + t * (current.y - previous.y));
     }
 
-    return outCount;
+    if (currentDistance >= 0.0) {
+      if (outputCount >= MaxMortarScratchVertices) {
+        if (capacityError) atomicExch(capacityError, 1);
+        return -1;
+      }
+      output[outputCount++] = current;
+    }
+
+    previous = current;
+    previousDistance = currentDistance;
+  }
+  return outputCount;
 }
 
-static __host__ __device__ inline double polygonAreaAndCentroid2D(
-    const double2* poly,
+struct ClippedPolygon2D {
+  const double2 *points = nullptr;
+  int count = 0;
+};
+
+__device__ inline ClippedPolygon2D clipConvexPolygon2D(
+    const double2 *subject,
+    int subjectCount,
+    const double2 *clipPolygon,
+    int clipCount,
+    double2 *scratchA,
+    double2 *scratchB,
+    int *capacityError = nullptr) {
+  if (subjectCount < 3 || clipCount < 3) return {};
+
+  const double2 *source = subject;
+  int count = subjectCount;
+  double2 *destination = scratchA;
+
+  for (int edge = 0; edge < clipCount; ++edge) {
+    const int next = (edge + 1 == clipCount) ? 0 : edge + 1;
+    const double2 a = clipPolygon[edge];
+    const double2 b = clipPolygon[next];
+
+    const double lineA = a.y - b.y;
+    const double lineB = b.x - a.x;
+    const double lineC = b.y * a.x - b.x * a.y;
+
+    const int newCount = clipPolygon2DByHalfPlane(source, count, lineA, lineB, lineC, destination, capacityError);
+    if (newCount < 3) return {};
+
+    count = newCount;
+    source = destination;
+    destination = destination == scratchA ? scratchB : scratchA;
+  }
+
+  return {source, count};
+}
+
+__host__ __device__ inline double polygonAreaAndCentroid2D(
+    const double2 *polygon,
     int count,
-    double2& outCentroid)
-{
-    if (count < 3) {
-        outCentroid = make_double2(0.0, 0.0);
-        return 0.0;
-    }
-    double signedArea2 = 0.0;
-    double cx = 0.0;
-    double cy = 0.0;
-    for (int i = 0; i < count; ++i) {
-        int next = (i + 1 == count) ? 0 : i + 1;
-        double cross = poly[i].x * poly[next].y - poly[next].x * poly[i].y;
-        signedArea2 += cross;
-        cx += (poly[i].x + poly[next].x) * cross;
-        cy += (poly[i].y + poly[next].y) * cross;
-    }
-    double area = 0.5 * fabs(signedArea2);
-    if (area <= 1e-14) {
-        outCentroid = make_double2(0.0, 0.0);
-        return 0.0;
-    }
-    outCentroid = make_double2(cx / (3.0 * signedArea2), cy / (3.0 * signedArea2));
-    return area;
+    double2 &centroid) {
+  if (count < 3) {
+    centroid = make_double2(0.0, 0.0);
+    return 0.0;
+  }
+
+  double signedDoubleArea = 0.0;
+  double cx = 0.0;
+  double cy = 0.0;
+  for (int i = 0; i < count; ++i) {
+    const int next = (i + 1 == count) ? 0 : i + 1;
+    const double cross = polygon[i].x * polygon[next].y - polygon[next].x * polygon[i].y;
+    signedDoubleArea += cross;
+    cx += (polygon[i].x + polygon[next].x) * cross;
+    cy += (polygon[i].y + polygon[next].y) * cross;
+  }
+
+  const double area = 0.5 * fabs(signedDoubleArea);
+  if (area <= 1e-14) {
+    centroid = make_double2(0.0, 0.0);
+    return 0.0;
+  }
+  centroid = make_double2(cx / (3.0 * signedDoubleArea), cy / (3.0 * signedDoubleArea));
+  return area;
 }
 
-template <typename T>
-static bool ensureCapacity(cudaUtils::CudaBuffer<T>& buffer, size_t needed) {
-    if (buffer.size() < needed) {
-        return buffer.allocate(needed);
+__device__ inline const DeviceModelInfo *findModelInfo(
+    const DeviceModelInfo *models,
+    uint32_t modelCount,
+    uint32_t surface) {
+  for (uint32_t m = 0; m < modelCount; ++m) {
+    if (surface >= models[m].surfaceBase &&
+        surface < models[m].surfaceBase + models[m].totalPatches) {
+      return &models[m];
     }
-    return true;
+  }
+  return nullptr;
 }
 
-static bool exclusiveSum(
-    const uint32_t* in,
-    uint32_t* out,
-    int count,
-    cudaUtils::CudaBuffer<uint8_t>& scratch,
-    cudaStream_t stream)
-{
-    size_t bytes = 0;
-    if (cub::DeviceScan::ExclusiveSum(nullptr, bytes, in, out, count, stream) != cudaSuccess) return false;
-    if (!ensureCapacity(scratch, bytes)) return false;
-    return cub::DeviceScan::ExclusiveSum(scratch.get(), bytes, in, out, count, stream) == cudaSuccess;
+__device__ inline double3 geometryNormal(const RestrictedSurfaceGeometry &geometry) {
+  return normalize3(geometry.normal);
 }
 
-template <typename KeyT, typename ValueT>
-static bool sortPairs(
-    const KeyT* keysIn, KeyT* keysOut,
-    const ValueT* valsIn, ValueT* valsOut,
-    int count,
-    cudaUtils::CudaBuffer<uint8_t>& scratch,
-    cudaStream_t stream)
-{
-    size_t bytes = 0;
-    if (cub::DeviceRadixSort::SortPairs(nullptr, bytes, keysIn, keysOut, valsIn, valsOut, count, 0, sizeof(KeyT) * 8, stream) != cudaSuccess) return false;
-    if (!ensureCapacity(scratch, bytes)) return false;
-    return cub::DeviceRadixSort::SortPairs(scratch.get(), bytes, keysIn, keysOut, valsIn, valsOut, count, 0, sizeof(KeyT) * 8, stream) == cudaSuccess;
+__device__ inline double3 geometryCentroidWorld(
+    const RestrictedSurfaceGeometry &geometry,
+    float3 domainMin,
+    double invBaseScale) {
+  return make_double3(
+      double(domainMin.x) + geometry.centroidArea.x * invBaseScale,
+      double(domainMin.y) + geometry.centroidArea.y * invBaseScale,
+      double(domainMin.z) + geometry.centroidArea.z * invBaseScale);
 }
 
-static __global__ void initSurfaceExposureKernel(
-    const RestrictedSurfaceGeometry* geom,
+__device__ inline bool clipMortarPair(
+    uint32_t vertexCountA,
+    const double3 *verticesA,
+    double3 normalA,
+    double3 centroidA,
+    uint32_t vertexCountB,
+    const double3 *verticesB,
+    double3 normalB,
+    double3 centroidB,
+    double contactRange,
+    double gapPenetrationTolerance,
+    MortarOverlap &overlap,
+    MortarBasis &basis,
+    double2 *outputVertices,
+    int &outputVertexCount,
+    int *capacityError = nullptr) {
+  if (vertexCountA < 3 || vertexCountB < 3) return false;
+  if (vertexCountA > MaxMortarScratchVertices ||
+      vertexCountB > MaxMortarScratchVertices) {
+    if (capacityError) atomicExch(capacityError, 1);
+    return false;
+  }
+
+  const double3 mortarNormal = normalA;
+  const double dotAMortar = 1.0;
+  const double dotBMortar = dot3(normalB, mortarNormal);
+  if (dotBMortar > -0.5) return false;
+
+  const double3 reference =
+      fabs(mortarNormal.x) < 0.9
+      ? make_double3(1.0, 0.0, 0.0)
+      : make_double3(0.0, 1.0, 0.0);
+  const double3 uCross = cross3(reference, mortarNormal);
+  const double uLength = length3(uCross);
+  if (uLength <= 1e-14) return false;
+
+  const double3 u = mul3(uCross, 1.0 / uLength);
+  const double3 v = cross3(mortarNormal, u);
+  const double3 mortarPoint = centroidA;
+
+  double2 polygonA[MaxMortarScratchVertices];
+  for (uint32_t k = 0; k < vertexCountA; ++k) {
+    const double3 delta = sub3(verticesA[k], mortarPoint);
+    polygonA[k] = make_double2(dot3(delta, u), dot3(delta, v));
+  }
+  ensureCounterClockwise(polygonA, int(vertexCountA));
+
+  double2 polygonB[MaxMortarScratchVertices];
+  for (uint32_t k = 0; k < vertexCountB; ++k) {
+    const double3 delta = sub3(verticesB[k], mortarPoint);
+    polygonB[k] = make_double2(dot3(delta, u), dot3(delta, v));
+  }
+  ensureCounterClockwise(polygonB, int(vertexCountB));
+
+  double2 scratch1[MaxMortarScratchVertices];
+  double2 scratch2[MaxMortarScratchVertices];
+
+  ClippedPolygon2D clipped = clipConvexPolygon2D(
+      polygonA, int(vertexCountA), polygonB, int(vertexCountB),
+      scratch1, scratch2, capacityError);
+  if (clipped.count < 3) return false;
+
+  const double2 *source = clipped.points;
+  double2 *destination = source == scratch1 ? scratch2 : scratch1;
+  int currentCount = clipped.count;
+
+  const double g0 =
+      dot3(normalB, sub3(centroidB, mortarPoint)) / dotBMortar -
+      dot3(normalA, sub3(centroidA, mortarPoint)) / dotAMortar;
+  const double gu = -dot3(normalB, u) / dotBMortar + dot3(normalA, u) / dotAMortar;
+  const double gv = -dot3(normalB, v) / dotBMortar + dot3(normalA, v) / dotAMortar;
+
+  const double gradientMagnitude = sqrt(gu * gu + gv * gv);
+  if (gradientMagnitude > 1e-12) {
+    int newCount = clipPolygon2DByHalfPlane(
+        source, currentCount, gu, gv, g0 + gapPenetrationTolerance,
+        destination, capacityError);
+    if (newCount < 3) return false;
+    currentCount = newCount;
+    source = destination;
+    destination = destination == scratch1 ? scratch2 : scratch1;
+
+    newCount = clipPolygon2DByHalfPlane(
+        source, currentCount, -gu, -gv, contactRange - g0,
+        destination, capacityError);
+    if (newCount < 3) return false;
+    currentCount = newCount;
+    source = destination;
+    destination = destination == scratch1 ? scratch2 : scratch1;
+  } else if (g0 < -gapPenetrationTolerance || g0 > contactRange) {
+    return false;
+  }
+
+  double2 centroid2D;
+  const double couplingArea = polygonAreaAndCentroid2D(source, currentCount, centroid2D);
+  if (couplingArea <= 1e-14) return false;
+
+  const double3 couplingCentroid = add3(
+      mortarPoint,
+      add3(mul3(u, centroid2D.x), mul3(v, centroid2D.y)));
+  const double areaA = couplingArea / fabs(dotAMortar);
+  const double areaB = couplingArea / fabs(dotBMortar);
+
+  const double zA =
+      (dot3(normalA, sub3(centroidA, mortarPoint)) -
+       centroid2D.x * dot3(normalA, u) -
+       centroid2D.y * dot3(normalA, v)) /
+      dotAMortar;
+  const double zB =
+      (dot3(normalB, sub3(centroidB, mortarPoint)) -
+       centroid2D.x * dot3(normalB, u) -
+       centroid2D.y * dot3(normalB, v)) /
+      dotBMortar;
+
+  const double3 projectedA = add3(couplingCentroid, mul3(mortarNormal, zA));
+  const double3 projectedB = add3(couplingCentroid, mul3(mortarNormal, zB));
+
+  overlap.couplingArea = couplingArea;
+  overlap.areaA = areaA;
+  overlap.areaB = areaB;
+  overlap.momentA = mul3(projectedA, areaA);
+  overlap.momentB = mul3(projectedB, areaB);
+
+  basis.origin = mortarPoint;
+  basis.u = u;
+  basis.v = v;
+  basis.normal = mortarNormal;
+
+  if (outputVertices != nullptr) {
+    for (int k = 0; k < currentCount; ++k) {
+      outputVertices[k] = source[k];
+    }
+  }
+  outputVertexCount = currentCount;
+  return true;
+}
+
+__device__ inline int2 findPatchRangeForTriangle(
+    const uint32_t *sortedTriangles,
+    uint32_t patchCount,
+    uint32_t targetTriangle) {
+  int left = 0;
+  int right = int(patchCount);
+  while (left < right) {
+    const int middle = left + (right - left) / 2;
+    if (sortedTriangles[middle] < targetTriangle) {
+      left = middle + 1;
+    } else {
+      right = middle;
+    }
+  }
+
+  const int start = left;
+  if (start >= int(patchCount) || sortedTriangles[start] != targetTriangle) {
+    return make_int2(0, 0);
+  }
+
+  left = start;
+  right = int(patchCount);
+  while (left < right) {
+    const int middle = left + (right - left) / 2;
+    if (sortedTriangles[middle] <= targetTriangle) {
+      left = middle + 1;
+    } else {
+      right = middle;
+    }
+  }
+  return make_int2(start, left - start);
+}
+
+__global__ void initSurfaceExposureKernel(
+    const RestrictedSurfaceGeometry *geometry,
     uint32_t patchCount,
     uint32_t surfaceBase,
     double invBaseScale,
     float3 domainMin,
-    double4* outDevExposure)
-{
-    uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= patchCount) return;
+    double4 *surfaceExposure) {
+  const uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
+  if (index >= patchCount) return;
 
-    RestrictedSurfaceGeometry g = geom[idx];
-    double invScale2 = invBaseScale * invBaseScale;
-    double canArea = g.centroidArea.w;
-    double totalArea = canArea * invScale2;
+  const RestrictedSurfaceGeometry patch = geometry[index];
+  const double inverseScaleSquared = invBaseScale * invBaseScale;
+  const double area = double(patch.centroidArea.w) * inverseScaleSquared;
+  const double3 centroid = make_double3(patch.centroidArea.x, patch.centroidArea.y, patch.centroidArea.z);
+  const double3 worldCentroid = cudaGeometry::canonicalToWorld(centroid, make_double3(domainMin.x, domainMin.y, domainMin.z), invBaseScale);
+  const double3 moment = mul3(worldCentroid, area);
 
-    double3 canCent = make_double3(g.centroidArea.x, g.centroidArea.y, g.centroidArea.z);
-    double3 worldCent = make_double3(
-        double(domainMin.x) + canCent.x * invBaseScale,
-        double(domainMin.y) + canCent.y * invBaseScale,
-        double(domainMin.z) + canCent.z * invBaseScale
-    );
-    double3 totalMoment = mul3(worldCent, totalArea);
-
-    outDevExposure[surfaceBase + idx] = make_double4(totalMoment.x, totalMoment.y, totalMoment.z, totalArea);
+  surfaceExposure[surfaceBase + index] = make_double4(moment.x, moment.y, moment.z, area);
 }
 
-static __global__ void extractPatchTrianglesKernel(
-    const RestrictedSurface* surfaces,
+__global__ void extractPatchTrianglesKernel(
+    const RestrictedSurface *surfaces,
     uint32_t patchCount,
-    uint32_t* outTriIds,
-    uint32_t* outPatchIndices)
-{
-    uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= patchCount) return;
-    outTriIds[idx] = surfaces[idx].triangleId;
-    outPatchIndices[idx] = idx;
+    uint32_t *triangleIds,
+    uint32_t *patchIndices) {
+  const uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
+  if (index >= patchCount) return;
+
+  triangleIds[index] = surfaces[index].triangleId;
+  patchIndices[index] = index;
 }
 
-static __device__ inline int2 findPatchRangeForTriangle(
-    const uint32_t* sortedTriangles,
-    uint32_t totalPatches,
-    uint32_t targetTriId)
-{
-    int l = 0, r = int(totalPatches);
-    while (l < r) {
-        int m = l + (r - l) / 2;
-        if (sortedTriangles[m] < targetTriId) l = m + 1;
-        else r = m;
-    }
-    int start = l;
-    if (start >= int(totalPatches) || sortedTriangles[start] != targetTriId) {
-        return make_int2(0, 0);
-    }
-    l = start; r = int(totalPatches);
-    while (l < r) {
-        int m = l + (r - l) / 2;
-        if (sortedTriangles[m] <= targetTriId) l = m + 1;
-        else r = m;
-    }
-    return make_int2(start, l - start);
-}
-
-static __global__ void countAndEmitCandidatePatchPairsKernel(
-    const RestrictedSurface* surfacesA,
-    const RestrictedSurfaceGeometry* geomA,
-    const double3* verticesA,
+__global__ void countAndEmitCandidatePatchPairsKernel(
+    const RestrictedSurface *surfacesA,
+    const RestrictedSurfaceGeometry *geometryA,
+    const double3 *verticesA,
     uint32_t patchCountA,
-    uint32_t surfBaseA,
-    cudaGeometry::DeviceModelGeometryView geomB,
-    const uint32_t* sortedTrianglesB,
-    const uint32_t* sortedPatchIndicesB,
-    const RestrictedSurfaceGeometry* geomBData,
+    uint32_t surfaceBaseA,
+    cudaGeometry::DeviceModelGeometryView geometryB,
+    const uint32_t *sortedTrianglesB,
+    const uint32_t *sortedPatchIndicesB,
+    const RestrictedSurfaceGeometry *geometryBData,
     uint32_t patchCountB,
-    uint32_t surfBaseB,
+    uint32_t surfaceBaseB,
     double contactRange,
     float3 domainMin,
     double invBaseScale,
     float coordScale,
-    const uint32_t* offsetsA,
-    uint32_t* outCountsA,
-    uint2* outCandidatePairs,
-    bool emitPass)
-{
-    uint32_t idxA = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idxA >= patchCountA) return;
+    const uint32_t *offsetsA,
+    uint32_t *countsA,
+    uint2 *candidatePairs,
+    bool emitPass) {
+  const uint32_t indexA = blockIdx.x * blockDim.x + threadIdx.x;
+  if (indexA >= patchCountA) return;
 
-    RestrictedSurface sA = surfacesA[idxA];
-    if (sA.vertexCount < 3) {
-        if (!emitPass) outCountsA[idxA] = 0;
-        return;
+  const RestrictedSurface surfaceA = surfacesA[indexA];
+  if (surfaceA.vertexCount < 3) {
+    if (!emitPass) countsA[indexA] = 0;
+    return;
+  }
+
+  const double3 domainMinD = make_double3(domainMin.x, domainMin.y, domainMin.z);
+  float3 boundsMin = make_float3(1e30f, 1e30f, 1e30f);
+  float3 boundsMax = make_float3(-1e30f, -1e30f, -1e30f);
+  for (uint32_t v = 0; v < surfaceA.vertexCount; ++v) {
+    const double3 canonical = verticesA[surfaceA.firstVertex + v];
+    const double3 world = cudaGeometry::canonicalToWorld(canonical, domainMinD, invBaseScale);
+    const float3 point = make_float3(float(world.x), float(world.y), float(world.z));
+    boundsMin.x = fminf(boundsMin.x, point.x);
+    boundsMin.y = fminf(boundsMin.y, point.y);
+    boundsMin.z = fminf(boundsMin.z, point.z);
+    boundsMax.x = fmaxf(boundsMax.x, point.x);
+    boundsMax.y = fmaxf(boundsMax.y, point.y);
+    boundsMax.z = fmaxf(boundsMax.z, point.z);
+  }
+
+  const double3 normalA = geometryNormal(geometryA[indexA]);
+  const float margin = 16.0f * FLT_EPSILON * coordScale;
+  const float contactRangeF = float(contactRange);
+  const float3 queryMin = make_float3(
+      boundsMin.x - contactRangeF - margin,
+      boundsMin.y - contactRangeF - margin,
+      boundsMin.z - contactRangeF - margin);
+  const float3 queryMax = make_float3(
+      boundsMax.x + contactRangeF + margin,
+      boundsMax.y + contactRangeF + margin,
+      boundsMax.z + contactRangeF + margin);
+
+  const float maxDistance = contactRangeF + margin;
+  const float maxDistanceSquared = maxDistance * maxDistance;
+
+  uint32_t stack[64];
+  int stackPointer = 0;
+  if (geometryB.root != cudaGeometry::InvalidNodeId && geometryB.nodes != nullptr) {
+    stack[stackPointer++] = geometryB.root;
+  }
+
+  uint32_t foundCount = 0;
+  const uint32_t destinationBase = emitPass ? offsetsA[indexA] : 0;
+
+  while (stackPointer > 0) {
+    const uint32_t nodeIndex = stack[--stackPointer];
+    const cudaGeometry::TriangleBvhNode node = geometryB.nodes[nodeIndex];
+
+    if (node.maximum.x < queryMin.x || node.minimum.x > queryMax.x ||
+        node.maximum.y < queryMin.y || node.minimum.y > queryMax.y ||
+        node.maximum.z < queryMin.z || node.minimum.z > queryMax.z) {
+      continue;
+    }
+    if (cudaGeometry::aabbDistanceSquared(
+            node.minimum, node.maximum, boundsMin, boundsMax) >
+        maxDistanceSquared) {
+      continue;
     }
 
-    float3 aabbMin = make_float3(1e30f, 1e30f, 1e30f);
-    float3 aabbMax = make_float3(-1e30f, -1e30f, -1e30f);
-    for (uint32_t v = 0; v < sA.vertexCount; ++v) {
-        double3 pCan = verticesA[sA.firstVertex + v];
-        float3 pWorld = make_float3(
-            float(double(domainMin.x) + pCan.x * invBaseScale),
-            float(double(domainMin.y) + pCan.y * invBaseScale),
-            float(double(domainMin.z) + pCan.z * invBaseScale)
-        );
-        aabbMin.x = fminf(aabbMin.x, pWorld.x);
-        aabbMin.y = fminf(aabbMin.y, pWorld.y);
-        aabbMin.z = fminf(aabbMin.z, pWorld.z);
-        aabbMax.x = fmaxf(aabbMax.x, pWorld.x);
-        aabbMax.y = fmaxf(aabbMax.y, pWorld.y);
-        aabbMax.z = fmaxf(aabbMax.z, pWorld.z);
-    }
+    if (node.isLeaf()) {
+      const uint32_t triangleB = node.triangleId();
+      const int2 range = findPatchRangeForTriangle(sortedTrianglesB, patchCountB, triangleB);
 
-    RestrictedSurfaceGeometry gA = geomA[idxA];
-    double3 nA = normalize3(make_double3(gA.plane.x, gA.plane.y, gA.plane.z));
-
-    float margin = 16.0f * FLT_EPSILON * coordScale;
-    float3 qMin = make_float3(aabbMin.x - float(contactRange) - margin,
-                              aabbMin.y - float(contactRange) - margin,
-                              aabbMin.z - float(contactRange) - margin);
-    float3 qMax = make_float3(aabbMax.x + float(contactRange) + margin,
-                              aabbMax.y + float(contactRange) + margin,
-                              aabbMax.z + float(contactRange) + margin);
-    float maxDist = float(contactRange) + margin;
-    float maxDistSq = maxDist * maxDist;
-
-    uint32_t stack[64];
-    int stackPtr = 0;
-    if (geomB.root != cudaGeometry::InvalidNodeId && geomB.nodes != nullptr) {
-        stack[stackPtr++] = geomB.root;
-    }
-
-    uint32_t foundCount = 0;
-    uint32_t dstBase = emitPass ? offsetsA[idxA] : 0;
-
-    while (stackPtr > 0) {
-        uint32_t nodeIdx = stack[--stackPtr];
-        const cudaGeometry::TriangleBvhNode node = geomB.nodes[nodeIdx];
-
-        if (node.maximum.x < qMin.x || node.minimum.x > qMax.x ||
-            node.maximum.y < qMin.y || node.minimum.y > qMax.y ||
-            node.maximum.z < qMin.z || node.minimum.z > qMax.z) {
-            continue;
+      for (int r = 0; r < range.y; ++r) {
+        const uint32_t patchBIndex = sortedPatchIndicesB[range.x + r];
+        const double3 normalB = geometryNormal(geometryBData[patchBIndex]);
+        if (dot3(normalA, normalB) < -0.2) {
+          if (emitPass) {
+            candidatePairs[destinationBase + foundCount] =
+                make_uint2(surfaceBaseA + indexA, surfaceBaseB + patchBIndex);
+          }
+          ++foundCount;
         }
-
-        if (cudaGeometry::aabbDistanceSquared(node.minimum, node.maximum, aabbMin, aabbMax) > maxDistSq) {
-            continue;
-        }
-
-        if (node.isLeaf()) {
-            uint32_t triB = node.triangleId();
-            int2 range = findPatchRangeForTriangle(sortedTrianglesB, patchCountB, triB);
-            for (int r = 0; r < range.y; ++r) {
-                uint32_t patchBIdx = sortedPatchIndicesB[range.x + r];
-                RestrictedSurfaceGeometry gB = geomBData[patchBIdx];
-                double3 nB = normalize3(make_double3(gB.plane.x, gB.plane.y, gB.plane.z));
-
-                if (dot3(nA, nB) < -0.2) {
-                    if (emitPass) {
-                        outCandidatePairs[dstBase + foundCount] = make_uint2(surfBaseA + idxA, surfBaseB + patchBIdx);
-                    }
-                    foundCount++;
-                }
-            }
-        } else {
-            if (stackPtr < 62) {
-                stack[stackPtr++] = node.leftChild();
-                stack[stackPtr++] = node.rightChild();
-            }
-        }
+      }
+    } else if (stackPointer < 62) {
+      stack[stackPointer++] = node.leftChild();
+      stack[stackPointer++] = node.rightChild();
     }
+  }
 
-    if (!emitPass) {
-        outCountsA[idxA] = foundCount;
-    }
+  if (!emitPass) {
+    countsA[indexA] = foundCount;
+  }
 }
 
-static __device__ inline bool clipMortarPair(
-    uint32_t vCountA, const double3* vertsA, double3 nA, double3 centA,
-    uint32_t vCountB, const double3* vertsB, double3 nB, double3 centB,
-    double contactRange, double gPenTol,
-    MortarOverlap& outOverlap,
-    MortarBasis& outBasis,
-    double2* outVertices,
-    int& outVertexCount,
-    int* outCapacityError = nullptr)
-{
-    if (vCountA < 3 || vCountB < 3) return false;
-    if (vCountA > MaxMortarScratchVertices || vCountB > MaxMortarScratchVertices) {
-        if (outCapacityError) atomicExch(outCapacityError, 1);
-        return false;
-    }
-
-    double3 m = nA;
-    double dotAm = 1.0;
-    double dotBm = dot3(nB, m);
-    if (dotBm > -0.5) return false;
-
-    double3 ref = (fabs(m.x) < 0.9) ? make_double3(1.0, 0.0, 0.0) : make_double3(0.0, 1.0, 0.0);
-    double3 uCross = cross3(ref, m);
-    double uLen = length3(uCross);
-    if (uLen <= 1e-14) return false;
-    double3 u = mul3(uCross, 1.0 / uLen);
-    double3 v = cross3(m, u);
-
-    double3 pm = centA;
-
-    double2 polyA[MaxMortarScratchVertices];
-    for (uint32_t k = 0; k < vCountA; ++k) {
-        double3 d = sub3(vertsA[k], pm);
-        polyA[k] = make_double2(dot3(d, u), dot3(d, v));
-    }
-    if (polygonSignedArea2D(polyA, int(vCountA)) < 0.0) {
-        reversePolygon2D(polyA, int(vCountA));
-    }
-
-    double2 polyB[MaxMortarScratchVertices];
-    for (uint32_t k = 0; k < vCountB; ++k) {
-        double3 d = sub3(vertsB[k], pm);
-        polyB[k] = make_double2(dot3(d, u), dot3(d, v));
-    }
-    if (polygonSignedArea2D(polyB, int(vCountB)) < 0.0) {
-        reversePolygon2D(polyB, int(vCountB));
-    }
-
-    double2 scratch1[MaxMortarScratchVertices];
-    double2 scratch2[MaxMortarScratchVertices];
-    int curCount = int(vCountA);
-    const double2* src = polyA;
-    double2* dst = scratch1;
-
-    for (uint32_t e = 0; e < vCountB; ++e) {
-        uint32_t eNext = (e + 1 == vCountB) ? 0 : e + 1;
-        double2 b0 = polyB[e];
-        double2 b1 = polyB[eNext];
-        double aLine = b0.y - b1.y;
-        double bLine = b1.x - b0.x;
-        double cLine = b1.y * b0.x - b1.x * b0.y;
-
-        int newCount = clipPolygon2DByHalfPlane(src, curCount, aLine, bLine, cLine, dst, outCapacityError);
-        if (newCount < 3) return false;
-        curCount = newCount;
-        src = dst;
-        dst = (dst == scratch1) ? scratch2 : scratch1;
-    }
-
-    double g0 = dot3(nB, sub3(centB, pm)) / dotBm - dot3(nA, sub3(centA, pm)) / dotAm;
-    double gu = -dot3(nB, u) / dotBm + dot3(nA, u) / dotAm;
-    double gv = -dot3(nB, v) / dotBm + dot3(nA, v) / dotAm;
-
-    double gradG = sqrt(gu * gu + gv * gv);
-    if (gradG > 1e-12) {
-        int newCount = clipPolygon2DByHalfPlane(src, curCount, gu, gv, g0 + gPenTol, dst, outCapacityError);
-        if (newCount < 3) return false;
-        curCount = newCount;
-        src = dst;
-        dst = (dst == scratch1) ? scratch2 : scratch1;
-
-        newCount = clipPolygon2DByHalfPlane(src, curCount, -gu, -gv, contactRange - g0, dst, outCapacityError);
-        if (newCount < 3) return false;
-        curCount = newCount;
-        src = dst;
-        dst = (dst == scratch1) ? scratch2 : scratch1;
-    } else {
-        if (g0 < -gPenTol || g0 > contactRange) return false;
-    }
-
-    double2 centroid2D;
-    double Am = polygonAreaAndCentroid2D(src, curCount, centroid2D);
-    if (Am <= 1e-14) return false;
-
-    double3 Cm = add3(pm, add3(mul3(u, centroid2D.x), mul3(v, centroid2D.y)));
-    double areaA = Am / fabs(dotAm);
-    double areaB = Am / fabs(dotBm);
-
-    double zA = (dot3(nA, sub3(centA, pm)) - centroid2D.x * dot3(nA, u) - centroid2D.y * dot3(nA, v)) / dotAm;
-    double zB = (dot3(nB, sub3(centB, pm)) - centroid2D.x * dot3(nB, u) - centroid2D.y * dot3(nB, v)) / dotBm;
-
-    double3 CA = add3(Cm, mul3(m, zA));
-    double3 CB = add3(Cm, mul3(m, zB));
-
-    outOverlap.couplingArea = Am;
-    outOverlap.areaA = areaA;
-    outOverlap.areaB = areaB;
-    outOverlap.momentA = mul3(CA, areaA);
-    outOverlap.momentB = mul3(CB, areaB);
-
-    outBasis.origin = pm;
-    outBasis.u = u;
-    outBasis.v = v;
-    outBasis.normal = m;
-
-    if (outVertices != nullptr) {
-        for (int k = 0; k < curCount; ++k) {
-            outVertices[k] = src[k];
-        }
-    }
-    outVertexCount = curCount;
-    return true;
-}
-
-static __global__ void countAndEmitMortarOverlapsKernel(
-    const uint2* candidatePairs,
+__global__ void countAndEmitMortarOverlapsKernel(
+    const uint2 *candidatePairs,
     uint32_t candidateCount,
-    const DeviceModelInfo* models,
+    const DeviceModelInfo *models,
     uint32_t modelCount,
     double contactRange,
-    double gPenTol,
+    double gapPenetrationTolerance,
     float3 domainMin,
     double invBaseScale,
-    const uint32_t* overlapOffsets,
-    const uint32_t* vertexOffsets,
-    uint32_t* outOverlapValid,
-    uint32_t* outVertexCounts,
-    MortarOverlap* outAcceptedOverlaps,
-    MortarBasis* outBases,
-    double2* outVertices,
+    const uint32_t *overlapOffsets,
+    const uint32_t *vertexOffsets,
+    uint32_t *overlapValid,
+    uint32_t *vertexCounts,
+    MortarOverlap *acceptedOverlaps,
+    MortarBasis *bases,
+    double2 *vertices,
     bool emitPass,
-    int* outCapacityError)
-{
-    uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= candidateCount) return;
+    int *capacityError) {
+  const uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
+  if (index >= candidateCount) return;
 
-    uint2 pair = candidatePairs[idx];
-    uint32_t globalA = pair.x;
-    uint32_t globalB = pair.y;
+  const uint2 pair = candidatePairs[index];
+  const uint32_t globalA = pair.x;
+  const uint32_t globalB = pair.y;
 
-    const DeviceModelInfo* infoA = nullptr;
-    const DeviceModelInfo* infoB = nullptr;
-    for (uint32_t m = 0; m < modelCount; ++m) {
-        if (globalA >= models[m].surfaceBase && globalA < models[m].surfaceBase + models[m].totalPatches) {
-            infoA = &models[m];
-        }
-        if (globalB >= models[m].surfaceBase && globalB < models[m].surfaceBase + models[m].totalPatches) {
-            infoB = &models[m];
-        }
-    }
-    if (!infoA || !infoB) {
-        if (!emitPass) {
-            outOverlapValid[idx] = 0;
-            outVertexCounts[idx] = 0;
-        }
-        return;
-    }
-
-    uint32_t localA = globalA - infoA->surfaceBase;
-    uint32_t localB = globalB - infoB->surfaceBase;
-
-    RestrictedSurface sA = infoA->surfaces[localA];
-    RestrictedSurface sB = infoB->surfaces[localB];
-    RestrictedSurfaceGeometry gA = infoA->geom[localA];
-    RestrictedSurfaceGeometry gB = infoB->geom[localB];
-
-    double3 nA = normalize3(make_double3(gA.plane.x, gA.plane.y, gA.plane.z));
-    double3 nB = normalize3(make_double3(gB.plane.x, gB.plane.y, gB.plane.z));
-
-    double3 centA = make_double3(
-        double(domainMin.x) + gA.centroidArea.x * invBaseScale,
-        double(domainMin.y) + gA.centroidArea.y * invBaseScale,
-        double(domainMin.z) + gA.centroidArea.z * invBaseScale
-    );
-    double3 centB = make_double3(
-        double(domainMin.x) + gB.centroidArea.x * invBaseScale,
-        double(domainMin.y) + gB.centroidArea.y * invBaseScale,
-        double(domainMin.z) + gB.centroidArea.z * invBaseScale
-    );
-
-    double3 vertsA[MaxMortarScratchVertices];
-    for (uint32_t k = 0; k < sA.vertexCount && k < MaxMortarScratchVertices; ++k) {
-        double3 pCan = infoA->vertices[sA.firstVertex + k];
-        vertsA[k] = make_double3(
-            double(domainMin.x) + pCan.x * invBaseScale,
-            double(domainMin.y) + pCan.y * invBaseScale,
-            double(domainMin.z) + pCan.z * invBaseScale
-        );
-    }
-
-    double3 vertsB[MaxMortarScratchVertices];
-    for (uint32_t k = 0; k < sB.vertexCount && k < MaxMortarScratchVertices; ++k) {
-        double3 pCan = infoB->vertices[sB.firstVertex + k];
-        vertsB[k] = make_double3(
-            double(domainMin.x) + pCan.x * invBaseScale,
-            double(domainMin.y) + pCan.y * invBaseScale,
-            double(domainMin.z) + pCan.z * invBaseScale
-        );
-    }
-
-    MortarOverlap overlap{};
-    MortarBasis basis{};
-    int vCount = 0;
-    double2* vertDst = emitPass ? (outVertices + vertexOffsets[idx]) : nullptr;
-
-    bool valid = clipMortarPair(
-        sA.vertexCount, vertsA, nA, centA,
-        sB.vertexCount, vertsB, nB, centB,
-        contactRange, gPenTol,
-        overlap, basis, vertDst, vCount,
-        outCapacityError
-    );
-
+  const DeviceModelInfo *infoA = findModelInfo(models, modelCount, globalA);
+  const DeviceModelInfo *infoB = findModelInfo(models, modelCount, globalB);
+  if (!infoA || !infoB) {
     if (!emitPass) {
-        outOverlapValid[idx] = valid ? 1 : 0;
-        outVertexCounts[idx] = valid ? uint32_t(vCount) : 0;
-    } else {
-        if (valid) {
-            uint32_t dstOv = overlapOffsets[idx];
-            overlap.surfaceA = globalA;
-            overlap.surfaceB = globalB;
-            outAcceptedOverlaps[dstOv] = overlap;
-            outBases[dstOv] = basis;
-            outVertexCounts[dstOv] = uint32_t(vCount);
-        }
+      overlapValid[index] = 0;
+      vertexCounts[index] = 0;
     }
+    return;
+  }
+
+  const uint32_t localA = globalA - infoA->surfaceBase;
+  const uint32_t localB = globalB - infoB->surfaceBase;
+
+  const RestrictedSurface surfaceA = infoA->surfaces[localA];
+  const RestrictedSurface surfaceB = infoB->surfaces[localB];
+  const RestrictedSurfaceGeometry geometryA = infoA->geom[localA];
+  const RestrictedSurfaceGeometry geometryB = infoB->geom[localB];
+
+  const double3 normalA = geometryNormal(geometryA);
+  const double3 normalB = geometryNormal(geometryB);
+  const double3 centroidA = geometryCentroidWorld(geometryA, domainMin, invBaseScale);
+  const double3 centroidB = geometryCentroidWorld(geometryB, domainMin, invBaseScale);
+  const double3 domainMinD = make_double3(domainMin.x, domainMin.y, domainMin.z);
+
+  double3 verticesA[MaxMortarScratchVertices];
+  for (uint32_t k = 0; k < surfaceA.vertexCount && k < MaxMortarScratchVertices; ++k) {
+    const double3 canonical = infoA->vertices[surfaceA.firstVertex + k];
+    verticesA[k] = cudaGeometry::canonicalToWorld(canonical, domainMinD, invBaseScale);
+  }
+
+  double3 verticesB[MaxMortarScratchVertices];
+  for (uint32_t k = 0; k < surfaceB.vertexCount && k < MaxMortarScratchVertices; ++k) {
+    const double3 canonical = infoB->vertices[surfaceB.firstVertex + k];
+    verticesB[k] = cudaGeometry::canonicalToWorld(canonical, domainMinD, invBaseScale);
+  }
+
+  MortarOverlap overlap{};
+  MortarBasis basis{};
+  int vertexCount = 0;
+  double2 *destination = emitPass ? vertices + vertexOffsets[index] : nullptr;
+
+  const bool valid = clipMortarPair(
+      surfaceA.vertexCount, verticesA, normalA, centroidA,
+      surfaceB.vertexCount, verticesB, normalB, centroidB,
+      contactRange, gapPenetrationTolerance,
+      overlap, basis, destination, vertexCount, capacityError);
+
+  if (!emitPass) {
+    overlapValid[index] = valid ? 1 : 0;
+    vertexCounts[index] = valid ? uint32_t(vertexCount) : 0;
+    return;
+  }
+  if (!valid) return;
+
+  const uint32_t destinationIndex = overlapOffsets[index];
+  overlap.surfaceA = globalA;
+  overlap.surfaceB = globalB;
+  acceptedOverlaps[destinationIndex] = overlap;
+  bases[destinationIndex] = basis;
+  vertexCounts[destinationIndex] = uint32_t(vertexCount);
 }
 
-static __global__ void verifyOwnershipSideKernel(
-    const uint32_t* sortedKeys,
-    const uint32_t* sortedIndices,
+__global__ void accumulateMortarExposureKernel(
+    const MortarOverlap *overlaps,
     uint32_t overlapCount,
-    uint32_t sideIndex,
-    const MortarOverlap* overlaps,
-    const MortarBasis* bases,
-    const double2* vertices,
-    const uint32_t* vertexOffsets,
-    const uint32_t* vertexCounts,
-    const DeviceModelInfo* models,
-    uint32_t modelCount,
-    float3 domainMin,
-    double invBaseScale,
-    float coordScale,
-    int* conflictFound,
-    double2* conflictMeasure)
-{
-    uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= overlapCount) return;
+    double4 *claimedAreaMoment) {
+  const uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
+  if (index >= overlapCount) return;
 
-    uint32_t currKey = sortedKeys[idx];
-    if (idx > 0 && sortedKeys[idx - 1] == currKey) return; // Only process at run start
+  const MortarOverlap overlap = overlaps[index];
+  atomicAdd(&claimedAreaMoment[overlap.surfaceA].w, overlap.areaA);
+  atomicAdd(&claimedAreaMoment[overlap.surfaceA].x, overlap.momentA.x);
+  atomicAdd(&claimedAreaMoment[overlap.surfaceA].y, overlap.momentA.y);
+  atomicAdd(&claimedAreaMoment[overlap.surfaceA].z, overlap.momentA.z);
 
-    int runLength = 1;
-    while (idx + runLength < overlapCount && sortedKeys[idx + runLength] == currKey) {
-        runLength++;
-    }
-    if (runLength <= 1) return;
-
-    const DeviceModelInfo* info = nullptr;
-    for (uint32_t m = 0; m < modelCount; ++m) {
-        if (currKey >= models[m].surfaceBase && currKey < models[m].surfaceBase + models[m].totalPatches) {
-            info = &models[m];
-            break;
-        }
-    }
-    if (!info) return;
-
-    uint32_t localPatch = currKey - info->surfaceBase;
-    RestrictedSurfaceGeometry g = info->geom[localPatch];
-    double3 nP = normalize3(make_double3(g.plane.x, g.plane.y, g.plane.z));
-    double3 cP = make_double3(
-        double(domainMin.x) + g.centroidArea.x * invBaseScale,
-        double(domainMin.y) + g.centroidArea.y * invBaseScale,
-        double(domainMin.z) + g.centroidArea.z * invBaseScale
-    );
-
-    double3 ref = (fabs(nP.x) < 0.9) ? make_double3(1.0, 0.0, 0.0) : make_double3(0.0, 1.0, 0.0);
-    double3 uP = normalize3(cross3(ref, nP));
-    double3 vP = cross3(nP, uP);
-
-    double invScale2 = invBaseScale * invBaseScale;
-    double patchArea = g.centroidArea.w * invScale2;
-
-    for (int i = 0; i < runLength; ++i) {
-        uint32_t ovIdx1 = sortedIndices[idx + i];
-        uint32_t k1 = vertexCounts[ovIdx1];
-        if (k1 < 3 || k1 > MaxMortarScratchVertices) continue;
-        uint32_t off1 = vertexOffsets[ovIdx1];
-        MortarBasis b1 = bases[ovIdx1];
-
-        double denom1 = dot3(nP, b1.normal);
-        if (fabs(denom1) < 1e-4) continue;
-
-        double2 poly1[MaxMortarScratchVertices];
-        for (uint32_t v = 0; v < k1; ++v) {
-            double2 p2D = vertices[off1 + v];
-            double3 p3D = add3(b1.origin, add3(mul3(b1.u, p2D.x), mul3(b1.v, p2D.y)));
-            double t1 = dot3(nP, sub3(cP, p3D)) / denom1;
-            double3 pPatch = add3(p3D, mul3(b1.normal, t1));
-            double3 d = sub3(pPatch, cP);
-            poly1[v] = make_double2(dot3(d, uP), dot3(d, vP));
-        }
-        if (polygonSignedArea2D(poly1, int(k1)) < 0.0) {
-            reversePolygon2D(poly1, int(k1));
-        }
-
-        double perim1 = 0.0;
-        for (uint32_t v = 0; v < k1; ++v) {
-            uint32_t next = (v + 1 == k1) ? 0 : v + 1;
-            double dx = poly1[next].x - poly1[v].x;
-            double dy = poly1[next].y - poly1[v].y;
-            perim1 += sqrt(dx * dx + dy * dy);
-        }
-
-        for (int j = i + 1; j < runLength; ++j) {
-            uint32_t ovIdx2 = sortedIndices[idx + j];
-            uint32_t k2 = vertexCounts[ovIdx2];
-            if (k2 < 3 || k2 > MaxMortarScratchVertices) continue;
-            uint32_t off2 = vertexOffsets[ovIdx2];
-            MortarBasis b2 = bases[ovIdx2];
-
-            double denom2 = dot3(nP, b2.normal);
-            if (fabs(denom2) < 1e-4) continue;
-
-            double2 poly2[MaxMortarScratchVertices];
-            for (uint32_t v = 0; v < k2; ++v) {
-                double2 p2D = vertices[off2 + v];
-                double3 p3D = add3(b2.origin, add3(mul3(b2.u, p2D.x), mul3(b2.v, p2D.y)));
-                double t2 = dot3(nP, sub3(cP, p3D)) / denom2;
-                double3 pPatch = add3(p3D, mul3(b2.normal, t2));
-                double3 d = sub3(pPatch, cP);
-                poly2[v] = make_double2(dot3(d, uP), dot3(d, vP));
-            }
-            if (polygonSignedArea2D(poly2, int(k2)) < 0.0) {
-                reversePolygon2D(poly2, int(k2));
-            }
-
-            double kappa = fmax(1.0 / fabs(denom1), 1.0 / fabs(denom2));
-            double tol = kappa * (16.0 * FLT_EPSILON * coordScale * perim1)
-                       + 64.0 * FLT_EPSILON * patchArea
-                       + 1e-12 * coordScale * coordScale;
-
-            double2 scratch1[MaxMortarScratchVertices];
-            double2 scratch2[MaxMortarScratchVertices];
-            int curCount = int(k1);
-            const double2* src = poly1;
-            double2* dst = scratch1;
-
-            for (uint32_t e = 0; e < k2; ++e) {
-                uint32_t eNext = (e + 1 == k2) ? 0 : e + 1;
-                double2 b0 = poly2[e];
-                double2 b1 = poly2[eNext];
-                double aLine = b0.y - b1.y;
-                double bLine = b1.x - b0.x;
-                double cLine = b1.y * b0.x - b1.x * b0.y;
-
-                int newCount = clipPolygon2DByHalfPlane(src, curCount, aLine, bLine, cLine, dst);
-                if (newCount < 3) { curCount = 0; break; }
-                curCount = newCount;
-                src = dst;
-                dst = (dst == scratch1) ? scratch2 : scratch1;
-            }
-
-            if (curCount >= 3) {
-                double interArea = fabs(polygonSignedArea2D(src, curCount));
-                if (interArea > tol) {
-                    if (atomicCAS(conflictFound, 0, 1) == 0) {
-                        uint32_t oppSurf1 = (sideIndex == 0) ? overlaps[ovIdx1].surfaceB : overlaps[ovIdx1].surfaceA;
-                        uint32_t oppSurf2 = (sideIndex == 0) ? overlaps[ovIdx2].surfaceB : overlaps[ovIdx2].surfaceA;
-
-                        RestrictedSurfaceGeometry oppGeom1{};
-                        bool oppGeom1Found = false;
-                        for (uint32_t m = 0; m < modelCount; ++m) {
-                            if (oppSurf1 >= models[m].surfaceBase && oppSurf1 < models[m].surfaceBase + models[m].totalPatches) {
-                                oppGeom1 = models[m].geom[oppSurf1 - models[m].surfaceBase];
-                                oppGeom1Found = true;
-                                break;
-                            }
-                        }
-
-                        RestrictedSurfaceGeometry oppGeom2{};
-                        bool oppGeom2Found = false;
-                        for (uint32_t m = 0; m < modelCount; ++m) {
-                            if (oppSurf2 >= models[m].surfaceBase && oppSurf2 < models[m].surfaceBase + models[m].totalPatches) {
-                                oppGeom2 = models[m].geom[oppSurf2 - models[m].surfaceBase];
-                                oppGeom2Found = true;
-                                break;
-                            }
-                        }
-
-                        double singleDirArea = 0.0;
-                        if (oppGeom1Found && oppGeom2Found) {
-                            double3 nOpp1 = normalize3(make_double3(oppGeom1.plane.x, oppGeom1.plane.y, oppGeom1.plane.z));
-                            double3 cOpp1 = make_double3(
-                                double(domainMin.x) + oppGeom1.centroidArea.x * invBaseScale,
-                                double(domainMin.y) + oppGeom1.centroidArea.y * invBaseScale,
-                                double(domainMin.z) + oppGeom1.centroidArea.z * invBaseScale
-                            );
-                            double denomOpp1 = dot3(nOpp1, b1.normal);
-                            for (uint32_t v = 0; v < k1; ++v) {
-                                double2 p2D = vertices[off1 + v];
-                                double3 p3D = add3(b1.origin, add3(mul3(b1.u, p2D.x), mul3(b1.v, p2D.y)));
-                                double tB1 = (fabs(denomOpp1) > 1e-6) ? (dot3(nOpp1, sub3(cOpp1, p3D)) / denomOpp1) : 0.0;
-                                double3 pOpp1 = add3(p3D, mul3(b1.normal, tB1));
-                                double3 d1 = sub3(pOpp1, cP);
-                                poly1[v] = make_double2(dot3(d1, uP), dot3(d1, vP));
-                            }
-                            if (polygonSignedArea2D(poly1, int(k1)) < 0.0) {
-                                reversePolygon2D(poly1, int(k1));
-                            }
-
-                            double3 nOpp2 = normalize3(make_double3(oppGeom2.plane.x, oppGeom2.plane.y, oppGeom2.plane.z));
-                            double3 cOpp2 = make_double3(
-                                double(domainMin.x) + oppGeom2.centroidArea.x * invBaseScale,
-                                double(domainMin.y) + oppGeom2.centroidArea.y * invBaseScale,
-                                double(domainMin.z) + oppGeom2.centroidArea.z * invBaseScale
-                            );
-                            double denomOpp2 = dot3(nOpp2, b2.normal);
-                            for (uint32_t v = 0; v < k2; ++v) {
-                                double2 p2D = vertices[off2 + v];
-                                double3 p3D = add3(b2.origin, add3(mul3(b2.u, p2D.x), mul3(b2.v, p2D.y)));
-                                double tB2 = (fabs(denomOpp2) > 1e-6) ? (dot3(nOpp2, sub3(cOpp2, p3D)) / denomOpp2) : 0.0;
-                                double3 pOpp2 = add3(p3D, mul3(b2.normal, tB2));
-                                double3 d2 = sub3(pOpp2, cP);
-                                poly2[v] = make_double2(dot3(d2, uP), dot3(d2, vP));
-                            }
-                            if (polygonSignedArea2D(poly2, int(k2)) < 0.0) {
-                                reversePolygon2D(poly2, int(k2));
-                            }
-
-                            int testCount = int(k1);
-                            const double2* testSrc = poly1;
-                            double2* testDst = scratch1;
-
-                            for (uint32_t e = 0; e < k2; ++e) {
-                                uint32_t eNext = (e + 1 == k2) ? 0 : e + 1;
-                                double2 b0 = poly2[e];
-                                double2 b1p = poly2[eNext];
-                                double aLine = b0.y - b1p.y;
-                                double bLine = b1p.x - b0.x;
-                                double cLine = b1p.y * b0.x - b1p.x * b0.y;
-
-                                int newCount = clipPolygon2DByHalfPlane(testSrc, testCount, aLine, bLine, cLine, testDst);
-                                if (newCount < 3) { testCount = 0; break; }
-                                testCount = newCount;
-                                testSrc = testDst;
-                                testDst = (testDst == scratch1) ? scratch2 : scratch1;
-                            }
-
-                            if (testCount >= 3) {
-                                singleDirArea = fabs(polygonSignedArea2D(testSrc, testCount));
-                            }
-                        }
-                        *conflictMeasure = make_double2(singleDirArea, tol);
-                    }
-                }
-            }
-        }
-    }
+  atomicAdd(&claimedAreaMoment[overlap.surfaceB].w, overlap.areaB);
+  atomicAdd(&claimedAreaMoment[overlap.surfaceB].x, overlap.momentB.x);
+  atomicAdd(&claimedAreaMoment[overlap.surfaceB].y, overlap.momentB.y);
+  atomicAdd(&claimedAreaMoment[overlap.surfaceB].z, overlap.momentB.z);
 }
 
-// Exposure accounting kernels
-
-static __global__ void accumulateMortarExposureKernel(
-    const MortarOverlap* overlaps,
-    uint32_t overlapCount,
-    double4* claimedAreaMoment)
-{
-    uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= overlapCount) return;
-
-    MortarOverlap ov = overlaps[idx];
-
-    atomicAdd(&claimedAreaMoment[ov.surfaceA].w, ov.areaA);
-    atomicAdd(&claimedAreaMoment[ov.surfaceA].x, ov.momentA.x);
-    atomicAdd(&claimedAreaMoment[ov.surfaceA].y, ov.momentA.y);
-    atomicAdd(&claimedAreaMoment[ov.surfaceA].z, ov.momentA.z);
-
-    atomicAdd(&claimedAreaMoment[ov.surfaceB].w, ov.areaB);
-    atomicAdd(&claimedAreaMoment[ov.surfaceB].x, ov.momentB.x);
-    atomicAdd(&claimedAreaMoment[ov.surfaceB].y, ov.momentB.y);
-    atomicAdd(&claimedAreaMoment[ov.surfaceB].z, ov.momentB.z);
-}
-
-static __global__ void finalizeSurfaceExposureKernel(
-    const RestrictedSurfaceGeometry* geom,
+__global__ void finalizeSurfaceExposureKernel(
+    const RestrictedSurfaceGeometry *geometry,
     uint32_t patchCount,
     uint32_t surfaceBase,
     double invBaseScale,
     float3 domainMin,
-    float coordScale,
-    const double4* claimedAreaMoment,
-    double4* outDevExposure)
-{
-    uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= patchCount) return;
+    const double4 *claimedAreaMoment,
+    double4 *surfaceExposure) {
+  const uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
+  if (index >= patchCount) return;
 
-    uint32_t globalIdx = surfaceBase + idx;
-    RestrictedSurfaceGeometry g = geom[idx];
+  const uint32_t globalIndex = surfaceBase + index;
+  const RestrictedSurfaceGeometry patch = geometry[index];
+  const double inverseScaleSquared = invBaseScale * invBaseScale;
+  const double totalArea = patch.centroidArea.w * inverseScaleSquared;
 
-    double invScale2 = invBaseScale * invBaseScale;
-    double totalArea = g.centroidArea.w * invScale2;
+  const double3 canonicalCentroid = make_double3(patch.centroidArea.x, patch.centroidArea.y, patch.centroidArea.z);
+  const double3 worldCentroid = make_double3(
+      double(domainMin.x) + canonicalCentroid.x * invBaseScale,
+      double(domainMin.y) + canonicalCentroid.y * invBaseScale,
+      double(domainMin.z) + canonicalCentroid.z * invBaseScale);
+  const double3 totalMoment = mul3(worldCentroid, totalArea);
 
-    double3 canCent = make_double3(g.centroidArea.x, g.centroidArea.y, g.centroidArea.z);
-    double3 worldCent = make_double3(
-        double(domainMin.x) + canCent.x * invBaseScale,
-        double(domainMin.y) + canCent.y * invBaseScale,
-        double(domainMin.z) + canCent.z * invBaseScale
-    );
-    double3 totalMoment = mul3(worldCent, totalArea);
+  const double4 claimed = claimedAreaMoment[globalIndex];
+  const double contactArea = fmin(claimed.w, totalArea);
+  const double3 contactMoment = make_double3(claimed.x, claimed.y, claimed.z);
 
-    const double4 claimed = claimedAreaMoment[globalIdx];
-    double Acontact = claimed.w;
-    double3 Mcontact = make_double3(claimed.x, claimed.y, claimed.z);
+  double exposedArea = fmax(0.0, totalArea - contactArea);
+  double3 exposedMoment;
+  if (exposedArea <= 256.0 * DBL_EPSILON * totalArea) {
+    exposedArea = 0.0;
+    exposedMoment = make_double3(0.0, 0.0, 0.0);
+  } else {
+    exposedMoment = sub3(totalMoment, contactMoment);
+  }
 
-    if (Acontact > totalArea) {
-        // Clamp area while keeping partial-contact centroid to prevent replacing with whole patch
-        Acontact = totalArea;
-    }
-
-    double Aexposed = fmax(0.0, totalArea - Acontact);
-    double3 Mexposed;
-    if (Aexposed <= 256.0 * DBL_EPSILON * totalArea) {
-        Aexposed = 0.0;
-        Mexposed = make_double3(0.0, 0.0, 0.0);
-    } else {
-        Mexposed = sub3(totalMoment, Mcontact);
-    }
-
-    outDevExposure[globalIdx] = make_double4(Mexposed.x, Mexposed.y, Mexposed.z, Aexposed);
+  surfaceExposure[globalIndex] =
+      make_double4(exposedMoment.x, exposedMoment.y, exposedMoment.z, exposedArea);
 }
 
-static __global__ void mapOverlapsToCouplingKeysKernel(
-    const MortarOverlap* overlaps,
+__global__ void mapOverlapsToCouplingKeysKernel(
+    const MortarOverlap *overlaps,
     uint32_t overlapCount,
-    const uint32_t* contactFaceBySurface,
-    uint64_t* outKeys,
-    double* outValues)
-{
-    uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= overlapCount) return;
+    const uint32_t *contactFaceBySurface,
+    uint64_t *keys,
+    double *values) {
+  const uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
+  if (index >= overlapCount) return;
 
-    MortarOverlap ov = overlaps[idx];
-    uint32_t faceA = contactFaceBySurface[ov.surfaceA];
-    uint32_t faceB = contactFaceBySurface[ov.surfaceB];
+  const MortarOverlap overlap = overlaps[index];
+  const uint32_t faceA = contactFaceBySurface[overlap.surfaceA];
+  const uint32_t faceB = contactFaceBySurface[overlap.surfaceB];
 
-    if (faceA != InvalidId && faceB != InvalidId) {
-        uint32_t fMin = min(faceA, faceB);
-        uint32_t fMax = max(faceA, faceB);
-        outKeys[idx] = (uint64_t(fMin) << 32) | uint64_t(fMax);
-        outValues[idx] = ov.couplingArea;
-    } else {
-        outKeys[idx] = 0xFFFFFFFFFFFFFFFFull;
-        outValues[idx] = 0.0;
-    }
+  if (faceA != InvalidId && faceB != InvalidId) {
+    const uint32_t minimumFace = min(faceA, faceB);
+    const uint32_t maximumFace = max(faceA, faceB);
+    keys[index] = (uint64_t(minimumFace) << 32) | uint64_t(maximumFace);
+    values[index] = overlap.couplingArea;
+  } else {
+    keys[index] = InvalidCouplingKey;
+    values[index] = 0.0;
+  }
 }
+
+bool initializeSurfaceExposure(
+    const std::vector<ModelRestriction> &models,
+    uint32_t totalPatches,
+    const BaseCellDomain &baseDomain,
+    cudaUtils::CudaBuffer<double4> &surfaceExposure,
+    cudaStream_t stream) {
+  if (!rvdHost::ensureCapacity(surfaceExposure, totalPatches)) return false;
+
+  const float3 domainMin = make_float3(
+      baseDomain.domainMin.x, baseDomain.domainMin.y, baseDomain.domainMin.z);
+  for (const ModelRestriction &model : models) {
+    if (model.totalPatches == 0) continue;
+
+    initSurfaceExposureKernel<<<
+        rvdHost::blockCount(model.totalPatches), BlockSize, 0, stream>>>(
+        model.devSurfaceGeometry.get(),
+        model.totalPatches,
+        model.surfaceBase,
+        baseDomain.invBaseScale,
+        domainMin,
+        surfaceExposure.get());
+  }
+  return rvdHost::checkLaunch("launch initSurfaceExposureKernel");
+}
+
+bool uploadModelInfos(
+    const std::vector<ModelRestriction> &models,
+    cudaStream_t stream,
+    cudaUtils::CudaBuffer<DeviceModelInfo> &modelInfos) {
+  std::vector<DeviceModelInfo> hostInfos(models.size());
+  for (uint32_t m = 0; m < models.size(); ++m) {
+    hostInfos[m].surfaceBase = models[m].surfaceBase;
+    hostInfos[m].totalPatches = models[m].totalPatches;
+    hostInfos[m].geom = models[m].devSurfaceGeometry.get();
+    hostInfos[m].surfaces = models[m].devSurfaces.get();
+    hostInfos[m].vertices = models[m].devRestrictedVertices.get();
+  }
+
+  return modelInfos.allocate(models.size()) &&
+         modelInfos.uploadAsync(
+             hostInfos.data(), models.size(), stream);
+}
+
+bool buildPairOverlaps(
+    const ModelRestriction &modelA,
+    const ModelRestriction &modelB,
+    const cudaGeometry::DeviceModelGeometryView &geometryB,
+    const cudaUtils::CudaBuffer<DeviceModelInfo> &modelInfos,
+    uint32_t modelCount,
+    double contactRange,
+    double gapPenetrationTolerance,
+    float3 domainMin,
+    double invBaseScale,
+    float coordScale,
+    int *capacityError,
+    cudaStream_t stream,
+    PairWorkBuffers &work,
+    PairOverlapBuffers &pair) {
+  const uint32_t patchesA = modelA.totalPatches;
+  const uint32_t patchesB = modelB.totalPatches;
+  if (patchesA == 0 || patchesB == 0) return true;
+
+  if (!rvdHost::ensureCapacity(work.triangleKeysIn, patchesB) ||
+      !rvdHost::ensureCapacity(work.triangleKeysOut, patchesB) ||
+      !rvdHost::ensureCapacity(work.patchIndicesIn, patchesB) ||
+      !rvdHost::ensureCapacity(work.patchIndicesOut, patchesB)) {
+    return false;
+  }
+
+  extractPatchTrianglesKernel<<<
+      rvdHost::blockCount(patchesB), BlockSize, 0, stream>>>(
+      modelB.devSurfaces.get(), patchesB,
+      work.triangleKeysIn.get(), work.patchIndicesIn.get());
+  if (!rvdHost::checkLaunch("launch extractPatchTrianglesKernel")) return false;
+
+  if (!rvdHost::sortPairs(
+          work.triangleKeysIn.get(), work.triangleKeysOut.get(),
+          work.patchIndicesIn.get(), work.patchIndicesOut.get(),
+          int(patchesB), work.scratch, stream)) {
+    return false;
+  }
+
+  if (!rvdHost::ensureCapacity(work.countsA, patchesA) ||
+      !rvdHost::ensureCapacity(work.offsetsA, patchesA)) {
+    return false;
+  }
+
+  countAndEmitCandidatePatchPairsKernel<<<
+      rvdHost::blockCount(patchesA), BlockSize, 0, stream>>>(
+      modelA.devSurfaces.get(),
+      modelA.devSurfaceGeometry.get(),
+      modelA.devRestrictedVertices.get(),
+      patchesA,
+      modelA.surfaceBase,
+      geometryB,
+      work.triangleKeysOut.get(),
+      work.patchIndicesOut.get(),
+      modelB.devSurfaceGeometry.get(),
+      patchesB,
+      modelB.surfaceBase,
+      contactRange,
+      domainMin,
+      invBaseScale,
+      coordScale,
+      nullptr,
+      work.countsA.get(),
+      nullptr,
+      false);
+  if (!rvdHost::checkLaunch("launch candidate pair count pass")) return false;
+
+  if (!rvdHost::exclusiveSum(
+          work.countsA.get(), work.offsetsA.get(), int(patchesA),
+          work.scratch, stream)) {
+    return false;
+  }
+
+  uint32_t candidateCount = 0;
+  if (!rvdHost::readLastExclusiveScanTotal(
+          work.countsA.get(), work.offsetsA.get(), patchesA, stream,
+          candidateCount, "read candidate pair count")) {
+    return false;
+  }
+  if (candidateCount == 0) return true;
+
+  if (!rvdHost::ensureCapacity(work.candidatePairs, candidateCount)) {
+    return false;
+  }
+
+  countAndEmitCandidatePatchPairsKernel<<<
+      rvdHost::blockCount(patchesA), BlockSize, 0, stream>>>(
+      modelA.devSurfaces.get(),
+      modelA.devSurfaceGeometry.get(),
+      modelA.devRestrictedVertices.get(),
+      patchesA,
+      modelA.surfaceBase,
+      geometryB,
+      work.triangleKeysOut.get(),
+      work.patchIndicesOut.get(),
+      modelB.devSurfaceGeometry.get(),
+      patchesB,
+      modelB.surfaceBase,
+      contactRange,
+      domainMin,
+      invBaseScale,
+      coordScale,
+      work.offsetsA.get(),
+      nullptr,
+      work.candidatePairs.get(),
+      true);
+  if (!rvdHost::checkLaunch("launch candidate pair emit pass")) return false;
+
+  if (!rvdHost::ensureCapacity(work.overlapValid, candidateCount) ||
+      !rvdHost::ensureCapacity(work.overlapOffsets, candidateCount) ||
+      !rvdHost::ensureCapacity(work.vertexCounts, candidateCount) ||
+      !rvdHost::ensureCapacity(work.vertexOffsets, candidateCount)) {
+    return false;
+  }
+
+  countAndEmitMortarOverlapsKernel<<<
+      rvdHost::blockCount(candidateCount), BlockSize, 0, stream>>>(
+      work.candidatePairs.get(),
+      candidateCount,
+      modelInfos.get(),
+      modelCount,
+      contactRange,
+      gapPenetrationTolerance,
+      domainMin,
+      invBaseScale,
+      nullptr,
+      nullptr,
+      work.overlapValid.get(),
+      work.vertexCounts.get(),
+      nullptr,
+      nullptr,
+      nullptr,
+      false,
+      capacityError);
+  if (!rvdHost::checkLaunch("launch mortar overlap count pass")) return false;
+
+  if (!rvdHost::exclusiveSum(
+          work.overlapValid.get(), work.overlapOffsets.get(),
+          int(candidateCount), work.scratch, stream) ||
+      !rvdHost::exclusiveSum(
+          work.vertexCounts.get(), work.vertexOffsets.get(),
+          int(candidateCount), work.scratch, stream)) {
+    return false;
+  }
+
+  uint32_t acceptedOverlaps = 0;
+  uint32_t acceptedVertices = 0;
+  if (!rvdHost::readLastExclusiveScanTotal(
+          work.overlapValid.get(), work.overlapOffsets.get(), candidateCount,
+          stream, acceptedOverlaps, "read accepted overlap count") ||
+      !rvdHost::readLastExclusiveScanTotal(
+          work.vertexCounts.get(), work.vertexOffsets.get(), candidateCount,
+          stream, acceptedVertices, "read accepted overlap vertices")) {
+    return false;
+  }
+
+  int hostCapacityError = 0;
+  if (!rvdHost::copyToHost(
+          &hostCapacityError, capacityError, 1, stream,
+          "read mortar scratch capacity")) {
+    return false;
+  }
+  if (hostCapacityError != 0) {
+    std::cerr << "[RVDContact] Fatal error: Mortar scratch polygon capacity exceeded ("
+              << "MaxMortarScratchVertices = " << MaxMortarScratchVertices
+              << "). Clipping buffer overflowed!" << std::endl;
+    return false;
+  }
+
+  if (acceptedOverlaps == 0) return true;
+
+  if (!pair.overlaps.allocate(acceptedOverlaps) ||
+      !pair.bases.allocate(acceptedOverlaps) ||
+      !pair.vertexCounts.allocate(acceptedOverlaps) ||
+      !pair.vertices.allocate(acceptedVertices)) {
+    return false;
+  }
+
+  countAndEmitMortarOverlapsKernel<<<
+      rvdHost::blockCount(candidateCount), BlockSize, 0, stream>>>(
+      work.candidatePairs.get(),
+      candidateCount,
+      modelInfos.get(),
+      modelCount,
+      contactRange,
+      gapPenetrationTolerance,
+      domainMin,
+      invBaseScale,
+      work.overlapOffsets.get(),
+      work.vertexOffsets.get(),
+      work.overlapValid.get(),
+      pair.vertexCounts.get(),
+      pair.overlaps.get(),
+      pair.bases.get(),
+      pair.vertices.get(),
+      true,
+      capacityError);
+  if (!rvdHost::checkLaunch("launch mortar overlap emit pass")) return false;
+
+  pair.overlapCount = acceptedOverlaps;
+  pair.vertexCount = acceptedVertices;
+
+  return rvdHost::synchronize(stream, "finish pair overlaps");
+}
+
+bool allocateMortarMeshBuffers(uint32_t overlapCount, uint32_t vertexCount) {
+  if (!rvdHost::ensureCapacity(gMortarMeshBuffers.vertices, vertexCount) ||
+      !rvdHost::ensureCapacity(gMortarMeshBuffers.vertexCounts, overlapCount) ||
+      !rvdHost::ensureCapacity(gMortarMeshBuffers.vertexOffsets, overlapCount) ||
+      !rvdHost::ensureCapacity(gMortarMeshBuffers.bases, overlapCount)) {
+    return false;
+  }
+  gMortarMeshBuffers.vertexCount = vertexCount;
+  return true;
+}
+
+bool computeSurfaceExposure(
+    const std::vector<ModelRestriction> &models,
+    uint32_t totalPatches,
+    const BaseCellDomain &baseDomain,
+    const cudaUtils::CudaBuffer<MortarOverlap> &overlaps,
+    uint32_t overlapCount,
+    cudaUtils::CudaBuffer<double4> &surfaceExposure,
+    cudaStream_t stream) {
+  cudaUtils::CudaBuffer<double4> claimedAreaMoment;
+  if (!claimedAreaMoment.allocate(totalPatches) ||
+      !rvdHost::zero(
+          claimedAreaMoment.get(), totalPatches * sizeof(double4), stream,
+          "clear claimed surface area")) {
+    return false;
+  }
+
+  accumulateMortarExposureKernel<<<
+      rvdHost::blockCount(overlapCount), BlockSize, 0, stream>>>(
+      overlaps.get(), overlapCount, claimedAreaMoment.get());
+  if (!rvdHost::checkLaunch("launch accumulateMortarExposureKernel")) {
+    return false;
+  }
+
+  const float3 domainMin = make_float3(
+      baseDomain.domainMin.x, baseDomain.domainMin.y, baseDomain.domainMin.z);
+  for (const ModelRestriction &model : models) {
+    if (model.totalPatches == 0) continue;
+
+    finalizeSurfaceExposureKernel<<<
+        rvdHost::blockCount(model.totalPatches), BlockSize, 0, stream>>>(
+        model.devSurfaceGeometry.get(),
+        model.totalPatches,
+        model.surfaceBase,
+        baseDomain.invBaseScale,
+        domainMin,
+        claimedAreaMoment.get(),
+        surfaceExposure.get());
+  }
+  return rvdHost::checkLaunch("launch finalizeSurfaceExposureKernel");
+}
+
+bool buildContactCouplings(
+    const cudaUtils::CudaBuffer<MortarOverlap> &overlaps,
+    uint32_t overlapCount,
+    const cudaUtils::CudaBuffer<uint32_t> &contactFaceBySurface,
+    std::vector<ContactCoupling> &couplings,
+    cudaStream_t stream) {
+  cudaUtils::CudaBuffer<uint64_t> keysIn;
+  cudaUtils::CudaBuffer<uint64_t> keysOut;
+  cudaUtils::CudaBuffer<double> valuesIn;
+  cudaUtils::CudaBuffer<double> valuesOut;
+  cudaUtils::CudaBuffer<uint64_t> uniqueKeys;
+  cudaUtils::CudaBuffer<double> aggregatedAreas;
+  cudaUtils::CudaBuffer<int> runCount;
+  if (!keysIn.allocate(overlapCount) ||
+      !keysOut.allocate(overlapCount) ||
+      !valuesIn.allocate(overlapCount) ||
+      !valuesOut.allocate(overlapCount) ||
+      !uniqueKeys.allocate(overlapCount) ||
+      !aggregatedAreas.allocate(overlapCount) ||
+      !runCount.allocate(1)) {
+    return false;
+  }
+
+  mapOverlapsToCouplingKeysKernel<<<
+      rvdHost::blockCount(overlapCount), BlockSize, 0, stream>>>(
+      overlaps.get(),
+      overlapCount,
+      contactFaceBySurface.get(),
+      keysIn.get(),
+      valuesIn.get());
+  if (!rvdHost::checkLaunch("launch mapOverlapsToCouplingKeysKernel")) {
+    return false;
+  }
+
+  cudaUtils::CudaBuffer<uint8_t> reduceScratch;
+  if (!rvdHost::sortPairs(
+          keysIn.get(), keysOut.get(), valuesIn.get(), valuesOut.get(),
+          int(overlapCount), reduceScratch, stream) ||
+      !rvdHost::reduceByKeySum(
+          keysOut.get(), uniqueKeys.get(), valuesOut.get(), aggregatedAreas.get(),
+          runCount.get(), int(overlapCount), reduceScratch, stream)) {
+    return false;
+  }
+
+  int hostRunCount = 0;
+  if (!rvdHost::copyToHost(
+          &hostRunCount, runCount.get(), 1, stream,
+          "read contact coupling count")) {
+    return false;
+  }
+  if (hostRunCount <= 0) return true;
+
+  std::vector<uint64_t> hostKeys(hostRunCount);
+  std::vector<double> hostAreas(hostRunCount);
+  if (!uniqueKeys.downloadAsync(hostKeys.data(), hostRunCount, stream) ||
+      !aggregatedAreas.downloadAsync(hostAreas.data(), hostRunCount, stream) ||
+      !rvdHost::synchronize(stream, "download contact couplings")) {
+    return false;
+  }
+
+  couplings.reserve(couplings.size() + size_t(hostRunCount));
+  for (int r = 0; r < hostRunCount; ++r) {
+    const uint64_t key = hostKeys[r];
+    if (key == InvalidCouplingKey) continue;
+
+    ContactCoupling coupling{};
+    coupling.faceA = uint32_t(key >> 32);
+    coupling.faceB = uint32_t(key & 0xFFFFFFFFull);
+    coupling.couplingArea = hostAreas[r];
+    couplings.push_back(coupling);
+  }
+  return true;
+}
+
+bool buildContactMesh(uint32_t overlapCount, std::vector<ContactMeshVertex> &contactMesh, cudaStream_t stream) {
+  if (gMortarMeshBuffers.vertexCount == 0 ||
+      gMortarMeshBuffers.vertexCounts.size() < overlapCount) {
+    return true;
+  }
+
+  std::vector<uint32_t> hostCounts(overlapCount);
+  std::vector<uint32_t> hostOffsets(overlapCount);
+  std::vector<MortarBasis> hostBases(overlapCount);
+  std::vector<double2> hostVertices(gMortarMeshBuffers.vertexCount);
+  if (!gMortarMeshBuffers.vertexCounts.downloadAsync(
+          hostCounts.data(), overlapCount, stream) ||
+      !gMortarMeshBuffers.vertexOffsets.downloadAsync(
+          hostOffsets.data(), overlapCount, stream) ||
+      !gMortarMeshBuffers.bases.downloadAsync(
+          hostBases.data(), overlapCount, stream) ||
+      !gMortarMeshBuffers.vertices.downloadAsync(
+          hostVertices.data(), hostVertices.size(), stream) ||
+      !rvdHost::synchronize(stream, "download contact mesh")) {
+    return false;
+  }
+
+  for (uint32_t i = 0; i < overlapCount; ++i) {
+    const uint32_t vertexCount = hostCounts[i];
+    if (vertexCount < 3) continue;
+
+    const uint32_t offset = hostOffsets[i];
+    const MortarBasis basis = hostBases[i];
+    double2 centroid2D;
+    polygonAreaAndCentroid2D(hostVertices.data() + offset, int(vertexCount), centroid2D);
+
+    const glm::vec3 centroid(
+        float(basis.origin.x + centroid2D.x * basis.u.x + centroid2D.y * basis.v.x),
+        float(basis.origin.y + centroid2D.x * basis.u.y + centroid2D.y * basis.v.y),
+        float(basis.origin.z + centroid2D.x * basis.u.z + centroid2D.y * basis.v.z));
+    const glm::vec3 normal(float(basis.normal.x), float(basis.normal.y), float(basis.normal.z));
+
+    for (uint32_t k = 0; k < vertexCount; ++k) {
+      const uint32_t next = (k + 1 == vertexCount) ? 0 : k + 1;
+      const double2 point0 = hostVertices[offset + k];
+      const double2 point1 = hostVertices[offset + next];
+
+      const glm::vec3 position0(
+          float(basis.origin.x + point0.x * basis.u.x + point0.y * basis.v.x),
+          float(basis.origin.y + point0.x * basis.u.y + point0.y * basis.v.y),
+          float(basis.origin.z + point0.x * basis.u.z + point0.y * basis.v.z));
+      const glm::vec3 position1(
+          float(basis.origin.x + point1.x * basis.u.x + point1.y * basis.v.x),
+          float(basis.origin.y + point1.x * basis.u.y + point1.y * basis.v.y),
+          float(basis.origin.z + point1.x * basis.u.z + point1.y * basis.v.z));
+
+      ContactMeshVertex v0{};
+      ContactMeshVertex v1{};
+      ContactMeshVertex v2{};
+      v0.position = centroid;
+      v0.normal = normal;
+      v1.position = position0;
+      v1.normal = normal;
+      v2.position = position1;
+      v2.normal = normal;
+
+      contactMesh.push_back(v0);
+      contactMesh.push_back(v1);
+      contactMesh.push_back(v2);
+    }
+  }
+  return true;
+}
+
+} // namespace
 
 bool buildMortarOverlaps(
-    const std::vector<ModelRestriction>& models,
-    const std::vector<cudaGeometry::DeviceModelGeometryView>& geometries,
-    const BaseCellDomain& baseDomain,
+    const std::vector<ModelRestriction> &models,
+    const std::vector<cudaGeometry::DeviceModelGeometryView> &geometries,
+    const BaseCellDomain &baseDomain,
     double contactRange,
-    cudaUtils::CudaBuffer<MortarOverlap>& devOverlaps,
-    uint32_t& overlapCount,
-    cudaUtils::CudaBuffer<double4>& devExposure,
-    cudaStream_t stream)
-{
-    overlapCount = 0;
-    const uint32_t modelCount = uint32_t(models.size());
-    if (modelCount == 0) return true;
+    cudaUtils::CudaBuffer<MortarOverlap> &overlaps,
+    uint32_t &overlapCount,
+    cudaUtils::CudaBuffer<double4> &surfaceExposure,
+    cudaStream_t stream) {
+  overlapCount = 0;
 
-    uint32_t totalSurfacePatches = 0;
-    for (uint32_t m = 0; m < modelCount; ++m) {
-        totalSurfacePatches += models[m].totalPatches;
-    }
+  const uint32_t modelCount = uint32_t(models.size());
+  if (modelCount == 0) return true;
 
-    if (!ensureCapacity(devExposure, totalSurfacePatches)) return false;
+  uint32_t totalSurfacePatches = 0;
+  for (const ModelRestriction &model : models) {
+    totalSurfacePatches += model.totalPatches;
+  }
 
-    const float3 domainMin = make_float3(baseDomain.domainMin.x, baseDomain.domainMin.y, baseDomain.domainMin.z);
+  if (!initializeSurfaceExposure(
+          models, totalSurfacePatches, baseDomain, surfaceExposure, stream)) {
+    return false;
+  }
+  if (modelCount < 2 || totalSurfacePatches == 0) return true;
 
-    for (uint32_t m = 0; m < modelCount; ++m) {
-        if (models[m].totalPatches == 0) continue;
-        uint32_t blocks = (models[m].totalPatches + BlockSize - 1) / BlockSize;
-        initSurfaceExposureKernel<<<blocks, BlockSize, 0, stream>>>(
-            models[m].devSurfaceGeometry.get(),
-            models[m].totalPatches,
-            models[m].surfaceBase,
-            baseDomain.invBaseScale,
-            domainMin,
-            devExposure.get()
-        );
-    }
-    if (cudaGetLastError() != cudaSuccess) return false;
+  float coordScale = glm::length(baseDomain.domainMax - baseDomain.domainMin);
+  if (coordScale <= 0.0f) coordScale = 1.0f;
+  const double gapPenetrationTolerance = 256.0 * DBL_EPSILON * double(coordScale);
 
-    if (modelCount < 2 || totalSurfacePatches == 0) return true;
+  cudaUtils::CudaBuffer<DeviceModelInfo> modelInfos;
+  if (!uploadModelInfos(models, stream, modelInfos)) return false;
 
-    float coordScale = glm::length(baseDomain.domainMax - baseDomain.domainMin);
-    if (coordScale <= 0.0f) coordScale = 1.0f;
-    double gPenTol = 256.0 * DBL_EPSILON * double(coordScale);
+  cudaUtils::CudaBuffer<int> capacityError;
+  if (!capacityError.allocate(1) ||
+      !rvdHost::zero(capacityError.get(), sizeof(int), stream, "clear mortar capacity error")) {
+    return false;
+  }
 
-    // Prepare DeviceModelInfo array
-    std::vector<DeviceModelInfo> hostModelInfos(modelCount);
-    for (uint32_t m = 0; m < modelCount; ++m) {
-        hostModelInfos[m].modelIndex = m;
-        hostModelInfos[m].surfaceBase = models[m].surfaceBase;
-        hostModelInfos[m].totalPatches = models[m].totalPatches;
-        hostModelInfos[m].geom = models[m].devSurfaceGeometry.get();
-        hostModelInfos[m].surfaces = models[m].devSurfaces.get();
-        hostModelInfos[m].vertices = models[m].devRestrictedVertices.get();
-    }
-    cudaUtils::CudaBuffer<DeviceModelInfo> devModelInfos;
-    if (!devModelInfos.allocate(modelCount) ||
-        !devModelInfos.uploadAsync(hostModelInfos.data(), modelCount, stream)) {
+  const float3 domainMin = make_float3(baseDomain.domainMin.x, baseDomain.domainMin.y, baseDomain.domainMin.z);
+
+  std::vector<PairOverlapBuffers> pairs;
+  pairs.reserve(size_t(modelCount) * (modelCount - 1) / 2);
+  PairWorkBuffers work;
+
+  for (uint32_t modelA = 0; modelA < modelCount; ++modelA) {
+    for (uint32_t modelB = modelA + 1; modelB < modelCount; ++modelB) {
+      if (models[modelA].totalPatches == 0 || models[modelB].totalPatches == 0) {
+        continue;
+      }
+
+      pairs.emplace_back();
+      if (!buildPairOverlaps(
+              models[modelA], models[modelB], geometries[modelB], modelInfos,
+              modelCount, contactRange, gapPenetrationTolerance, domainMin,
+              baseDomain.invBaseScale, coordScale, capacityError.get(), stream,
+              work, pairs.back())) {
         return false;
+      }
     }
+  }
 
-    cudaUtils::CudaBuffer<int> devCapacityError;
-    if (!devCapacityError.allocate(1)) return false;
-    cudaMemsetAsync(devCapacityError.get(), 0, sizeof(int), stream);
+  uint32_t totalOverlaps = 0;
+  uint32_t totalVertices = 0;
+  for (const PairOverlapBuffers &pair : pairs) {
+    totalOverlaps += pair.overlapCount;
+    totalVertices += pair.vertexCount;
+  }
 
-    std::vector<MortarOverlap> allOverlaps;
-    std::vector<MortarBasis> allBases;
-    std::vector<double2> allVertices;
-    std::vector<uint32_t> allVertexCounts;
-    std::vector<uint32_t> allVertexOffsets;
+  overlapCount = totalOverlaps;
+  if (overlapCount == 0) return true;
 
-    cudaUtils::CudaBuffer<uint8_t> cubScratch;
+  if (!rvdHost::ensureCapacity(overlaps, totalOverlaps) ||
+      !allocateMortarMeshBuffers(totalOverlaps, totalVertices)) {
+    return false;
+  }
 
-    for (uint32_t ma = 0; ma < modelCount; ++ma) {
-        for (uint32_t mb = ma + 1; mb < modelCount; ++mb) {
-            uint32_t patchesA = models[ma].totalPatches;
-            uint32_t patchesB = models[mb].totalPatches;
-            if (patchesA == 0 || patchesB == 0) continue;
+  uint32_t overlapOffset = 0;
+  uint32_t vertexOffset = 0;
+  for (const PairOverlapBuffers &pair : pairs) {
+    if (pair.overlapCount == 0) continue;
 
-            cudaUtils::CudaBuffer<uint32_t> devTriKeysIn, devTriKeysOut;
-            cudaUtils::CudaBuffer<uint32_t> devPatchValsIn, devPatchValsOut;
-            if (!devTriKeysIn.allocate(patchesB) || !devTriKeysOut.allocate(patchesB) ||
-                !devPatchValsIn.allocate(patchesB) || !devPatchValsOut.allocate(patchesB)) {
-                return false;
-            }
-
-            uint32_t bBlocks = (patchesB + BlockSize - 1) / BlockSize;
-            extractPatchTrianglesKernel<<<bBlocks, BlockSize, 0, stream>>>(
-                models[mb].devSurfaces.get(),
-                patchesB,
-                devTriKeysIn.get(),
-                devPatchValsIn.get()
-            );
-
-            if (!sortPairs(devTriKeysIn.get(), devTriKeysOut.get(),
-                           devPatchValsIn.get(), devPatchValsOut.get(),
-                           int(patchesB), cubScratch, stream)) {
-                return false;
-            }
-
-            cudaUtils::CudaBuffer<uint32_t> devCountsA, devOffsetsA;
-            if (!devCountsA.allocate(patchesA) || !devOffsetsA.allocate(patchesA)) return false;
-
-            uint32_t aBlocks = (patchesA + BlockSize - 1) / BlockSize;
-            countAndEmitCandidatePatchPairsKernel<<<aBlocks, BlockSize, 0, stream>>>(
-                models[ma].devSurfaces.get(),
-                models[ma].devSurfaceGeometry.get(),
-                models[ma].devRestrictedVertices.get(),
-                patchesA,
-                models[ma].surfaceBase,
-                geometries[mb],
-                devTriKeysOut.get(),
-                devPatchValsOut.get(),
-                models[mb].devSurfaceGeometry.get(),
-                patchesB,
-                models[mb].surfaceBase,
-                contactRange,
-                domainMin,
-                baseDomain.invBaseScale,
-                coordScale,
-                nullptr,
-                devCountsA.get(),
-                nullptr,
-                false
-            );
-
-            if (!exclusiveSum(devCountsA.get(), devOffsetsA.get(), int(patchesA), cubScratch, stream)) {
-                return false;
-            }
-
-            uint32_t lastCount = 0, lastOffset = 0;
-            cudaMemcpyAsync(&lastCount, devCountsA.get() + (patchesA - 1), sizeof(uint32_t), cudaMemcpyDeviceToHost, stream);
-            cudaMemcpyAsync(&lastOffset, devOffsetsA.get() + (patchesA - 1), sizeof(uint32_t), cudaMemcpyDeviceToHost, stream);
-            cudaStreamSynchronize(stream);
-
-            uint32_t numCandidates = lastOffset + lastCount;
-            if (numCandidates == 0) continue;
-
-            cudaUtils::CudaBuffer<uint2> devCandidatePairs;
-            if (!devCandidatePairs.allocate(numCandidates)) return false;
-
-            countAndEmitCandidatePatchPairsKernel<<<aBlocks, BlockSize, 0, stream>>>(
-                models[ma].devSurfaces.get(),
-                models[ma].devSurfaceGeometry.get(),
-                models[ma].devRestrictedVertices.get(),
-                patchesA,
-                models[ma].surfaceBase,
-                geometries[mb],
-                devTriKeysOut.get(),
-                devPatchValsOut.get(),
-                models[mb].devSurfaceGeometry.get(),
-                patchesB,
-                models[mb].surfaceBase,
-                contactRange,
-                domainMin,
-                baseDomain.invBaseScale,
-                coordScale,
-                devOffsetsA.get(),
-                nullptr,
-                devCandidatePairs.get(),
-                true
-            );
-
-            cudaUtils::CudaBuffer<uint32_t> devOverlapValid, devOverlapOffsets;
-            cudaUtils::CudaBuffer<uint32_t> devVertexCounts, devVertexOffsets;
-            if (!devOverlapValid.allocate(numCandidates) || !devOverlapOffsets.allocate(numCandidates) ||
-                !devVertexCounts.allocate(numCandidates) || !devVertexOffsets.allocate(numCandidates)) {
-                return false;
-            }
-
-            uint32_t cBlocks = (numCandidates + BlockSize - 1) / BlockSize;
-            countAndEmitMortarOverlapsKernel<<<cBlocks, BlockSize, 0, stream>>>(
-                devCandidatePairs.get(),
-                numCandidates,
-                devModelInfos.get(),
-                modelCount,
-                contactRange,
-                gPenTol,
-                domainMin,
-                baseDomain.invBaseScale,
-                nullptr,
-                nullptr,
-                devOverlapValid.get(),
-                devVertexCounts.get(),
-                nullptr,
-                nullptr,
-                nullptr,
-                false,
-                devCapacityError.get()
-            );
-
-            if (!exclusiveSum(devOverlapValid.get(), devOverlapOffsets.get(), int(numCandidates), cubScratch, stream)) {
-                return false;
-            }
-            if (!exclusiveSum(devVertexCounts.get(), devVertexOffsets.get(), int(numCandidates), cubScratch, stream)) {
-                return false;
-            }
-
-            uint32_t lastValid = 0, lastValidOff = 0;
-            uint32_t lastVertCount = 0, lastVertOff = 0;
-            cudaMemcpyAsync(&lastValid, devOverlapValid.get() + (numCandidates - 1), sizeof(uint32_t), cudaMemcpyDeviceToHost, stream);
-            cudaMemcpyAsync(&lastValidOff, devOverlapOffsets.get() + (numCandidates - 1), sizeof(uint32_t), cudaMemcpyDeviceToHost, stream);
-            cudaMemcpyAsync(&lastVertCount, devVertexCounts.get() + (numCandidates - 1), sizeof(uint32_t), cudaMemcpyDeviceToHost, stream);
-            cudaMemcpyAsync(&lastVertOff, devVertexOffsets.get() + (numCandidates - 1), sizeof(uint32_t), cudaMemcpyDeviceToHost, stream);
-            cudaStreamSynchronize(stream);
-
-            int capacityError = 0;
-            cudaMemcpyAsync(&capacityError, devCapacityError.get(), sizeof(int), cudaMemcpyDeviceToHost, stream);
-            cudaStreamSynchronize(stream);
-            if (capacityError != 0) {
-                std::cerr << "[RVDContact] Fatal error: Mortar scratch polygon capacity exceeded (MaxMortarScratchVertices = "
-                          << MaxMortarScratchVertices << "). Clipping buffer overflowed!\n";
-                return false;
-            }
-
-            uint32_t acceptedOverlaps = lastValidOff + lastValid;
-            uint32_t acceptedVertices = lastVertOff + lastVertCount;
-            if (acceptedOverlaps == 0) continue;
-
-            cudaUtils::CudaBuffer<MortarOverlap> curAcceptedOverlaps;
-            cudaUtils::CudaBuffer<MortarBasis> curBases;
-            cudaUtils::CudaBuffer<uint32_t> curOverlapVertexCounts;
-            cudaUtils::CudaBuffer<double2> curVertices;
-
-            if (!curAcceptedOverlaps.allocate(acceptedOverlaps) ||
-                !curBases.allocate(acceptedOverlaps) ||
-                !curOverlapVertexCounts.allocate(acceptedOverlaps) ||
-                !curVertices.allocate(acceptedVertices)) {
-                return false;
-            }
-
-            countAndEmitMortarOverlapsKernel<<<cBlocks, BlockSize, 0, stream>>>(
-                devCandidatePairs.get(),
-                numCandidates,
-                devModelInfos.get(),
-                modelCount,
-                contactRange,
-                gPenTol,
-                domainMin,
-                baseDomain.invBaseScale,
-                devOverlapOffsets.get(),
-                devVertexOffsets.get(),
-                devOverlapValid.get(),
-                curOverlapVertexCounts.get(),
-                curAcceptedOverlaps.get(),
-                curBases.get(),
-                curVertices.get(),
-                true,
-                devCapacityError.get()
-            );
-            cudaStreamSynchronize(stream);
-
-            std::vector<MortarOverlap> pairOverlaps(acceptedOverlaps);
-            std::vector<MortarBasis> pairBases(acceptedOverlaps);
-            std::vector<uint32_t> pairCounts(acceptedOverlaps);
-            std::vector<double2> pairVertices(acceptedVertices);
-
-            if (!curAcceptedOverlaps.downloadAsync(pairOverlaps.data(), acceptedOverlaps, stream) ||
-                !curBases.downloadAsync(pairBases.data(), acceptedOverlaps, stream) ||
-                !curOverlapVertexCounts.downloadAsync(pairCounts.data(), acceptedOverlaps, stream) ||
-                !curVertices.downloadAsync(pairVertices.data(), acceptedVertices, stream) ||
-                cudaStreamSynchronize(stream) != cudaSuccess) {
-                return false;
-            }
-
-            uint32_t baseVertOffset = uint32_t(allVertices.size());
-            for (uint32_t i = 0; i < acceptedOverlaps; ++i) {
-                allOverlaps.push_back(pairOverlaps[i]);
-                allBases.push_back(pairBases[i]);
-                allVertexCounts.push_back(pairCounts[i]);
-                allVertexOffsets.push_back(baseVertOffset);
-                baseVertOffset += pairCounts[i];
-            }
-            allVertices.insert(allVertices.end(), pairVertices.begin(), pairVertices.end());
-        }
+    if (!rvdHost::copyDeviceToDeviceAsync(
+            overlaps.get() + overlapOffset, pair.overlaps.get(),
+            pair.overlapCount, stream, "copy mortar overlaps") ||
+        !rvdHost::copyDeviceToDeviceAsync(
+            gMortarMeshBuffers.bases.get() + overlapOffset, pair.bases.get(),
+            pair.overlapCount, stream, "copy mortar bases") ||
+        !rvdHost::copyDeviceToDeviceAsync(
+            gMortarMeshBuffers.vertexCounts.get() + overlapOffset,
+            pair.vertexCounts.get(), pair.overlapCount, stream,
+            "copy mortar vertex counts") ||
+        !rvdHost::copyDeviceToDeviceAsync(
+            gMortarMeshBuffers.vertices.get() + vertexOffset,
+            pair.vertices.get(), pair.vertexCount, stream,
+            "copy mortar vertices")) {
+      return false;
     }
+    overlapOffset += pair.overlapCount;
+    vertexOffset += pair.vertexCount;
+  }
 
-    overlapCount = uint32_t(allOverlaps.size());
-    if (overlapCount == 0) return true;
+  cudaUtils::CudaBuffer<uint8_t> scanScratch;
+  if (!rvdHost::exclusiveSum(
+          gMortarMeshBuffers.vertexCounts.get(),
+          gMortarMeshBuffers.vertexOffsets.get(),
+          int(totalOverlaps),
+          scanScratch,
+          stream)) {
+    return false;
+  }
 
-    if (!ensureCapacity(devOverlaps, overlapCount) ||
-        !devOverlaps.uploadAsync(allOverlaps.data(), overlapCount, stream) ||
-        !ensureCapacity(mortarBases, overlapCount) ||
-        !mortarBases.uploadAsync(allBases.data(), overlapCount, stream) ||
-        !ensureCapacity(overlapVertexCounts, overlapCount) ||
-        !overlapVertexCounts.uploadAsync(allVertexCounts.data(), overlapCount, stream) ||
-        !ensureCapacity(overlapVertexOffsets, overlapCount) ||
-        !overlapVertexOffsets.uploadAsync(allVertexOffsets.data(), overlapCount, stream) ||
-        !ensureCapacity(overlapVertices, allVertices.size()) ||
-        !overlapVertices.uploadAsync(allVertices.data(), allVertices.size(), stream)) {
-        return false;
-    }
+  if (!computeSurfaceExposure(
+          models, totalSurfacePatches, baseDomain, overlaps, overlapCount,
+          surfaceExposure, stream)) {
+    return false;
+  }
 
-    cudaUtils::CudaBuffer<int> devConflictFound;
-    cudaUtils::CudaBuffer<double2> devConflictMeasure;
-    if (!devConflictFound.allocate(1) || !devConflictMeasure.allocate(1)) return false;
-    cudaMemsetAsync(devConflictFound.get(), 0, sizeof(int), stream);
-    cudaMemsetAsync(devConflictMeasure.get(), 0, sizeof(double2), stream);
-
-    cudaUtils::CudaBuffer<uint32_t> devKeysAIn, devKeysAOut;
-    cudaUtils::CudaBuffer<uint32_t> devIndicesAIn, devIndicesAOut;
-    if (!devKeysAIn.allocate(overlapCount) || !devKeysAOut.allocate(overlapCount) ||
-        !devIndicesAIn.allocate(overlapCount) || !devIndicesAOut.allocate(overlapCount)) return false;
-
-    std::vector<uint32_t> hostKeysA(overlapCount);
-    std::vector<uint32_t> hostIndicesA(overlapCount);
-    for (uint32_t i = 0; i < overlapCount; ++i) {
-        hostKeysA[i] = allOverlaps[i].surfaceA;
-        hostIndicesA[i] = i;
-    }
-    devKeysAIn.uploadAsync(hostKeysA.data(), overlapCount, stream);
-    devIndicesAIn.uploadAsync(hostIndicesA.data(), overlapCount, stream);
-
-    if (!sortPairs(devKeysAIn.get(), devKeysAOut.get(),
-                   devIndicesAIn.get(), devIndicesAOut.get(),
-                   int(overlapCount), cubScratch, stream)) return false;
-
-    uint32_t ovBlocks = (overlapCount + BlockSize - 1) / BlockSize;
-    verifyOwnershipSideKernel<<<ovBlocks, BlockSize, 0, stream>>>(
-        devKeysAOut.get(),
-        devIndicesAOut.get(),
-        overlapCount,
-        0, // Side A
-        devOverlaps.get(),
-        mortarBases.get(),
-        overlapVertices.get(),
-        overlapVertexOffsets.get(),
-        overlapVertexCounts.get(),
-        devModelInfos.get(),
-        modelCount,
-        domainMin,
-        baseDomain.invBaseScale,
-        coordScale,
-        devConflictFound.get(), devConflictMeasure.get()
-    );
-
-    std::vector<uint32_t> hostKeysB(overlapCount);
-    for (uint32_t i = 0; i < overlapCount; ++i) {
-        hostKeysB[i] = allOverlaps[i].surfaceB;
-    }
-    devKeysAIn.uploadAsync(hostKeysB.data(), overlapCount, stream);
-    devIndicesAIn.uploadAsync(hostIndicesA.data(), overlapCount, stream);
-
-    if (!sortPairs(devKeysAIn.get(), devKeysAOut.get(),
-                   devIndicesAIn.get(), devIndicesAOut.get(),
-                   int(overlapCount), cubScratch, stream)) return false;
-
-    verifyOwnershipSideKernel<<<ovBlocks, BlockSize, 0, stream>>>(
-        devKeysAOut.get(),
-        devIndicesAOut.get(),
-        overlapCount,
-        1, // Side B
-        devOverlaps.get(),
-        mortarBases.get(),
-        overlapVertices.get(),
-        overlapVertexOffsets.get(),
-        overlapVertexCounts.get(),
-        devModelInfos.get(),
-        modelCount,
-        domainMin,
-        baseDomain.invBaseScale,
-        coordScale,
-        devConflictFound.get(), devConflictMeasure.get()
-    );
-
-    int hostConflictFound = 0;
-    double2 hostConflictMeasure = make_double2(0.0, 0.0);
-    cudaMemcpyAsync(&hostConflictFound, devConflictFound.get(), sizeof(int), cudaMemcpyDeviceToHost, stream);
-    cudaMemcpyAsync(&hostConflictMeasure, devConflictMeasure.get(), sizeof(double2), cudaMemcpyDeviceToHost, stream);
-    cudaStreamSynchronize(stream);
-
-    if (hostConflictFound != 0 && hostConflictMeasure.x > hostConflictMeasure.y) {
-        std::cerr << "[RVDContact] geometric ownership conflict: intersection="
-                  << hostConflictMeasure.x << " tolerance=" << hostConflictMeasure.y << std::endl;
-        return false;
-    }
-
-    cudaUtils::CudaBuffer<double4> devClaimedAreaMoment;
-    if (!devClaimedAreaMoment.allocate(totalSurfacePatches)) {
-        return false;
-    }
-    cudaMemsetAsync(devClaimedAreaMoment.get(), 0, totalSurfacePatches * sizeof(double4), stream);
-
-    accumulateMortarExposureKernel<<<ovBlocks, BlockSize, 0, stream>>>(
-        devOverlaps.get(),
-        overlapCount,
-        devClaimedAreaMoment.get()
-    );
-
-    for (uint32_t m = 0; m < modelCount; ++m) {
-        if (models[m].totalPatches == 0) continue;
-        uint32_t blocks = (models[m].totalPatches + BlockSize - 1) / BlockSize;
-        finalizeSurfaceExposureKernel<<<blocks, BlockSize, 0, stream>>>(
-            models[m].devSurfaceGeometry.get(),
-            models[m].totalPatches,
-            models[m].surfaceBase,
-            baseDomain.invBaseScale,
-            domainMin,
-            coordScale,
-            devClaimedAreaMoment.get(),
-            devExposure.get()
-        );
-    }
-
-    return true;
+  return rvdHost::synchronize(stream, "finish mortar overlaps");
 }
 
 bool finalizeContactCouplings(
-    const cudaUtils::CudaBuffer<MortarOverlap>& devOverlaps,
+    const cudaUtils::CudaBuffer<MortarOverlap> &overlaps,
     uint32_t overlapCount,
-    const cudaUtils::CudaBuffer<uint32_t>& devContactFaceBySurface,
-    RVDResult& result,
-    cudaStream_t stream)
-{
-    result.contactCouplings.clear();
-    result.contactMesh.clear();
+    const cudaUtils::CudaBuffer<uint32_t> &contactFaceBySurface,
+    RVDResult &result,
+    cudaStream_t stream) {
+  result.contactCouplings.clear();
+  result.contactMesh.clear();
 
-    if (overlapCount == 0) {
-        overlapVertices.reset();
-        overlapVertexOffsets.reset();
-        overlapVertexCounts.reset();
-        mortarBases.reset();
-        return true;
-    }
-
-    cudaUtils::CudaBuffer<uint64_t> devKeysIn, devKeysOut;
-    cudaUtils::CudaBuffer<double> devValsIn, devValsOut;
-    if (!devKeysIn.allocate(overlapCount) || !devKeysOut.allocate(overlapCount) ||
-        !devValsIn.allocate(overlapCount) || !devValsOut.allocate(overlapCount)) {
-        return false;
-    }
-
-    uint32_t blocks = (overlapCount + BlockSize - 1) / BlockSize;
-    mapOverlapsToCouplingKeysKernel<<<blocks, BlockSize, 0, stream>>>(
-        devOverlaps.get(),
-        overlapCount,
-        devContactFaceBySurface.get(),
-        devKeysIn.get(),
-        devValsIn.get()
-    );
-
-    cudaUtils::CudaBuffer<uint8_t> cubScratch;
-    if (!sortPairs(devKeysIn.get(), devKeysOut.get(),
-                   devValsIn.get(), devValsOut.get(),
-                   int(overlapCount), cubScratch, stream)) {
-        return false;
-    }
-
-    cudaUtils::CudaBuffer<uint64_t> devUniqueKeys;
-    cudaUtils::CudaBuffer<double> devAggregatedAreas;
-    cudaUtils::CudaBuffer<int> devNumRuns;
-    if (!devUniqueKeys.allocate(overlapCount) ||
-        !devAggregatedAreas.allocate(overlapCount) ||
-        !devNumRuns.allocate(1)) {
-        return false;
-    }
-
-    size_t reduceBytes = 0;
-    if (cub::DeviceReduce::ReduceByKey(nullptr, reduceBytes,
-                                       devKeysOut.get(), devUniqueKeys.get(),
-                                       devValsOut.get(), devAggregatedAreas.get(),
-                                       devNumRuns.get(), cub::Sum(), int(overlapCount), stream) != cudaSuccess) {
-        return false;
-    }
-    if (!ensureCapacity(cubScratch, reduceBytes)) return false;
-    if (cub::DeviceReduce::ReduceByKey(cubScratch.get(), reduceBytes,
-                                       devKeysOut.get(), devUniqueKeys.get(),
-                                       devValsOut.get(), devAggregatedAreas.get(),
-                                       devNumRuns.get(), cub::Sum(), int(overlapCount), stream) != cudaSuccess) {
-        return false;
-    }
-
-    int numRuns = 0;
-    cudaMemcpyAsync(&numRuns, devNumRuns.get(), sizeof(int), cudaMemcpyDeviceToHost, stream);
-    cudaStreamSynchronize(stream);
-
-    if (numRuns > 0) {
-        std::vector<uint64_t> hostKeys(numRuns);
-        std::vector<double> hostAreas(numRuns);
-        if (!devUniqueKeys.downloadAsync(hostKeys.data(), numRuns, stream) ||
-            !devAggregatedAreas.downloadAsync(hostAreas.data(), numRuns, stream) ||
-            cudaStreamSynchronize(stream) != cudaSuccess) {
-            return false;
-        }
-
-        for (int r = 0; r < numRuns; ++r) {
-            uint64_t key = hostKeys[r];
-            if (key == 0xFFFFFFFFFFFFFFFFull) continue;
-            ContactCoupling cc{};
-            cc.faceA = uint32_t(key >> 32);
-            cc.faceB = uint32_t(key & 0xFFFFFFFFull);
-            cc.couplingArea = hostAreas[r];
-            result.contactCouplings.push_back(cc);
-        }
-    }
-
-    if (overlapVertices.size() > 0 && overlapVertexCounts.size() >= overlapCount) {
-        std::vector<uint32_t> hostCounts(overlapCount);
-        std::vector<uint32_t> hostOffsets(overlapCount);
-        std::vector<MortarBasis> hostBases(overlapCount);
-        std::vector<double2> hostVertices(overlapVertices.size());
-
-        if (overlapVertexCounts.downloadAsync(hostCounts.data(), overlapCount, stream) &&
-            overlapVertexOffsets.downloadAsync(hostOffsets.data(), overlapCount, stream) &&
-            mortarBases.downloadAsync(hostBases.data(), overlapCount, stream) &&
-            overlapVertices.downloadAsync(hostVertices.data(), hostVertices.size(), stream) &&
-            cudaStreamSynchronize(stream) == cudaSuccess) {
-
-            for (uint32_t i = 0; i < overlapCount; ++i) {
-                uint32_t K = hostCounts[i];
-                if (K < 3) continue;
-                uint32_t offset = hostOffsets[i];
-                MortarBasis b = hostBases[i];
-
-                double2 c2D;
-                polygonAreaAndCentroid2D(hostVertices.data() + offset, int(K), c2D);
-
-                glm::vec3 c3D = glm::vec3(
-                    float(b.origin.x + c2D.x * b.u.x + c2D.y * b.v.x),
-                    float(b.origin.y + c2D.x * b.u.y + c2D.y * b.v.y),
-                    float(b.origin.z + c2D.x * b.u.z + c2D.y * b.v.z)
-                );
-                glm::vec3 n3D = glm::vec3(float(b.normal.x), float(b.normal.y), float(b.normal.z));
-
-                for (uint32_t k = 0; k < K; ++k) {
-                    uint32_t nextK = (k + 1 == K) ? 0 : k + 1;
-                    double2 v0 = hostVertices[offset + k];
-                    double2 v1 = hostVertices[offset + nextK];
-
-                    glm::vec3 p0 = glm::vec3(
-                        float(b.origin.x + v0.x * b.u.x + v0.y * b.v.x),
-                        float(b.origin.y + v0.x * b.u.y + v0.y * b.v.y),
-                        float(b.origin.z + v0.x * b.u.z + v0.y * b.v.z)
-                    );
-                    glm::vec3 p1 = glm::vec3(
-                        float(b.origin.x + v1.x * b.u.x + v1.y * b.v.x),
-                        float(b.origin.y + v1.x * b.u.y + v1.y * b.v.y),
-                        float(b.origin.z + v1.x * b.u.z + v1.y * b.v.z)
-                    );
-
-                    ContactMeshVertex cv0{}, cv1{}, cv2{};
-                    cv0.position = c3D;
-                    cv0.normal = n3D;
-                    cv1.position = p0;
-                    cv1.normal = n3D;
-                    cv2.position = p1;
-                    cv2.normal = n3D;
-
-                    result.contactMesh.push_back(cv0);
-                    result.contactMesh.push_back(cv1);
-                    result.contactMesh.push_back(cv2);
-                }
-            }
-        }
-    }
-
-    overlapVertices.reset();
-    overlapVertexOffsets.reset();
-    overlapVertexCounts.reset();
-    mortarBases.reset();
-
+  if (overlapCount == 0) {
+    gMortarMeshBuffers.reset();
     return true;
+  }
+
+  const bool couplingsBuilt = buildContactCouplings(overlaps, overlapCount, contactFaceBySurface, result.contactCouplings, stream);
+  if (!couplingsBuilt) return false;
+
+  if (!buildContactMesh(overlapCount, result.contactMesh, stream)) {
+    return false;
+  }
+
+  gMortarMeshBuffers.reset();
+  return true;
 }
 
 } // namespace voronoi

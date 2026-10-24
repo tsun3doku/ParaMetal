@@ -51,4 +51,12 @@ __host__ __device__ inline double3 toDouble3(float4 v) {
     return make_double3(double(v.x), double(v.y), double(v.z));
 }
 
+__host__ __device__ inline bool finite3(float3 value) {
+    return isfinite(value.x) && isfinite(value.y) && isfinite(value.z);
+}
+
+__host__ __device__ inline bool finite3(double3 value) {
+    return isfinite(value.x) && isfinite(value.y) && isfinite(value.z);
+}
+
 } // namespace cudaMath

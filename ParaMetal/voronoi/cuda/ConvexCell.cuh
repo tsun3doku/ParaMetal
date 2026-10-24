@@ -48,7 +48,6 @@ template <class Limits>
 struct ConvexCellStorageT {
     alignas(16) uint3 vertices[Limits::V];
     alignas(16) double4 planes[Limits::P];
-    uint64_t planeTags[Limits::P];
     int planeNeighborIds[Limits::P];
     uint32_t boundaryNext[Limits::P];
     double planeAreas[Limits::P];
@@ -63,7 +62,6 @@ using ConvexCellOverflowStorage = ConvexCellStorageT<OverflowLimits>;
 
 struct ConvexCell {
     double4* planes = nullptr;
-    uint64_t* planeTags = nullptr;
     int* planeNeighborIds = nullptr;
     uint32_t* boundaryNext = nullptr;
     uint3* vertices = nullptr;
@@ -81,7 +79,6 @@ struct ConvexCell {
                                   uint32_t planeLimit = DiscoveryLimits::P,
                                   uint32_t vertexLimit = DiscoveryLimits::V) {
         planes = storage.planes;
-        planeTags = storage.planeTags;
         planeNeighborIds = storage.planeNeighborIds;
         boundaryNext = storage.boundaryNext;
         vertices = storage.vertices;
@@ -105,7 +102,6 @@ struct ConvexCell {
         for (int p = 0; p < planeCount; ++p) {
             planes[p] = source.planes[p];
             planeNeighborIds[p] = source.planeNeighborIds[p];
-            if (planeTags) planeTags[p] = source.planeTags[p];
         }
 
         for (int v = 0; v < vertexCount; ++v) {
@@ -125,7 +121,6 @@ struct ConvexCell {
         for (int p = 0; p < planeCount; ++p) {
             target.planes[p] = planes[p];
             target.planeNeighborIds[p] = planeNeighborIds[p];
-            if (planeTags) target.planeTags[p] = planeTags[p];
             target.planeAreas[p] = planeAreas[p];
             target.planeAreaAbsSums[p] = planeAreaAbsSums[p];
             if (planeMoments != nullptr) target.planeMoments[p] = planeMoments[p];
@@ -156,12 +151,9 @@ struct ConvexCell {
         planeCount = 6;
         vertexCount = 8;
 
-        constexpr uint64_t DomainTagBase = 0xfffffffffffffff0ull;
-
         for (uint32_t i = 0; i < 6; ++i) {
             planes[i] = domainPlanes[i];
             planeNeighborIds[i] = domainFaceTag(i);
-            if (planeTags) planeTags[i] = DomainTagBase + uint64_t(i);
             planeAreas[i] = 0.0;
             planeAreaAbsSums[i] = 0.0;
             if (planeMoments != nullptr) {
@@ -354,7 +346,6 @@ struct ConvexCell {
             if (boundaryNext[p]) {
                 if (newPlaneCount != p) {
                     planes[newPlaneCount] = planes[p];
-                    if (planeTags) planeTags[newPlaneCount] = planeTags[p];
                     planeNeighborIds[newPlaneCount] = planeNeighborIds[p];
                     planeAreas[newPlaneCount] = planeAreas[p];
                     planeAreaAbsSums[newPlaneCount] = planeAreaAbsSums[p];
@@ -384,7 +375,7 @@ struct ConvexCell {
         return true;
     }
 
-    __device__ bool addPlane(double4 plane, int neighborId = NoPlaneNeighbor, uint64_t tag = 0, bool* changed = nullptr) {
+    __device__ bool addPlane(double4 plane, int neighborId = NoPlaneNeighbor, bool* changed = nullptr) {
         if (uint32_t(planeCount) >= planeCapacity) {
             fail(RVDStatus::PlaneOverflow);
             return false;
@@ -394,9 +385,6 @@ struct ConvexCell {
             return false;
         }
         planes[planeCount] = plane;
-        if (planeTags) {
-            planeTags[planeCount] = tag;
-        }
         planeNeighborIds[planeCount] = neighborId;
         planeAreas[planeCount] = 0.0;
         planeAreaAbsSums[planeCount] = 0.0;

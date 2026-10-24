@@ -2,88 +2,87 @@
 #include "RVDFaceGeometry.cuh"
 #include "RVDFaceOverlay.cuh"
 #include "RVDFacePartition.hpp"
+#include "RVDHostUtils.cuh"
 
 #include <algorithm>
-#include <cfloat>
-#include <cmath>
 #include <cstdint>
-#include <cub/cub.cuh>
 #include <iostream>
-#include <limits>
 #include <vector>
 
 namespace voronoi {
 
-static const char *facePartitionErrorName(uint32_t code) {
+namespace {
+
+constexpr uint32_t OverlayBlockSize = 64;
+constexpr uint32_t FastBlockSize = 256;
+constexpr uint32_t OverlayBatchSize = 4096;
+
+const char *facePartitionErrorName(uint32_t code) {
   switch (code) {
-  case InvalidInput:
-    return "InvalidInput";
-  case InvalidFacePolygon:
-    return "InvalidFacePolygon";
-  case InvalidModelBvh:
-    return "InvalidModelBvh";
-  case TooManyLines:
-    return "TooManyLines";
-  case TooManyVertices:
-    return "TooManyVertices";
-  case TooManyRegions:
-    return "TooManyRegions";
-  case InvalidIntersection:
-    return "InvalidIntersection";
-  case AmbiguousOwnership:
-    return "AmbiguousOwnership";
-  case OverlappingModels:
-    return "OverlappingModels";
-  case AreaConservation:
-    return "AreaConservation";
-  case MomentConservation:
-    return "MomentConservation";
-  case PassMismatch:
-    return "PassMismatch";
-  case ClipAreaConservation:
-    return "ClipAreaConservation";
-  case CoverageAreaConservation:
-    return "CoverageAreaConservation";
-  case BaseAreaConservation:
-    return "BaseAreaConservation";
-  case BaseMomentConservation:
-    return "BaseMomentConservation";
-  case UnresolvedRegion:
-    return "UnresolvedRegion";
-  case UnresolvedCoverageArea:
-    return "UnresolvedCoverageArea";
-  case UnresolvedCoverageMoment:
-    return "UnresolvedCoverageMoment";
-  case TooManySegments:
-    return "TooManySegments";
-  case EmptyFacePartition:
-    return "EmptyFacePartition";
-  default:
-    return "Unknown";
+  case InvalidInput: return "InvalidInput";
+  case InvalidFacePolygon: return "InvalidFacePolygon";
+  case TooManyRegions: return "TooManyRegions";
+  case AmbiguousOwnership: return "AmbiguousOwnership";
+  case OverlappingModels: return "OverlappingModels";
+  case AreaConservation: return "AreaConservation";
+  case MomentConservation: return "MomentConservation";
+  case PassMismatch: return "PassMismatch";
+  case CoverageAreaConservation: return "CoverageAreaConservation";
+  case BaseAreaConservation: return "BaseAreaConservation";
+  case BaseMomentConservation: return "BaseMomentConservation";
+  case UnresolvedRegion: return "UnresolvedRegion";
+  case UnresolvedCoverageArea: return "UnresolvedCoverageArea";
+  case UnresolvedCoverageMoment: return "UnresolvedCoverageMoment";
+  case TooManySegments: return "TooManySegments";
+  case EmptyFacePartition: return "EmptyFacePartition";
+  default: return "Unknown";
   }
 }
 
-__device__ inline void facePartitionReport(unsigned long long *error,
-                                           uint32_t code, uint32_t faceId) {
-  atomicCAS(error, 0ULL,
-            (static_cast<unsigned long long>(code) << 32) |
-                static_cast<unsigned long long>(faceId));
+__device__ inline void reportFacePartitionError(
+    RvdPackedError *packedError,
+    uint32_t code,
+    uint32_t faceId) {
+  rvdReportError(packedError, code, faceId);
 }
 
-__device__ inline uint32_t facePartitionOne(
-    uint32_t faceId, const BaseFace *baseFaces, const uint32_t *polygonOffsets,
-    const double3 *polygonVertices, const BaseFaceMeasure *faceMeasures,
-    const cudaGeometry::DeviceModelGeometryView *models, uint32_t modelCount,
-    const double *const *modelPlaneAreas,
-    const double *const *modelPlaneAbsSums,
-    const double3 *const *modelPlaneMoments,
-    const FaceBoundarySegment *const *modelSegments,
-    const uint32_t *const *modelSegmentOffsets, DeviceBaseCells baseCells,
-    const uint32_t *cellPlaneOffsets, double invBaseAreaScale,
-    FaceOverlayWorkspace *overlayWork, FaceRegion *fastGroups,
-    uint32_t &fastGroupCount, bool allowOverlay, bool &handled) {
+struct FacePartitionInput {
+  const BaseFace *baseFaces = nullptr;
+  const uint32_t *faceVertexOffsets = nullptr;
+  const double3 *faceVertices = nullptr;
+  const BaseFaceMeasure *baseMeasures = nullptr;
+  const cudaGeometry::DeviceModelGeometryView *models = nullptr;
+  uint32_t modelCount = 0;
+  const double *const *modelPlaneAreas = nullptr;
+  const double *const *modelPlaneAbsSums = nullptr;
+  const double3 *const *modelPlaneMoments = nullptr;
+  const FaceBoundarySegment *const *modelSegments = nullptr;
+  const uint32_t *const *modelSegmentOffsets = nullptr;
+  DeviceBaseCells baseCells{};
+  const uint32_t *cellPlaneOffsets = nullptr;
+  double invBaseAreaScale = 1.0;
+};
+
+struct FacePartitionOutput {
+  uint32_t *regionCounts = nullptr;
+  const uint32_t *regionOffsets = nullptr;
+  FaceRegion *regions = nullptr;
+  uint32_t *overlayFaceIds = nullptr;
+  uint32_t *overlayCount = nullptr;
+  uint32_t *overlaySlot = nullptr;
+};
+
+__device__ inline uint32_t partitionFace(
+    uint32_t faceId,
+    const FacePartitionInput &input,
+    FaceOverlayWorkspace *overlayWork,
+    FaceRegion *fastGroups,
+    uint32_t &fastGroupCount,
+    bool allowOverlay,
+    bool &handled) {
   FaceRegion *groups = fastGroups;
   uint32_t *groupCountPtr = &fastGroupCount;
+
   if (overlayWork != nullptr) {
     overlayWork->segmentCount = overlayWork->pointCount =
         overlayWork->edgeCount = overlayWork->cycleCount =
@@ -91,419 +90,439 @@ __device__ inline uint32_t facePartitionOne(
     groups = overlayWork->groups;
     groupCountPtr = &overlayWork->groupCount;
   }
+
   uint32_t &groupCount = *groupCountPtr;
   groupCount = 0;
   handled = false;
-  const BaseFace &baseFace = baseFaces[faceId];
-  const BaseFaceMeasure base = faceMeasures[faceId];
+
+  const BaseFace &baseFace = input.baseFaces[faceId];
+  const BaseFaceMeasure base = input.baseMeasures[faceId];
+
   FacePolygon boundary{};
-  double3 origin, u, v, n, bboxMin, bboxMax;
+  double3 origin;
+  double3 u;
+  double3 v;
+  double3 normal;
+  double3 bboxMin;
+  double3 bboxMax;
   double scale;
-  if (!faceSetupPolygon(faceId, polygonOffsets, polygonVertices, base, boundary,
-                        origin, u, v, n, scale, bboxMin, bboxMax))
+  if (!faceSetupPolygon(
+          faceId, input.faceVertexOffsets, input.faceVertices, base, boundary,
+          origin, u, v, normal, scale, bboxMin, bboxMax)) {
     return InvalidFacePolygon;
-
-  FaceSideCoverage sideA{}, sideB{};
-  uint32_t error = faceCollectSideCoverage(
-      baseFace, base, models, modelCount, modelPlaneAreas, modelPlaneAbsSums,
-      modelPlaneMoments, baseCells, cellPlaneOffsets, invBaseAreaScale, sideA,
-      sideB);
-  if (error)
-    return error;
-
-  error = faceBuildCoverageRegions(base, boundary, origin, u, v, n, scale,
-                                   sideA, sideB, groups, groupCount, handled);
-  if (error)
-    return error;
-  if (handled) {
-    return faceValidateConservation(groups, groupCount, boundary, origin, u, v,
-                                    scale, base);
   }
-  if (!allowOverlay || overlayWork == nullptr)
-    return FacePartitionSuccess;
+
+  FaceSideCoverage sideA{};
+  FaceSideCoverage sideB{};
+  const uint32_t coverageError = faceCollectSideCoverage(
+      baseFace, base, input.models, input.modelCount, input.modelPlaneAreas,
+      input.modelPlaneAbsSums, input.modelPlaneMoments, input.baseCells,
+      input.cellPlaneOffsets, input.invBaseAreaScale, sideA, sideB);
+  if (coverageError) return coverageError;
+
+  const uint32_t regionError = faceBuildCoverageRegions(
+      base, boundary, origin, u, v, normal, scale, sideA, sideB, groups,
+      groupCount, handled);
+  if (regionError) return regionError;
+
+  if (handled) {
+    return faceValidateConservation(
+        groups, groupCount, boundary, origin, u, v, scale, base);
+  }
+  if (!allowOverlay || overlayWork == nullptr) return FacePartitionSuccess;
 
   uint32_t boundaryCount = 0;
-  uint32_t e = faceCollectRestrictedSegments(
-      baseFace, boundary, origin, u, v, scale, modelSegments,
-      modelSegmentOffsets, modelCount, boundaryCount, *overlayWork);
-  if (e)
-    return e;
-  e = faceBuildOverlay(faceId, base, boundary, origin, u, v, n, scale, models,
-                       modelCount, sideA, sideB, boundaryCount, *overlayWork);
-  if (e)
-    return e;
-  return faceValidateConservation(overlayWork->groups,
-                                  overlayWork->groupCount, boundary, origin, u,
-                                  v, scale, base);
+  const uint32_t segmentError = faceCollectRestrictedSegments(
+      baseFace, boundary, origin, u, v, scale, input.modelSegments,
+      input.modelSegmentOffsets, input.modelCount, boundaryCount, *overlayWork);
+  if (segmentError) return segmentError;
+
+  const uint32_t overlayError = faceBuildOverlay(
+      faceId, base, boundary, origin, u, v, normal, scale, input.models,
+      input.modelCount, sideA, sideB, boundaryCount, *overlayWork);
+  if (overlayError) return overlayError;
+
+  return faceValidateConservation(
+      overlayWork->groups, overlayWork->groupCount, boundary, origin, u, v,
+      scale, base);
 }
 
-static __global__ void buildFastFaceRegionsKernel(
-    uint32_t faceCount, const BaseFace *baseFaces,
-    const uint32_t *faceVertexOffsets, const double3 *faceVertices,
-    const BaseFaceMeasure *baseMeasures,
-    const cudaGeometry::DeviceModelGeometryView *modelViews,
-    uint32_t modelCount, const double *const *modelPlaneAreas,
-    const double *const *modelPlaneAbsSums,
-    const double3 *const *modelPlaneMoments,
-    const FaceBoundarySegment *const *modelSegments,
-    const uint32_t *const *modelSegmentOffsets, DeviceBaseCells baseCells,
-    const uint32_t *cellPlaneOffsets, double invBaseAreaScale,
-    uint32_t *regionCounts, const uint32_t *regionOffsets, FaceRegion *regions,
-    uint32_t *overlayFaceIds, uint32_t *overlayCount, uint32_t *overlaySlot,
-    bool appendOverlay, bool emit, unsigned long long *packedError) {
+__global__ void buildFastFaceRegionsKernel(
+    uint32_t faceCount,
+    FacePartitionInput input,
+    FacePartitionOutput output,
+    bool appendOverlay,
+    bool emit,
+    RvdPackedError *packedError) {
   const uint32_t faceId = blockIdx.x * blockDim.x + threadIdx.x;
-  if (faceId >= faceCount)
-    return;
-  if (emit && overlaySlot[faceId] != InvalidId)
-    return;
+  if (faceId >= faceCount) return;
+  if (emit && output.overlaySlot[faceId] != InvalidId) return;
+
   FaceRegion groups[2];
   uint32_t groupCount = 0;
   bool handled = false;
-  const uint32_t result = facePartitionOne(
-      faceId, baseFaces, faceVertexOffsets, faceVertices, baseMeasures,
-      modelViews, modelCount, modelPlaneAreas, modelPlaneAbsSums,
-      modelPlaneMoments, modelSegments, modelSegmentOffsets, baseCells,
-      cellPlaneOffsets, invBaseAreaScale, nullptr, groups, groupCount, false,
-      handled);
+  const uint32_t result = partitionFace(faceId, input, nullptr, groups, groupCount, false, handled);
   if (result) {
-    facePartitionReport(packedError, result, faceId);
+    reportFacePartitionError(packedError, result, faceId);
     return;
   }
+
   if (!handled) {
     if (!appendOverlay) {
-      facePartitionReport(packedError, PassMismatch, faceId);
+      reportFacePartitionError(packedError, PassMismatch, faceId);
       return;
     }
-    const uint32_t slot = atomicAdd(overlayCount, 1u);
-    overlayFaceIds[slot] = faceId;
-    overlaySlot[faceId] = slot;
-    regionCounts[faceId] = 0;
+    const uint32_t slot = atomicAdd(output.overlayCount, 1u);
+    output.overlayFaceIds[slot] = faceId;
+    output.overlaySlot[faceId] = slot;
+    output.regionCounts[faceId] = 0;
     return;
   }
-  if (appendOverlay)
-    overlaySlot[faceId] = InvalidId;
+
+  if (appendOverlay) output.overlaySlot[faceId] = InvalidId;
+
   if (!emit) {
     if (groupCount == 0) {
-      facePartitionReport(packedError, EmptyFacePartition, faceId);
+      reportFacePartitionError(packedError, EmptyFacePartition, faceId);
       return;
     }
-    regionCounts[faceId] = groupCount;
+    output.regionCounts[faceId] = groupCount;
     return;
   }
-  const uint32_t dst = regionOffsets[faceId];
-  if (dst + groupCount != regionOffsets[faceId + 1]) {
-    facePartitionReport(packedError, PassMismatch, faceId);
+
+  const uint32_t destination = output.regionOffsets[faceId];
+  if (destination + groupCount != output.regionOffsets[faceId + 1]) {
+    reportFacePartitionError(packedError, PassMismatch, faceId);
     return;
   }
-  for (uint32_t i = 0; i < groupCount; ++i)
-    regions[dst + i] = groups[i];
+  for (uint32_t i = 0; i < groupCount; ++i) {
+    output.regions[destination + i] = groups[i];
+  }
 }
 
-static __global__ void buildOverlayFaceRegionsKernel(
-    uint32_t overlayStart, uint32_t overlayEnd, const uint32_t *overlayFaceIds,
-    const BaseFace *baseFaces, const uint32_t *faceVertexOffsets,
-    const double3 *faceVertices, const BaseFaceMeasure *baseMeasures,
-    const cudaGeometry::DeviceModelGeometryView *modelViews,
-    uint32_t modelCount, const double *const *modelPlaneAreas,
-    const double *const *modelPlaneAbsSums,
-    const double3 *const *modelPlaneMoments,
-    const FaceBoundarySegment *const *modelSegments,
-    const uint32_t *const *modelSegmentOffsets, DeviceBaseCells baseCells,
-    const uint32_t *cellPlaneOffsets, double invBaseAreaScale,
-    FaceOverlayWorkspace *workspaces, uint32_t *regionCounts,
-    const uint32_t *regionOffsets, FaceRegion *regions,
-    bool emit, unsigned long long *packedError) {
+__global__ void buildOverlayFaceRegionsKernel(
+    uint32_t overlayStart,
+    uint32_t overlayEnd,
+    FacePartitionInput input,
+    FacePartitionOutput output,
+    FaceOverlayWorkspace *workspaces,
+    bool emit,
+    RvdPackedError *packedError) {
   const uint32_t local = blockIdx.x * blockDim.x + threadIdx.x;
   const uint32_t slot = overlayStart + local;
-  if (slot >= overlayEnd)
-    return;
-  const uint32_t faceId = overlayFaceIds[slot];
-  auto &work = workspaces[local];
+  if (slot >= overlayEnd) return;
+
+  const uint32_t faceId = output.overlayFaceIds[slot];
+  auto &workspace = workspaces[local];
   bool handled = false;
-  const uint32_t result = facePartitionOne(
-      faceId, baseFaces, faceVertexOffsets, faceVertices, baseMeasures,
-      modelViews, modelCount, modelPlaneAreas, modelPlaneAbsSums,
-      modelPlaneMoments, modelSegments, modelSegmentOffsets, baseCells,
-      cellPlaneOffsets, invBaseAreaScale, &work, work.groups, work.groupCount,
+  const uint32_t result = partitionFace(
+      faceId, input, &workspace, workspace.groups, workspace.groupCount,
       true, handled);
   if (result) {
-    facePartitionReport(packedError, result, faceId);
+    reportFacePartitionError(packedError, result, faceId);
     return;
   }
+
   if (!emit) {
-    if (work.groupCount == 0) {
-      facePartitionReport(packedError, EmptyFacePartition, faceId);
+    if (workspace.groupCount == 0) {
+      reportFacePartitionError(packedError, EmptyFacePartition, faceId);
       return;
     }
-    regionCounts[faceId] = work.groupCount;
+    output.regionCounts[faceId] = workspace.groupCount;
     return;
   }
-  const uint32_t dst = regionOffsets[faceId];
-  if (dst + work.groupCount != regionOffsets[faceId + 1]) {
-    facePartitionReport(packedError, PassMismatch, faceId);
+
+  const uint32_t destination = output.regionOffsets[faceId];
+  if (destination + workspace.groupCount != output.regionOffsets[faceId + 1]) {
+    reportFacePartitionError(packedError, PassMismatch, faceId);
     return;
   }
-  for (uint32_t i = 0; i < work.groupCount; ++i)
-    regions[dst + i] = work.groups[i];
+  for (uint32_t i = 0; i < workspace.groupCount; ++i) {
+    output.regions[destination + i] = workspace.groups[i];
+  }
 }
 
-static bool facePartitionFinishPass(
-    cudaUtils::CudaBuffer<unsigned long long> &devError,
+struct FacePartitionBuffers {
+  cudaUtils::CudaBuffer<uint32_t> regionCounts;
+  cudaUtils::CudaBuffer<uint32_t> overlayFaceIds;
+  cudaUtils::CudaBuffer<uint32_t> overlaySlot;
+  cudaUtils::CudaBuffer<uint32_t> overlayCount;
+  cudaUtils::CudaBuffer<RvdPackedError> packedError;
+  cudaUtils::CudaBuffer<FaceOverlayWorkspace> overlayWorkspaces;
+};
+
+bool finishPartitionPass(
+    const cudaUtils::CudaBuffer<RvdPackedError> &packedError,
     cudaStream_t stream) {
-  unsigned long long err = 0;
-  if (!cudaUtils::cudaCheck(cudaMemcpyAsync(&err, devError.get(), sizeof(err),
-                                            cudaMemcpyDeviceToHost, stream),
-                            "read partition error") ||
-      !cudaUtils::cudaCheck(cudaStreamSynchronize(stream),
-                            "synchronize partition"))
-    return false;
-  if (err) {
-    std::cerr << "[RVD-FacePartition] "
-              << facePartitionErrorName(uint32_t(err >> 32))
-              << " face=" << uint32_t(err) << std::endl;
-    return false;
-  }
-  return true;
+  RvdPackedError hostError = 0;
+  if (!rvdHost::readPackedError(packedError, stream, hostError)) return false;
+  if (hostError == 0) return true;
+
+  std::cerr << "[RVD-FacePartition] "
+            << facePartitionErrorName(rvdErrorCode(hostError))
+            << " face=" << rvdErrorId(hostError) << std::endl;
+  return false;
 }
 
-static bool facePartitionRunFast(
-    uint32_t count, BaseFaceTopology &faceTopology,
-    const cudaUtils::CudaBuffer<cudaGeometry::DeviceModelGeometryView> &devModels,
-    uint32_t modelCount,
-    const cudaUtils::CudaBuffer<const double *> &devPlaneAreas,
-    const cudaUtils::CudaBuffer<const double *> &devPlaneAbsSums,
-    const cudaUtils::CudaBuffer<const double3 *> &devPlaneMoments,
-    const cudaUtils::CudaBuffer<const FaceBoundarySegment *> &devModelSegments,
-    const cudaUtils::CudaBuffer<const uint32_t *> &devModelSegmentOffsets,
-    const BaseCellDomain &baseDomain,
-    cudaUtils::CudaBuffer<uint32_t> &devCounts,
-    cudaUtils::CudaBuffer<uint32_t> &devOverlayIds,
-    cudaUtils::CudaBuffer<uint32_t> &devOverlaySlot,
-    cudaUtils::CudaBuffer<uint32_t> &devOverlayCount,
-    cudaUtils::CudaBuffer<unsigned long long> &devError,
-    cudaStream_t stream, uint32_t fastBlocks, uint32_t fastThreads,
-    bool appendOverlay, bool emit) {
-  buildFastFaceRegionsKernel<<<fastBlocks, fastThreads, 0, stream>>>(
-      count, faceTopology.devBaseFaces.get(),
-      faceTopology.devFaceVertexOffsets.get(),
-      faceTopology.devFaceVertices.get(), faceTopology.devMeasures.get(),
-      devModels.get(), modelCount, devPlaneAreas.get(),
-      devPlaneAbsSums.get(), devPlaneMoments.get(), devModelSegments.get(),
-      devModelSegmentOffsets.get(), baseDomain.deviceView(),
-      baseDomain.devCellPlaneOffsets.get(), baseDomain.invBaseAreaScale,
-      devCounts.get(),
-      emit ? faceTopology.devRegionOffsets.get() : nullptr,
-      emit ? faceTopology.devRegions.get() : nullptr, devOverlayIds.get(),
-      devOverlayCount.get(), devOverlaySlot.get(), appendOverlay, emit,
-      devError.get());
-  if (!cudaUtils::cudaCheck(cudaGetLastError(), "buildFastFaceRegionsKernel"))
-    return false;
-  return facePartitionFinishPass(devError, stream);
+size_t surfaceWorkspaceCount(uint32_t overlayCount) {
+  return std::min(overlayCount, OverlayBatchSize);
 }
 
-static bool facePartitionRunOverlay(
-    uint32_t overlayCount, BaseFaceTopology &faceTopology,
-    const cudaUtils::CudaBuffer<cudaGeometry::DeviceModelGeometryView> &devModels,
-    uint32_t modelCount,
-    const cudaUtils::CudaBuffer<const double *> &devPlaneAreas,
-    const cudaUtils::CudaBuffer<const double *> &devPlaneAbsSums,
-    const cudaUtils::CudaBuffer<const double3 *> &devPlaneMoments,
-    const cudaUtils::CudaBuffer<const FaceBoundarySegment *> &devModelSegments,
-    const cudaUtils::CudaBuffer<const uint32_t *> &devModelSegmentOffsets,
-    const BaseCellDomain &baseDomain,
-    cudaUtils::CudaBuffer<FaceOverlayWorkspace> &overlayWorkspace,
-    cudaUtils::CudaBuffer<uint32_t> &devCounts,
-    cudaUtils::CudaBuffer<uint32_t> &devOverlayIds,
-    cudaUtils::CudaBuffer<unsigned long long> &devError,
-    cudaStream_t stream, uint32_t threads, uint32_t overlayBatch, bool emit) {
-  if (overlayCount == 0)
-    return true;
-  const uint32_t chunk = std::min(overlayCount, overlayBatch);
-  for (uint32_t start = 0; start < overlayCount; start += chunk) {
-    const uint32_t n = std::min(chunk, overlayCount - start);
-    const uint32_t blocks = (n + threads - 1) / threads;
-    buildOverlayFaceRegionsKernel<<<blocks, threads, 0, stream>>>(
-        start, start + n, devOverlayIds.get(),
-        faceTopology.devBaseFaces.get(),
-        faceTopology.devFaceVertexOffsets.get(),
-        faceTopology.devFaceVertices.get(), faceTopology.devMeasures.get(),
-        devModels.get(), modelCount, devPlaneAreas.get(),
-        devPlaneAbsSums.get(), devPlaneMoments.get(), devModelSegments.get(),
-        devModelSegmentOffsets.get(), baseDomain.deviceView(),
-        baseDomain.devCellPlaneOffsets.get(), baseDomain.invBaseAreaScale,
-        overlayWorkspace.get(), devCounts.get(),
-        emit ? faceTopology.devRegionOffsets.get() : nullptr,
-        emit ? faceTopology.devRegions.get() : nullptr,
-        emit, devError.get());
-    if (!cudaUtils::cudaCheck(cudaGetLastError(),
-                              "buildOverlayFaceRegionsKernel"))
+bool runFastPass(
+    uint32_t faceCount,
+    BaseFaceTopology &faceTopology,
+    const FacePartitionInput &input,
+    FacePartitionBuffers &buffers,
+    cudaStream_t stream,
+    bool appendOverlay,
+    bool emit) {
+  buildFastFaceRegionsKernel<<<
+      rvdHost::blockCount(faceCount, FastBlockSize),
+      FastBlockSize, 0, stream>>>(
+      faceCount,
+      input,
+      FacePartitionOutput{
+          buffers.regionCounts.get(),
+          emit ? faceTopology.devRegionOffsets.get() : nullptr,
+          emit ? faceTopology.devRegions.get() : nullptr,
+          buffers.overlayFaceIds.get(),
+          buffers.overlayCount.get(),
+          buffers.overlaySlot.get()},
+      appendOverlay,
+      emit,
+      buffers.packedError.get());
+
+  if (!rvdHost::checkLaunch("launch buildFastFaceRegionsKernel")) return false;
+  return finishPartitionPass(buffers.packedError, stream);
+}
+
+bool runOverlayPass(
+    uint32_t overlayCount,
+    BaseFaceTopology &faceTopology,
+    const FacePartitionInput &input,
+    FacePartitionBuffers &buffers,
+    cudaStream_t stream,
+    bool emit) {
+  if (overlayCount == 0) return true;
+
+  const uint32_t batchSize = std::min(overlayCount, OverlayBatchSize);
+  for (uint32_t start = 0; start < overlayCount; start += batchSize) {
+    const uint32_t count = std::min(batchSize, overlayCount - start);
+    buildOverlayFaceRegionsKernel<<<
+        rvdHost::blockCount(count, OverlayBlockSize),
+        OverlayBlockSize, 0, stream>>>(
+        start,
+        start + count,
+        input,
+        FacePartitionOutput{
+            buffers.regionCounts.get(),
+            emit ? faceTopology.devRegionOffsets.get() : nullptr,
+            emit ? faceTopology.devRegions.get() : nullptr,
+            buffers.overlayFaceIds.get(),
+            buffers.overlayCount.get(),
+            buffers.overlaySlot.get()},
+        buffers.overlayWorkspaces.get(),
+        emit,
+        buffers.packedError.get());
+
+    if (!rvdHost::checkLaunch("launch buildOverlayFaceRegionsKernel")) {
       return false;
+    }
   }
-  return facePartitionFinishPass(devError, stream);
+  return finishPartitionPass(buffers.packedError, stream);
 }
+
+struct ModelFacePointers {
+  cudaUtils::CudaBuffer<cudaGeometry::DeviceModelGeometryView> views;
+  cudaUtils::CudaBuffer<const double *> planeAreas;
+  cudaUtils::CudaBuffer<const double *> planeAbsSums;
+  cudaUtils::CudaBuffer<const double3 *> planeMoments;
+  cudaUtils::CudaBuffer<const FaceBoundarySegment *> segments;
+  cudaUtils::CudaBuffer<const uint32_t *> segmentOffsets;
+};
+
+bool uploadModelFacePointers(
+    const std::vector<cudaGeometry::DeviceModelGeometryView> &modelViews,
+    const std::vector<ModelRestriction> &models,
+    cudaStream_t stream,
+    ModelFacePointers &pointers) {
+  std::vector<const double *> hostPlaneAreas;
+  std::vector<const double *> hostPlaneAbsSums;
+  std::vector<const double3 *> hostPlaneMoments;
+  std::vector<const FaceBoundarySegment *> hostSegments;
+  std::vector<const uint32_t *> hostSegmentOffsets;
+
+  hostPlaneAreas.reserve(models.size());
+  hostPlaneAbsSums.reserve(models.size());
+  hostPlaneMoments.reserve(models.size());
+  hostSegments.reserve(models.size());
+  hostSegmentOffsets.reserve(models.size());
+  for (const ModelRestriction &model : models) {
+    hostPlaneAreas.push_back(model.devRestrictedPlaneAreas.get());
+    hostPlaneAbsSums.push_back(model.devRestrictedPlaneAbsSums.get());
+    hostPlaneMoments.push_back(model.devRestrictedPlaneMoments.get());
+    hostSegments.push_back(model.devFaceSegments.get());
+    hostSegmentOffsets.push_back(model.devFaceSegmentOffsets.get());
+  }
+
+  if (!pointers.views.allocate(modelViews.size()) ||
+      !pointers.views.uploadAsync(
+          modelViews.data(), modelViews.size(), stream)) {
+    return false;
+  }
+  if (models.empty()) return true;
+
+  const uint32_t modelCount = uint32_t(models.size());
+  return pointers.planeAreas.allocate(modelCount) &&
+         pointers.planeAbsSums.allocate(modelCount) &&
+         pointers.planeMoments.allocate(modelCount) &&
+         pointers.segments.allocate(modelCount) &&
+         pointers.segmentOffsets.allocate(modelCount) &&
+         pointers.planeAreas.uploadAsync(hostPlaneAreas.data(), modelCount, stream) &&
+         pointers.planeAbsSums.uploadAsync(hostPlaneAbsSums.data(), modelCount, stream) &&
+         pointers.planeMoments.uploadAsync(hostPlaneMoments.data(), modelCount, stream) &&
+         pointers.segments.uploadAsync(hostSegments.data(), modelCount, stream) &&
+         pointers.segmentOffsets.uploadAsync(
+             hostSegmentOffsets.data(), modelCount, stream);
+}
+
+FacePartitionInput makePartitionInput(
+    const BaseCellDomain &baseDomain,
+    BaseFaceTopology &faceTopology,
+    const ModelFacePointers &pointers,
+    uint32_t modelCount) {
+  FacePartitionInput input{};
+  input.baseFaces = faceTopology.devBaseFaces.get();
+  input.faceVertexOffsets = faceTopology.devFaceVertexOffsets.get();
+  input.faceVertices = faceTopology.devFaceVertices.get();
+  input.baseMeasures = faceTopology.devMeasures.get();
+  input.models = pointers.views.get();
+  input.modelCount = modelCount;
+  input.modelPlaneAreas = pointers.planeAreas.get();
+  input.modelPlaneAbsSums = pointers.planeAbsSums.get();
+  input.modelPlaneMoments = pointers.planeMoments.get();
+  input.modelSegments = pointers.segments.get();
+  input.modelSegmentOffsets = pointers.segmentOffsets.get();
+  input.baseCells = baseDomain.deviceView();
+  input.cellPlaneOffsets = baseDomain.devCellPlaneOffsets.get();
+  input.invBaseAreaScale = baseDomain.invBaseAreaScale;
+  return input;
+}
+
+bool allocatePartitionBuffers(
+    uint32_t faceCount,
+    BaseFaceTopology &faceTopology,
+    cudaStream_t stream,
+    FacePartitionBuffers &buffers) {
+  if (!buffers.regionCounts.allocate(size_t(faceCount) + 1) ||
+      !faceTopology.devRegionOffsets.allocate(size_t(faceCount) + 1) ||
+      !buffers.overlayFaceIds.allocate(faceCount) ||
+      !buffers.overlaySlot.allocate(faceCount) ||
+      !buffers.overlayCount.allocate(1) ||
+      !buffers.packedError.allocate(1)) {
+    return false;
+  }
+
+  return rvdHost::zero(
+             buffers.packedError.get(), sizeof(RvdPackedError), stream,
+             "clear face partition error") &&
+         rvdHost::zero(
+             buffers.overlayCount.get(), sizeof(uint32_t), stream,
+             "clear face overlay count") &&
+         rvdHost::zero(
+             buffers.regionCounts.get() + faceCount, sizeof(uint32_t), stream,
+             "clear face count tail");
+}
+
+} // namespace
 
 bool buildFacePartitionsGPU(
-    const BaseCellDomain &baseDomain, BaseFaceTopology &faceTopology,
+    const BaseCellDomain &baseDomain,
+    BaseFaceTopology &faceTopology,
     const std::vector<cudaGeometry::DeviceModelGeometryView> &modelViews,
-    const std::vector<ModelRestriction> &models, cudaStream_t stream) {
-  const uint32_t count = faceTopology.totalBaseFaces;
-  if (modelViews.size() != models.size())
-    return false;
-  if (!count) {
+    const std::vector<ModelRestriction> &models,
+    cudaStream_t stream) {
+  const uint32_t faceCount = faceTopology.totalBaseFaces;
+  if (modelViews.size() != models.size()) return false;
+
+  if (faceCount == 0) {
     faceTopology.devRegionOffsets.reset();
     faceTopology.devRegions.reset();
     return true;
   }
-  if (faceTopology.devFaceVertexOffsets.size() < size_t(count) + 1 ||
-      !faceTopology.devFaceVertices.get() ||
-      faceTopology.devMeasures.size() < count)
-    return false;
 
-  std::vector<const double *> modelPlaneAreaPointers;
-  std::vector<const double *> modelPlaneAbsSumPointers;
-  std::vector<const double3 *> modelPlaneMomentPointers;
-  std::vector<const FaceBoundarySegment *> modelSegmentPointers;
-  std::vector<const uint32_t *> modelSegmentOffsetPointers;
-  modelPlaneAreaPointers.reserve(models.size());
-  modelPlaneAbsSumPointers.reserve(models.size());
-  modelPlaneMomentPointers.reserve(models.size());
-  modelSegmentPointers.reserve(models.size());
-  modelSegmentOffsetPointers.reserve(models.size());
-  for (const ModelRestriction &model : models) {
-    modelPlaneAreaPointers.push_back(model.devRestrictedPlaneAreas.get());
-    modelPlaneAbsSumPointers.push_back(model.devRestrictedPlaneAbsSums.get());
-    modelPlaneMomentPointers.push_back(model.devRestrictedPlaneMoments.get());
-    modelSegmentPointers.push_back(model.devFaceSegments.get());
-    modelSegmentOffsetPointers.push_back(model.devFaceSegmentOffsets.get());
+  if (faceTopology.devFaceVertexOffsets.size() < size_t(faceCount) + 1 ||
+      faceTopology.devFaceVertices.get() == nullptr ||
+      faceTopology.devMeasures.size() < faceCount) {
+    return false;
   }
 
-  cudaUtils::CudaBuffer<cudaGeometry::DeviceModelGeometryView> devModels;
-  cudaUtils::CudaBuffer<const double *> devPlaneAreas;
-  cudaUtils::CudaBuffer<const double *> devPlaneAbsSums;
-  cudaUtils::CudaBuffer<const double3 *> devPlaneMoments;
-  cudaUtils::CudaBuffer<const FaceBoundarySegment *> devModelSegments;
-  cudaUtils::CudaBuffer<const uint32_t *> devModelSegmentOffsets;
-  cudaUtils::CudaBuffer<FaceOverlayWorkspace> overlayWorkspace;
-  cudaUtils::CudaBuffer<uint32_t> devCounts;
-  cudaUtils::CudaBuffer<uint32_t> devOverlayIds;
-  cudaUtils::CudaBuffer<uint32_t> devOverlaySlot;
-  cudaUtils::CudaBuffer<uint32_t> devOverlayCount;
-  cudaUtils::CudaBuffer<unsigned long long> devError;
-  if (!devModels.allocate(modelViews.size()) ||
-      !devCounts.allocate(size_t(count) + 1) ||
-      !faceTopology.devRegionOffsets.allocate(size_t(count) + 1) ||
-      !devOverlayIds.allocate(count) || !devOverlaySlot.allocate(count) ||
-      !devOverlayCount.allocate(1) || !devError.allocate(1))
-    return false;
-  if (!modelPlaneAreaPointers.empty() &&
-      (!devPlaneAreas.allocate(modelPlaneAreaPointers.size()) ||
-       !devPlaneAbsSums.allocate(modelPlaneAbsSumPointers.size()) ||
-       !devPlaneMoments.allocate(modelPlaneMomentPointers.size()) ||
-       !devPlaneAreas.uploadAsync(
-           modelPlaneAreaPointers.data(),
-           static_cast<uint32_t>(modelPlaneAreaPointers.size()), stream) ||
-       !devPlaneAbsSums.uploadAsync(
-           modelPlaneAbsSumPointers.data(),
-           static_cast<uint32_t>(modelPlaneAbsSumPointers.size()), stream) ||
-       !devPlaneMoments.uploadAsync(
-           modelPlaneMomentPointers.data(),
-           static_cast<uint32_t>(modelPlaneMomentPointers.size()), stream) ||
-       !devModelSegments.allocate(modelSegmentPointers.size()) ||
-       !devModelSegmentOffsets.allocate(modelSegmentOffsetPointers.size()) ||
-       !devModelSegments.uploadAsync(
-           modelSegmentPointers.data(),
-           static_cast<uint32_t>(modelSegmentPointers.size()), stream) ||
-       !devModelSegmentOffsets.uploadAsync(
-           modelSegmentOffsetPointers.data(),
-           static_cast<uint32_t>(modelSegmentOffsetPointers.size()), stream)))
-    return false;
-  if (!devModels.uploadAsync(modelViews.data(), modelViews.size(), stream) ||
-      !cudaUtils::cudaCheck(cudaMemsetAsync(devError.get(), 0,
-                                            sizeof(unsigned long long), stream),
-                            "clear face partition error") ||
-      !cudaUtils::cudaCheck(
-          cudaMemsetAsync(devOverlayCount.get(), 0, sizeof(uint32_t), stream),
-          "clear face overlay count") ||
-      !cudaUtils::cudaCheck(
-          cudaMemsetAsync(devCounts.get() + count, 0, sizeof(uint32_t), stream),
-          "clear face count tail"))
-    return false;
+  ModelFacePointers pointers;
+  if (!uploadModelFacePointers(modelViews, models, stream, pointers)) return false;
 
-  constexpr uint32_t threads = 64;
-  constexpr uint32_t fastThreads = 256;
-  const uint32_t fastBlocks = (count + fastThreads - 1) / fastThreads;
-  constexpr uint32_t OverlayBatch = 4096;
-
-  if (!facePartitionRunFast(
-          count, faceTopology, devModels, uint32_t(modelViews.size()),
-          devPlaneAreas, devPlaneAbsSums, devPlaneMoments, devModelSegments,
-          devModelSegmentOffsets, baseDomain, devCounts, devOverlayIds,
-          devOverlaySlot, devOverlayCount, devError, stream, fastBlocks,
-          fastThreads, true, false))
+  FacePartitionBuffers buffers;
+  if (!allocatePartitionBuffers(faceCount, faceTopology, stream, buffers)) {
     return false;
+  }
+
+  const FacePartitionInput input = makePartitionInput(
+      baseDomain, faceTopology, pointers, uint32_t(modelViews.size()));
+
+  if (!runFastPass(
+          faceCount, faceTopology, input, buffers, stream, true, false)) {
+    return false;
+  }
 
   uint32_t overlayCount = 0;
-  if (!cudaUtils::cudaCheck(
-          cudaMemcpyAsync(&overlayCount, devOverlayCount.get(),
-                          sizeof(overlayCount), cudaMemcpyDeviceToHost, stream),
-          "read overlay face count") ||
-      !cudaUtils::cudaCheck(cudaStreamSynchronize(stream),
-                            "sync overlay face count"))
+  if (!rvdHost::readAt(
+          overlayCount,
+          buffers.overlayCount.get(),
+          0,
+          stream,
+          "read overlay face count")) {
     return false;
-
-  if (overlayCount != 0) {
-    const uint32_t overlayBatch = std::min(overlayCount, OverlayBatch);
-    if (!overlayWorkspace.allocate(overlayBatch))
-      return false;
   }
 
-  if (!facePartitionRunOverlay(
-          overlayCount, faceTopology, devModels, uint32_t(modelViews.size()),
-          devPlaneAreas, devPlaneAbsSums, devPlaneMoments, devModelSegments,
-          devModelSegmentOffsets, baseDomain, overlayWorkspace, devCounts,
-          devOverlayIds, devError, stream, threads, OverlayBatch, false))
-      return false;
+  if (overlayCount > 0 &&
+      !buffers.overlayWorkspaces.allocate(surfaceWorkspaceCount(overlayCount))) {
+    return false;
+  }
 
-  size_t scratchBytes = 0;
-  if (!cudaUtils::cudaCheck(
-          cub::DeviceScan::ExclusiveSum(nullptr, scratchBytes, devCounts.get(),
-              faceTopology.devRegionOffsets.get(),
-              int(count + 1), stream),
-      "face CSR scan size"))
-      return false;
+  if (!runOverlayPass(
+          overlayCount, faceTopology, input, buffers, stream, false)) {
+    return false;
+  }
 
   cudaUtils::CudaBuffer<uint8_t> scanScratch;
-  if (!scanScratch.allocate(scratchBytes)) return false;
-  if (!cudaUtils::cudaCheck(
-          cub::DeviceScan::ExclusiveSum(
-              scanScratch.get(), scratchBytes, devCounts.get(),
-              faceTopology.devRegionOffsets.get(), int(count + 1), stream),
-          "face CSR scan"))
+  if (!rvdHost::exclusiveSum(
+          buffers.regionCounts.get(),
+          faceTopology.devRegionOffsets.get(),
+          int(faceCount + 1),
+          scanScratch,
+          stream)) {
     return false;
-  uint32_t total = 0;
-  if (!cudaUtils::cudaCheck(
-          cudaMemcpyAsync(&total, faceTopology.devRegionOffsets.get() + count,
-              sizeof(total), cudaMemcpyDeviceToHost, stream),
-      "read face region count") ||
-      !cudaUtils::cudaCheck(cudaStreamSynchronize(stream),
-                            "sync face region count"))
+  }
+
+  uint32_t totalRegions = 0;
+  if (!rvdHost::readAt(
+          totalRegions,
+          faceTopology.devRegionOffsets.get(),
+          faceCount,
+          stream,
+          "read face region count")) {
     return false;
-  if (total == 0 || !faceTopology.devRegions.allocate(total)) return false;
-  if (!facePartitionRunFast(
-          count, faceTopology, devModels, uint32_t(modelViews.size()),
-          devPlaneAreas, devPlaneAbsSums, devPlaneMoments, devModelSegments,
-          devModelSegmentOffsets, baseDomain, devCounts, devOverlayIds,
-          devOverlaySlot, devOverlayCount, devError, stream, fastBlocks,
-          fastThreads, false, true))
+  }
+
+  if (totalRegions == 0 || !faceTopology.devRegions.allocate(totalRegions)) {
     return false;
-  if (!facePartitionRunOverlay(
-          overlayCount, faceTopology, devModels, uint32_t(modelViews.size()),
-          devPlaneAreas, devPlaneAbsSums, devPlaneMoments, devModelSegments,
-          devModelSegmentOffsets, baseDomain, overlayWorkspace, devCounts,
-          devOverlayIds, devError, stream, threads, OverlayBatch, true))
+  }
+
+  if (!runFastPass(
+          faceCount, faceTopology, input, buffers, stream, false, true)) {
     return false;
-  return true;
+  }
+  return runOverlayPass(
+      overlayCount, faceTopology, input, buffers, stream, true);
 }
 
 } // namespace voronoi
-

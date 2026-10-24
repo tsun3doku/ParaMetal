@@ -183,7 +183,6 @@ bool VoronoiSystemBuildStage::buildGlobalDomain(VoronoiRuntime& runtime) {
     globalSeedIdGridExternal.cleanup();
     globalSeedIdGridBuffer = VK_NULL_HANDLE;
     globalSeedIdGridBufferOffset = 0;
-    globalSeedIdGridCount = 0;
 
     {
         const size_t totalVoxels =
@@ -208,7 +207,6 @@ bool VoronoiSystemBuildStage::buildGlobalDomain(VoronoiRuntime& runtime) {
                     0)) {
                 globalSeedIdGridBuffer = globalSeedIdGridExternal.getBuffer();
                 globalSeedIdGridBufferOffset = 0;
-                globalSeedIdGridCount = static_cast<uint32_t>(totalVoxels);
             } else {
                 std::cerr << "[VoronoiBuild] warning: buildSeedIdGrid failed; fluid volume visualization unavailable" << std::endl;
             }
@@ -451,7 +449,6 @@ void VoronoiSystemBuildStage::copyGpu(VoronoiProduct& product) const {
     product.contactVertexCount = contactVertexCount;
     product.globalSeedIdGridBuffer = globalSeedIdGridBuffer;
     product.globalSeedIdGridBufferOffset = globalSeedIdGridBufferOffset;
-    product.globalSeedIdGridCount = globalSeedIdGridCount;
 
     if (candidate) {
         candidate->copyGpu(product);
@@ -487,7 +484,6 @@ void VoronoiSystemBuildStage::cleanup() {
     globalSeedIdGridExternal.cleanup();
     globalSeedIdGridBuffer = VK_NULL_HANDLE;
     globalSeedIdGridBufferOffset = 0;
-    globalSeedIdGridCount = 0;
 
     if (candidate) {
         candidate->cleanup();

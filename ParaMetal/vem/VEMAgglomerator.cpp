@@ -385,11 +385,6 @@ bool VEMAgglomerator::build(
     }
 
     if (!remapInputs(result.remap, fragmentInputs, result.inputs)) return false;
-    std::cerr << "[VEMAgglomerator] complete fragments=" << fragmentCount
-              << " cells=" << result.mesh.cells.size()
-              << " merges=" << mergeCount
-              << " traces=" << mesh.totalTraceCount << "->" << result.mesh.totalTraceCount
-              << std::endl;
     return true;
 }
 
