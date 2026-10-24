@@ -163,12 +163,11 @@ void InputController::handleMouseButton(int button, float mouseX, float mouseY, 
     modelSelection.queuePickRequest(x, y, shiftPressed, mouseX, mouseY);
 }
 
-void InputController::processInput(bool shiftPressed, bool middleButtonPressed, double mouseX, double mouseY, float deltaTime) {
-    (void)deltaTime;
-    if (middleButtonPressed) {
-        cameraController.cancelTransition();
+void InputController::processRawDrag(bool panActive, float dx, float dy) {
+    cameraController.cancelTransition();
+    if (dx != 0.0f || dy != 0.0f) {
+        camera.applyDragDelta(dx, dy, panActive);
     }
-    camera.processMouseMovement(middleButtonPressed, mouseX, mouseY, shiftPressed);
 }
 
 void InputController::updateGizmo() {

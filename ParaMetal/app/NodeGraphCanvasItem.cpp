@@ -18,9 +18,17 @@
 #include <QtGui/QPainter>
 #include <QtGui/QRadialGradient>
 #include <QtGui/QWheelEvent>
+#include <QtQuick/QQuickWindow>
 
 #include <algorithm>
 #include <cmath>
+
+// The animation bitmap is rendered at a resolution matching the current zoom
+// (bucketed), so minification stays within bilinear's range. A fixed high
+// supersample aliases badly when the whole graph is zoomed out.
+static constexpr qreal simulationRingBitmapMinScale = 0.5;
+static constexpr qreal simulationRingBitmapMaxScale = 4.0;
+static constexpr qreal simulationRingBitmapScaleStep = 0.25;
 
 static QColor graphBlendColor(const QColor& first, const QColor& second, qreal amount) {
     const qreal factor = std::clamp(amount, 0.0, 1.0);
@@ -126,6 +134,46 @@ static void paintArcText(
     }
 }
 
+static qreal simulationRingRadius() {
+    return std::hypot(nodegraphscene::nodeWidth * 0.5, nodegraphscene::nodeHeight * 0.5) +
+        nodegraphscene::simulationRingPadding;
+}
+
+// Shared by the static vector path and the cached animation bitmap so both
+// render the same ring geometry and carved labels.
+static void paintSimulationRing(
+    QPainter& painter,
+    const QPointF& center,
+    qreal ringRadius,
+    const QColor& ringColor) {
+    painter.setPen(QPen(ringColor, nodegraphscene::simulationRingWidth,
+                        Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(Qt::NoBrush);
+    painter.drawEllipse(center, ringRadius, ringRadius);
+
+    // Remove both labels from the solid circle so the graph background shows through them.
+    painter.setCompositionMode(QPainter::CompositionMode_Clear);
+    painter.setPen(QColor(0, 0, 0, 255));
+    paintArcText(
+        painter,
+        QStringLiteral("SIMULATION"),
+        center,
+        ringRadius - nodegraphscene::simulationLabelRadiusInset,
+        nodegraphscene::simulationLabelCenterAngle,
+        nodegraphscene::simulationLabelMaxSweep,
+        nodegraphscene::simulationLabelBaselineInset,
+        false);
+    paintArcText(
+        painter,
+        QStringLiteral("NODE"),
+        center,
+        ringRadius - nodegraphscene::simulationLabelRadiusInset,
+        nodegraphscene::simulationNodeLabelCenterAngle,
+        nodegraphscene::simulationNodeLabelMaxSweep,
+        nodegraphscene::simulationLabelBaselineInset,
+        true);
+}
+
 static void paintGraphCap(
     QPainter& painter,
     const QPainterPath& path,
@@ -162,10 +210,7 @@ NodeGraphCanvasItem::NodeGraphCanvasItem(QQuickItem* parent)
     setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton | Qt::MiddleButton);
     setFocus(true);
     setAntialiasing(true);
-    setMipmap(false);
-    setOpaquePainting(false);
     setRenderTarget(QQuickPaintedItem::Image);
-    setFillColor(Qt::transparent);
 }
 
 NodeGraphUiModel* NodeGraphCanvasItem::model() const { return graphModel; }
@@ -229,55 +274,175 @@ void NodeGraphCanvasItem::refreshModel() {
                              map.value(QStringLiteral("valueType")).toInt()});
         }
     }
+    updateSimulationRingAnimation();
     requestRender();
 }
 
 void NodeGraphCanvasItem::requestRender() { update(); }
 
 bool NodeGraphCanvasItem::isSimulationNode(const Node& node) {
-    return node.typeId == QString::fromLatin1(nodegraphtypes::HeatSolve);
+    return node.typeId == QString::fromLatin1(nodegraphtypes::HeatSolve) ||
+        node.typeId == QString::fromLatin1(nodegraphtypes::CFD);
 }
 
 void NodeGraphCanvasItem::paintSimulationHighlight(QPainter& painter, const Node& node) const {
     const QPointF center(
         node.x + nodegraphscene::nodeWidth * 0.5,
         node.y + nodegraphscene::nodeHeight * 0.5);
-    const qreal halfDiagonal = std::hypot(
-        nodegraphscene::nodeWidth * 0.5,
-        nodegraphscene::nodeHeight * 0.5);
-    const qreal ringRadius = halfDiagonal + nodegraphscene::simulationRingPadding;
 
     QColor ringColor = nodegraphscene::simulationRingColor();
     if (node.selected || node.id == hoveredNodeId) ringColor = ringColor.lighter(120);
 
-    painter.save();
-    painter.setPen(QPen(ringColor, nodegraphscene::simulationRingWidth,
-                        Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-    painter.setBrush(Qt::NoBrush);
-    painter.drawEllipse(center, ringRadius, ringRadius);
+    // Static rings stay vector so they remain crisp at every zoom. While a ring
+    // animates, swap to the pre-rendered bitmap and rotate it as a whole:
+    // re-rasterizing the arc glyphs under a rotating transform makes the text
+    // jitter because pixel hinting re-snaps glyphs every frame. Both transitions
+    // happen at angle 0, where the two renderings closely match.
+    const bool animating = node.id == simulationRingNodeId &&
+        (simulationRingSpinning || simulationRingSnapping);
+    if (animating) {
+        const qreal imageScale = simulationRingImageScale();
+        const QImage& ringImage = simulationRingImage(ringColor);
+        const qreal halfExtent = ringImage.width() / (2.0 * imageScale);
+        painter.save();
+        if (simulationRingAngle != 0.0) {
+            painter.translate(center);
+            painter.rotate(simulationRingAngle);
+            painter.translate(-center);
+        }
+        painter.drawImage(
+            QRectF(center.x() - halfExtent, center.y() - halfExtent,
+                   halfExtent * 2.0, halfExtent * 2.0),
+            ringImage);
+        painter.restore();
+        return;
+    }
 
-    // Remove both labels from the solid circle so the graph background shows through them.
-    painter.setCompositionMode(QPainter::CompositionMode_Clear);
-    painter.setPen(QColor(0, 0, 0, 255));
-    paintArcText(
-        painter,
-        QStringLiteral("SIMULATION"),
-        center,
-        ringRadius - nodegraphscene::simulationLabelRadiusInset,
-        nodegraphscene::simulationLabelCenterAngle,
-        nodegraphscene::simulationLabelMaxSweep,
-        nodegraphscene::simulationLabelBaselineInset,
-        false);
-    paintArcText(
-        painter,
-        QStringLiteral("NODE"),
-        center,
-        ringRadius - nodegraphscene::simulationLabelRadiusInset,
-        nodegraphscene::simulationNodeLabelCenterAngle,
-        nodegraphscene::simulationNodeLabelMaxSweep,
-        nodegraphscene::simulationLabelBaselineInset,
-        true);
+    painter.save();
+    paintSimulationRing(painter, center, simulationRingRadius(), ringColor);
     painter.restore();
+}
+
+qreal NodeGraphCanvasItem::simulationRingImageScale() const {
+    const qreal deviceScale = window() ? window()->devicePixelRatio() : 1.0;
+    const qreal requested = zoomValue * deviceScale;
+    const qreal clamped = std::clamp(requested,
+        simulationRingBitmapMinScale, simulationRingBitmapMaxScale);
+    return std::round(clamped / simulationRingBitmapScaleStep) * simulationRingBitmapScaleStep;
+}
+
+const QImage& NodeGraphCanvasItem::simulationRingImage(const QColor& ringColor) const {
+    const qreal imageScale = simulationRingImageScale();
+    const quint64 key = (static_cast<quint64>(ringColor.rgba()) << 16) ^
+        static_cast<quint64>(std::lround(imageScale * 100.0));
+    const auto existing = simulationRingImageCache.find(key);
+    if (existing != simulationRingImageCache.end()) {
+        return existing.value();
+    }
+
+    const qreal ringRadius = simulationRingRadius();
+    const qreal halfExtent = ringRadius + nodegraphscene::simulationRingWidth;
+
+    const int pixelSize = static_cast<int>(
+        std::ceil(halfExtent * 2.0 * imageScale)) + 2;
+    QImage image(pixelSize, pixelSize, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::transparent);
+
+    QPainter painter(&image);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    painter.scale(imageScale, imageScale);
+    const QPointF center(
+        pixelSize / (2.0 * imageScale),
+        pixelSize / (2.0 * imageScale));
+
+    paintSimulationRing(painter, center, ringRadius, ringColor);
+    painter.end();
+
+    return simulationRingImageCache.insert(key, std::move(image)).value();
+}
+
+void NodeGraphCanvasItem::updateSimulationRingAnimation() {
+    const Node* hovered = findNode(hoveredNodeId);
+    const bool shouldSpin = hovered != nullptr && isSimulationNode(*hovered);
+    if (shouldSpin) {
+        simulationRingSpinning = true;
+        simulationRingSnapping = false;
+        simulationRingNodeId = hovered->id;
+        simulationRingClock.restart();
+        setSimulationRingFrameHook(true);
+        requestRender();
+        return;
+    }
+
+    simulationRingSpinning = false;
+    if (simulationRingAngle == 0.0) {
+        simulationRingSnapping = false;
+        setSimulationRingFrameHook(false);
+        return;
+    }
+
+    if (!simulationRingSnapping) {
+        // Snap along the shortest arc back to zero.
+        qreal from = std::fmod(simulationRingAngle, 360.0);
+        if (from > 180.0) {
+            from -= 360.0;
+        }
+        simulationRingSnapFrom = from;
+        simulationRingSnapElapsedMs = 0.0;
+        simulationRingSnapping = true;
+    }
+    simulationRingClock.restart();
+    setSimulationRingFrameHook(true);
+}
+
+void NodeGraphCanvasItem::setSimulationRingFrameHook(bool enabled) {
+    QQuickWindow* quickWindow = window();
+    if (!quickWindow) {
+        simulationRingFrameHooked = false;
+        return;
+    }
+    if (enabled == simulationRingFrameHooked) {
+        return;
+    }
+    if (enabled) {
+        connect(quickWindow, &QQuickWindow::frameSwapped, this, &NodeGraphCanvasItem::onSimulationRingFrame, Qt::UniqueConnection);
+        simulationRingFrameHooked = true;
+        simulationRingClock.restart();
+    } else {
+        disconnect(quickWindow, &QQuickWindow::frameSwapped, this, &NodeGraphCanvasItem::onSimulationRingFrame);
+        simulationRingFrameHooked = false;
+    }
+}
+
+void NodeGraphCanvasItem::onSimulationRingFrame() {
+    qreal elapsedMs = simulationRingClock.isValid() ? static_cast<qreal>(simulationRingClock.restart()) : 0.0;
+    if (elapsedMs <= 0.0) {
+        elapsedMs = 16.0;
+    }
+
+    if (simulationRingSpinning) {
+        constexpr qreal rotationDegreesPerSecond = 18.0; // one revolution per 20 s
+        simulationRingAngle = std::fmod(
+            simulationRingAngle + rotationDegreesPerSecond * elapsedMs / 1000.0, 360.0);
+        requestRender();
+        return;
+    }
+
+    if (simulationRingSnapping) {
+        constexpr qreal snapDurationMs = 260.0;
+        simulationRingSnapElapsedMs += elapsedMs;
+        const qreal t = std::min(simulationRingSnapElapsedMs / snapDurationMs, 1.0);
+        const qreal eased = 1.0 - std::pow(1.0 - t, 3.0); // ease-out cubic
+        simulationRingAngle = simulationRingSnapFrom * (1.0 - eased);
+        if (t >= 1.0) {
+            simulationRingAngle = 0.0;
+            simulationRingSnapping = false;
+            simulationRingNodeId = 0;
+            setSimulationRingFrameHook(false);
+        }
+        requestRender();
+    }
 }
 
 void NodeGraphCanvasItem::geometryChange(const QRectF& newGeometry, const QRectF& oldGeometry) {
@@ -422,6 +587,7 @@ void NodeGraphCanvasItem::updateHover(const QPointF& position) {
                               ? Qt::PointingHandCursor : Qt::ArrowCursor));
         requestRender();
     }
+    updateSimulationRingAnimation();
 }
 
 bool NodeGraphCanvasItem::socketTypesCompatible(const Socket& source, const Socket& target) {
@@ -460,6 +626,7 @@ void NodeGraphCanvasItem::hoverLeaveEvent(QHoverEvent* event) {
     hoveredSocketCompatible = true;
     hoveredEdgeIndex = -1;
     unsetCursor();
+    updateSimulationRingAnimation();
     requestRender();
     if (event) event->accept();
 }
@@ -820,6 +987,9 @@ void NodeGraphCanvasItem::paint(QPainter* painter) {
                 const bool hovered = node.id == hoveredSocketNodeId &&
                     sockets[index].id == hoveredSocketId && output == hoveredSocketOutput;
                 QColor fill = nodegraphscene::valueTypeColor(static_cast<NodeGraphValueType>(sockets[index].valueType));
+                if (output && isSimulationNode(node)) {
+                    fill = nodegraphscene::valueTypeColor(NodeGraphValueType::Simulation);
+                }
                 if (hovered) fill = hoveredSocketCompatible ? fill.lighter(nodegraphscene::edgeHoverLightenFactor) : QColor(220, 75, 75);
                 painter->setPen(QPen(hovered ? (hoveredSocketCompatible ? nodegraphscene::titleColor() : QColor(255, 120, 120)) : nodegraphscene::socketBorderColor(),
                                      hovered ? nodegraphscene::socketBorderWidth * 1.5 : nodegraphscene::socketBorderWidth));

@@ -30,7 +30,6 @@ public:
     static constexpr float MaxPanSpeed = 5.0f;
 
     void update(float deltaTime);   
-    void processMouseMovement(bool middleButtonPressed, double mouseX, double mouseY, bool shiftPressed = false);  
     void processMouseScroll(double yOffset);
     void setLookAt(const glm::vec3& target);
     void setOrientation(const glm::quat& q);
@@ -41,6 +40,7 @@ public:
     void setProjectionMode(CameraProjectionMode mode);
     void setOrthographicHeight(float height);
     void orbit(float dx, float dy);
+    void applyDragDelta(float dx, float dy, bool panActive);
     void resetRadius();
     void setWorldUnit(units::LengthUnit unit);
     glm::vec3 screenToWorldRayOrigin(double mouseX, double mouseY, int screenWidth, int screenHeight) const;
@@ -100,9 +100,6 @@ public:
 private:
     void pan(float dx, float dy);
 
-    bool isMousePressed = false;
-    double lastMouseX = 0.0;
-    double lastMouseY = 0.0;
     glm::vec3 position = glm::vec3(0.0f, 0.0f, 3.0f);   // Starting position    
     glm::vec3 lookAt;
     

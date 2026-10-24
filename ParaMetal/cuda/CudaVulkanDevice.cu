@@ -2,9 +2,12 @@
 
 #include <cuda_runtime.h>
 
+#include <atomic>
 #include <cstring>
 
 namespace cudaVulkan {
+
+static std::atomic<bool> deviceFound{false};
 
 int findDevice(VkPhysicalDevice physicalDevice) {
     if (physicalDevice == VK_NULL_HANDLE) return -1;
@@ -22,10 +25,15 @@ int findDevice(VkPhysicalDevice physicalDevice) {
         cudaDeviceProp cudaProperties{};
         if (cudaGetDeviceProperties(&cudaProperties, device) != cudaSuccess) continue;
         if (std::memcmp(cudaProperties.uuid.bytes, idProperties.deviceUUID, VK_UUID_SIZE) == 0) {
+            deviceFound.store(true, std::memory_order_release);
             return device;
         }
     }
     return -1;
+}
+
+bool deviceWasFound() {
+    return deviceFound.load(std::memory_order_acquire);
 }
 
 } // namespace cudaVulkan

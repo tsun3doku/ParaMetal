@@ -5,7 +5,7 @@
 #include "NodeGraphUtils.hpp"
 
 #include "NodePayloadRegistry.hpp"
-#include "domain/HeatFluidData.hpp"
+#include "domain/FluidData.hpp"
 #include "domain/HeatModelData.hpp"
 #include "domain/SerialTemperatureData.hpp"
 
@@ -64,18 +64,18 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodeGraphTypeRegistry* typ
         dataBlock.metadata.erase("heat_model.initial_temperature_c");
     }
 
-    if (dataBlock.dataType == payloadtypes::HeatFluid) {
-        const HeatFluidData* fluid = registry ? registry->get<HeatFluidData>(dataBlock.payloadHandle) : nullptr;
-        dataBlock.metadata["heat_fluid.density"] = fluid ? std::to_string(fluid->density) : std::string();
-        dataBlock.metadata["heat_fluid.specific_heat"] = fluid ? std::to_string(fluid->specificHeat) : std::string();
-        dataBlock.metadata["heat_fluid.conductivity"] = fluid ? std::to_string(fluid->conductivity) : std::string();
-        dataBlock.metadata["heat_fluid.initial_temperature_c"] =
+    if (dataBlock.dataType == payloadtypes::Fluid) {
+        const FluidData* fluid = registry ? registry->get<FluidData>(dataBlock.payloadHandle) : nullptr;
+        dataBlock.metadata["fluid.density"] = fluid ? std::to_string(fluid->density) : std::string();
+        dataBlock.metadata["fluid.specific_heat"] = fluid ? std::to_string(fluid->specificHeat) : std::string();
+        dataBlock.metadata["fluid.conductivity"] = fluid ? std::to_string(fluid->conductivity) : std::string();
+        dataBlock.metadata["fluid.initial_temperature_c"] =
             fluid ? std::to_string(fluid->initialTemperatureC) : std::string();
     } else {
-        dataBlock.metadata.erase("heat_fluid.density");
-        dataBlock.metadata.erase("heat_fluid.specific_heat");
-        dataBlock.metadata.erase("heat_fluid.conductivity");
-        dataBlock.metadata.erase("heat_fluid.initial_temperature_c");
+        dataBlock.metadata.erase("fluid.density");
+        dataBlock.metadata.erase("fluid.specific_heat");
+        dataBlock.metadata.erase("fluid.conductivity");
+        dataBlock.metadata.erase("fluid.initial_temperature_c");
     }
 
     if (dataBlock.dataType == payloadtypes::SerialTemperature) {

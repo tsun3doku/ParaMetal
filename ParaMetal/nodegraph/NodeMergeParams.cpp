@@ -1,4 +1,4 @@
-﻿#include "NodeMergeParams.hpp"
+#include "NodeMergeParams.hpp"
 
 #include "NodeGraphEditor.hpp"
 #include "NodeGraphRegistry.hpp"
@@ -13,11 +13,6 @@ MergeNodeParams readMergeNodeParams(const NodeGraphNode& node) {
     return params;
 }
 
-bool writeMergeNodeParams(
-    NodeGraphEditor& editor,
-    NodeGraphNodeId nodeId,
-    const MergeNodeParams& params) {
-    return editor.setNodeParameter(
-        nodeId,
-        NodeGraphParamValue{nodegraphparams::merge::MergeDistance, NodeGraphParamType::Float, static_cast<double>(params.mergeDistance)});
+bool writeMergeNodeParams(NodeGraphEditor& editor, NodeGraphNodeId nodeId, const MergeNodeParams& params) {
+    return editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::merge::MergeDistance, NodeGraphParamType::Float, static_cast<double>(params.mergeDistance)});
 }

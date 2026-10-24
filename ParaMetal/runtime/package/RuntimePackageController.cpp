@@ -2,6 +2,7 @@
 
 #include "nodegraph/NodeGraphState.hpp"
 #include "runtime/RuntimeHeatComputeTransport.hpp"
+#include "runtime/RuntimeCFDComputeTransport.hpp"
 #include "runtime/RuntimeHeatDisplayTransport.hpp"
 #include "runtime/RuntimeModelComputeTransport.hpp"
 #include "runtime/RuntimeModelDisplayTransport.hpp"
@@ -13,18 +14,16 @@
 #include "runtime/RuntimeVoronoiComputeTransport.hpp"
 #include "runtime/RuntimeVoronoiDisplayTransport.hpp"
 
-RuntimePackageController::RuntimePackageController(
-    const RuntimeConnections& runtimeConnections,
-    VulkanDevice& vulkanDevice,
-    MemoryAllocator& memoryAllocator)
+RuntimePackageController::RuntimePackageController(const RuntimeConnections& runtimeConnections)
     : connections(runtimeConnections),
-      productManager(std::make_unique<RuntimeProductManager>(vulkanDevice, memoryAllocator)) {
+      productManager(std::make_unique<RuntimeProductManager>()) {
     RuntimeProductManager* products = productManager.get();
     if (connections.modelComputeTransport) connections.modelComputeTransport->setProducts(products);
     if (connections.pointComputeTransport) connections.pointComputeTransport->setProducts(products);
     if (connections.remeshComputeTransport) connections.remeshComputeTransport->setProducts(products);
     if (connections.voronoiComputeTransport) connections.voronoiComputeTransport->setProducts(products);
     if (connections.heatComputeTransport) connections.heatComputeTransport->setProducts(products);
+    if (connections.cfdComputeTransport) connections.cfdComputeTransport->setProducts(products);
     if (connections.modelDisplayTransport) connections.modelDisplayTransport->setProducts(products);
     if (connections.pointDisplayTransport) connections.pointDisplayTransport->setProducts(products);
     if (connections.remeshDisplayTransport) connections.remeshDisplayTransport->setProducts(products);
@@ -58,6 +57,10 @@ bool RuntimePackageController::applyNode(const NodeGraphNode& node) {
         }
         if (const HeatPackage* package = packageManager.find<HeatPackage>(socketKey)) {
             if (!applyPackage(socketKey, *package)) return false;
+            continue;
+        }
+        if (const CFDPackage* package = packageManager.find<CFDPackage>(socketKey)) {
+            if (!applyPackage(socketKey, *package)) return false;
         }
     }
     return true;
@@ -68,6 +71,7 @@ bool RuntimePackageController::applyPackage(uint64_t socketKey, const ModelPacka
     const ProductHandle handle = connections.modelComputeTransport->apply(socketKey, package);
     if (!handle.isValid()) return false;
     packageManager.setProductHandle(socketKey, handle);
+    appliedSockets.insert(socketKey);
     return true;
 }
 
@@ -76,6 +80,7 @@ bool RuntimePackageController::applyPackage(uint64_t socketKey, const PointPacka
     const ProductHandle handle = connections.pointComputeTransport->apply(socketKey, package);
     if (!handle.isValid()) return false;
     packageManager.setProductHandle(socketKey, handle);
+    appliedSockets.insert(socketKey);
     return true;
 }
 
@@ -84,6 +89,7 @@ bool RuntimePackageController::applyPackage(uint64_t socketKey, const RemeshPack
     const ProductHandle handle = connections.remeshComputeTransport->apply(socketKey, package);
     if (!handle.isValid()) return false;
     packageManager.setProductHandle(socketKey, handle);
+    appliedSockets.insert(socketKey);
     return true;
 }
 
@@ -92,6 +98,7 @@ bool RuntimePackageController::applyPackage(uint64_t socketKey, const VoronoiPac
     const ProductHandle handle = connections.voronoiComputeTransport->apply(socketKey, package);
     if (!handle.isValid()) return false;
     packageManager.setProductHandle(socketKey, handle);
+    appliedSockets.insert(socketKey);
     return true;
 }
 
@@ -100,11 +107,27 @@ bool RuntimePackageController::applyPackage(uint64_t socketKey, const HeatPackag
     const ProductHandle handle = connections.heatComputeTransport->apply(socketKey, package);
     if (!handle.isValid()) return false;
     packageManager.setProductHandle(socketKey, handle);
+    appliedSockets.insert(socketKey);
     return true;
 }
 
-void RuntimePackageController::finishCompilation() {
-    removeStalePackages();
+bool RuntimePackageController::applyPackage(uint64_t socketKey, const CFDPackage& package) {
+    if (!connections.cfdComputeTransport) return true;
+    const ProductHandle handle = connections.cfdComputeTransport->apply(socketKey, package);
+    if (!handle.isValid()) return false;
+    packageManager.setProductHandle(socketKey, handle);
+    appliedSockets.insert(socketKey);
+    return true;
+}
+
+void RuntimePackageController::finishCompilation(bool success) {
+    if (success) {
+        removeStalePackages();
+        packageManager.commitStaged();
+    } else {
+        packageManager.commitApplied(appliedSockets);
+    }
+    appliedSockets.clear();
 }
 
 void RuntimePackageController::removeStalePackages() {
@@ -119,6 +142,8 @@ void RuntimePackageController::removeStalePackages() {
             connections.voronoiComputeTransport->remove(key);
         } else if (connections.heatComputeTransport && packageManager.findStored<HeatPackage>(key)) {
             connections.heatComputeTransport->remove(key);
+        } else if (connections.cfdComputeTransport && packageManager.findStored<CFDPackage>(key)) {
+            connections.cfdComputeTransport->remove(key);
         }
     }
     packageManager.destroyStale();

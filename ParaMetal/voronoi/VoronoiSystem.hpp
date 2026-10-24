@@ -30,7 +30,7 @@ public:
         const std::vector<std::vector<uint32_t>>& triangleIndices,
         const std::vector<std::vector<glm::vec3>>& surfacePositions,
         const std::vector<std::vector<uint32_t>>& surfaceTriangleIndices,
-        float sdfPadding);
+        float volumePadding);
     void clearGeometry();
     void setParams(float cellSize, int voxelResolution);
     void setContactRange(float range);

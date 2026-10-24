@@ -22,11 +22,12 @@ ProductHandle RuntimeVoronoiComputeTransport::apply(uint64_t socketKey, const Vo
     config.pointDomainCorners = package.pointDomainCorners;
 
     if (package.pointPositions.empty() ||
-        package.globalRemeshProducts.size() != package.globalRemeshLocalToWorld.size()) {
+        package.globalRemeshProducts.size() != package.globalRemeshLocalToWorld.size() ||
+        package.globalRemeshProducts.size() != package.globalModelProducts.size()) {
         remove(socketKey);
         return {};
     }
-    config.sdfPadding = package.authored.sdfPadding;
+    config.volumePadding = package.authored.volumePadding;
     config.pointPositions = package.pointPositions;
     config.globalRemeshRuntimeModelIds.reserve(package.globalRemeshProducts.size());
     config.globalRemeshPositions.reserve(package.globalRemeshProducts.size());
@@ -59,15 +60,16 @@ ProductHandle RuntimeVoronoiComputeTransport::apply(uint64_t socketKey, const Vo
 
     config.computeHash = computeHash;
 
-    controller->apply(socketKey, config);
+    if (!controller->apply(socketKey, config)) {
+        return {};
+    }
 
     VoronoiProduct product{};
     if (!controller->buildProduct(socketKey, product)) {
         return {};
     }
 
-    ProductHandle handle = products->publish<VoronoiProduct>(socketKey, product);
-    return handle;
+    return products->publish<VoronoiProduct>(socketKey, product);
 }
 
 void RuntimeVoronoiComputeTransport::remove(uint64_t socketKey) {

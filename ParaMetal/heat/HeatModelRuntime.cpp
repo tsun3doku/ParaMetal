@@ -3,7 +3,6 @@
 #include "heat/HeatSystemPlayback.hpp"
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/MemoryAllocator.hpp"
-#include "vulkan/CommandBufferManager.hpp"
 #include "vulkan/VulkanBuffer.hpp"
 
 #include <algorithm>
@@ -18,14 +17,12 @@ HeatModelRuntime::HeatModelRuntime(
     const std::vector<glm::vec3>& surfacePositions,
     const std::vector<glm::vec3>& surfaceNormals,
     const std::vector<uint32_t>& surfaceTriangleIndices,
-    CommandPool& cmdPool,
     float initialTemperatureValueC)
     : vulkanDevice(device),
       memoryAllocator(allocator),
       surfacePositions(surfacePositions),
       surfaceNormals(surfaceNormals),
       surfaceTriangleIndices(surfaceTriangleIndices),
-      renderCommandPool(cmdPool),
       initialTemperatureC(initialTemperatureValueC) {
     initialized = !surfacePositions.empty() &&
         surfaceNormals.size() == surfacePositions.size() &&
@@ -42,7 +39,28 @@ void HeatModelRuntime::setMaterialProperties(float density, float specificHeat, 
     this->conductivity = conductivity;
 }
 
+void HeatModelRuntime::retainSurfaceBuffers(
+    VkBuffer surface,
+    VkDeviceSize surfaceOffset,
+    VkBuffer gradient,
+    VkDeviceSize gradientOffset) {
+    if (surfaceBuffer == surface && surfaceGradientBuffer == gradient) {
+        return;
+    }
+    releaseSurfaceBuffers();
+    surfaceBuffer = surface;
+    surfaceBufferOffset = surfaceOffset;
+    surfaceGradientBuffer = gradient;
+    surfaceGradientBufferOffset = gradientOffset;
+}
+
+void HeatModelRuntime::releaseSurfaceBuffers() {
+    freeBuffer(memoryAllocator, surfaceBuffer, surfaceBufferOffset);
+    freeBuffer(memoryAllocator, surfaceGradientBuffer, surfaceGradientBufferOffset);
+}
+
 void HeatModelRuntime::cleanup() {
+    releaseSurfaceBuffers();
     if (playback) {
         playback->cleanup();
         playback.reset();

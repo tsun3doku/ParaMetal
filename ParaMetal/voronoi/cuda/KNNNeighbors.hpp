@@ -21,6 +21,7 @@ public:
     KNNNeighbors& operator=(const KNNNeighbors&) = delete;
 
     bool initialize(VulkanDevice& vulkanDevice);
+    bool initializeCuda(int ordinal = 0);
 
     bool buildNeighbors(uint32_t k, const std::vector<uint32_t>& queryIds);
     bool buildSpatialIndex(const std::vector<glm::vec4>& seeds);

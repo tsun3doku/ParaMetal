@@ -16,7 +16,7 @@ public:
     const std::vector<std::vector<uint32_t>>& getGlobalRemeshTriangleIndices() const { return globalRemeshTriangleIndices; }
     const std::vector<std::vector<glm::vec3>>& getGlobalRemeshSurfacePositions() const { return globalRemeshSurfacePositions; }
     const std::vector<std::vector<uint32_t>>& getGlobalRemeshSurfaceTriangleIndices() const { return globalRemeshSurfaceTriangleIndices; }
-    float getGlobalSdfPadding() const { return globalSdfPadding; }
+    float getGlobalVolumePadding() const { return globalVolumePadding; }
 
     std::vector<glm::vec4>& getSeedPositions() { return seedPositions; }
     const std::vector<glm::vec4>& getSeedPositions() const { return seedPositions; }
@@ -39,7 +39,7 @@ public:
         const std::vector<std::vector<uint32_t>>& triangleIndices,
         const std::vector<std::vector<glm::vec3>>& surfacePositions,
         const std::vector<std::vector<uint32_t>>& surfaceTriangleIndices,
-        float sdfPadding);
+        float volumePadding);
 
     void cleanup();
 
@@ -57,7 +57,7 @@ private:
     std::vector<std::vector<uint32_t>> globalRemeshTriangleIndices;
     std::vector<std::vector<glm::vec3>> globalRemeshSurfacePositions;
     std::vector<std::vector<uint32_t>> globalRemeshSurfaceTriangleIndices;
-    float globalSdfPadding = 0.0f;
+    float globalVolumePadding = 0.0f;
 
     bool voronoiReady = false;
 };

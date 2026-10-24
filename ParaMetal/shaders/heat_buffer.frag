@@ -55,7 +55,7 @@ layout(set = 0, binding = 15) uniform sampler2D parulaLut;
 
 const float PI = 3.14159265359;
 const float WALK_RELATIVE_AREA_EPSILON = 1e-8;
-const int WALK_MAX_STEPS = 256;
+const int WALK_MAX_STEPS = 512;
 const int WALK_SUCCESS = 0;
 const int WALK_NO_SEED = -1;
 const int WALK_INVALID_TOPOLOGY = -2;
@@ -63,7 +63,9 @@ const int WALK_DEGENERATE = -3;
 const int WALK_BOUNDARY = -4;
 const int WALK_LIMIT_REACHED = -5;
 const int WALK_STALLED = -6;
-const vec3 errorColor = vec3(1.0, 0.0, 1.0);
+const vec3 gmlsErrorColor = vec3(1.0, 0.0, 1.0);
+const vec3 chartErrorColor = vec3(1.0, 0.0, 0.0);
+const vec3 topologyErrorColor = vec3(1.0, 0.5, 0.0);
 const float HEAT_ROUGHNESS = 0.05;
 const float HEAT_METALNESS = 0.0;
 const float HEAT_LIGHTING_MIX = 0.1;
@@ -166,6 +168,16 @@ bool validIndex(int index, int count) {
 
 bool validLength(float lengthValue) {
     return lengthValue > 0.0 && !isnan(lengthValue) && !isinf(lengthValue);
+}
+
+vec3 walkStatusColor(int status) {
+    if (status == WALK_NO_SEED) return vec3(0.0, 1.0, 1.0);
+    if (status == WALK_INVALID_TOPOLOGY) return vec3(1.0, 0.25, 0.0);
+    if (status == WALK_DEGENERATE) return vec3(1.0, 1.0, 0.0);
+    if (status == WALK_BOUNDARY) return vec3(0.0, 1.0, 0.0);
+    if (status == WALK_LIMIT_REACHED) return vec3(0.75, 0.0, 1.0);
+    if (status == WALK_STALLED) return vec3(0.1, 0.2, 1.0);
+    return vec3(1.0);
 }
 
 float triangleAreaEpsilon(float a, float b, float c) {
@@ -412,7 +424,7 @@ void main() {
     ivec3 faceHEs;
     vec2 triCoords[3];
     if (!loadInputTriangleChart(inputTri, faceHEs, triCoords)) {
-        writeHeatSurface(errorColor);
+        writeHeatSurface(chartErrorColor);
         return;
     }
 
@@ -421,13 +433,13 @@ void main() {
     vec2 py = p + dFdy(p);
     WalkResult walk = locateIntrinsicTriangle(faceHEs, triCoords, p, px, py, true);
     if (walk.status != WALK_SUCCESS) {
-        writeHeatSurface(errorColor);
+        writeHeatSurface(walkStatusColor(walk.status));
         return;
     }
 
     int href = texelFetch(T, walk.triangle).r;
     if (href < 0) {
-        writeHeatSurface(errorColor);
+        writeHeatSurface(topologyErrorColor);
         return;
     }
 
@@ -441,7 +453,7 @@ void main() {
     int v2 = texelFetch(H, h2_ref).r;
 
     if (v0 < 0 || v1 < 0 || v2 < 0) {
-        writeHeatSurface(errorColor);
+        writeHeatSurface(topologyErrorColor);
         return;
     }
     
@@ -450,7 +462,7 @@ void main() {
     float temp2 = heatColors.surfacePoints[v2].temperatureC;
 
     if (temp0 < -1.0e20 || temp1 < -1.0e20 || temp2 < -1.0e20 || isnan(temp0) || isnan(temp1) || isnan(temp2)) {
-        writeHeatSurface(vec3(1.0, 0.0, 1.0)); // Diagnostic magenta for GMLS failure
+        writeHeatSurface(gmlsErrorColor);
         return;
     }
 

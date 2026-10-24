@@ -1,19 +1,15 @@
 #include "TriangleBvh.cuh"
+#include "../../cuda/CudaMath.cuh"
 #include <cub/cub.cuh>
 #include <algorithm>
 
 namespace voronoi::cudaGeometry {
 
+using cudaMath::min3;
+using cudaMath::max3;
+
 static constexpr uint32_t BlockSize = 256;
 using BlockReduce = cub::BlockReduce<float, BlockSize>;
-
-static __device__ inline float3 min3(float3 a, float3 b) {
-    return make_float3(fminf(a.x, b.x), fminf(a.y, b.y), fminf(a.z, b.z));
-}
-
-static __device__ inline float3 max3(float3 a, float3 b) {
-    return make_float3(fmaxf(a.x, b.x), fmaxf(a.y, b.y), fmaxf(a.z, b.z));
-}
 
 static __device__ inline uint32_t expandBits(uint32_t v) {
     v = (v * 0x00010001u) & 0xFF0000FFu;
@@ -84,7 +80,6 @@ static __global__ void computeCentroidBoundsKernel(
         bMax = max3(bMax, c);
     }
 
-    // Block reduction
     __shared__ typename BlockReduce::TempStorage temp;
 
     const float minX = BlockReduce(temp).Reduce(bMin.x, cub::Min()); __syncthreads();
@@ -253,7 +248,6 @@ static __global__ void initLeavesAndPropagateAabbKernel(
     nodes[nodeIdx].left = triId | LeafBit;
     nodes[nodeIdx].right = InvalidNodeId;
 
-    // AABB propagation to root
     uint32_t current = nodeParents[nodeIdx];
     while (current != InvalidNodeId) {
         // Publish this child's AABB before announcing completion
@@ -316,7 +310,6 @@ bool buildTriangleBvh(
     const uint32_t totalNodes = 2 * count - 1;
     if (!bvh.nodes.allocate(totalNodes)) return false;
 
-    // Centroid bounding box
     cudaUtils::CudaBuffer<float3> devBounds;
     if (!devBounds.allocate(2)) return false;
     const float3 initMin = make_float3( 1e30f,  1e30f,  1e30f);
@@ -347,7 +340,6 @@ bool buildTriangleBvh(
         extent.y > 0.0f ? 1.0f / extent.y : 0.0f,
         extent.z > 0.0f ? 1.0f / extent.z : 0.0f);
 
-    // Compute Morton keys
     cudaUtils::CudaBuffer<uint64_t> devKeysIn;
     cudaUtils::CudaBuffer<uint64_t> devKeysOut;
     if (!devKeysIn.allocate(count) || !devKeysOut.allocate(count)) return false;
@@ -356,7 +348,6 @@ bool buildTriangleBvh(
     computeMortonKeysKernel<<<grid, BlockSize, 0, stream>>>(
         triangles.get(), count, bMin, bInvExt, devKeysIn.get());
 
-    // Radix sort keys
     size_t tempStorageBytes = 0;
     if (cub::DeviceRadixSort::SortKeys(
             nullptr, tempStorageBytes,
@@ -371,7 +362,6 @@ bool buildTriangleBvh(
             devKeysIn.get(), devKeysOut.get(),
             int(count), 0, 64, stream) != cudaSuccess) return false;
 
-    // Hierarchy construction
     cudaUtils::CudaBuffer<uint32_t> devNodeParents;
     cudaUtils::CudaBuffer<int> devNodeFlags;
     if (!devNodeParents.allocate(totalNodes) || !devNodeFlags.allocate(count - 1)) return false;
@@ -382,7 +372,6 @@ bool buildTriangleBvh(
     generateHierarchyKernel<<<gridInternal, BlockSize, 0, stream>>>(
         devKeysOut.get(), count, bvh.nodes.get(), devNodeParents.get());
 
-    // Initialize leaves and propagate bounding boxes
     initLeavesAndPropagateAabbKernel<<<grid, BlockSize, 0, stream>>>(
         triangles.get(), devKeysOut.get(), count, bvh.nodes.get(), devNodeParents.get(), devNodeFlags.get());
 

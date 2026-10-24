@@ -25,21 +25,13 @@ public:
         const std::vector<std::vector<glm::vec3>>& surfacePositions,
         const std::vector<std::vector<uint32_t>>& surfaceTriangleIndices);
 
-    void releaseGpuResources(VoronoiProduct& product);
+    // Non-detaching copy of this generation's handles into a product record
+    void copyGpu(VoronoiProduct& product) const;
     void cleanup();
 
     size_t getModelCount() const { return runtimeModelIds.size(); }
     uint32_t getRuntimeModelId(size_t index) const { return index < runtimeModelIds.size() ? runtimeModelIds[index] : 0; }
     uint32_t getFaceCount(size_t index) const { return index < faceCounts.size() ? faceCounts[index] : 0; }
-
-    VkBuffer getVertexBuffer(size_t index) const { return index < vertexBuffers.size() ? vertexBuffers[index] : VK_NULL_HANDLE; }
-    VkDeviceSize getVertexBufferOffset(size_t index) const { return index < vertexBufferOffsets.size() ? vertexBufferOffsets[index] : 0; }
-
-    VkBuffer getFaceIndexBuffer(size_t index) const { return index < faceIndexBuffers.size() ? faceIndexBuffers[index] : VK_NULL_HANDLE; }
-    VkDeviceSize getFaceIndexBufferOffset(size_t index) const { return index < faceIndexBufferOffsets.size() ? faceIndexBufferOffsets[index] : 0; }
-
-    VkBuffer getCandidateBuffer(size_t index) const { return index < candidateBuffers.size() ? candidateBuffers[index] : VK_NULL_HANDLE; }
-    VkDeviceSize getCandidateBufferOffset(size_t index) const { return index < candidateBufferOffsets.size() ? candidateBufferOffsets[index] : 0; }
 
     const std::vector<uint32_t>& getRuntimeModelIds() const { return runtimeModelIds; }
     const std::vector<uint32_t>& getFaceCounts() const { return faceCounts; }

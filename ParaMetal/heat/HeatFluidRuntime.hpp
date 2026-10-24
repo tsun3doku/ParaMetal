@@ -28,10 +28,6 @@ public:
     float getConductivity() const { return conductivity; }
     float getInitialTemperatureC() const { return initialTemperatureC; }
     void setInitialTemperatureC(float temperatureC) { initialTemperatureC = temperatureC; }
-    float getInletTemperatureC() const { return inletTemperatureC; }
-    void setInletTemperatureC(float temperatureC) { inletTemperatureC = temperatureC; }
-    const glm::vec3& getPrescribedVelocity() const { return prescribedVelocity; }
-    void setPrescribedVelocity(const glm::vec3& v) { prescribedVelocity = v; }
 
     uint32_t getNodeCount() const { return nodeCount; }
 
@@ -54,8 +50,6 @@ private:
     float specificHeat = HeatSimDefaults::fluidSpecificHeat;
     float conductivity = HeatSimDefaults::fluidConductivity;
     float initialTemperatureC = HeatSimDefaults::ambientTemperatureC;
-    float inletTemperatureC = HeatSimDefaults::ambientTemperatureC;
-    glm::vec3 prescribedVelocity{0.0f};
 
     uint32_t nodeCount = 0;
 

@@ -19,6 +19,7 @@ public:
 
     VkBuffer getBuffer() const { return buffer; }
     VkDeviceMemory getMemory() const { return memory; }
+    VkDevice getDevice() const { return device; }
     VkDeviceSize getSize() const { return bufferSize; }
     VkDeviceSize getBufferSize() const { return bufferSize; }
     VkDeviceSize getAllocationSize() const { return allocationSize; }

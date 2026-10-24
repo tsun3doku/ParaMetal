@@ -12,10 +12,10 @@ struct RemeshPreviewSettings {
 };
 
 struct RemeshNodeParams {
-    int iterations = 10;
-    double minAngleDegrees = 25.0;
-    double maxEdgeLength = 0.2;
-    double stepSize = 0.5;
+    int iterations = 1;
+    double minAngleDegrees = 20.0;
+    double maxEdgeLength = 0.1;
+    double stepSize = 0.25;
     RemeshPreviewSettings preview{};
     double normalLength = 0.05;
 };

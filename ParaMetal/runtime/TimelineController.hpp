@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 class TimelineRuntime;
 class TimelinePlaybackTarget;
@@ -10,6 +11,9 @@ public:
     explicit TimelineController(TimelineRuntime* runtime = nullptr);
 
     void bindPlaybackTarget(TimelinePlaybackTarget* playbackTarget);
+    void addPlaybackTarget(TimelinePlaybackTarget* playbackTarget);
+    void removePlaybackTarget(TimelinePlaybackTarget* playbackTarget);
+    void clearPlaybackTargets();
 
     void setPlaying(bool playing);
     void reset();
@@ -20,5 +24,5 @@ public:
 
 private:
     TimelineRuntime* runtime = nullptr;
-    TimelinePlaybackTarget* playbackTarget = nullptr;
+    std::vector<TimelinePlaybackTarget*> playbackTargets;
 };

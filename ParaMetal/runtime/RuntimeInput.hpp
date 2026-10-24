@@ -15,6 +15,7 @@ class InputController;
 class NodeGraphController;
 class SceneController;
 class ModelRegistry;
+class RawMouseInput;
 struct GizmoDragBegin;
 struct GizmoDragUpdate;
 enum class ViewportCommand : uint8_t;
@@ -26,9 +27,10 @@ public:
         InputController& inputController,
         const NodeGraphController& graphController,
         const SceneController& sceneController,
-        ModelRegistry& modelRegistry);
+        ModelRegistry& modelRegistry,
+        RawMouseInput* rawMouseInput);
 
-    void tick(float deltaTime);
+    void tick();
     std::vector<ViewportCommand> takePendingViewportCommands();
     bool takePendingNodeParameters(NodeGraphNodeId& outNodeId, std::vector<NodeGraphParamValue>& outParameters);
 
@@ -48,6 +50,8 @@ private:
     const NodeGraphController& graphController;
     const SceneController& sceneController;
     ModelRegistry& modelRegistry;
+    RawMouseInput* rawMouseInput = nullptr;
+    bool rawDragActive = false;
 
     NodeGraphNodeId activeTransformNodeId{};
     uint32_t activeRuntimeModelId = 0;

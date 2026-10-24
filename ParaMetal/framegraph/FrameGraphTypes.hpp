@@ -258,8 +258,6 @@ struct FrameGraphResult {
     std::vector<ResourceId> attachmentResourceOrder;
     std::vector<int32_t> aliasGroupByResource;
     std::vector<std::vector<uint32_t>> aliasGroups;
-    SizeBytes transientNoAliasBytes = 0;
-    SizeBytes transientAliasedBytes = 0;
 };
 
 }

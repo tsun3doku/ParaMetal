@@ -9,7 +9,6 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include <functional>
 
 #include "nodegraph/NodeGraphCoreTypes.hpp"
 #include "runtime/RuntimeProducts.hpp"
@@ -84,14 +83,6 @@ public:
     void updateGrid(uint32_t frameIndex, const render::SceneView& sceneView, const glm::vec3& sceneExtent);
     void setWorldUnit(units::LengthUnit unit);
 
-    bool createCommandBuffers();
-    void freeCommandBuffers();
-    bool recordCommandBuffer(
-        const render::RenderFrameRequest& frameRequest,
-        render::RenderServices& services,
-        bool insertComputeToGraphicsBarrier,
-        VkPipelineStageFlags computeToGraphicsDstStageMask,
-        const std::function<void(VkCommandBuffer)>& postRenderCommands = {});
     bool recordExternalCommandBuffer(
         VkCommandBuffer commandBuffer,
         const render::RenderFrameRequest& frameRequest,
@@ -105,10 +96,6 @@ public:
 
     VkDescriptorSetLayout getGbufferDescriptorSetLayout() const;
     VkDescriptorSet getGeometryDescriptorSet(uint32_t frameIndex) const;
-
-    const std::vector<VkCommandBuffer>& getCommandBuffers() const {
-        return gbufferCommandBuffers;
-    }
 
     bool isReady() const {
         return ready;
@@ -134,12 +121,10 @@ private:
     void recordComputeToGraphicsBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags dstStageMask);
     bool recordCommands(
         VkCommandBuffer commandBuffer,
-        bool manageCommandBufferRecording,
         const render::RenderFrameRequest& frameRequest,
         render::RenderServices& services,
         bool insertComputeToGraphicsBarrier,
-        VkPipelineStageFlags computeToGraphicsDstStageMask,
-        const std::function<void(VkCommandBuffer)>& postRenderCommands);
+        VkPipelineStageFlags computeToGraphicsDstStageMask);
     
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
@@ -172,8 +157,6 @@ private:
     std::vector<uint8_t> gpuTimingValidFrames;
     std::vector<std::unique_ptr<render::Pass>> passes;
     std::vector<render::Pass*> orderedPasses;
-
-    std::vector<VkCommandBuffer> gbufferCommandBuffers;
 
     bool ready = false;
 };

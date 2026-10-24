@@ -14,7 +14,6 @@
 #include "HeatSystem.hpp"
 #include "HeatGpuStructs.hpp"
 #include "HeatSystemPresets.hpp"
-#include "framegraph/ComputePass.hpp"
 #include "voronoi/VoronoiGpuStructs.hpp"
 #include "voronoi/GlobalDomainTopology.hpp"
 #include "serial/SerialTemperatureRuntime.hpp"
@@ -36,8 +35,13 @@ public:
         float fluidSpecificHeat = 0.0f;
         float fluidConductivity = 0.0f;
         float fluidInitialTemperatureC = 0.0f;
-        float fluidInletTemperatureC = HeatSimDefaults::ambientTemperatureC;
-        glm::vec3 fluidVelocity{0.0f};
+    bool hasAdvection = false;
+    VkBuffer advectionFaceFluxBuffer = VK_NULL_HANDLE;
+    VkDeviceSize advectionFaceFluxBufferSize = 0;
+    VkBuffer advectionBoundaryFluxBuffer = VK_NULL_HANDLE;
+    VkDeviceSize advectionBoundaryFluxBufferSize = 0;
+    uint32_t advectionFaceCount = 0;
+    uint32_t advectionBoundaryFaceCount = 0;
         uint32_t domainBoundaryTypes[6] = {};
         float domainBoundaryTemperaturesC[6] = {
             HeatSimDefaults::ambientTemperatureC,
@@ -49,20 +53,12 @@ public:
         };
         float domainBoundaryHeatFluxes[6] = {};
         float domainBoundaryHeatTransferCoefficients[6] = {};
+        uint32_t solverMaxIterations = 0;         // 0 = keep heat solver default
+        float solverConvergenceTolerance = 0.0f;  // 0 = keep heat solver default
         std::vector<std::vector<glm::vec3>> modelSurfacePositions;
         std::vector<std::vector<glm::vec3>> modelSurfaceNormals;
         std::vector<std::vector<uint32_t>> modelSurfaceTriangleIndices;
         std::vector<uint32_t> modelRuntimeModelIds;
-        std::vector<VkBufferView> supportingHalfedgeViews;
-        std::vector<VkBufferView> supportingAngleViews;
-        std::vector<VkBufferView> halfedgeViews;
-        std::vector<VkBufferView> edgeViews;
-        std::vector<VkBufferView> triangleViews;
-        std::vector<VkBufferView> lengthViews;
-        std::vector<VkBufferView> inputHalfedgeViews;
-        std::vector<VkBufferView> inputEdgeViews;
-        std::vector<VkBufferView> inputTriangleViews;
-        std::vector<VkBufferView> inputLengthViews;
         std::unordered_map<uint32_t, float> modelInitialTemperaturesCByRuntimeId;
         std::unordered_map<uint32_t, float> modelVolumetricPowerDensitiesByRuntimeId;
         std::unordered_map<uint32_t, float> modelDensity;
@@ -72,23 +68,8 @@ public:
         std::unordered_map<uint64_t, bool> serialEnabledBySourceKey;
         std::unordered_map<uint64_t, std::string> serialPortNamesBySourceKey;
         std::unordered_map<uint64_t, uint32_t> serialBaudRatesBySourceKey;
-        std::unordered_map<uint32_t, VkBuffer> modelSimNodeBufferByModelId;
-        std::unordered_map<uint32_t, VkDeviceSize> modelSimNodeBufferOffsetByModelId;
-        std::unordered_map<uint32_t, VkBuffer> modelSimNodeCouplingBufferByModelId;
-        std::unordered_map<uint32_t, VkDeviceSize> modelSimNodeCouplingBufferOffsetByModelId;
-        std::unordered_map<uint32_t, uint32_t> simNodeCounts;
-        std::unordered_map<uint32_t, uint32_t> simNodeCouplingCounts;
-        std::unordered_map<uint32_t, std::vector<glm::vec3>> modelNodePositionsByModelId;
         topology::GlobalDomain domainVoronoiProduct;
         std::unordered_map<uint32_t, std::array<float, 16>> modelLocalToWorldByModelId;
-        std::unordered_map<uint32_t, VkBuffer> modelGMLSSurfaceStencilBufferByModelId;
-        std::unordered_map<uint32_t, VkDeviceSize> modelGMLSSurfaceStencilBufferOffsetByModelId;
-        std::unordered_map<uint32_t, VkBuffer> modelGMLSSurfaceWeightBufferByModelId;
-        std::unordered_map<uint32_t, VkDeviceSize> modelGMLSSurfaceWeightBufferOffsetByModelId;
-        std::unordered_map<uint32_t, size_t> modelGMLSSurfaceWeightCountByModelId;
-        std::unordered_map<uint32_t, VkBuffer> modelGMLSSurfaceGradientWeightBufferByModelId;
-        std::unordered_map<uint32_t, VkDeviceSize> modelGMLSSurfaceGradientWeightBufferOffsetByModelId;
-        std::unordered_map<uint32_t, size_t> modelGMLSSurfaceGradientWeightCountByModelId;
         std::unordered_map<uint32_t, bool> modelPrescribedTemperatureEnabledByRuntimeId;
         std::unordered_map<uint32_t, float> modelPrescribedTemperaturesCByRuntimeId;
         uint64_t computeHash = 0;
@@ -102,7 +83,8 @@ public:
         CommandPool& transferCommandPool,
         uint32_t maxFramesInFlight);
 
-    void apply(uint64_t socketKey, const Config& config);
+    // Returns false on failure, previous generation stays active and caller skips publish
+    bool apply(uint64_t socketKey, const Config& config);
     void remove(uint64_t socketKey);
     void disableAll();
     void syncSerialInputs();
@@ -115,9 +97,15 @@ public:
     void resetTimeline() override;
     void scrubTimeline(uint32_t frame) override;
 
-    std::vector<ComputePass*> getActiveSystems() const;
+    std::vector<HeatSystem*> getActiveSystems() const;
+
+    // Blocks until in-flight solves finish for current and retained systems
+    void waitIdle();
+    // Host-signals pending solve release waits for current and retained systems
+    void releaseWaits();
     bool buildProduct(uint64_t socketKey, HeatProduct& outProduct);
     const HeatSystem* getSystem(uint64_t socketKey) const;
+    HeatSystem* getSystem(uint64_t socketKey);
     const Config* getConfig(uint64_t socketKey) const;
 
 private:
@@ -137,6 +125,8 @@ private:
 
     std::unordered_map<uint64_t, std::unique_ptr<HeatSystem>> systemsBySocket;
     std::unordered_map<uint64_t, Config> configuredConfigs;
+    std::unordered_map<uint64_t, uint64_t> failedComputeHashes;
+    std::vector<std::unique_ptr<HeatSystem>> retainedSystems;
     std::unordered_map<uint64_t, std::unique_ptr<SerialTemperatureRuntime>> serialRuntimes;
     std::unordered_map<uint64_t, uint64_t> lastSerialRevisions;
 };

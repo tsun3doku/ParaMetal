@@ -1,6 +1,6 @@
 #include "FrameSync.hpp"
+#include "ComputePass.hpp"
 
-#include <array>
 #include <iostream>
 
 bool FrameSync::initialize(VkDevice deviceHandle, uint32_t maxFramesInFlight) {
@@ -16,38 +16,15 @@ bool FrameSync::initialize(VkDevice deviceHandle, uint32_t maxFramesInFlight) {
 
     frameSlots.assign(frameCount, FrameSlot{});
 
-    VkSemaphoreCreateInfo semaphoreInfo{};
-    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
     VkFenceCreateInfo fenceInfo{};
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-    const auto failCreate = [this]() {
-        shutdown();
-        return false;
-    };
 
     for (uint32_t index = 0; index < frameCount; ++index) {
         FrameSlot& slot = frameSlots[index];
-        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &slot.imageAvailableSemaphore) != VK_SUCCESS) {
-            return failCreate();
-        }
-        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &slot.renderFinishedSemaphore) != VK_SUCCESS) {
-            return failCreate();
-        }
-        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &slot.computeFinishedSemaphore) != VK_SUCCESS) {
-            return failCreate();
-        }
-        if (vkCreateFence(device, &fenceInfo, nullptr, &slot.graphicsFence) != VK_SUCCESS) {
-            return failCreate();
-        }
         if (vkCreateFence(device, &fenceInfo, nullptr, &slot.computeFence) != VK_SUCCESS) {
-            return failCreate();
+            shutdown();
+            return false;
         }
-
-        slot.graphicsSubmittedThisLap = true;
-        slot.computeSubmittedThisLap = true;
     }
 
     return true;
@@ -56,18 +33,6 @@ bool FrameSync::initialize(VkDevice deviceHandle, uint32_t maxFramesInFlight) {
 void FrameSync::shutdown() {
     if (device != VK_NULL_HANDLE) {
         for (FrameSlot& slot : frameSlots) {
-            if (slot.renderFinishedSemaphore != VK_NULL_HANDLE) {
-                vkDestroySemaphore(device, slot.renderFinishedSemaphore, nullptr);
-            }
-            if (slot.imageAvailableSemaphore != VK_NULL_HANDLE) {
-                vkDestroySemaphore(device, slot.imageAvailableSemaphore, nullptr);
-            }
-            if (slot.computeFinishedSemaphore != VK_NULL_HANDLE) {
-                vkDestroySemaphore(device, slot.computeFinishedSemaphore, nullptr);
-            }
-            if (slot.graphicsFence != VK_NULL_HANDLE) {
-                vkDestroyFence(device, slot.graphicsFence, nullptr);
-            }
             if (slot.computeFence != VK_NULL_HANDLE) {
                 vkDestroyFence(device, slot.computeFence, nullptr);
             }
@@ -80,22 +45,6 @@ void FrameSync::shutdown() {
     device = VK_NULL_HANDLE;
 }
 
-void FrameSync::waitForSlot() {
-    if (device == VK_NULL_HANDLE || currentFrame >= frameSlots.size()) {
-        return;
-    }
-
-    const FrameSlot& slot = frameSlots[currentFrame];
-
-    if (slot.graphicsSubmittedThisLap) {
-        vkWaitForFences(device, 1, &slot.graphicsFence, VK_TRUE, UINT64_MAX);
-    }
-
-    if (slot.computeSubmittedThisLap) {
-        vkWaitForFences(device, 1, &slot.computeFence, VK_TRUE, UINT64_MAX);
-    }
-}
-
 void FrameSync::prepareExternalFrame(uint32_t frameIndex) {
     if (frameCount == 0) {
         return;
@@ -106,10 +55,19 @@ void FrameSync::prepareExternalFrame(uint32_t frameIndex) {
         return;
     }
 
-    const FrameSlot& slot = frameSlots[currentFrame];
+    FrameSlot& slot = frameSlots[currentFrame];
+    slot.computePresentedThisLap = false;
     if (slot.computeSubmittedThisLap) {
         vkWaitForFences(device, 1, &slot.computeFence, VK_TRUE, UINT64_MAX);
+        slot.computeSubmittedThisLap = false;
     }
+}
+
+bool FrameSync::wasComputePresentedThisLap() const {
+    if (currentFrame >= frameSlots.size()) {
+        return false;
+    }
+    return frameSlots[currentFrame].computePresentedThisLap;
 }
 
 void FrameSync::waitForAllFrameFences() {
@@ -118,173 +76,109 @@ void FrameSync::waitForAllFrameFences() {
     }
 
     for (const FrameSlot& slot : frameSlots) {
-        vkWaitForFences(device, 1, &slot.graphicsFence, VK_TRUE, UINT64_MAX);
+        // Skip unsignaled fences to avoid blocking indefinitely
+        if (!slot.computeSubmittedThisLap) {
+            continue;
+        }
         vkWaitForFences(device, 1, &slot.computeFence, VK_TRUE, UINT64_MAX);
     }
 }
 
-VkResult FrameSync::acquireNextImage(VkSwapchainKHR swapChain, uint32_t& imageIndex) const {
-    imageIndex = 0;
-    if (device == VK_NULL_HANDLE ||
-        swapChain == VK_NULL_HANDLE ||
-        currentFrame >= frameSlots.size()) {
+VkResult FrameSync::submitComputeBatch(
+    VkQueue computeQueue,
+    const std::vector<FrameComputeSubmission>& submissions) {
+    if (device == VK_NULL_HANDLE || currentFrame >= frameSlots.size() || computeQueue == VK_NULL_HANDLE) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    return vkAcquireNextImageKHR(
-        device,
-        swapChain,
-        UINT64_MAX,
-        frameSlots[currentFrame].imageAvailableSemaphore,
-        VK_NULL_HANDLE,
-        &imageIndex);
-}
-
-VkResult FrameSync::submitFrame(VkQueue computeQueue, VkQueue graphicsQueue,
-                                VkSwapchainKHR swapChain, uint32_t imageIndex,
-                                const FrameSubmission& submission) {
-    (void)swapChain;
-    (void)imageIndex;
-
-    if (device == VK_NULL_HANDLE || currentFrame >= frameSlots.size()) {
-        return VK_ERROR_INITIALIZATION_FAILED;
+    if (submissions.empty()) {
+        return VK_SUCCESS;
     }
 
     FrameSlot& slot = frameSlots[currentFrame];
-
-    slot.graphicsSubmittedThisLap = false;
     slot.computeSubmittedThisLap = false;
 
-    if (submission.computeCommandBuffer != VK_NULL_HANDLE) {
-        vkResetFences(device, 1, &slot.computeFence);
+    vkResetFences(device, 1, &slot.computeFence);
 
-        std::array<VkSemaphore, 1> waitSemaphores{};
-        std::array<VkPipelineStageFlags, 1> waitStages{};
-        std::array<uint64_t, 1> waitValues{};
-        uint32_t waitCount = 0;
-        if (submission.externalWaitSemaphore != VK_NULL_HANDLE) {
-            waitSemaphores[waitCount] = submission.externalWaitSemaphore;
-            waitStages[waitCount] = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-            waitValues[waitCount] = submission.externalWaitValue;
-            ++waitCount;
-        }
+    struct PerSubmitData {
+        std::vector<VkSemaphore> waitSemaphores;
+        std::vector<VkPipelineStageFlags> waitStages;
+        std::vector<uint64_t> waitValues;
 
-        std::array<VkSemaphore, 2> signalSemaphores{};
-        std::array<uint64_t, 2> signalValues{};
-        uint32_t signalCount = 0;
-        if (submission.waitForComputeSemaphore) {
-            signalSemaphores[signalCount] = slot.computeFinishedSemaphore;
-            signalValues[signalCount] = 0;
-            ++signalCount;
-        }
-        if (submission.externalSignalSemaphore != VK_NULL_HANDLE) {
-            signalSemaphores[signalCount] = submission.externalSignalSemaphore;
-            signalValues[signalCount] = submission.externalSignalValue;
-            ++signalCount;
-        }
+        std::vector<VkSemaphore> signalSemaphores;
+        std::vector<uint64_t> signalValues;
 
+        VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
         VkTimelineSemaphoreSubmitInfo timelineInfo{};
-        timelineInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
-        timelineInfo.waitSemaphoreValueCount = waitCount;
-        timelineInfo.pWaitSemaphoreValues = waitValues.data();
-        timelineInfo.signalSemaphoreValueCount = signalCount;
-        timelineInfo.pSignalSemaphoreValues = signalValues.data();
+        VkSubmitInfo submitInfo{};
+    };
 
-        VkSubmitInfo computeSubmitInfo{};
-        computeSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        computeSubmitInfo.pNext = &timelineInfo;
-        computeSubmitInfo.waitSemaphoreCount = waitCount;
-        computeSubmitInfo.pWaitSemaphores = waitSemaphores.data();
-        computeSubmitInfo.pWaitDstStageMask = waitStages.data();
-        computeSubmitInfo.commandBufferCount = 1;
-        computeSubmitInfo.pCommandBuffers = &submission.computeCommandBuffer;
-        computeSubmitInfo.signalSemaphoreCount = signalCount;
-        computeSubmitInfo.pSignalSemaphores = signalSemaphores.data();
+    std::vector<PerSubmitData> submitData(submissions.size());
+    std::vector<VkSubmitInfo> submitInfos(submissions.size());
 
-        const VkResult computeResult = vkQueueSubmit(computeQueue, 1, &computeSubmitInfo, slot.computeFence);
-        if (computeResult == VK_SUCCESS) {
-            slot.computeSubmittedThisLap = true;
-        } else {
-            std::cerr << "[SUBMIT] COMPUTE failed VkResult=" << static_cast<int>(computeResult)
-                      << " frame=" << currentFrame << std::endl;
-            return computeResult;
+    for (size_t i = 0; i < submissions.size(); ++i) {
+        const auto& sub = submissions[i];
+        PerSubmitData& data = submitData[i];
+        data.commandBuffer = sub.commandBuffer;
+
+        data.waitSemaphores.reserve(sub.synchronization.waits.size());
+        data.waitStages.reserve(sub.synchronization.waits.size());
+        data.waitValues.reserve(sub.synchronization.waits.size());
+        for (const ComputePass::TimelineWait& wait : sub.synchronization.waits) {
+            if (wait.semaphore == VK_NULL_HANDLE) {
+                continue;
+            }
+            data.waitSemaphores.push_back(wait.semaphore);
+            data.waitStages.push_back(wait.stageMask);
+            data.waitValues.push_back(wait.value);
         }
+
+        data.signalSemaphores.reserve(sub.synchronization.signals.size());
+        data.signalValues.reserve(sub.synchronization.signals.size());
+        for (const ComputePass::TimelineSignal& signal : sub.synchronization.signals) {
+            if (signal.semaphore == VK_NULL_HANDLE) {
+                continue;
+            }
+            data.signalSemaphores.push_back(signal.semaphore);
+            data.signalValues.push_back(signal.value);
+        }
+
+        data.timelineInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+        data.timelineInfo.waitSemaphoreValueCount = static_cast<uint32_t>(data.waitValues.size());
+        data.timelineInfo.pWaitSemaphoreValues = data.waitValues.empty() ? nullptr : data.waitValues.data();
+        data.timelineInfo.signalSemaphoreValueCount = static_cast<uint32_t>(data.signalValues.size());
+        data.timelineInfo.pSignalSemaphoreValues = data.signalValues.empty() ? nullptr : data.signalValues.data();
+
+        data.submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        if (data.timelineInfo.waitSemaphoreValueCount > 0 || data.timelineInfo.signalSemaphoreValueCount > 0) {
+            data.submitInfo.pNext = &data.timelineInfo;
+        }
+        data.submitInfo.waitSemaphoreCount = static_cast<uint32_t>(data.waitSemaphores.size());
+        data.submitInfo.pWaitSemaphores = data.waitSemaphores.empty() ? nullptr : data.waitSemaphores.data();
+        data.submitInfo.pWaitDstStageMask = data.waitStages.empty() ? nullptr : data.waitStages.data();
+        data.submitInfo.commandBufferCount = 1;
+        data.submitInfo.pCommandBuffers = &data.commandBuffer;
+        data.submitInfo.signalSemaphoreCount = static_cast<uint32_t>(data.signalSemaphores.size());
+        data.submitInfo.pSignalSemaphores = data.signalSemaphores.empty() ? nullptr : data.signalSemaphores.data();
+
+        submitInfos[i] = data.submitInfo;
     }
 
-    // Graphics submit 
-    if (submission.graphicsCommandBuffer != VK_NULL_HANDLE) {
-        vkResetFences(device, 1, &slot.graphicsFence);
+    const VkResult computeResult = vkQueueSubmit(
+        computeQueue,
+        static_cast<uint32_t>(submitInfos.size()),
+        submitInfos.data(),
+        slot.computeFence);
 
-        std::array<VkSemaphore, 2> waitSemaphores{};
-        std::array<VkPipelineStageFlags, 2> waitStages{};
-        uint32_t waitCount = 1;
-        waitSemaphores[0] = slot.imageAvailableSemaphore;
-        waitStages[0] = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-
-        if (submission.waitForComputeSemaphore) {
-            waitSemaphores[waitCount] = slot.computeFinishedSemaphore;
-            waitStages[waitCount] = submission.computeWaitDstStageMask;
-            ++waitCount;
-        }
-
-        VkSubmitInfo graphicsSubmitInfo{};
-        graphicsSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        graphicsSubmitInfo.waitSemaphoreCount = waitCount;
-        graphicsSubmitInfo.pWaitSemaphores = waitSemaphores.data();
-        graphicsSubmitInfo.pWaitDstStageMask = waitStages.data();
-        graphicsSubmitInfo.commandBufferCount = 1;
-        graphicsSubmitInfo.pCommandBuffers = &submission.graphicsCommandBuffer;
-        graphicsSubmitInfo.signalSemaphoreCount = 1;
-        graphicsSubmitInfo.pSignalSemaphores = &slot.renderFinishedSemaphore;
-
-        const VkResult graphicsResult = vkQueueSubmit(graphicsQueue, 1, &graphicsSubmitInfo, slot.graphicsFence);
-        if (graphicsResult != VK_SUCCESS) {
-            std::cerr << "[SUBMIT] GRAPHICS failed VkResult=" << static_cast<int>(graphicsResult)
-                      << " frame=" << currentFrame << std::endl;
-            return graphicsResult;
-        }
-        slot.graphicsSubmittedThisLap = true;
+    if (computeResult == VK_SUCCESS) {
+        slot.computeSubmittedThisLap = true;
+        slot.computePresentedThisLap = true;
+    } else {
+        std::cerr << "[SUBMIT] COMPUTE BATCH failed VkResult=" << static_cast<int>(computeResult)
+                  << " frame=" << currentFrame << std::endl;
+        return computeResult;
     }
 
     return VK_SUCCESS;
 }
 
-VkResult FrameSync::submitCompute(VkQueue computeQueue, const FrameSubmission& submission) {
-    FrameSubmission computeSubmission = submission;
-    computeSubmission.graphicsCommandBuffer = VK_NULL_HANDLE;
-    computeSubmission.waitForComputeSemaphore = false;
-    return submitFrame(computeQueue, VK_NULL_HANDLE, VK_NULL_HANDLE, 0, computeSubmission);
-}
-
-VkResult FrameSync::present(VkQueue presentQueue, VkSwapchainKHR swapChain, uint32_t imageIndex) const {
-    if (presentQueue == VK_NULL_HANDLE || swapChain == VK_NULL_HANDLE || currentFrame >= frameSlots.size()) {
-        return VK_ERROR_INITIALIZATION_FAILED;
-    }
-
-    VkPresentInfoKHR presentInfo{};
-    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = &frameSlots[currentFrame].renderFinishedSemaphore;
-    presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = &swapChain;
-    presentInfo.pImageIndices = &imageIndex;
-
-    return vkQueuePresentKHR(presentQueue, &presentInfo);
-}
-
-void FrameSync::advanceFrame() {
-    if (frameCount == 0) {
-        return;
-    }
-
-    currentFrame = (currentFrame + 1) % frameCount;
-}
-
-void FrameSync::resetFrameIndex() {
-    currentFrame = 0;
-
-    for (FrameSlot& slot : frameSlots) {
-        slot.graphicsSubmittedThisLap = true;
-        slot.computeSubmittedThisLap = true;
-    }
-}

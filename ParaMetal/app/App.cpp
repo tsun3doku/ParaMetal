@@ -79,7 +79,7 @@ int App::initializePresentation() {
     qRegisterMetaType<std::vector<NodeGraphNodeId>>();
 
     QSurfaceFormat surfaceFormat = window.format();
-    surfaceFormat.setSwapInterval(0);
+    surfaceFormat.setSwapInterval(1);
     window.setFormat(surfaceFormat);
     window.setGraphicsConfiguration(graphicsConfiguration);
     window.setResizeMode(QQuickView::SizeRootObjectToView);
@@ -109,6 +109,11 @@ int App::initializePresentation() {
     if (!viewport) return 4;
 
     viewport->bindRuntime(runtimeSystems, runtimeNotifier);
+    // Presentation telemetry: the composition root wires the window's swap
+    // signal into the runtime, keeping the UI layer unaware of frame timing.
+    QObject::connect(&window, &QQuickWindow::frameSwapped, [this] {
+        runtimeSystems.noteFramePresented();
+    });
     connectUi(*viewport, *graphHost);
     connectRuntime(*graphHost);
     connectGraph(*viewport, *graphHost);

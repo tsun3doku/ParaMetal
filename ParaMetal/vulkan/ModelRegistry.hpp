@@ -59,8 +59,11 @@ private:
 
 	MemoryAllocator& memoryAllocator;
 
-	std::unordered_map<uint32_t, std::unique_ptr<Model>> models;
-	std::unordered_set<uint32_t> visibleModelIds;
+    std::unordered_map<uint32_t, std::unique_ptr<Model>> models;
+    // Models removed from the registry stay alive until shutdown: published
+    // ModelProducts may still reference their buffers until the global quiesce.
+    std::vector<std::unique_ptr<Model>> retainedModels;
+    std::unordered_set<uint32_t> visibleModelIds;
 	std::vector<uint32_t> recycledModelIds;
 	uint32_t nextModelId = 1;
 };

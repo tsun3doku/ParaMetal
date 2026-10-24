@@ -5,6 +5,7 @@
 #include "../../cuda/CudaBuffer.cuh"
 #include "../../cuda/CudaCheck.cuh"
 #include "../../cuda/CudaPcg.cuh"
+#include "../../cuda/CudaGraphBuilder.cuh"
 #include "../../cuda/CudaExternalBuffer.hpp"
 #include "../../cuda/CudaVulkanDevice.hpp"
 #include "../../vulkan/VulkanDevice.hpp"
@@ -14,6 +15,7 @@
 #include <vulkan/vulkan_win32.h>
 
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <vector>
 
@@ -22,36 +24,51 @@ public:
     struct DeviceTemperatureNodes {
         float* d_temperatureA = nullptr;
         float* d_temperatureB = nullptr;
-        cudaUtils::CudaBuffer<uint32_t> localNodeIds;
-        uint32_t solverNodeOffset = 0;
-        uint32_t nodeCount = 0;
+        cudaUtils::CudaBuffer<uint32_t> gatherOffsets;
+        cudaUtils::CudaBuffer<uint32_t> gatherLocalNodeIds;
+        cudaUtils::CudaBuffer<float> gatherWeights;
+        cudaUtils::CudaBuffer<uint32_t> gatherSolverNodeIds;
+        cudaUtils::CudaBuffer<uint32_t> scatterLocalNodeIds;
+        cudaUtils::CudaBuffer<uint32_t> scatterSolverNodeIds;
+        uint32_t gatherGroupCount = 0;
+        uint32_t scatterCount = 0;
     };
 
     ~Implementation() { cleanup(); }
 
     bool initialize(
         VulkanDevice& vulkanDevice,
-        const std::vector<int>& rowOffsets,
-        const std::vector<int>& columnIndices,
-        const std::vector<float>& values,
-        const std::vector<float>& masses,
+        const vem::VEMTraceSystem& traceSystem,
+        const std::vector<float>& cellCapacityOverDt,
+        const std::vector<float>& cellSourceAdditions,
         const std::vector<TemperatureNodes>& inputTemperatureNodes,
-        const std::vector<float>& rhsAdditions) {
+        const std::vector<float>& fixedCellTemperatures = {}) {
         cleanup();
-        if (masses.empty() || rowOffsets.size() != masses.size() + 1 ||
-            columnIndices.size() != values.size() || inputTemperatureNodes.empty() ||
-            (!rhsAdditions.empty() && rhsAdditions.size() != masses.size())) {
+        if (traceSystem.traceCount == 0 || traceSystem.cellCount == 0 ||
+            cellCapacityOverDt.size() != traceSystem.cellCount ||
+            traceSystem.rowOffsets.size() != traceSystem.traceCount + 1 ||
+            traceSystem.columnIndices.size() != traceSystem.values.size() ||
+            inputTemperatureNodes.empty()) {
             return false;
         }
 
         device = vulkanDevice.getDevice();
-        nodeCount = static_cast<uint32_t>(masses.size());
+        cellCount = traceSystem.cellCount;
+        traceCount = traceSystem.traceCount;
+        matrixValueCount = static_cast<uint32_t>(traceSystem.values.size());
 
         cudaDevice = cudaVulkan::findDevice(vulkanDevice.getPhysicalDevice());
         if (cudaDevice < 0 || !cudaUtils::cudaCheck(cudaSetDevice(cudaDevice), "cudaSetDevice")) return false;
 
         if (!cudaUtils::cudaCheck(cudaStreamCreateWithFlags(&solveStream, cudaStreamNonBlocking), "create solveStream") ||
-            !cudaUtils::cudaCheck(cudaEventCreateWithFlags(&solveCompleteEvent, cudaEventDisableTiming), "create completeEvent")) {
+            !cudaUtils::cudaCheck(cudaEventCreate(&solveStartEvent), "create solveStartEvent") ||
+            !cudaUtils::cudaCheck(cudaEventCreate(&solveEndEvent), "create solveEndEvent")) {
+            cleanup();
+            return false;
+        }
+
+        if (!cudaUtils::cudaCheck(cudaMallocHost(reinterpret_cast<void**>(&pinnedPcgStatus), sizeof(cudaPcg::PcgStatus)), "alloc pinned PCG status") ||
+            !cudaUtils::cudaCheck(cudaMallocHost(reinterpret_cast<void**>(&pinnedAdvectionTimestep), sizeof(cudaSubcycle::SubcycleTimestep)), "alloc pinned advection timestep")) {
             cleanup();
             return false;
         }
@@ -81,63 +98,160 @@ public:
             auto& devNode = temperatureNodes.back();
             devNode.d_temperatureA = inputNode.temperatureA->getPointer();
             devNode.d_temperatureB = inputNode.temperatureB->getPointer();
-            devNode.solverNodeOffset = inputNode.solverNodeOffset;
-            devNode.nodeCount = static_cast<uint32_t>(inputNode.localNodeIds.size());
+            devNode.gatherGroupCount = static_cast<uint32_t>(inputNode.gatherSolverNodeIds.size());
+            devNode.scatterCount = static_cast<uint32_t>(inputNode.scatterLocalNodeIds.size());
+            if (inputNode.gatherOffsets.size() != size_t(devNode.gatherGroupCount) + 1 ||
+                inputNode.gatherLocalNodeIds.size() != inputNode.gatherWeights.size() ||
+                inputNode.gatherLocalNodeIds.empty() ||
+                inputNode.scatterLocalNodeIds.size() != inputNode.scatterSolverNodeIds.size() ||
+                inputNode.gatherOffsets.back() != inputNode.gatherLocalNodeIds.size()) {
+                cleanup();
+                return false;
+            }
 
-            if (devNode.nodeCount > 0) {
-                if (!devNode.localNodeIds.allocate(devNode.nodeCount) ||
-                    !devNode.localNodeIds.upload(inputNode.localNodeIds.data(), devNode.nodeCount)) {
+            if (devNode.gatherGroupCount > 0 && devNode.scatterCount > 0) {
+                if (!devNode.gatherOffsets.allocate(static_cast<uint32_t>(inputNode.gatherOffsets.size())) ||
+                    !devNode.gatherOffsets.upload(inputNode.gatherOffsets.data(), static_cast<uint32_t>(inputNode.gatherOffsets.size())) ||
+                    !devNode.gatherLocalNodeIds.allocate(static_cast<uint32_t>(inputNode.gatherLocalNodeIds.size())) ||
+                    !devNode.gatherLocalNodeIds.upload(inputNode.gatherLocalNodeIds.data(), static_cast<uint32_t>(inputNode.gatherLocalNodeIds.size())) ||
+                    !devNode.gatherWeights.allocate(static_cast<uint32_t>(inputNode.gatherWeights.size())) ||
+                    !devNode.gatherWeights.upload(inputNode.gatherWeights.data(), static_cast<uint32_t>(inputNode.gatherWeights.size())) ||
+                    !devNode.gatherSolverNodeIds.allocate(devNode.gatherGroupCount) ||
+                    !devNode.gatherSolverNodeIds.upload(inputNode.gatherSolverNodeIds.data(), devNode.gatherGroupCount) ||
+                    !devNode.scatterLocalNodeIds.allocate(devNode.scatterCount) ||
+                    !devNode.scatterLocalNodeIds.upload(inputNode.scatterLocalNodeIds.data(), devNode.scatterCount) ||
+                    !devNode.scatterSolverNodeIds.allocate(devNode.scatterCount) ||
+                    !devNode.scatterSolverNodeIds.upload(inputNode.scatterSolverNodeIds.data(), devNode.scatterCount)) {
                     cleanup();
                     return false;
                 }
+            } else if (devNode.gatherGroupCount != 0 || devNode.scatterCount != 0) {
+                cleanup();
+                return false;
             }
         }
 
-        // Allocate CSR matrix and vector memory
-        matrixValueCount = static_cast<uint32_t>(values.size());
-
-        if (!d_rowOffsets.allocate(static_cast<uint32_t>(rowOffsets.size())) ||
+        // Allocate CSR matrix and trace vector memory
+        if (!d_rowOffsets.allocate(static_cast<uint32_t>(traceSystem.rowOffsets.size())) ||
             !d_columnIndices.allocate(matrixValueCount) ||
             !d_values.allocate(matrixValueCount) ||
-            !d_invDiag.allocate(nodeCount) ||
-            !d_thermalMasses.allocate(nodeCount) ||
-            !d_rhsAdditions.allocate(nodeCount) ||
-            !d_rhs.allocate(nodeCount) ||
-            !d_x.allocate(nodeCount) ||
-            !d_r.allocate(nodeCount) ||
-            !d_z.allocate(nodeCount) ||
-            !d_p.allocate(nodeCount) ||
-            !d_Ap.allocate(nodeCount) ||
-            !d_status.allocate(1)) {
+            !d_invDiag.allocate(traceCount) ||
+            !d_traceRhs.allocate(traceCount) ||
+            !d_traceSolution.allocate(traceCount) ||
+            !d_r.allocate(traceCount) ||
+            !d_z.allocate(traceCount) ||
+            !d_p.allocate(traceCount) ||
+            !d_Ap.allocate(traceCount) ||
+            !d_status.allocate(1) ||
+            !d_config.allocate(1) ||
+            !d_traceIsDirichlet.allocate(traceCount) ||
+            !d_traceDirichletValue.allocate(traceCount) ||
+            !d_fixedCellTemperatures.allocate(cellCount)) {
             cleanup();
             return false;
         }
 
-        if (!d_rowOffsets.upload(rowOffsets.data(), static_cast<uint32_t>(rowOffsets.size())) ||
-            !d_columnIndices.upload(columnIndices.data(), matrixValueCount) ||
-            !d_values.upload(values.data(), matrixValueCount) ||
-            !d_thermalMasses.upload(masses.data(), nodeCount)) {
+        // Zero PCG warm-start vector while remaining scratch is overwritten before use
+        if (!cudaUtils::cudaCheck(cudaMemset(d_traceSolution.get(), 0, traceCount * sizeof(float)), "zero d_traceSolution")) {
             cleanup();
             return false;
         }
 
-        if (!rhsAdditions.empty()) {
-            if (!d_rhsAdditions.upload(rhsAdditions.data(), nodeCount)) {
+        // Allocate Cell memory
+        if (!d_cellState.allocate(cellCount) ||
+            !d_cellCapacityOverDt.allocate(cellCount) ||
+            !d_cellSourceAdditions.allocate(cellCount) ||
+            !d_cellSource.allocate(cellCount)) {
+            cleanup();
+            return false;
+        }
+
+        // Allocate VEM Recovery & Scatter memory
+        const uint32_t totalCellTraceEntries = static_cast<uint32_t>(traceSystem.cellTraceIndices.size());
+        const uint32_t totalScatterEntries = static_cast<uint32_t>(traceSystem.traceScatterCells.size());
+
+        if (!d_cellRecoveryScale.allocate(cellCount) ||
+            !d_cellTraceOffsets.allocate(static_cast<uint32_t>(traceSystem.cellTraceOffsets.size())) ||
+            !d_cellTraceIndices.allocate(totalCellTraceEntries) ||
+            !d_cellTraceWeights.allocate(totalCellTraceEntries) ||
+            !d_traceScatterOffsets.allocate(static_cast<uint32_t>(traceSystem.traceScatterOffsets.size())) ||
+            !d_traceScatterCells.allocate(totalScatterEntries) ||
+            !d_traceScatterWeights.allocate(totalScatterEntries) ||
+            !d_traceBoundaryRhs.allocate(traceCount)) {
+            cleanup();
+            return false;
+        }
+
+        // Upload CSR data
+        if (!d_rowOffsets.upload(traceSystem.rowOffsets.data(), static_cast<uint32_t>(traceSystem.rowOffsets.size())) ||
+            !d_columnIndices.upload(traceSystem.columnIndices.data(), matrixValueCount) ||
+            !d_values.upload(traceSystem.values.data(), matrixValueCount)) {
+            cleanup();
+            return false;
+        }
+
+        // Upload Cell data
+        if (!d_cellCapacityOverDt.upload(cellCapacityOverDt.data(), cellCount)) {
+            cleanup();
+            return false;
+        }
+        if (!cellSourceAdditions.empty()) {
+            if (!d_cellSourceAdditions.upload(cellSourceAdditions.data(), cellCount)) {
+                cleanup();
+                return false;
+            }
+        } else if (!cudaUtils::cudaCheck(cudaMemset(d_cellSourceAdditions.get(), 0, cellCount * sizeof(float)), "zero d_cellSourceAdditions")) {
+            cleanup();
+            return false;
+        }
+
+        // Upload VEM Recovery & Scatter data
+        if (!d_cellRecoveryScale.upload(traceSystem.cellRecoveryScale.data(), cellCount) ||
+            !d_cellTraceOffsets.upload(traceSystem.cellTraceOffsets.data(), static_cast<uint32_t>(traceSystem.cellTraceOffsets.size())) ||
+            !d_cellTraceIndices.upload(traceSystem.cellTraceIndices.data(), totalCellTraceEntries) ||
+            !d_cellTraceWeights.upload(traceSystem.cellTraceWeights.data(), totalCellTraceEntries) ||
+            !d_traceScatterOffsets.upload(traceSystem.traceScatterOffsets.data(), static_cast<uint32_t>(traceSystem.traceScatterOffsets.size())) ||
+            !d_traceScatterCells.upload(traceSystem.traceScatterCells.data(), totalScatterEntries) ||
+            !d_traceScatterWeights.upload(traceSystem.traceScatterWeights.data(), totalScatterEntries) ||
+            !d_traceBoundaryRhs.upload(traceSystem.traceBoundaryRhs.data(), traceCount)) {
+            cleanup();
+            return false;
+        }
+
+        // Dirichlet buffers preallocated before graph capture; sentinels represent inactive entries
+        if (!traceSystem.traceIsDirichlet.empty()) {
+            if (!d_traceIsDirichlet.upload(traceSystem.traceIsDirichlet.data(), traceCount) ||
+                !d_traceDirichletValue.upload(traceSystem.traceDirichletValue.data(), traceCount)) {
+                cleanup();
+                return false;
+            }
+        } else if (!cudaUtils::cudaCheck(cudaMemset(d_traceIsDirichlet.get(), 0, traceCount * sizeof(uint8_t)), "zero d_traceIsDirichlet") ||
+                   !cudaUtils::cudaCheck(cudaMemset(d_traceDirichletValue.get(), 0, traceCount * sizeof(float)), "zero d_traceDirichletValue")) {
+            cleanup();
+            return false;
+        }
+        if (!fixedCellTemperatures.empty()) {
+            if (!d_fixedCellTemperatures.upload(fixedCellTemperatures.data(), cellCount)) {
                 cleanup();
                 return false;
             }
         } else {
-            if (!cudaUtils::cudaCheck(cudaMemset(d_rhsAdditions.get(), 0, nodeCount * sizeof(float)), "zero d_rhsAdditions")) {
-                cleanup();
-                return false;
-            }
+            const uint32_t cellBlocks = (cellCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
+            heat::globalsolver::fillNaNKernel<<<cellBlocks, heat::globalsolver::BlockSize, 0, solveStream>>>(cellCount, d_fixedCellTemperatures.get());
         }
 
-        // Compute initial Jacobi inverse diagonal
-        const uint32_t gridNodes = (nodeCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
-        heat::globalsolver::computeInvDiagKernel<<<gridNodes, heat::globalsolver::BlockSize, 0, solveStream>>>(
-            nodeCount, d_rowOffsets.get(), d_columnIndices.get(), d_values.get(), d_invDiag.get());
+        // Compute initial Jacobi inverse diagonal over traceCount
+        const uint32_t gridTraces = (traceCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
+        heat::globalsolver::computeInvDiagKernel<<<gridTraces, heat::globalsolver::BlockSize, 0, solveStream>>>(
+            traceCount, d_rowOffsets.get(), d_columnIndices.get(), d_values.get(), d_invDiag.get());
         if (!cudaUtils::cudaCheck(cudaStreamSynchronize(solveStream), "computeInvDiagKernel")) {
+            cleanup();
+            return false;
+        }
+
+        // Upload the graph-independent PCG parameters before graph construction.
+        cudaPcg::PcgConfig initialConfig{ solverMaxIterations, solverConvergenceTolerance };
+        if (!d_config.upload(&initialConfig, 1)) {
             cleanup();
             return false;
         }
@@ -146,99 +260,180 @@ public:
 
         // Build execution graphs
         if (!buildGraphs()) {
-            std::cerr << "[HeatGlobalSolver] Graph construction failed; using direct stream launch." << std::endl;
+            std::cerr << "[HeatGlobalSolver] Graph construction failed." << std::endl;
+            cleanup();
+            return false;
         }
 
         return true;
     }
 
     bool updateValues(
-        const std::vector<float>& values,
-        const std::vector<float>& masses,
-        const std::vector<float>& rhsAdditions) {
+        const vem::VEMTraceSystem& traceSystem,
+        const std::vector<float>& cellCapacityOverDt,
+        const std::vector<float>& cellSourceAdditions,
+        const std::vector<float>& fixedCellTemperatures = {}) {
         if (!initialized) return false;
         waitIdle();
         cudaSetDevice(cudaDevice);
 
-        if (values.size() != matrixValueCount || masses.size() != nodeCount ||
-            (!rhsAdditions.empty() && rhsAdditions.size() != nodeCount)) {
+        if (traceSystem.traceCount != traceCount || traceSystem.cellCount != cellCount ||
+            traceSystem.values.size() != matrixValueCount || cellCapacityOverDt.size() != cellCount) {
             return false;
         }
 
-        if (!d_values.upload(values.data(), matrixValueCount)) {
+        if (!d_values.uploadAsync(traceSystem.values.data(), matrixValueCount, solveStream)) {
             return false;
         }
 
-        if (!d_thermalMasses.uploadAsync(masses.data(), nodeCount, solveStream)) {
+        if (!d_cellCapacityOverDt.uploadAsync(cellCapacityOverDt.data(), cellCount, solveStream)) {
             return false;
         }
 
-        if (!rhsAdditions.empty()) {
-            if (!d_rhsAdditions.uploadAsync(rhsAdditions.data(), nodeCount, solveStream)) {
+        if (!cellSourceAdditions.empty()) {
+            if (!d_cellSourceAdditions.uploadAsync(cellSourceAdditions.data(), cellCount, solveStream)) {
                 return false;
             }
+        } else if (!cudaUtils::cudaCheck(cudaMemsetAsync(d_cellSourceAdditions.get(), 0, cellCount * sizeof(float), solveStream), "clear d_cellSourceAdditions")) {
+            return false;
+        }
+
+        if (!d_cellRecoveryScale.uploadAsync(traceSystem.cellRecoveryScale.data(), cellCount, solveStream)) {
+            return false;
+        }
+        if (!d_cellTraceWeights.uploadAsync(traceSystem.cellTraceWeights.data(), static_cast<uint32_t>(traceSystem.cellTraceWeights.size()), solveStream)) {
+            return false;
+        }
+        if (!d_traceScatterWeights.uploadAsync(traceSystem.traceScatterWeights.data(), static_cast<uint32_t>(traceSystem.traceScatterWeights.size()), solveStream)) {
+            return false;
+        }
+        if (!d_traceBoundaryRhs.uploadAsync(traceSystem.traceBoundaryRhs.data(), traceCount, solveStream)) {
+            return false;
+        }
+
+        // Refresh constraint buffers via sentinels without reallocating captured memory
+        if (!traceSystem.traceIsDirichlet.empty()) {
+            if (!d_traceIsDirichlet.uploadAsync(traceSystem.traceIsDirichlet.data(), traceCount, solveStream) ||
+                !d_traceDirichletValue.uploadAsync(traceSystem.traceDirichletValue.data(), traceCount, solveStream)) {
+                return false;
+            }
+        } else if (!cudaUtils::cudaCheck(cudaMemsetAsync(d_traceIsDirichlet.get(), 0, traceCount * sizeof(uint8_t), solveStream), "clear d_traceIsDirichlet") ||
+                   !cudaUtils::cudaCheck(cudaMemsetAsync(d_traceDirichletValue.get(), 0, traceCount * sizeof(float), solveStream), "clear d_traceDirichletValue")) {
+            return false;
+        }
+
+        if (!fixedCellTemperatures.empty()) {
+            if (!d_fixedCellTemperatures.uploadAsync(fixedCellTemperatures.data(), cellCount, solveStream)) return false;
         } else {
-            if (!cudaUtils::cudaCheck(cudaMemsetAsync(d_rhsAdditions.get(), 0, nodeCount * sizeof(float), solveStream), "zero d_rhsAdditions")) {
-                return false;
-            }
+            const uint32_t cellBlocks = (cellCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
+            heat::globalsolver::fillNaNKernel<<<cellBlocks, heat::globalsolver::BlockSize, 0, solveStream>>>(cellCount, d_fixedCellTemperatures.get());
         }
 
-        const uint32_t gridNodes = (nodeCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
-        heat::globalsolver::computeInvDiagKernel<<<gridNodes, heat::globalsolver::BlockSize, 0, solveStream>>>(
-            nodeCount, d_rowOffsets.get(), d_columnIndices.get(), d_values.get(), d_invDiag.get());
+        const uint32_t gridTraces = (traceCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
+        heat::globalsolver::computeInvDiagKernel<<<gridTraces, heat::globalsolver::BlockSize, 0, solveStream>>>(
+            traceCount, d_rowOffsets.get(), d_columnIndices.get(), d_values.get(), d_invDiag.get());
 
         return cudaUtils::cudaCheck(cudaStreamSynchronize(solveStream), "sync updateValues");
     }
 
     bool configureAdvectionTopology(
+        uint32_t inFaceCount,
+        uint32_t inBoundaryFaceCount,
         const std::vector<heat::AdvectionFace>& faces,
         const std::vector<heat::AdvectionBoundaryFace>& boundaryFaces,
         const float* deviceFaceFlux,
-        const float* deviceBoundaryFlux) {
+        const float* deviceBoundaryFlux,
+        const std::vector<float>& cellVolumes) {
         if (!initialized) return false;
+        if (inFaceCount == 0 || !deviceFaceFlux) return false;
+        if (faces.size() != inFaceCount || boundaryFaces.size() != inBoundaryFaceCount) return false;
+        if (cellVolumes.size() != cellCount) return false;
         waitIdle();
         cudaSetDevice(cudaDevice);
 
-        advectionFaceCount = static_cast<uint32_t>(faces.size());
-        advectionBoundaryFaceCount = static_cast<uint32_t>(boundaryFaces.size());
+        disableAdvection();
+
+        // Reject non-positive or non-finite cell volumes immediately
+        std::vector<float> invVolumes(cellCount, 0.0f);
+        for (uint32_t c = 0; c < cellCount; ++c) {
+            const float volume = cellVolumes[c];
+            if (!(volume > 0.0f) || !std::isfinite(volume)) {
+                std::cerr << "[HeatGlobalSolver] configureAdvectionTopology: invalid cell volume at " << c
+                          << ": " << volume << std::endl;
+                disableAdvection();
+                return false;
+            }
+            invVolumes[c] = 1.0f / volume;
+        }
+
+        advectionFaceCount = inFaceCount;
+        advectionBoundaryFaceCount = inBoundaryFaceCount;
         d_advectionFaceFlux = deviceFaceFlux;
         d_advectionBoundaryFlux = deviceBoundaryFlux;
 
         d_advectionFaces.reset();
-        if (advectionFaceCount > 0) {
-            if (!d_advectionFaces.allocate(advectionFaceCount) ||
-                !d_advectionFaces.uploadAsync(faces.data(), advectionFaceCount, solveStream)) {
-                return false;
-            }
-        }
-
         d_advectionBoundaryFaces.reset();
-        if (advectionBoundaryFaceCount > 0) {
-            if (!d_advectionBoundaryFaces.allocate(advectionBoundaryFaceCount) ||
-                !d_advectionBoundaryFaces.uploadAsync(boundaryFaces.data(), advectionBoundaryFaceCount, solveStream)) {
+        d_cellInvVolumes.reset();
+        d_advectionDeltaT.reset();
+        d_advectionOutflow.reset();
+        d_advectionMaxRate.reset();
+        d_advectionInvalid.reset();
+        d_advectionTimestep.reset();
+        d_advectionMacroDt.reset();
+        d_advectionIter.reset();
+        d_inflowTemperatures.reset();
+        if (!d_advectionFaces.allocate(inFaceCount) ||
+            !d_advectionFaces.uploadAsync(faces.data(), inFaceCount, solveStream)) {
+            disableAdvection();
+            return false;
+        }
+        if (inBoundaryFaceCount > 0) {
+            if (!d_advectionBoundaryFaces.allocate(inBoundaryFaceCount) ||
+                !d_advectionBoundaryFaces.uploadAsync(boundaryFaces.data(), inBoundaryFaceCount, solveStream)) {
+                disableAdvection();
                 return false;
             }
         }
-
-        if (nodeCount > 0) {
-            if (d_advectionDeltaT.size() < nodeCount && !d_advectionDeltaT.allocate(nodeCount)) {
-                return false;
-            }
-            if (!cudaUtils::cudaCheck(cudaMemsetAsync(d_advectionDeltaT.get(), 0, nodeCount * sizeof(float), solveStream), "zero d_advectionDeltaT")) {
-                return false;
-            }
+        if (!d_cellInvVolumes.allocate(cellCount) ||
+            !d_cellInvVolumes.uploadAsync(invVolumes.data(), cellCount, solveStream) ||
+            !d_advectionDeltaT.allocate(cellCount) ||
+            !d_advectionOutflow.allocate(cellCount) ||
+            !d_advectionMaxRate.allocate(1) ||
+            !d_advectionInvalid.allocate(1) ||
+            !d_advectionTimestep.allocate(1) ||
+            !d_advectionMacroDt.allocate(1) ||
+            !d_advectionIter.allocate(1) ||
+            !d_inflowTemperatures.allocate(6) ||
+            !cudaUtils::cudaCheck(cudaMemsetAsync(d_advectionMacroDt.get(), 0, sizeof(float), solveStream), "zero d_advectionMacroDt")) {
+            disableAdvection();
+            return false;
         }
 
-        return cudaUtils::cudaCheck(cudaStreamSynchronize(solveStream), "sync configureAdvectionTopology");
+        if (!cudaUtils::cudaCheck(cudaStreamSynchronize(solveStream), "sync configureAdvectionTopology")) {
+            disableAdvection();
+            return false;
+        }
+
+        if (!buildAdvectionGraph()) {
+            disableAdvection();
+            return false;
+        }
+        return true;
     }
 
-    void updateAdvectionStep(
-        float inletTemperatureC,
-        uint32_t subcycleCount,
-        float subcycleDt) {
-        advectionInletTemperatureC = inletTemperatureC;
-        advectionSubcycleCount = std::max(1u, subcycleCount);
-        advectionSubcycleDt = subcycleDt;
+    bool updateAdvectionStep(
+        const float* inflowTemperaturesC,
+        float stepDt) {
+        if (inflowTemperaturesC && d_inflowTemperatures.get() &&
+            !d_inflowTemperatures.uploadAsync(inflowTemperaturesC, 6, solveStream)) {
+            std::cerr << "[HeatGlobalSolver] inflow temperature upload failed" << std::endl;
+            return false;
+        }
+        if (d_advectionMacroDt.get() && !d_advectionMacroDt.uploadAsync(&stepDt, 1, solveStream)) {
+            std::cerr << "[HeatGlobalSolver] advection macro dt upload failed" << std::endl;
+            return false;
+        }
+        return true;
     }
 
     bool launch(
@@ -248,7 +443,11 @@ public:
         if (!initialized) return false;
         cudaSetDevice(cudaDevice);
 
-        // Wait for Vulkan to finish reading the destination buffer before overwriting
+        if (solveStartEvent) {
+            cudaEventRecord(solveStartEvent, solveStream);
+        }
+
+        // Wait for destination buffer last reader or current frame flux staging copy
         if (destinationVulkanReleaseValue > 0) {
             cudaExternalSemaphoreWaitParams waitParams{};
             waitParams.params.fence.value = destinationVulkanReleaseValue;
@@ -257,52 +456,42 @@ public:
             }
         }
 
-        const uint32_t gridNodes = (nodeCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
+        // Everything from here on is GPU compute enqueued on the solve stream.
 
-        // Gather source temperature into d_x
+        // Gather source temperature into d_cellState
         for (const auto& node : temperatureNodes) {
-            const uint32_t blocks = (node.nodeCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
+            const uint32_t blocks = (node.gatherGroupCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
             heat::globalsolver::gatherTemperaturesKernel<<<blocks, heat::globalsolver::BlockSize, 0, solveStream>>>(
                 sourceIsA ? node.d_temperatureA : node.d_temperatureB,
-                node.localNodeIds.get(), node.nodeCount, node.solverNodeOffset,
-                d_x.get());
+                node.gatherOffsets.get(),
+                node.gatherLocalNodeIds.get(),
+                node.gatherWeights.get(),
+                node.gatherSolverNodeIds.get(),
+                node.gatherGroupCount,
+                d_cellState.get());
         }
 
-        // Subcycled explicit upwind advection on fluid temperature components of d_x
-        if ((advectionFaceCount > 0 || advectionBoundaryFaceCount > 0) && d_advectionDeltaT.get()) {
-            const uint32_t faceBlocks = (advectionFaceCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
-            const uint32_t bfaceBlocks = (advectionBoundaryFaceCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
-
-            for (uint32_t sub = 0; sub < advectionSubcycleCount; ++sub) {
-                if (advectionFaceCount > 0 && d_advectionFaceFlux) {
-                    heat::globalsolver::advectFluidKernel<<<faceBlocks, heat::globalsolver::BlockSize, 0, solveStream>>>(
-                        advectionFaceCount, d_advectionFaces.get(), d_advectionFaceFlux, d_advectionDeltaT.get(), d_x.get(), advectionSubcycleDt);
-                }
-                if (advectionBoundaryFaceCount > 0 && d_advectionBoundaryFlux) {
-                    heat::globalsolver::advectBoundaryKernel<<<bfaceBlocks, heat::globalsolver::BlockSize, 0, solveStream>>>(
-                        advectionBoundaryFaceCount, d_advectionBoundaryFaces.get(), d_advectionBoundaryFlux, d_advectionDeltaT.get(), d_x.get(), advectionInletTemperatureC, advectionSubcycleDt);
-                }
-                heat::globalsolver::applyAdvectionUpdatesKernel<<<gridNodes, heat::globalsolver::BlockSize, 0, solveStream>>>(
-                    nodeCount, d_x.get(), d_advectionDeltaT.get());
-            }
-        }
-
-        // Build authoritative RHS: rhs = thermalMasses * x + rhsAdditions
-        heat::globalsolver::buildRhsKernel<<<gridNodes, heat::globalsolver::BlockSize, 0, solveStream>>>(
-            nodeCount, d_thermalMasses.get(), d_x.get(), d_rhsAdditions.get(), d_rhs.get());
-
-        // Launch the PCG solver graph
-        cudaGraphExec_t graphExec = sourceIsA ? graphExecAToB : graphExecBToA;
-        if (graphExec) {
-            if (!cudaUtils::cudaCheck(cudaGraphLaunch(graphExec, solveStream), "launch CUDA graph")) {
+        // Launch device-controlled conditional subcycle graph for fine conservative advection
+        if (advectionExec) {
+            if (!cudaUtils::cudaCheck(cudaGraphLaunch(advectionExec, solveStream), "launch advection graph")) {
                 return false;
             }
-        } else {
-            recordPcgSequence(sourceIsA, solveStream);
         }
 
-        // Record completion polling event
-        cudaEventRecord(solveCompleteEvent, solveStream);
+        // Three ordered launches on solveStream: prologue, PCG loop, recovery + scatter. Stream order supplies the dependencies.
+        if (!preExec || !pcgExec || !postExecAToB || !postExecBToA) {
+            std::cerr << "[HeatGlobalSolver] solve graphs are not built" << std::endl;
+            return false;
+        }
+        if (!cudaUtils::cudaCheck(cudaGraphLaunch(preExec, solveStream), "launch pre graph")) {
+            return false;
+        }
+        if (!cudaUtils::cudaCheck(cudaGraphLaunch(pcgExec, solveStream), "launch pcg graph")) {
+            return false;
+        }
+        if (!cudaUtils::cudaCheck(cudaGraphLaunch(sourceIsA ? postExecAToB : postExecBToA, solveStream), "launch post graph")) {
+            return false;
+        }
 
         // Signal CUDA ready semaphore
         if (cudaReadyValue > 0) {
@@ -313,22 +502,39 @@ public:
             }
         }
 
+        // Asynchronously download solve status to pinned memory on solve stream
+        if (advectionFaceCount > 0 && d_advectionTimestep.get() && pinnedAdvectionTimestep &&
+            !d_advectionTimestep.downloadAsync(pinnedAdvectionTimestep, 1, solveStream)) {
+            return false;
+        }
+        if (d_status.get() && pinnedPcgStatus && !d_status.downloadAsync(pinnedPcgStatus, 1, solveStream)) {
+            return false;
+        }
+
+        // Record solve completion event after all graph launches and staging copies
+        if (solveEndEvent) {
+            cudaEventRecord(solveEndEvent, solveStream);
+        }
+
         return true;
     }
 
-    SolvePollResult poll() const {
-        if (!initialized || !solveCompleteEvent) return SolvePollResult::Complete;
-        const cudaError_t status = cudaEventQuery(solveCompleteEvent);
-        if (status == cudaSuccess) {
-            return SolvePollResult::Complete;
+        SolvePollResult poll() const {
+            const cudaError_t status = cudaEventQuery(solveEndEvent);
+            if (status == cudaSuccess) {
+                float elapsedMs = 0.0f;
+                if (cudaEventElapsedTime(&elapsedMs, solveStartEvent, solveEndEvent) == cudaSuccess) {
+                    lastSolveMs = double(elapsedMs);
+                }
+                return SolvePollResult::Complete;
+            }
+            if (status == cudaErrorNotReady) {
+                return SolvePollResult::Pending;
+            }
+            std::cerr << "[HeatGlobalSolver] async solve failed: "
+                      << cudaGetErrorString(status) << std::endl;
+            return SolvePollResult::Failed;
         }
-        if (status == cudaErrorNotReady) {
-            return SolvePollResult::Pending;
-        }
-        std::cerr << "[HeatGlobalSolver] async solve failed: "
-                  << cudaGetErrorString(status) << std::endl;
-        return SolvePollResult::Failed;
-    }
 
     void waitIdle() {
         if (solveStream) {
@@ -336,25 +542,64 @@ public:
         }
     }
 
-    bool hasSolveFailed() const {
-        if (!d_status.get()) return false;
-        cudaPcg::PcgStatus hostStatus{};
-        if (cudaMemcpy(&hostStatus, d_status.get(), sizeof(cudaPcg::PcgStatus), cudaMemcpyDeviceToHost) == cudaSuccess) {
-            return hostStatus.failed != 0 ||
-                   (hostStatus.converged == 0 &&
-                    hostStatus.iterationCount >= heat::globalsolver::MaxIterations);
+    bool hasSolveFailed() {
+        // Check pinned advection and PCG completion status to reject failed steps
+        if (advectionFaceCount > 0 && d_advectionTimestep.get() && pinnedAdvectionTimestep) {
+            const cudaSubcycle::SubcycleTimestep& timestep = *pinnedAdvectionTimestep;
+            if (timestep.status != cudaSubcycle::SubcycleStatus::Ok) {
+                std::cerr << "[HeatGlobalSolver] advection step rejected: status="
+                          << static_cast<uint32_t>(timestep.status) << std::endl;
+                return true;
+            }
         }
-        return false;
+
+        if (!d_status.get() || !pinnedPcgStatus) return false;
+        const cudaPcg::PcgStatus& hostStatus = *pinnedPcgStatus;
+
+        const bool breakdown = hostStatus.failed != 0;
+        const bool nonConverged = hostStatus.converged == 0 &&
+                                  hostStatus.iterationCount >= int(solverMaxIterations);
+        if (!breakdown && !nonConverged) return false;
+
+        const float relRes = hostStatus.residual0 > 1e-12f
+            ? hostStatus.residual / hostStatus.residual0
+            : hostStatus.residual;
+        std::cerr << "[HeatGlobalSolver] solve did not succeed: "
+                  << (breakdown ? "numerical breakdown (pAp non-finite or <= 0)"
+                                : "no convergence at max iterations")
+                  << ", iterations=" << hostStatus.iterationCount
+                  << ", residual0=" << hostStatus.residual0
+                  << ", relResidual=" << relRes
+                  << ", pAp=" << hostStatus.pAp
+                  << ", alpha=" << hostStatus.alpha
+                  << std::endl;
+
+        return true;
     }
+
+    void setSolverParameters(uint32_t maxIterations, float convergenceTolerance) {
+        // 0 / non-positive means "keep the current value" (authoring default).
+        if (maxIterations > 0u) solverMaxIterations = maxIterations;
+        if (convergenceTolerance > 0.0f) solverConvergenceTolerance = convergenceTolerance;
+        if (!initialized || !d_config.get()) return;
+        // Solver parameters reside in device memory read by graph kernels without rebuilds
+        waitIdle();
+        cudaSetDevice(cudaDevice);
+        cudaPcg::PcgConfig cfg{ solverMaxIterations, solverConvergenceTolerance };
+        d_config.upload(&cfg, 1);
+    }
+
+    float getLastSolveMs() const { return static_cast<float>(lastSolveMs); }
 
     VkSemaphore getCudaReadySemaphore() const { return cudaReadyVkSemaphore; }
     VkSemaphore getVulkanReleaseSemaphore() const { return vulkanReleaseVkSemaphore; }
 
     void destroyGraphs() {
-        if (graphExecAToB) { cudaGraphExecDestroy(graphExecAToB); graphExecAToB = nullptr; }
-        if (graphExecBToA) { cudaGraphExecDestroy(graphExecBToA); graphExecBToA = nullptr; }
-        if (graphAToB) { cudaGraphDestroy(graphAToB); graphAToB = nullptr; }
-        if (graphBToA) { cudaGraphDestroy(graphBToA); graphBToA = nullptr; }
+        if (pcgExec) { cudaGraphExecDestroy(pcgExec); pcgExec = nullptr; }
+        if (preExec) { cudaGraphExecDestroy(preExec); preExec = nullptr; }
+        if (postExecAToB) { cudaGraphExecDestroy(postExecAToB); postExecAToB = nullptr; }
+        if (postExecBToA) { cudaGraphExecDestroy(postExecBToA); postExecBToA = nullptr; }
+        disableAdvection();
     }
 
     void cleanup() {
@@ -363,33 +608,58 @@ public:
         }
         waitIdle();
         destroyGraphs();
-        if (solveCompleteEvent) { cudaEventDestroy(solveCompleteEvent); solveCompleteEvent = nullptr; }
+        if (solveStartEvent) { cudaEventDestroy(solveStartEvent); solveStartEvent = nullptr; }
+        if (solveEndEvent) { cudaEventDestroy(solveEndEvent); solveEndEvent = nullptr; }
+        if (pinnedPcgStatus) { cudaFreeHost(pinnedPcgStatus); pinnedPcgStatus = nullptr; }
+        if (pinnedAdvectionTimestep) { cudaFreeHost(pinnedAdvectionTimestep); pinnedAdvectionTimestep = nullptr; }
         if (solveStream) { cudaStreamDestroy(solveStream); solveStream = nullptr; }
 
         d_rowOffsets.reset();
         d_columnIndices.reset();
         d_values.reset();
         d_invDiag.reset();
-        d_thermalMasses.reset();
-        d_rhs.reset();
-        d_x.reset();
+        d_traceRhs.reset();
+        d_traceSolution.reset();
         d_r.reset();
         d_z.reset();
         d_p.reset();
         d_Ap.reset();
         d_status.reset();
-        d_rhsAdditions.reset();
+        d_config.reset();
+
+        d_cellState.reset();
+        d_cellCapacityOverDt.reset();
+        d_cellSourceAdditions.reset();
+        d_cellSource.reset();
+
+        d_cellRecoveryScale.reset();
+        d_cellTraceOffsets.reset();
+        d_cellTraceIndices.reset();
+        d_cellTraceWeights.reset();
+        d_traceScatterOffsets.reset();
+        d_traceScatterCells.reset();
+        d_traceScatterWeights.reset();
+        d_traceBoundaryRhs.reset();
+        d_traceIsDirichlet.reset();
+        d_traceDirichletValue.reset();
+        d_fixedCellTemperatures.reset();
+
         d_advectionFaces.reset();
         d_advectionBoundaryFaces.reset();
+        d_cellInvVolumes.reset();
         d_advectionDeltaT.reset();
+        d_advectionOutflow.reset();
+        d_advectionMaxRate.reset();
+        d_advectionInvalid.reset();
+        d_advectionTimestep.reset();
+        d_advectionMacroDt.reset();
+        d_advectionIter.reset();
+        d_inflowTemperatures.reset();
 
         advectionFaceCount = 0;
         advectionBoundaryFaceCount = 0;
         d_advectionFaceFlux = nullptr;
         d_advectionBoundaryFlux = nullptr;
-        advectionInletTemperatureC = 0.0f;
-        advectionSubcycleCount = 1;
-        advectionSubcycleDt = 0.0f;
 
         temperatureNodes.clear();
 
@@ -409,55 +679,212 @@ public:
 
         device = VK_NULL_HANDLE;
         cudaDevice = -1;
-        nodeCount = 0;
+        cellCount = 0;
+        traceCount = 0;
         matrixValueCount = 0;
         initialized = false;
     }
 
 private:
-    void recordPcgSequence(bool sourceIsA, cudaStream_t stream) {
-        cudaPcg::recordPcgSolve(
-            stream,
-            nodeCount,
+    // Direction-independent prologue of the solve sequence.
+    void recordPrePcgSequence(cudaStream_t stream) {
+        const uint32_t cellBlocks = (cellCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
+        const uint32_t traceBlocks = (traceCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
+
+        // 1. Build authoritative cell source: S_E = (C_E / dt) * u_E^adv + S_E^add
+        heat::globalsolver::buildCellSourceKernel<<<cellBlocks, heat::globalsolver::BlockSize, 0, stream>>>(
+            cellCount,
+            d_cellCapacityOverDt.get(),
+            d_cellState.get(),
+            d_cellSourceAdditions.get(),
+            d_cellSource.get());
+
+        // 2. Assemble trace RHS: b_t = sum_E (w_Et * S_E / d_E) + b_bc, with Dirichlet override
+        heat::globalsolver::assembleTraceRhsKernel<<<traceBlocks, heat::globalsolver::BlockSize, 0, stream>>>(
+            traceCount,
+            d_traceScatterOffsets.get(),
+            d_traceScatterCells.get(),
+            d_traceScatterWeights.get(),
+            d_cellSource.get(),
+            d_cellRecoveryScale.get(),
+            d_traceBoundaryRhs.get(),
+            d_traceIsDirichlet.get(),
+            d_traceDirichletValue.get(),
+            d_traceRhs.get());
+    }
+
+    // Recovery and scatter; direction only selects the destination buffer.
+    void recordPostPcgSequence(bool sourceIsA, cudaStream_t stream) {
+        const uint32_t cellBlocks = (cellCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
+
+        // 3. Recover cell temperatures: u_E = (1 / d_E) * (sum_f w_Ef * lambda_f + S_E), with fixed temperature override
+        heat::globalsolver::recoverCellTemperaturesKernel<<<cellBlocks, heat::globalsolver::BlockSize, 0, stream>>>(
+            cellCount,
+            d_cellRecoveryScale.get(),
+            d_cellTraceOffsets.get(),
+            d_cellTraceIndices.get(),
+            d_cellTraceWeights.get(),
+            d_traceSolution.get(),
+            d_cellSource.get(),
+            d_fixedCellTemperatures.get(),
+            d_cellState.get());
+
+        // 4. Scatter solution into the alternate destination buffer
+        for (const auto& node : temperatureNodes) {
+            const uint32_t blocks = (node.scatterCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
+            heat::globalsolver::scatterTemperaturesKernel<<<blocks, heat::globalsolver::BlockSize, 0, stream>>>(
+                d_cellState.get(),
+                node.scatterSolverNodeIds.get(),
+                node.scatterLocalNodeIds.get(),
+                node.scatterCount,
+                sourceIsA ? node.d_temperatureB : node.d_temperatureA);
+        }
+    }
+
+    bool buildPcgGraph() {
+        pcgExec = cudaPcg::buildPcgGraphExec(
+            traceCount,
             d_rowOffsets.get(),
             d_columnIndices.get(),
             d_values.get(),
             d_invDiag.get(),
-            d_x.get(),
-            d_rhs.get(),
+            d_traceSolution.get(),
+            d_traceRhs.get(),
             d_Ap.get(),
             d_r.get(),
             d_z.get(),
             d_p.get(),
             d_status.get(),
-            heat::globalsolver::MaxIterations,
-            heat::globalsolver::ConvergenceTolerance,
-            true);
-
-        // Scatter solution into alternate destination buffer
-        for (const auto& node : temperatureNodes) {
-            const uint32_t blocks = (node.nodeCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
-            heat::globalsolver::scatterTemperaturesKernel<<<blocks, heat::globalsolver::BlockSize, 0, stream>>>(
-                d_x.get(), node.solverNodeOffset, node.localNodeIds.get(), node.nodeCount,
-                sourceIsA ? node.d_temperatureB : node.d_temperatureA);
-        }
+            d_config.get());
+        return pcgExec != nullptr;
     }
 
     bool buildGraphs() {
         if (!solveStream) return false;
 
-        // Capture Graph A -> B
-        if (!cudaUtils::cudaCheck(cudaStreamBeginCapture(solveStream, cudaStreamCaptureModeGlobal), "begin capture A->B")) return false;
-        recordPcgSequence(true, solveStream);
-        if (!cudaUtils::cudaCheck(cudaStreamEndCapture(solveStream, &graphAToB), "end capture A->B")) return false;
-        if (!cudaUtils::cudaCheck(cudaGraphInstantiate(&graphExecAToB, graphAToB, nullptr, nullptr, 0), "instantiate graph A->B")) return false;
+        // Standalone PCG graph executable because CUDA disallows conditional nodes in child graphs
+        if (!buildPcgGraph()) return false;
 
-        // Capture Graph B -> A
-        if (!cudaUtils::cudaCheck(cudaStreamBeginCapture(solveStream, cudaStreamCaptureModeGlobal), "begin capture B->A")) return false;
-        recordPcgSequence(false, solveStream);
-        if (!cudaUtils::cudaCheck(cudaStreamEndCapture(solveStream, &graphBToA), "end capture B->A")) return false;
-        if (!cudaUtils::cudaCheck(cudaGraphInstantiate(&graphExecBToA, graphBToA, nullptr, nullptr, 0), "instantiate graph B->A")) return false;
+        // Capture the direction-independent prologue.
+        {
+            cudaGraph_t graph = nullptr;
+            if (!cudaUtils::cudaCheck(cudaStreamBeginCapture(solveStream, cudaStreamCaptureModeGlobal), "begin capture pre")) return false;
+            recordPrePcgSequence(solveStream);
+            if (!cudaUtils::cudaCheck(cudaStreamEndCapture(solveStream, &graph), "end capture pre")) return false;
+            if (!cudaUtils::cudaCheck(cudaGraphInstantiate(&preExec, graph, nullptr, nullptr, 0), "instantiate pre")) return false;
+            cudaGraphDestroy(graph);
+        }
 
+        // Capture recovery + scatter to B.
+        {
+            cudaGraph_t graph = nullptr;
+            if (!cudaUtils::cudaCheck(cudaStreamBeginCapture(solveStream, cudaStreamCaptureModeGlobal), "begin capture post AB")) return false;
+            recordPostPcgSequence(true, solveStream);
+            if (!cudaUtils::cudaCheck(cudaStreamEndCapture(solveStream, &graph), "end capture post AB")) return false;
+            if (!cudaUtils::cudaCheck(cudaGraphInstantiate(&postExecAToB, graph, nullptr, nullptr, 0), "instantiate post AB")) return false;
+            cudaGraphDestroy(graph);
+        }
+
+        // Capture recovery + scatter to A.
+        {
+            cudaGraph_t graph = nullptr;
+            if (!cudaUtils::cudaCheck(cudaStreamBeginCapture(solveStream, cudaStreamCaptureModeGlobal), "begin capture post BA")) return false;
+            recordPostPcgSequence(false, solveStream);
+            if (!cudaUtils::cudaCheck(cudaStreamEndCapture(solveStream, &graph), "end capture post BA")) return false;
+            if (!cudaUtils::cudaCheck(cudaGraphInstantiate(&postExecBToA, graph, nullptr, nullptr, 0), "instantiate post BA")) return false;
+            cudaGraphDestroy(graph);
+        }
+
+        return true;
+    }
+
+    // Tears down advection so the solver degrades to heat-only on any failure.
+    void disableAdvection() {
+        if (advectionExec) { cudaGraphExecDestroy(advectionExec); advectionExec = nullptr; }
+        advectionFaceCount = 0;
+        advectionBoundaryFaceCount = 0;
+        d_advectionFaceFlux = nullptr;
+        d_advectionBoundaryFlux = nullptr;
+    }
+
+    bool buildAdvectionGraph() {
+        if (!solveStream || advectionFaceCount == 0) return false;
+
+        using cudaGraphBuilder::appendKernel;
+        using cudaGraphBuilder::appendMemset;
+
+        cudaGraph_t graph = nullptr;
+        if (!cudaUtils::cudaCheck(cudaGraphCreate(&graph, 0), "advection graph create")) {
+            return false;
+        }
+
+        const uint32_t faceBlocks = (advectionFaceCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
+        const uint32_t bfaceBlocks = std::max(1u, (advectionBoundaryFaceCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize);
+        const uint32_t cellBlocks = (cellCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
+
+        cudaGraphNode_t prev = nullptr;
+        const bool prologueOk =
+            appendMemset(graph, prev, d_advectionMaxRate.get(), 0, sizeof(float)) == cudaSuccess &&
+            appendMemset(graph, prev, d_advectionOutflow.get(), 0, cellCount * sizeof(float)) == cudaSuccess &&
+            appendMemset(graph, prev, d_advectionInvalid.get(), 0, sizeof(uint32_t)) == cudaSuccess &&
+            appendKernel(graph, prev, (void*)heat::globalsolver::accumulateFineAdvectionOutflowKernel, dim3(faceBlocks), dim3(heat::globalsolver::BlockSize),
+                         advectionFaceCount, d_advectionFaces.get(), d_advectionFaceFlux,
+                         advectionBoundaryFaceCount, d_advectionBoundaryFaces.get(), d_advectionBoundaryFlux,
+                         d_cellInvVolumes.get(), d_advectionOutflow.get(), d_advectionInvalid.get()) == cudaSuccess &&
+            appendKernel(graph, prev, (void*)cudaSubcycle::reduceMaxRateKernel, dim3(64), dim3(256),
+                         cellCount, d_advectionOutflow.get(), d_advectionMaxRate.get(), d_advectionInvalid.get()) == cudaSuccess;
+        if (!prologueOk) {
+            cudaGraphDestroy(graph);
+            return false;
+        }
+
+        cudaSubcycle::SubcycleSchedule schedule{};
+        schedule.maxRate = d_advectionMaxRate.get();
+        schedule.invalidFlag = d_advectionInvalid.get();
+        schedule.macroDt = d_advectionMacroDt.get();
+        schedule.targetCfl = AdvectionTargetCfl;
+        schedule.maxCount = MaxAdvectionSubsteps;
+        schedule.timestep = d_advectionTimestep.get();
+        schedule.iteration = d_advectionIter.get();
+
+        cudaGraphConditionalHandle handle = {};
+        cudaGraphBuilder::WhileLoop loop;
+        if (!cudaUtils::cudaCheck(cudaSubcycle::beginSubcycleLoop(graph, prev, schedule, handle, loop), "advection subcycle loop")) {
+            cudaGraphDestroy(graph);
+            return false;
+        }
+        cudaGraph_t body = loop.body;
+
+        cudaGraphNode_t b = nullptr;
+        const bool bodyOk =
+            appendMemset(body, b, d_advectionDeltaT.get(), 0, cellCount * sizeof(float)) == cudaSuccess &&
+            appendKernel(body, b, (void*)heat::globalsolver::advectFineFacesKernel, dim3(faceBlocks), dim3(heat::globalsolver::BlockSize),
+                         advectionFaceCount, d_advectionFaces.get(), d_advectionFaceFlux, d_advectionDeltaT.get(),
+                         d_cellState.get(), d_cellInvVolumes.get(), d_advectionTimestep.get()) == cudaSuccess;
+        bool bodyComplete = bodyOk;
+        if (bodyComplete && advectionBoundaryFaceCount > 0) {
+            bodyComplete = appendKernel(body, b, (void*)heat::globalsolver::advectFineBoundaryKernel, dim3(bfaceBlocks), dim3(heat::globalsolver::BlockSize),
+                                        advectionBoundaryFaceCount, d_advectionBoundaryFaces.get(), d_advectionBoundaryFlux,
+                                        d_advectionDeltaT.get(), d_cellState.get(), d_inflowTemperatures.get(),
+                                        d_cellInvVolumes.get(), d_advectionTimestep.get()) == cudaSuccess;
+        }
+        if (bodyComplete) {
+            bodyComplete =
+                appendKernel(body, b, (void*)heat::globalsolver::applyAdvectionUpdatesKernel, dim3(cellBlocks), dim3(heat::globalsolver::BlockSize),
+                             cellCount, d_cellState.get(), d_advectionDeltaT.get()) == cudaSuccess &&
+                cudaSubcycle::endSubcycleLoop(body, b, handle, schedule) == cudaSuccess;
+        }
+        if (!bodyComplete) {
+            cudaGraphDestroy(graph);
+            return false;
+        }
+
+        if (!cudaUtils::cudaCheck(cudaGraphInstantiate(&advectionExec, graph, nullptr, nullptr, 0), "advection graph instantiate")) {
+            cudaGraphDestroy(graph);
+            advectionExec = nullptr;
+            return false;
+        }
+        cudaGraphDestroy(graph);
         return true;
     }
 
@@ -497,7 +924,11 @@ private:
     VkDevice device = VK_NULL_HANDLE;
     int cudaDevice = -1;
     cudaStream_t solveStream = nullptr;
-    cudaEvent_t solveCompleteEvent = nullptr;
+    cudaEvent_t solveStartEvent = nullptr;
+    cudaEvent_t solveEndEvent = nullptr;
+    mutable double lastSolveMs = 0.0;
+    cudaSubcycle::SubcycleTimestep* pinnedAdvectionTimestep = nullptr;
+    cudaPcg::PcgStatus* pinnedPcgStatus = nullptr;
 
     VkSemaphore cudaReadyVkSemaphore = VK_NULL_HANDLE;
     cudaExternalSemaphore_t cudaReadySemaphore = nullptr;
@@ -505,41 +936,74 @@ private:
     VkSemaphore vulkanReleaseVkSemaphore = VK_NULL_HANDLE;
     cudaExternalSemaphore_t vulkanReleaseSemaphore = nullptr;
 
-    cudaGraph_t graphAToB = nullptr;
-    cudaGraphExec_t graphExecAToB = nullptr;
-    cudaGraph_t graphBToA = nullptr;
-    cudaGraphExec_t graphExecBToA = nullptr;
+    cudaGraphExec_t pcgExec = nullptr;
+
+    cudaGraphExec_t preExec = nullptr;
+    cudaGraphExec_t postExecAToB = nullptr;
+    cudaGraphExec_t postExecBToA = nullptr;
+
+    cudaGraphExec_t advectionExec = nullptr;
 
     cudaUtils::CudaBuffer<int> d_rowOffsets;
     cudaUtils::CudaBuffer<int> d_columnIndices;
     cudaUtils::CudaBuffer<float> d_values;
     cudaUtils::CudaBuffer<float> d_invDiag;
-    cudaUtils::CudaBuffer<float> d_thermalMasses;
-    cudaUtils::CudaBuffer<float> d_rhsAdditions;
-    cudaUtils::CudaBuffer<float> d_rhs;
-    cudaUtils::CudaBuffer<float> d_x;
+    cudaUtils::CudaBuffer<float> d_traceRhs;
+    cudaUtils::CudaBuffer<float> d_traceSolution;
     cudaUtils::CudaBuffer<float> d_r;
     cudaUtils::CudaBuffer<float> d_z;
     cudaUtils::CudaBuffer<float> d_p;
     cudaUtils::CudaBuffer<float> d_Ap;
     cudaUtils::CudaBuffer<cudaPcg::PcgStatus> d_status;
+    cudaUtils::CudaBuffer<cudaPcg::PcgConfig> d_config;
 
-    cudaUtils::CudaBuffer<heat::AdvectionFace> d_advectionFaces;
+    cudaUtils::CudaBuffer<float> d_cellState;
+    cudaUtils::CudaBuffer<float> d_cellCapacityOverDt;
+    cudaUtils::CudaBuffer<float> d_cellSourceAdditions;
+    cudaUtils::CudaBuffer<float> d_cellSource;
+
+    cudaUtils::CudaBuffer<float> d_cellRecoveryScale;
+    cudaUtils::CudaBuffer<uint32_t> d_cellTraceOffsets;
+    cudaUtils::CudaBuffer<uint32_t> d_cellTraceIndices;
+    cudaUtils::CudaBuffer<float> d_cellTraceWeights;
+    cudaUtils::CudaBuffer<uint32_t> d_traceScatterOffsets;
+    cudaUtils::CudaBuffer<uint32_t> d_traceScatterCells;
+    cudaUtils::CudaBuffer<float> d_traceScatterWeights;
+    cudaUtils::CudaBuffer<float> d_traceBoundaryRhs;
+    cudaUtils::CudaBuffer<uint8_t> d_traceIsDirichlet;
+    cudaUtils::CudaBuffer<float> d_traceDirichletValue;
+    cudaUtils::CudaBuffer<float> d_fixedCellTemperatures;
+
     uint32_t advectionFaceCount = 0;
-    cudaUtils::CudaBuffer<heat::AdvectionBoundaryFace> d_advectionBoundaryFaces;
     uint32_t advectionBoundaryFaceCount = 0;
     const float* d_advectionFaceFlux = nullptr;
     const float* d_advectionBoundaryFlux = nullptr;
-    float advectionInletTemperatureC = 0.0f;
+    cudaUtils::CudaBuffer<heat::AdvectionFace> d_advectionFaces;
+    cudaUtils::CudaBuffer<heat::AdvectionBoundaryFace> d_advectionBoundaryFaces;
+    cudaUtils::CudaBuffer<float> d_cellInvVolumes;
     cudaUtils::CudaBuffer<float> d_advectionDeltaT;
-    uint32_t advectionSubcycleCount = 1;
-    float advectionSubcycleDt = 0.0f;
+    cudaUtils::CudaBuffer<float> d_advectionOutflow;
+    cudaUtils::CudaBuffer<float> d_advectionMaxRate;
+    cudaUtils::CudaBuffer<uint32_t> d_advectionInvalid;
+    cudaUtils::CudaBuffer<cudaSubcycle::SubcycleTimestep> d_advectionTimestep;
+    cudaUtils::CudaBuffer<float> d_advectionMacroDt;
+    cudaUtils::CudaBuffer<uint32_t> d_advectionIter;
+    cudaUtils::CudaBuffer<float> d_inflowTemperatures;
+
+    // Explicit fine-advection CFL target and substep cap safety ceiling
+    static constexpr float AdvectionTargetCfl = 1.0f;
+    static constexpr uint32_t MaxAdvectionSubsteps = 1024;
 
     std::vector<DeviceTemperatureNodes> temperatureNodes;
 
-    uint32_t nodeCount = 0;
+    uint32_t cellCount = 0;
+    uint32_t traceCount = 0;
     uint32_t matrixValueCount = 0;
     bool initialized = false;
+
+    // Runtime PCG knobs uploaded to device config without graph rebuilds
+    uint32_t solverMaxIterations = 200;
+    float solverConvergenceTolerance = 3e-3f;
 };
 
 HeatGlobalSolver::HeatGlobalSolver() : implementation(std::make_unique<Implementation>()) {}
@@ -547,15 +1011,13 @@ HeatGlobalSolver::~HeatGlobalSolver() = default;
 
 bool HeatGlobalSolver::initialize(
     VulkanDevice& vulkanDevice,
-    const std::vector<int>& rowOffsets,
-    const std::vector<int>& columnIndices,
-    const std::vector<float>& values,
-    const std::vector<float>& thermalMasses,
+    const vem::VEMTraceSystem& traceSystem,
+    const std::vector<float>& cellCapacityOverDt,
+    const std::vector<float>& cellSourceAdditions,
     const std::vector<TemperatureNodes>& temperatureNodes,
-    const std::vector<float>& rhsAdditions) {
+    const std::vector<float>& fixedCellTemperatures) {
     return implementation->initialize(
-        vulkanDevice, rowOffsets, columnIndices, values, thermalMasses,
-        temperatureNodes, rhsAdditions);
+        vulkanDevice, traceSystem, cellCapacityOverDt, cellSourceAdditions, temperatureNodes, fixedCellTemperatures);
 }
 
 bool HeatGlobalSolver::launch(
@@ -575,10 +1037,11 @@ void HeatGlobalSolver::waitIdle() {
 }
 
 bool HeatGlobalSolver::updateValues(
-    const std::vector<float>& values,
-    const std::vector<float>& thermalMasses,
-    const std::vector<float>& rhsAdditions) {
-    return implementation->updateValues(values, thermalMasses, rhsAdditions);
+    const vem::VEMTraceSystem& traceSystem,
+    const std::vector<float>& cellCapacityOverDt,
+    const std::vector<float>& cellSourceAdditions,
+    const std::vector<float>& fixedCellTemperatures) {
+    return implementation->updateValues(traceSystem, cellCapacityOverDt, cellSourceAdditions, fixedCellTemperatures);
 }
 
 VkSemaphore HeatGlobalSolver::getCudaReadySemaphore() const {
@@ -593,23 +1056,29 @@ bool HeatGlobalSolver::hasSolveFailed() const {
     return implementation->hasSolveFailed();
 }
 
-void HeatGlobalSolver::cleanup() {
-    implementation->cleanup();
+void HeatGlobalSolver::setSolverParameters(uint32_t maxIterations, float convergenceTolerance) {
+    implementation->setSolverParameters(maxIterations, convergenceTolerance);
+}
+
+float HeatGlobalSolver::getLastSolveMs() const {
+    return implementation ? implementation->getLastSolveMs() : 0.0f;
 }
 
 bool HeatGlobalSolver::configureAdvectionTopology(
+    uint32_t inFaceCount,
+    uint32_t inBoundaryFaceCount,
     const std::vector<heat::AdvectionFace>& faces,
     const std::vector<heat::AdvectionBoundaryFace>& boundaryFaces,
     const float* deviceFaceFlux,
-    const float* deviceBoundaryFlux) {
-    return implementation ? implementation->configureAdvectionTopology(faces, boundaryFaces, deviceFaceFlux, deviceBoundaryFlux) : false;
+    const float* deviceBoundaryFlux,
+    const std::vector<float>& cellVolumes) {
+    return implementation ? implementation->configureAdvectionTopology(
+        inFaceCount, inBoundaryFaceCount, faces, boundaryFaces,
+        deviceFaceFlux, deviceBoundaryFlux, cellVolumes) : false;
 }
 
-void HeatGlobalSolver::updateAdvectionStep(
-    float inletTemperatureC,
-    uint32_t subcycleCount,
-    float subcycleDt) {
-    if (implementation) {
-        implementation->updateAdvectionStep(inletTemperatureC, subcycleCount, subcycleDt);
-    }
+bool HeatGlobalSolver::updateAdvectionStep(
+    const float* inflowTemperaturesC,
+    float stepDt) {
+    return implementation ? implementation->updateAdvectionStep(inflowTemperaturesC, stepDt) : false;
 }

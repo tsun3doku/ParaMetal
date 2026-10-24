@@ -12,6 +12,7 @@ void bindRegistry(py::module_& m) {
         .value("Mesh", NodeGraphValueType::Mesh)
         .value("Remesh", NodeGraphValueType::Remesh)
         .value("HeatModel", NodeGraphValueType::HeatModel)
+        .value("Fluid", NodeGraphValueType::Fluid)
         .value("HeatFluid", NodeGraphValueType::HeatFluid)
         .value("Points", NodeGraphValueType::Points)
         .value("Volume", NodeGraphValueType::Volume)

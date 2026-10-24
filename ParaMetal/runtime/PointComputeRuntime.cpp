@@ -2,20 +2,20 @@
 
 #include "hash/HashProduct.hpp"
 #include "renderers/PointRenderer.hpp"
-#include "vulkan/VulkanDevice.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 
 #include <cstring>
 
-PointComputeRuntime::PointComputeRuntime(
-    VulkanDevice& vulkanDevice,
-    MemoryAllocator& memoryAllocator,
-    CommandPool& commandPool)
-    : vulkanDevice(vulkanDevice),
-      memoryAllocator(memoryAllocator),
-      commandPool(commandPool) {}
+PointComputeRuntime::PointComputeRuntime(MemoryAllocator& memoryAllocator)
+    : memoryAllocator(memoryAllocator) {}
 
 PointComputeRuntime::~PointComputeRuntime() {
+    for (const auto& [buffer, offset] : ownedBuffers) {
+        if (buffer != VK_NULL_HANDLE) {
+            memoryAllocator.free(buffer, offset);
+        }
+    }
+    ownedBuffers.clear();
     disableAll();
 }
 
@@ -50,7 +50,8 @@ bool PointComputeRuntime::buildProduct(const Config& config, PointProduct& produ
 
     std::memcpy(mappedPtr, vertices.data(), static_cast<size_t>(bufferSize));
 
-    // Ownership transfers to product
+    // The runtime keeps ownership until teardown; the product is a view.
+    ownedBuffers.emplace_back(buffer, offset);
     product.positionBuffer = buffer;
     product.positionBufferOffset = offset;
     product.pointCount = static_cast<uint32_t>(vertices.size());

@@ -67,12 +67,16 @@ QtObject {
     readonly property color timelineFrameBackground: interactiveAccent
     readonly property color timelineFrameText: "#f5f8ff"
     readonly property color timelineFieldBackground: "#222328"
-    readonly property color welcomeBackdrop: Qt.rgba(0.065, 0.065, 0.08, 0.75)
-    readonly property color welcomeOptionBackground: "#24242c"
-    readonly property color welcomeOptionHover: "#303047"
-    readonly property color welcomeCardBorder: "#5b5b69"
-    readonly property color welcomeText: "#25252b"
-    readonly property color welcomeSubtext: "#63626e"
+    readonly property color welcomeBackdrop: Qt.rgba(0.04, 0.04, 0.05, 0.80)
+    readonly property color welcomeCardBackground: "#272022"
+    readonly property color welcomeTitleBar: "#d8d7dc"
+    readonly property color welcomeTitleBarText: "#242329"
+    readonly property color welcomeTitleBarBorder: "#bcbcc4"
+    readonly property color welcomeOptionBackground: "#1e1a1c"
+    readonly property color welcomeOptionHover: "#352b2f"
+    readonly property color welcomeCardBorder: "#4a3e44"
+    readonly property color welcomeText: "#f6f5fb"
+    readonly property color welcomeSubtext: "#aba9b6"
 
     readonly property string fontFamily: UiTypography.fontFamily
     readonly property string monoFamily: UiTypography.monoFamily

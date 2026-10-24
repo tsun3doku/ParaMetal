@@ -394,6 +394,9 @@ KNNNeighbors::~KNNNeighbors() = default;
 bool KNNNeighbors::initialize(VulkanDevice &vulkanDevice) {
   return implementation->initialize(vulkanDevice);
 }
+bool KNNNeighbors::initializeCuda(int ordinal) {
+  return implementation ? implementation->setupDevice(ordinal) : false;
+}
 void KNNNeighbors::cleanup() { implementation->cleanup(); }
 bool KNNNeighbors::buildNeighbors(uint32_t k,
                                   const std::vector<uint32_t> &queryIds) {

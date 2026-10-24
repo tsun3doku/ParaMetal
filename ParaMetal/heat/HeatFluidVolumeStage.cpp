@@ -251,13 +251,24 @@ bool HeatFluidVolumeStage::updateSeedToFluidNode(
     }
 
     std::vector<uint32_t> seedToFluid(seeds.size(), 0xFFFFFFFFu);
-    for (size_t f = 0; f < globalDomain.fragments.size(); ++f) {
-        const auto& frag = globalDomain.fragments[f];
-        if (frag.instanceId == topology::InvalidInstanceId && f < globalFragmentToFluidNode.size()) {
-            const uint32_t fluidNode = globalFragmentToFluidNode[f];
-            const uint32_t seedId = frag.seedId;
-            if (seedId < seedToFluid.size()) {
-                seedToFluid[seedId] = fluidNode;
+    if (!globalDomain.seedToFragment.empty()) {
+        for (size_t s = 0; s < seeds.size() && s < globalDomain.seedToFragment.size(); ++s) {
+            const uint32_t fragment = globalDomain.seedToFragment[s];
+            if (fragment < globalDomain.fragments.size() &&
+                globalDomain.fragments[fragment].instanceId == topology::InvalidInstanceId &&
+                fragment < globalFragmentToFluidNode.size()) {
+                seedToFluid[s] = globalFragmentToFluidNode[fragment];
+            }
+        }
+    } else {
+        for (size_t f = 0; f < globalDomain.fragments.size(); ++f) {
+            const auto& frag = globalDomain.fragments[f];
+            if (frag.instanceId == topology::InvalidInstanceId && f < globalFragmentToFluidNode.size()) {
+                const uint32_t fluidNode = globalFragmentToFluidNode[f];
+                const uint32_t seedId = frag.seedId;
+                if (seedId < seedToFluid.size()) {
+                    seedToFluid[seedId] = fluidNode;
+                }
             }
         }
     }

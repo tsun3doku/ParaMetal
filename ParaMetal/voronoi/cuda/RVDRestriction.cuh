@@ -13,26 +13,31 @@
 
 namespace voronoi {
 
-struct ModelCellData {
-    double volume = 0.0;
-    glm::dvec3 localMoment{0.0};
-    float surfaceArea = 0.0f;
-};
-
 struct RestrictedSurfaceGeometry {
-    float4 centroidArea; // xyz = canonical centroid, w = canonical area
-    float4 plane;        // xyz = unit triangle normal, w = dot(n,p)
+    double4 centroidArea; // xyz = canonical centroid, w = canonical area
+    double4 plane;        // xyz = unit triangle normal, w = dot(n,p)
 };
 
-struct ModelRestrictionData {
-    uint32_t runtimeModelId = 0;
-    std::vector<ModelCellData> cells;
-    std::vector<double> faceAreas;
-    std::vector<RestrictedSurfaceGeometry> surfaceGeometry;
+struct FaceBoundarySegment {
+    double3 a;
+    double3 b;
+    uint32_t modelId = 0;
+};
 
+struct ModelRestriction {
+    uint32_t runtimeModelId = 0;
+
+    cudaUtils::CudaBuffer<double4> devMoments;
+    cudaUtils::CudaBuffer<double> devRestrictedPlaneAreas;
+    cudaUtils::CudaBuffer<double> devRestrictedPlaneAbsSums;
+    cudaUtils::CudaBuffer<double3> devRestrictedPlaneMoments;
+    cudaUtils::CudaBuffer<RestrictedSurfaceGeometry> devSurfaceGeometry;
     cudaUtils::CudaBuffer<RestrictedSurface> devSurfaces;
-    cudaUtils::CudaBuffer<float3> devRestrictedVertices;
+    cudaUtils::CudaBuffer<double3> devRestrictedVertices;
+    cudaUtils::CudaBuffer<uint32_t> devFaceSegmentOffsets;
+    cudaUtils::CudaBuffer<FaceBoundarySegment> devFaceSegments;
     uint32_t totalPatches = 0;
+    uint32_t totalFaceSegments = 0;
     uint32_t surfaceBase = 0;
 };
 
@@ -40,10 +45,8 @@ bool restrictModelGeometry(
     const RVDInput& input,
     const RVDConfig& config,
     const cudaGeometry::DeviceModelGeometry& devGeom,
-    const BaseCellsContext& baseCtx,
-    const TopologyContext& topoCtx,
-    ModelRestrictionData& model,
-    RVDResult& result,
+    const BaseCellDomain& baseDomain,
+    ModelRestriction& restriction,
     cudaStream_t stream);
 
 } // namespace voronoi

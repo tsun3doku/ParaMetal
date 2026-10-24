@@ -13,7 +13,8 @@ inline constexpr const char* Transform = "transform";
 inline constexpr const char* Group = "group";
 inline constexpr const char* Remesh = "remesh";
 inline constexpr const char* HeatModel = "heat_model";
-inline constexpr const char* HeatFluid = "heat_fluid";
+inline constexpr const char* Fluid = "fluid";
+inline constexpr const char* HeatFluid = "fluid";
 inline constexpr const char* Voronoi = "voronoi";
 inline constexpr const char* HeatSolve = "heat_solve";
 inline constexpr const char* Points = "points";
@@ -21,6 +22,7 @@ inline constexpr const char* HeatPoints = "heat_points";
 inline constexpr const char* MeshPoints = "mesh_points";
 inline constexpr const char* Merge = "merge";
 inline constexpr const char* SerialTemperature = "serial_temperature";
+inline constexpr const char* CFD = "cfd";
 }
 
 namespace nodegraphparams {
@@ -80,6 +82,8 @@ constexpr uint32_t SimulationDuration = 11;
 constexpr uint32_t ShowDomainBox = 14;
 constexpr uint32_t ShowFluidVolume = 15;
 constexpr uint32_t FluidVolumeOpacity = 16;
+constexpr uint32_t SolverMaxIterations = 30;
+constexpr uint32_t SolverConvergenceTolerance = 31;
 
 // Domain Boundary Conditions (6 faces: 0=-X, 1=+X, 2=-Y, 3=+Y, 4=-Z, 5=+Z)
 inline constexpr uint32_t domainBoundaryTypeParam(uint32_t face) { return 100 + face * 4; }
@@ -89,11 +93,11 @@ inline constexpr uint32_t domainBoundaryHtcParam(uint32_t face)  { return 103 + 
 }
 
 namespace voronoi {
-constexpr uint32_t SDFSize = 1;
+constexpr uint32_t CellSize = 1;
 constexpr uint32_t VoxelResolution = 2;
 constexpr uint32_t ShowVoronoi = 3;
 constexpr uint32_t ShowPoints = 4;
-constexpr uint32_t SDFPadding = 5;
+constexpr uint32_t VolumePadding = 5;
 constexpr uint32_t ContactRange = 6;
 constexpr uint32_t ShowContactManifold = 8;
 }
@@ -141,10 +145,30 @@ constexpr uint32_t VelocityX = 5;
 constexpr uint32_t VelocityY = 6;
 constexpr uint32_t VelocityZ = 7;
 constexpr uint32_t InletTemperatureC = 8;
+constexpr uint32_t KinematicViscosity = 9;
 }
+namespace fluid = heatfluid;
+
 
 namespace merge {
 constexpr uint32_t MergeDistance = 1;
+}
+
+namespace cfd {
+constexpr uint32_t Enabled = 1;
+constexpr uint32_t TargetCourant = 2;
+constexpr uint32_t TimeStep = 3;
+constexpr uint32_t VelocityX = 4;
+constexpr uint32_t VelocityY = 5;
+constexpr uint32_t VelocityZ = 6;
+constexpr uint32_t PressureIterations = 7;
+constexpr uint32_t PressureTolerance = 8;
+
+// Domain Boundary Conditions (6 faces: 0=-X, 1=+X, 2=-Y, 3=+Y, 4=-Z, 5=+Z)
+inline constexpr uint32_t domainBoundaryTypeParam(uint32_t face) { return 100 + face * 4; }
+inline constexpr uint32_t domainBoundaryVelocityXParam(uint32_t face) { return 101 + face * 4; }
+inline constexpr uint32_t domainBoundaryVelocityYParam(uint32_t face) { return 102 + face * 4; }
+inline constexpr uint32_t domainBoundaryVelocityZParam(uint32_t face) { return 103 + face * 4; }
 }
 }
 

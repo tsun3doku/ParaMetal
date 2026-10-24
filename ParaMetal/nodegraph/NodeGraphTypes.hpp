@@ -14,14 +14,16 @@ enum class NodeGraphValueType : uint8_t {
     Mesh,
     Remesh,
     HeatModel,
-    HeatFluid,
+    Fluid,
+    HeatFluid = Fluid,
     Points,
     Volume,
     Field,
     Vector3,
     ScalarFloat,
     ScalarInt,
-    ScalarBool
+    ScalarBool,
+    Simulation
 };
 
 enum class NodeGraphSocketDirection {

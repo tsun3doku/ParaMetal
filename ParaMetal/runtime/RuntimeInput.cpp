@@ -1,5 +1,6 @@
 #include "RuntimeInput.hpp"
 
+#include "app/RawMouseInput.hpp"
 #include "nodegraph/NodeGraphController.hpp"
 #include "nodegraph/NodeGraphRegistry.hpp"
 #include "nodegraph/NodeTransform.hpp"
@@ -21,15 +22,17 @@ RuntimeInput::RuntimeInput(
     InputController& inputController,
     const NodeGraphController& graphController,
     const SceneController& sceneController,
-    ModelRegistry& modelRegistry)
+    ModelRegistry& modelRegistry,
+    RawMouseInput* rawMouseInput)
     : windowRuntimeState(windowRuntimeState),
       inputController(inputController),
       graphController(graphController),
       sceneController(sceneController),
-      modelRegistry(modelRegistry) {
+      modelRegistry(modelRegistry),
+      rawMouseInput(rawMouseInput) {
 }
 
-void RuntimeInput::tick(float deltaTime) {
+void RuntimeInput::tick() {
     std::vector<WindowInputEvent> inputEvents;
     windowRuntimeState.consumeInputEvents(inputEvents);
     for (const WindowInputEvent& inputEvent : inputEvents) {
@@ -61,12 +64,33 @@ void RuntimeInput::tick(float deltaTime) {
         }
     }
 
-    const double x = static_cast<double>(windowRuntimeState.mouseX.load(std::memory_order_acquire));
-    const double y = static_cast<double>(windowRuntimeState.mouseY.load(std::memory_order_acquire));
     const bool middlePressed = windowRuntimeState.middleButtonPressed.load(std::memory_order_acquire);
     const bool shiftPressed = windowRuntimeState.shiftPressed.load(std::memory_order_acquire);
 
-    inputController.processInput(shiftPressed, middlePressed, x, y, deltaTime);
+    // Camera drags consume raw mouse input independently of GUI thread pacing
+    if (rawMouseInput != nullptr && rawMouseInput->isInitialized()) {
+        if (!middlePressed) {
+            rawDragActive = false;
+        } else if (!rawDragActive) {
+            rawDragActive = true;
+            RawMouseInput::Sample stale[64];
+            while (rawMouseInput->drain(stale, 64) > 0) {
+            }
+        } else {
+            float dx = 0.0f;
+            float dy = 0.0f;
+            RawMouseInput::Sample samples[128];
+            size_t count = 0;
+            do {
+                count = rawMouseInput->drain(samples, 128);
+                for (size_t i = 0; i < count; ++i) {
+                    dx += samples[i].dx;
+                    dy += samples[i].dy;
+                }
+            } while (count == 128);
+            inputController.processRawDrag(shiftPressed, dx, dy);
+        }
+    }
 
     if (std::optional<GizmoDragBegin> begin = inputController.takePendingGizmoDragBegin()) {
         if (!beginGizmoDrag(*begin)) {
@@ -211,4 +235,3 @@ void RuntimeInput::resetGizmoDrag() {
     activeMode = GizmoMode::Translate;
     activeAxis = GizmoAxis::None;
 }
-

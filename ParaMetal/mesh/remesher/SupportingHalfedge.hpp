@@ -7,11 +7,7 @@
 #include <glm/glm.hpp>
 #include <vulkan/vulkan.h>
 
-// 
-//                          [ This DS enables GPU based rendering of intrinsic triangulations
-//                            Tracks for each input halfedge:
-//                            - Which intrinsic HE currently supports it
-//                            - The angular offset between the input halfedge and support HE ]
+// Supporting halfedge mapping and angular offsets for intrinsic rendering
 
 class SupportingHalfedge {
 public:

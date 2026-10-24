@@ -4,26 +4,29 @@
 #include "RVDBaseCells.cuh"
 #include "RVDTopology.hpp"
 #include "RVDRestriction.cuh"
+#include "../../cuda/CudaBuffer.cuh"
 
 #include <vector>
 #include <cstdint>
+#include <cuda_runtime.h>
 
 namespace voronoi {
 
-bool buildFragments(
+bool buildFragmentsAndFaces(
     const RVDInput& input,
-    const BaseCellsContext& baseCtx,
-    const std::vector<ModelRestrictionData>& models,
-    std::vector<std::vector<uint32_t>>& fragmentIdByModelCell,
-    std::vector<uint32_t>& unownedFragmentIdByCell,
-    RVDResult& result);
+    const BaseCellDomain& baseDomain,
+    const BaseFaceTopology& faceTopology,
+    const std::vector<ModelRestriction>& models,
+    const cudaUtils::CudaBuffer<double4>& devSurfaceExposure,
+    cudaUtils::CudaBuffer<uint32_t>& devContactFaceBySurface,
+    uint32_t& totalBaseFragmentFaces,
+    RVDResult& result,
+    cudaStream_t stream = nullptr);
 
-bool buildFragmentFaces(
-    const BaseCellsContext& baseCtx,
-    const TopologyContext& topoCtx,
-    const std::vector<ModelRestrictionData>& models,
-    const std::vector<std::vector<uint32_t>>& fragmentIdByModelCell,
-    const std::vector<uint32_t>& unownedFragmentIdByCell,
-    RVDResult& result);
+bool validateFragmentTopology(
+    const RVDResult& result,
+    uint32_t totalBaseFragmentFaces,
+    double toleranceClosure = 0.005,
+    double toleranceGauss = 0.01);
 
 } // namespace voronoi

@@ -216,18 +216,18 @@ void HeatSystemSurfaceStage::dispatchSurfaceTemperatureUpdates(
     VkCommandBuffer commandBuffer,
     const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
     bool replayFromHistory,
-    bool finalWritesBufferB,
+    bool currentIsB,
     uint32_t currentFrame) const {
-    dispatchSurfacePass(commandBuffer, pipeline, pipelineLayout, activeModels, replayFromHistory, finalWritesBufferB, false, currentFrame);
+    dispatchSurfacePass(commandBuffer, pipeline, pipelineLayout, activeModels, replayFromHistory, currentIsB, false, currentFrame);
 }
 
 void HeatSystemSurfaceStage::dispatchSurfaceGradientUpdates(
     VkCommandBuffer commandBuffer,
     const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
     bool replayFromHistory,
-    bool finalWritesBufferB,
+    bool currentIsB,
     uint32_t currentFrame) const {
-    dispatchSurfacePass(commandBuffer, gradientPipeline, gradientPipelineLayout, activeModels, replayFromHistory, finalWritesBufferB, true, currentFrame);
+    dispatchSurfacePass(commandBuffer, gradientPipeline, gradientPipelineLayout, activeModels, replayFromHistory, currentIsB, true, currentFrame);
 }
 
 
@@ -237,7 +237,7 @@ void HeatSystemSurfaceStage::dispatchSurfacePass(
     VkPipelineLayout layout,
     const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
     bool replayFromHistory,
-    bool finalWritesBufferB,
+    bool currentIsB,
     bool isGradientPass,
     uint32_t currentFrame) const {
     if (pipeline == VK_NULL_HANDLE || layout == VK_NULL_HANDLE) {
@@ -261,9 +261,9 @@ void HeatSystemSurfaceStage::dispatchSurfacePass(
                 ? (useB ? heatModel->getSurfaceGradientHistorySetB() : heatModel->getSurfaceGradientHistorySetA())
                 : (useB ? heatModel->getSurfaceHistoryComputeSetB() : heatModel->getSurfaceHistoryComputeSetA());
         } else if (isGradientPass) {
-            set = finalWritesBufferB ? heatModel->getSurfaceGradientComputeSetB() : heatModel->getSurfaceGradientComputeSetA();
+            set = currentIsB ? heatModel->getSurfaceGradientComputeSetB() : heatModel->getSurfaceGradientComputeSetA();
         } else {
-            set = finalWritesBufferB ? heatModel->getSurfaceComputeSetB() : heatModel->getSurfaceComputeSetA();
+            set = currentIsB ? heatModel->getSurfaceComputeSetB() : heatModel->getSurfaceComputeSetA();
         }
 
         if (set != VK_NULL_HANDLE) {

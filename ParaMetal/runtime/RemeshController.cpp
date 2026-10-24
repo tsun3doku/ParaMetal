@@ -17,32 +17,46 @@ RemeshController::OperatingScope::~OperatingScope() {
 RemeshController::RemeshController(
     VulkanDevice& vulkanDevice,
     MemoryAllocator& memoryAllocator,
-    ModelRegistry& modelRegistry,
     std::atomic<bool>& isOperating)
-    : vulkanDevice(vulkanDevice),
-      modelRegistry(modelRegistry),
-      isOperating(isOperating),
+    : isOperating(isOperating),
       remesher(vulkanDevice, memoryAllocator) {
 }
 
-void RemeshController::apply(uint64_t socketKey, const Config& config) {
+bool RemeshController::apply(uint64_t socketKey, const Config& config) {
     if (socketKey == 0) {
-        return;
+        return false;
     }
 
-    auto& system = activeSystems[socketKey];
-    if (!system) {
-        system = std::make_unique<RemeshSystem>(remesher, vulkanDevice, modelRegistry);
+    const auto failedIt = failedComputeHashes.find(socketKey);
+    if (failedIt != failedComputeHashes.end() && failedIt->second == config.computeHash) {
+        return false;
     }
+    failedComputeHashes.erase(socketKey);
 
-    system->setSourceGeometry(config.pointPositions, config.triangleIndices);
-    system->setParams(config.iterations, config.minAngleDegrees, config.maxEdgeLength, config.stepSize);
-    system->setRuntimeModelId(config.runtimeModelId);
+    // Build replacement generation off to the side while active generation remains live
+    auto candidate = std::make_unique<RemeshSystem>(remesher);
+    candidate->setSourceGeometry(config.pointPositions, config.triangleIndices);
+    candidate->setParams(config.iterations, config.minAngleDegrees, config.maxEdgeLength, config.stepSize);
+    candidate->setRuntimeModelId(config.runtimeModelId);
 
     OperatingScope operatingScope(isOperating);
-    if (!system->remesh()) {
-        activeSystems.erase(socketKey);
+    if (!candidate->remesh()) {
+        // Retain failed candidate to avoid destroying resources with in-flight GPU work
+        retainedSystems.push_back(std::move(candidate));
+        failedComputeHashes[socketKey] = config.computeHash;
+        return false;
     }
+
+    auto it = activeSystems.find(socketKey);
+    if (it != activeSystems.end()) {
+        if (it->second) {
+            retainedSystems.push_back(std::move(it->second));
+        }
+        it->second = std::move(candidate);
+    } else {
+        activeSystems.emplace(socketKey, std::move(candidate));
+    }
+    return true;
 }
 
 bool RemeshController::buildProduct(uint64_t socketKey, RemeshProduct& product) {
@@ -71,72 +85,36 @@ bool RemeshController::buildProduct(uint64_t socketKey, RemeshProduct& product) 
     }
     product.surfaceTriangleIndices = mesh.indices;
 
-    // GPU resources
-    const SupportingHalfedge::GPUResources gpu = system.takeIntrinsicGpuResources();
-
-    product.intrinsicTriangleCount = gpu.triangleCount;
-    product.intrinsicVertexCount = gpu.vertexCount;
-    product.averageTriangleArea = gpu.averageTriangleArea;
-
-    product.intrinsicTriangleBuffer = gpu.intrinsicTriangleBuffer;
-    product.intrinsicTriangleBufferOffset = gpu.triangleGeometryOffset;
-    product.intrinsicVertexBuffer = gpu.intrinsicVertexBuffer;
-    product.intrinsicVertexBufferOffset = gpu.vertexGeometryOffset;
-
-    product.supportingHalfedgeBuffer = gpu.bufferS;
-    product.supportingHalfedgeOffset = gpu.offsetS;
-    product.supportingHalfedgeView = gpu.viewS;
-    product.supportingAngleBuffer = gpu.bufferA;
-    product.supportingAngleOffset = gpu.offsetA;
-    product.supportingAngleView = gpu.viewA;
-    product.halfedgeBuffer = gpu.bufferH;
-    product.halfedgeOffset = gpu.offsetH;
-    product.halfedgeView = gpu.viewH;
-    product.edgeBuffer = gpu.bufferE;
-    product.edgeOffset = gpu.offsetE;
-    product.edgeView = gpu.viewE;
-    product.triangleBuffer = gpu.bufferT;
-    product.triangleOffset = gpu.offsetT;
-    product.triangleView = gpu.viewT;
-    product.lengthBuffer = gpu.bufferL;
-    product.lengthOffset = gpu.offsetL;
-    product.lengthView = gpu.viewL;
-    product.inputHalfedgeBuffer = gpu.bufferHInput;
-    product.inputHalfedgeOffset = gpu.offsetHInput;
-    product.inputHalfedgeView = gpu.viewHInput;
-    product.inputEdgeBuffer = gpu.bufferEInput;
-    product.inputEdgeOffset = gpu.offsetEInput;
-    product.inputEdgeView = gpu.viewEInput;
-    product.inputTriangleBuffer = gpu.bufferTInput;
-    product.inputTriangleOffset = gpu.offsetTInput;
-    product.inputTriangleView = gpu.viewTInput;
-    product.inputLengthBuffer = gpu.bufferLInput;
-    product.inputLengthOffset = gpu.offsetLInput;
-    product.inputLengthView = gpu.viewLInput;
+    // GPU resources (non-detaching copy, ownership transfers on commit)
+    system.copyGpu(product);
 
     HashProduct::seal(product);
     return product.isValid();
 }
+
+
 
 void RemeshController::remove(uint64_t socketKey) {
     if (socketKey == 0) {
         return;
     }
 
+    failedComputeHashes.erase(socketKey);
     auto it = activeSystems.find(socketKey);
     if (it != activeSystems.end()) {
         if (it->second) {
-            it->second->disable();
+            retainedSystems.push_back(std::move(it->second));
         }
         activeSystems.erase(it);
     }
 }
 
 void RemeshController::disableAll() {
+    failedComputeHashes.clear();
     for (auto& [socketKey, system] : activeSystems) {
         (void)socketKey;
         if (system) {
-            system->disable();
+            retainedSystems.push_back(std::move(system));
         }
     }
     activeSystems.clear();

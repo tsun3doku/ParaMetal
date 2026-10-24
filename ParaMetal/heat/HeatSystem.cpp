@@ -23,7 +23,8 @@
 #include "vulkan/VulkanDevice.hpp"
 #include "voronoi/VoronoiNodeIndex.hpp"
 #include "util/GMLS.hpp"
-#include "spatial/SdfUtils.hpp"
+#include "util/GeometryUtils.hpp"
+#include "spatial/TriangleHashGrid.hpp"
 
 HeatSystem::HeatSystem(
     VulkanDevice& vulkanDevice,
@@ -174,7 +175,6 @@ bool HeatSystem::rebuildDomainRuntime() {
                 positions,
                 normals,
                 triangleIndices,
-                transferCommandPool,
                 getInitialTemperatureC(runtimeModelId));
             configureModelProperties(*replacement, runtimeModelId);
             if (replacement->isInitialized()) {
@@ -201,34 +201,23 @@ void HeatSystem::setParams(float updatedSimulationDuration) {
     }
 }
 
-void HeatSystem::setDomainBoundaryConditions(
-    const uint32_t types[6],
-    const float temperaturesC[6],
-    const float heatFluxes[6],
-    const float heatTransferCoefficients[6]) {
+void HeatSystem::setDomainBoundaryConditions(const heat::DomainBoundaryConditions& boundaries) {
     bool formulationChanged = false;
     bool valuesChanged = false;
-    for (int i = 0; i < 6; ++i) {
-        if (domainBoundaryTypes[i] != types[i]) {
+    for (size_t i = 0; i < 6; ++i) {
+        if (domainBoundaries[i].type != boundaries[i].type) {
             formulationChanged = true;
         }
-        if (domainBoundaryTemperaturesC[i] != temperaturesC[i] ||
-            domainBoundaryHeatFluxes[i] != heatFluxes[i] ||
-            domainBoundaryHeatTransferCoefficients[i] != heatTransferCoefficients[i]) {
+        if (domainBoundaries[i].temperatureC != boundaries[i].temperatureC ||
+            domainBoundaries[i].heatFlux != boundaries[i].heatFlux ||
+            domainBoundaries[i].htc != boundaries[i].htc) {
             valuesChanged = true;
         }
-        domainBoundaryTypes[i] = types[i];
-        domainBoundaryTemperaturesC[i] = temperaturesC[i];
-        domainBoundaryHeatFluxes[i] = heatFluxes[i];
-        domainBoundaryHeatTransferCoefficients[i] = heatTransferCoefficients[i];
     }
+    domainBoundaries = boundaries;
     if (formulationChanged || valuesChanged) {
         heatParamsDirty = true;
-        domainRuntime.setDomainBoundaryConditions(
-            domainBoundaryTypes,
-            domainBoundaryTemperaturesC,
-            domainBoundaryHeatFluxes,
-            domainBoundaryHeatTransferCoefficients);
+        domainRuntime.setDomainBoundaryConditions(domainBoundaries);
         if (domainRuntime.isGlobalDomain()) {
             if (formulationChanged) {
                 domainRuntime.markGlobalTopologyDirty();
@@ -239,6 +228,14 @@ void HeatSystem::setDomainBoundaryConditions(
     }
 }
 
+void HeatSystem::setDomainBoundaryConditions(
+    const uint32_t types[6],
+    const float temperaturesC[6],
+    const float heatFluxes[6],
+    const float heatTransferCoefficients[6]) {
+    setDomainBoundaryConditions(heat::fromFlatArrays(types, temperaturesC, heatFluxes, heatTransferCoefficients));
+}
+
 uint32_t HeatSystem::computeTimelineFrameCount() const {
     if (timeline.getDuration() <= 0.0f) {
         return 0;
@@ -246,7 +243,7 @@ uint32_t HeatSystem::computeTimelineFrameCount() const {
     return std::max(1u, static_cast<uint32_t>(std::ceil(timeline.getDuration() * TimelineFPS)));
 }
 
-void HeatSystem::clearGlobalVoronoiInput() {
+void HeatSystem::releaseGmlsBuffers() {
     for (auto& [runtimeModelId, buffer] : modelGMLSSurfaceStencilBufferByModelId) {
         if (buffer != VK_NULL_HANDLE) {
             freeBuffer(memoryAllocator, buffer, modelGMLSSurfaceStencilBufferOffsetByModelId[runtimeModelId]);
@@ -262,7 +259,6 @@ void HeatSystem::clearGlobalVoronoiInput() {
             freeBuffer(memoryAllocator, buffer, modelGMLSSurfaceGradientWeightBufferOffsetByModelId[runtimeModelId]);
         }
     }
-    simNodeCounts.clear();
     modelGMLSSurfaceStencilBufferByModelId.clear();
     modelGMLSSurfaceStencilBufferOffsetByModelId.clear();
     modelGMLSSurfaceWeightBufferByModelId.clear();
@@ -271,6 +267,11 @@ void HeatSystem::clearGlobalVoronoiInput() {
     modelGMLSSurfaceGradientWeightBufferByModelId.clear();
     modelGMLSSurfaceGradientWeightBufferOffsetByModelId.clear();
     modelGMLSSurfaceGradientWeightCountByModelId.clear();
+}
+
+void HeatSystem::clearGlobalVoronoiInput() {
+    releaseGmlsBuffers();
+    simNodeCounts.clear();
     modelLocalToWorldByModelId.clear();
     domainRuntime.clearGlobalDomain();
     voronoiConfigDirty = true;
@@ -280,22 +281,12 @@ void HeatSystem::setHeatFluid(
     float density,
     float specificHeat,
     float conductivity,
-    float initialTemperatureC,
-    float inletTemperatureC,
-    const glm::vec3& prescribedVelocity) {
+    float initialTemperatureC) {
     if (!fluidRuntime) {
         fluidRuntime = std::make_unique<HeatFluidRuntime>();
     }
     fluidRuntime->setMaterialProperties(density, specificHeat, conductivity, initialTemperatureC);
-    fluidRuntime->setInletTemperatureC(inletTemperatureC);
-    fluidRuntime->setPrescribedVelocity(prescribedVelocity);
     domainDirty = true;
-}
-
-void HeatSystem::setFluidPrescribedVelocity(const glm::vec3& prescribedVelocity) {
-    if (!fluidRuntime) return;
-    fluidRuntime->setPrescribedVelocity(prescribedVelocity);
-    domainRuntime.markAdvectionDirty();
 }
 
 void HeatSystem::clearHeatFluid() {
@@ -304,6 +295,28 @@ void HeatSystem::clearHeatFluid() {
         fluidRuntime.reset();
     }
     domainDirty = true;
+}
+
+void HeatSystem::setAdvectionInput(
+    VkBuffer faceFluxBuffer,
+    VkDeviceSize faceFluxBufferSize,
+    VkBuffer boundaryFluxBuffer,
+    VkDeviceSize boundaryFluxBufferSize,
+    uint32_t faceCount,
+    uint32_t boundaryFaceCount) {
+    HeatDomainRuntime::AdvectionInput input{};
+    input.enabled = true;
+    input.faceFluxBuffer = faceFluxBuffer;
+    input.faceFluxBufferSize = faceFluxBufferSize;
+    input.boundaryFluxBuffer = boundaryFluxBuffer;
+    input.boundaryFluxBufferSize = boundaryFluxBufferSize;
+    input.faceCount = faceCount;
+    input.boundaryFaceCount = boundaryFaceCount;
+    domainRuntime.setAdvectionInput(input);
+}
+
+void HeatSystem::clearAdvectionInput() {
+    domainRuntime.clearAdvectionInput();
 }
 
 void HeatSystem::setGlobalVoronoiInput(
@@ -332,41 +345,53 @@ void HeatSystem::update() {
     processResetTrigger();
     physicsStepCompletedThisFrame = false;
     domainRuntime.clearGlobalSynchronization();
+    domainRuntime.resetAdvectionStagingCopySchedule();
+    domainRuntime.setAdvectionConnected(boundInputConnectionId != 0);
 
     if (domainRuntime.isGlobalDomain()) {
         bool completedDestinationIsA = false;
         bool newSolveCompleted = false;
         if (domainRuntime.pollGlobalSolve(completedDestinationIsA)) {
-            temperatureBufferAIsCurrent = completedDestinationIsA;
-            physicsStepCompletedThisFrame = true;
-            newSolveCompleted = true;
             if (domainRuntime.hasSolveFailed()) {
-                std::cerr << "[HeatSystem-Diag] PCG solve reported numerical breakdown!" << std::endl;
+                // Terminal failure: halt heat physics until reset
+                if (!physicsFailed) {
+                    std::cerr << "[HeatSystem] PCG solve failed; heat physics halted until reset." << std::endl;
+                }
+                physicsFailed = true;
+            } else {
+                temperatureBufferAIsCurrent = completedDestinationIsA;
+                physicsStepCompletedThisFrame = true;
+                newSolveCompleted = true;
+                ++completedSteps;
             }
         }
 
-        if (domainRuntime.globalValuesDirty()) {
-            if (!domainRuntime.updateGlobalValues(domainRuntime.getActiveModels(), fluidRuntime.get(), FixedTimeStep)) {
-                std::cerr << "[HeatSystem] global value update failed" << std::endl;
+        if (!physicsFailed) {
+            if (domainRuntime.globalValuesDirty()) {
+                if (!domainRuntime.updateGlobalValues(domainRuntime.getActiveModels(), fluidRuntime.get(), FixedTimeStep)) {
+                    std::cerr << "[HeatSystem] global value update failed; heat physics halted until reset." << std::endl;
+                    physicsFailed = true;
+                }
             }
-        }
 
-        if (domainRuntime.globalAdvectionDirty()) {
-            if (!domainRuntime.updateGlobalAdvection(fluidRuntime.get(), FixedTimeStep)) {
-                std::cerr << "[HeatSystem] global advection update failed" << std::endl;
+            if (!physicsFailed && domainRuntime.globalAdvectionDirty()) {
+                if (!domainRuntime.updateGlobalAdvection(fluidRuntime.get(), FixedTimeStep)) {
+                    std::cerr << "[HeatSystem] global advection update failed; heat physics halted until reset." << std::endl;
+                    physicsFailed = true;
+                }
             }
         }
 
         forwardSim(deltaTime);
 
-        if (shouldStepPhysics && !domainRuntime.isGlobalSolveInFlight()) {
+        if (!physicsFailed && shouldStepPhysics && !domainRuntime.isGlobalSolveInFlight()) {
             if (domainRuntime.launchGlobalSolve(temperatureBufferAIsCurrent)) {
                 physicsAccumulator = std::max(0.0f, physicsAccumulator - FixedTimeStep);
             }
             shouldStepPhysics = false;
         }
 
-        domainRuntime.prepareGlobalRenderSynchronization(temperatureBufferAIsCurrent, newSolveCompleted);
+        domainRuntime.prepareGlobalRenderSynchronization(newSolveCompleted);
     } else {
         forwardSim(deltaTime);
 
@@ -375,10 +400,10 @@ void HeatSystem::update() {
 }
 
 ComputePass::Synchronization HeatSystem::getSynchronization() const {
-    if (domainRuntime.isGlobalDomain()) {
-        return domainRuntime.getGlobalSynchronization();
+    if (!domainRuntime.isGlobalDomain()) {
+        return ComputePass::Synchronization{};
     }
-    return ComputePass::Synchronization{};
+    return domainRuntime.getGlobalSynchronization();
 }
 
 bool HeatSystem::setRuntimeVolumetricPowerDensity(uint32_t runtimeModelId, float powerDensity) {
@@ -386,6 +411,8 @@ bool HeatSystem::setRuntimeVolumetricPowerDensity(uint32_t runtimeModelId, float
     if (!model || !model->setVolumetricPowerDensity(powerDensity)) {
         return false;
     }
+    // Keep the authored store in sync so a later reconfiguration cannot revert this
+    modelVolumetricPowerDensitiesByRuntimeId[runtimeModelId] = powerDensity;
     domainRuntime.markGlobalValuesDirty();
     return true;
 }
@@ -396,6 +423,7 @@ bool HeatSystem::setRuntimePrescribedTemperature(uint32_t runtimeModelId, float 
         return false;
     }
     model->setPrescribedTemperature(model->hasPrescribedTemperature(), tempC);
+    modelPrescribedTemperaturesCByRuntimeId[runtimeModelId] = tempC;
     domainRuntime.markGlobalValuesDirty();
     return true;
 }
@@ -416,15 +444,6 @@ bool HeatSystem::setRuntimeFluidInitialTemperature(float temperatureC) {
         return false;
     }
     fluidRuntime->setInitialTemperatureC(temperatureC);
-    return true;
-}
-
-bool HeatSystem::setRuntimeFluidInletTemperature(float temperatureC) {
-    if (!fluidRuntime) {
-        return false;
-    }
-    fluidRuntime->setInletTemperatureC(temperatureC);
-    domainRuntime.markAdvectionDirty();
     return true;
 }
 
@@ -492,12 +511,6 @@ bool HeatSystem::ensureConfigured() {
     const bool needsHardRebuild = domainDirty || voronoiConfigDirty || heatParamsDirty;
     if (!needsHardRebuild) return true;
 
-
-    if (vkDeviceWaitIdle(vulkanDevice.getDevice()) != VK_SUCCESS) {
-        std::cerr << "[HeatSystem-Diag] ensureConfigured FAILED: vkDeviceWaitIdle" << std::endl;
-        return false;
-    }
-
     const bool modelsReady = rebuildDomainRuntime();
     if (!modelsReady) {
         std::cerr << "[HeatSystem-Diag] ensureConfigured FAILED: rebuildDomainRuntime"
@@ -520,7 +533,7 @@ bool HeatSystem::ensureConfigured() {
         }
     }
 
-    const bool heatVoronoiReady = rebuildVoronoiRuntime();
+    const bool heatVoronoiReady = domainRuntime.isGlobalDomain() && rebuildGlobalThermalDomain();
 
     configureGMLSSurfaceWeights(heatVoronoiReady);
 
@@ -554,7 +567,7 @@ bool HeatSystem::ensureConfigured() {
             }
             if (fluidVolumeStage) {
                 const auto& domain = domainRuntime.getGlobalDomain();
-                if (!fluidVolumeStage->initialize(domain.sdfGridDim) ||
+                if (!fluidVolumeStage->initialize(domain.volumeGridDim) ||
                     !fluidVolumeStage->updateSeedToFluidNode(domain.seedPositions, domain, domainRuntime.getGlobalFragmentToFluidNode())) {
                     std::cerr << "[HeatSystem-Diag] fluidVolumeStage configuration failed" << std::endl;
                 }
@@ -618,6 +631,17 @@ bool HeatSystem::setupDescriptors(
             true)) {
             return false;
         }
+    }
+
+    // Models retain surface buffers only after descriptors update, partial failure leaves ownership with caller
+    for (size_t i = 0; i < modelRuntimeModelIds.size() && i < surfaceBuffers.size(); ++i) {
+        HeatModelRuntime* heatModel = domainRuntime.getModelByRuntimeId(modelRuntimeModelIds[i]);
+        if (!heatModel) continue;
+        heatModel->retainSurfaceBuffers(
+            surfaceBuffers[i],
+            surfaceOffsets[i],
+            gradientBuffers[i],
+            gradientOffsets[i]);
     }
 
     return true;
@@ -724,6 +748,7 @@ void HeatSystem::resetSimulationState() {
     timeline.setScrubFrame(heat::NoRewindFrame);
     simulatedTime = 0.0f;
     shouldStepPhysics = false;
+    physicsFailed = false;
     needsInitialCapture = true;
     physicsAccumulator = 0.0f;
     temperatureBufferAIsCurrent = true;
@@ -745,6 +770,7 @@ void HeatSystem::resetSimulationState() {
         fluidRuntime->getPlayback()->reset();
     }
     fluidVolumeDirty = true;
+    surfaceDataDirty = true;
 }
 
 void HeatSystem::resetVoronoiTemperatures() {
@@ -866,13 +892,53 @@ void HeatSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t c
         return;
     }
 
-    if (timingQueryPool != VK_NULL_HANDLE) {
-        vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, timingQueryPool, timingStartQuery);
+    // Monotonic rendered-frame counter, frame slot index cannot drive periodic cadence
+    ++renderedFrameCounter;
+
+    if (domainRuntime.advectionStagingCopyScheduled()) {
+        const auto& adv = domainRuntime.getAdvectionInput();
+        std::vector<VkBufferMemoryBarrier> barriers;
+        if (adv.faceFluxBuffer != VK_NULL_HANDLE && domainRuntime.getAdvectionFaceFluxBuffer() != VK_NULL_HANDLE && adv.faceFluxBufferSize > 0) {
+            VkBufferCopy copyRegion{};
+            copyRegion.size = adv.faceFluxBufferSize;
+            vkCmdCopyBuffer(commandBuffer, adv.faceFluxBuffer, domainRuntime.getAdvectionFaceFluxBuffer(), 1, &copyRegion);
+
+            VkBufferMemoryBarrier barrier{};
+            barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
+            barrier.buffer = domainRuntime.getAdvectionFaceFluxBuffer();
+            barrier.offset = 0;
+            barrier.size = adv.faceFluxBufferSize;
+            barriers.push_back(barrier);
+        }
+        if (adv.boundaryFluxBuffer != VK_NULL_HANDLE && domainRuntime.getAdvectionBoundaryFluxBuffer() != VK_NULL_HANDLE && adv.boundaryFluxBufferSize > 0) {
+            VkBufferCopy copyRegion{};
+            copyRegion.size = adv.boundaryFluxBufferSize;
+            vkCmdCopyBuffer(commandBuffer, adv.boundaryFluxBuffer, domainRuntime.getAdvectionBoundaryFluxBuffer(), 1, &copyRegion);
+
+            VkBufferMemoryBarrier barrier{};
+            barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
+            barrier.buffer = domainRuntime.getAdvectionBoundaryFluxBuffer();
+            barrier.offset = 0;
+            barrier.size = adv.boundaryFluxBufferSize;
+            barriers.push_back(barrier);
+        }
+        if (!barriers.empty()) {
+            vkCmdPipelineBarrier(
+                commandBuffer,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                0, 0, nullptr,
+                static_cast<uint32_t>(barriers.size()), barriers.data(),
+                0, nullptr);
+        }
     }
 
     bool hasWork = hasDispatchableComputeWork();
-    if (hasWork &&
-        surfaceStage) {
+    if (hasWork) {
         const auto* pbData = playbackRuntime.getMappedPlaybackData();
         const uint32_t recordedFrames = getRecordedTimelineFrames();
 
@@ -977,6 +1043,7 @@ void HeatSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t c
                     : fluidRuntime->getTempBufferB();
                 fluidRuntime->getPlayback()->recordFrame(commandBuffer, finalBuf, 0);
             }
+            domainRuntime.noteTemperatureReader(temperatureBufferAIsCurrent);
         }
 
         // Display pass
@@ -984,11 +1051,12 @@ void HeatSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t c
         const uint32_t displayFrame = static_cast<uint32_t>(displayTime * TimelineFPS);
         const bool replayFromHistory = displayFrame < recordedFrames;
 
-        if (physicsStepCompletedThisFrame) {
+        const bool displayDataChanged = physicsStepCompletedThisFrame ||
+            replayFromHistory != lastFluidReplayFromHistory ||
+            (replayFromHistory && displayFrame != lastFluidDisplayFrame);
+        if (displayDataChanged) {
             fluidVolumeDirty = true;
-        } else if (replayFromHistory != lastFluidReplayFromHistory ||
-                   (replayFromHistory && displayFrame != lastFluidDisplayFrame)) {
-            fluidVolumeDirty = true;
+            surfaceDataDirty = true;
         }
         lastFluidReplayFromHistory = replayFromHistory;
         lastFluidDisplayFrame = displayFrame;
@@ -1002,14 +1070,14 @@ void HeatSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t c
             }
         }
 
-        const bool finalWritesBufferB = !temperatureBufferAIsCurrent;
+        const bool currentIsB = !temperatureBufferAIsCurrent;
 
         if (physicsStepCompletedThisFrame) {
             std::vector<VkBufferMemoryBarrier> surfaceReadBarriers;
             for (const auto& [id, heatModel] : domainRuntime.getActiveModels()) {
                 if (!heatModel || heatModel->getSimNodeCount() == 0) continue;
 
-                VkBuffer finalBuf = finalWritesBufferB ? heatModel->getTempBufferB() : heatModel->getTempBufferA();
+                VkBuffer finalBuf = currentIsB ? heatModel->getTempBufferB() : heatModel->getTempBufferA();
 
                 VkBufferMemoryBarrier barrier{};
                 barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
@@ -1021,7 +1089,7 @@ void HeatSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t c
                 surfaceReadBarriers.push_back(barrier);
             }
             if (fluidRuntime && fluidRuntime->getNodeCount() > 0) {
-                VkBuffer finalBuf = finalWritesBufferB ? fluidRuntime->getTempBufferB() : fluidRuntime->getTempBufferA();
+                VkBuffer finalBuf = currentIsB ? fluidRuntime->getTempBufferB() : fluidRuntime->getTempBufferA();
 
                 VkBufferMemoryBarrier barrier{};
                 barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
@@ -1042,14 +1110,20 @@ void HeatSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t c
             }
         }
 
-        surfaceStage->dispatchSurfaceTemperatureUpdates(
-            commandBuffer, domainRuntime.getActiveModels(),
-            replayFromHistory, finalWritesBufferB, currentFrame);
-
-        if (currentFrame % 4 == 0) {
-            surfaceStage->dispatchSurfaceGradientUpdates(
+        if (surfaceDataDirty) {
+            if (!replayFromHistory) {
+                domainRuntime.noteTemperatureReader(temperatureBufferAIsCurrent);
+            }
+            surfaceStage->dispatchSurfaceTemperatureUpdates(
                 commandBuffer, domainRuntime.getActiveModels(),
-                replayFromHistory, finalWritesBufferB, currentFrame);
+                replayFromHistory, currentIsB, currentFrame);
+
+            if (renderedFrameCounter % 4 == 0) {
+                surfaceStage->dispatchSurfaceGradientUpdates(
+                    commandBuffer, domainRuntime.getActiveModels(),
+                    replayFromHistory, currentIsB, currentFrame);
+            }
+            surfaceDataDirty = false;
         }
 
         if (fluidVolumeDirty && fluidVolumeStage && fluidVolumeStage->isValid() && domainRuntime.isGlobalDomain() && fluidRuntime && fluidRuntime->getNodeCount() > 0) {
@@ -1062,8 +1136,9 @@ void HeatSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t c
                     sourceBuf = playback->getHistoryBuffer();
                     sourceOff = playback->getHistoryBufferOffset() + static_cast<VkDeviceSize>(displayFrame) * playback->getFrameStride();
                 } else {
-                    sourceBuf = finalWritesBufferB ? fluidRuntime->getTempBufferB() : fluidRuntime->getTempBufferA();
+                    sourceBuf = currentIsB ? fluidRuntime->getTempBufferB() : fluidRuntime->getTempBufferA();
                     sourceOff = 0;
+                    domainRuntime.noteTemperatureReader(temperatureBufferAIsCurrent);
                 }
 
                 if (sourceBuf != VK_NULL_HANDLE) {
@@ -1080,16 +1155,7 @@ void HeatSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t c
         }
     }
 
-    if (timingQueryPool != VK_NULL_HANDLE) {
-        vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timingQueryPool, timingEndQuery);
-    }
     vkEndCommandBuffer(commandBuffer);
-}
-
-void HeatSystem::setComputeTimingQueries(VkQueryPool queryPool, uint32_t startQuery, uint32_t endQuery) {
-    timingQueryPool = queryPool;
-    timingStartQuery = startQuery;
-    timingEndQuery = endQuery;
 }
 
 bool HeatSystem::rebuildGlobalThermalDomain() {
@@ -1101,6 +1167,8 @@ bool HeatSystem::rebuildGlobalThermalDomain() {
         std::cerr << "[HeatSystem-Diag] rebuildGlobalThermalDomain FAILED: empty fragments" << std::endl;
         return false;
     }
+
+    releaseGmlsBuffers();
 
     const VkDeviceSize alignment = vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
     const auto& models = domainRuntime.getActiveModels();
@@ -1171,7 +1239,6 @@ bool HeatSystem::rebuildGlobalThermalDomain() {
         }
 
         const auto& surfacePositions = heatModelPtr->getSurfacePositions();
-        const auto& surfaceNormals = heatModelPtr->getSurfaceNormals();
         const size_t surfaceVertexCount = surfacePositions.size();
 
         VoronoiNodeIndex nodeIndex;
@@ -1198,7 +1265,7 @@ bool HeatSystem::rebuildGlobalThermalDomain() {
             const uint32_t a = globalToLocal[face.fragmentA];
             const uint32_t b = globalToLocal[face.fragmentB];
 
-            // Both ends must belong to this model.
+            // Both ends must belong to this model
             if (a == InvalidLocal || b == InvalidLocal) {
                 continue;
             }
@@ -1216,31 +1283,56 @@ bool HeatSystem::rebuildGlobalThermalDomain() {
         valueWeights.reserve(surfaceVertexCount * SupportCount);
         gradientWeights.reserve(surfaceVertexCount * SupportCount);
 
-        uint32_t sdfChannel = UINT32_MAX;
-        for (size_t c = 0; c < domain.sdfRuntimeModelIds.size(); ++c) {
-            if (domain.sdfRuntimeModelIds[c] == runtimeModelId) {
-                sdfChannel = static_cast<uint32_t>(c);
+        uint32_t modelIndex = UINT32_MAX;
+        for (size_t c = 0; c < modelRuntimeModelIds.size(); ++c) {
+            if (modelRuntimeModelIds[c] == runtimeModelId) {
+                modelIndex = static_cast<uint32_t>(c);
                 break;
             }
         }
 
-        const glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(localToWorld)));
+        const std::vector<uint32_t>* modelTriangleIndices =
+            (modelIndex < modelSurfaceTriangleIndices.size())
+                ? &modelSurfaceTriangleIndices[modelIndex]
+                : nullptr;
+
+        std::vector<glm::vec3> worldSurfacePositions;
+        TriangleHashGrid surfaceGrid;
+        if (modelTriangleIndices != nullptr &&
+            !modelTriangleIndices->empty() &&
+            !surfacePositions.empty()) {
+            worldSurfacePositions.resize(surfacePositions.size());
+            glm::vec3 boundsMin(std::numeric_limits<float>::max());
+            glm::vec3 boundsMax(-std::numeric_limits<float>::max());
+            for (size_t i = 0; i < surfacePositions.size(); ++i) {
+                const glm::vec3 world = glm::vec3(
+                    localToWorld * glm::vec4(surfacePositions[i], 1.0f));
+                worldSurfacePositions[i] = world;
+                boundsMin = glm::min(boundsMin, world);
+                boundsMax = glm::max(boundsMax, world);
+            }
+            const glm::vec3 extent = boundsMax - boundsMin;
+            const float maxExtent = std::max(std::max(extent.x, extent.y), extent.z);
+            const float cellSize = std::max(1e-6f, maxExtent / 64.0f);
+            const glm::vec3 padding(cellSize);
+            surfaceGrid.build(
+                worldSurfacePositions,
+                *modelTriangleIndices,
+                boundsMin - padding,
+                boundsMax + padding,
+                cellSize);
+        }
+
+        uint32_t failedStencilCount = 0;
+        uint32_t reportedStencilFailures = 0;
 
         for (size_t vertexId = 0; vertexId < surfaceVertexCount; ++vertexId) {
             const glm::vec3 worldPos = glm::vec3(localToWorld * glm::vec4(surfacePositions[vertexId], 1.0f));
-            glm::vec3 worldNorm = (vertexId < surfaceNormals.size())
-                ? normalMatrix * surfaceNormals[vertexId]
-                : glm::vec3(0.0f, 1.0f, 0.0f);
-            if (glm::dot(worldNorm, worldNorm) > 1e-8f) {
-                worldNorm = glm::normalize(worldNorm);
-            } else {
-                worldNorm = glm::vec3(0.0f, 1.0f, 0.0f);
-            }
 
             std::vector<uint32_t> nearestNodeIds;
             std::vector<float> distanceSquared;
 
-            // KNN is used only to identify which local piece of the model this surface point belongs to.
+            // KNN is used only to identify which local piece of the model this surface point belongs to
             uint32_t anchor = InvalidLocal;
             uint32_t candidateCount = std::min(64u, fragmentCount);
             uint32_t testedCount = 0;
@@ -1256,15 +1348,13 @@ bool HeatSystem::rebuildGlobalThermalDomain() {
                     const uint32_t localFrag = nearestNodeIds[k];
                     const glm::vec3 nodePos = fragmentPositions[localFrag];
 
-                    if (sdfChannel != UINT32_MAX &&
-                        !spatial::segmentStaysInside(
-                            domain.sdfGridMin,
-                            domain.sdfGridDim,
-                            domain.sdfCellSize,
-                            domain.sdfValues,
-                            sdfChannel,
+                    if (modelTriangleIndices != nullptr &&
+                        !worldSurfacePositions.empty() &&
+                        surfaceGrid.segmentIntersects(
                             worldPos,
-                            nodePos)) {
+                            nodePos,
+                            worldSurfacePositions,
+                            *modelTriangleIndices)) {
                         continue;
                     }
 
@@ -1346,7 +1436,6 @@ bool HeatSystem::rebuildGlobalThermalDomain() {
             const bool gmlsSuccess = !sourcePositions.empty() &&
                 GMLS::computeSurfaceWeights(
                     glm::dvec3(worldPos),
-                    glm::dvec3(worldNorm),
                     sourcePositions,
                     kernelRadius,
                     computedValueWeights,
@@ -1383,12 +1472,32 @@ bool HeatSystem::rebuildGlobalThermalDomain() {
                     });
                 }
             } else {
+                ++failedStencilCount;
+                if (reportedStencilFailures < 10) {
+                    ++reportedStencilFailures;
+                    std::cerr << "[HeatSystem-Diag] GMLS stencil failed: model=" << runtimeModelId
+                              << " vertex=" << vertexId
+                              << " position=(" << worldPos.x << ", " << worldPos.y << ", " << worldPos.z << ")"
+                              << " support=" << count
+                              << " solve=" << (gmlsSuccess ? "ok" : "failed")
+                              << " valueWeights=" << computedValueWeights.size()
+                              << " gradientWeights=" << computedGradientWeights.size()
+                              << " weightSum=" << weightSum
+                              << " finite=" << (weightsFinite ? "yes" : "no")
+                              << std::endl;
+                }
                 stencil.valueWeightOffset = 0;
                 stencil.gradientWeightOffset = 0;
                 stencil.valueWeightCount = 0;
                 stencil.gradientWeightCount = 0;
             }
             stencils[vertexId] = stencil;
+        }
+
+        if (failedStencilCount > 0) {
+            std::cerr << "[HeatSystem-Diag] GMLS stencil failures: model=" << runtimeModelId
+                      << " failed=" << failedStencilCount
+                      << " total=" << surfaceVertexCount << std::endl;
         }
 
         VkBuffer stencilBuffer = VK_NULL_HANDLE;
@@ -1407,6 +1516,9 @@ bool HeatSystem::rebuildGlobalThermalDomain() {
                 gradientWeights.size() * sizeof(heat::GMLSSurfaceGradientWeight), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                 alignment, gradientWeightBuffer, gradientWeightBufferOffset) != VK_SUCCESS) {
             std::cerr << "[HeatSystem-Diag] rebuildGlobalThermalDomain FAILED: gmls upload id=" << runtimeModelId << std::endl;
+            freeBuffer(memoryAllocator, stencilBuffer, stencilBufferOffset);
+            freeBuffer(memoryAllocator, valueWeightBuffer, valueWeightBufferOffset);
+            freeBuffer(memoryAllocator, gradientWeightBuffer, gradientWeightBufferOffset);
             return false;
         }
 
@@ -1423,14 +1535,8 @@ bool HeatSystem::rebuildGlobalThermalDomain() {
     return true;
 }
 
-bool HeatSystem::rebuildVoronoiRuntime() {
-    if (!domainRuntime.isGlobalDomain()) {
-        return false;
-    }
-    return rebuildGlobalThermalDomain();
-}
-
 void HeatSystem::cleanup() {
+    releaseGmlsBuffers();
     if (fluidVolumeStage) {
         fluidVolumeStage->cleanup();
         fluidVolumeStage.reset();

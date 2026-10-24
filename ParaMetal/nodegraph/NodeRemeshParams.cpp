@@ -5,20 +5,15 @@
 #include "nodegraph/NodeParamUtils.hpp"
 
 RemeshNodeParams readRemeshNodeParams(const NodeGraphNode& node) {
-    constexpr int iterations = 1;
-    constexpr double minAngleDegrees = 30.0;
-    constexpr double maxEdgeLength = 0.1;
-    constexpr double stepSize = 0.25;
-
     RemeshNodeParams params{};
-    params.iterations = NodeParamUtils::readIntParam(node, nodegraphparams::remesh::Iterations, iterations);
-    params.minAngleDegrees = NodeParamUtils::readFloatParam(node, nodegraphparams::remesh::MinAngleDegrees, minAngleDegrees);
-    params.maxEdgeLength = NodeParamUtils::readFloatParam(node, nodegraphparams::remesh::MaxEdgeLength, maxEdgeLength);
-    params.stepSize = NodeParamUtils::readFloatParam(node, nodegraphparams::remesh::StepSize, stepSize);
-    params.preview.showRemeshOverlay = NodeParamUtils::readBoolParam(node, nodegraphparams::remesh::ShowRemeshOverlay, false);
-    params.preview.showFaceNormals = NodeParamUtils::readBoolParam(node, nodegraphparams::remesh::ShowFaceNormals, false);
-    params.preview.showVertexNormals = NodeParamUtils::readBoolParam(node, nodegraphparams::remesh::ShowVertexNormals, false);
-    params.normalLength = NodeParamUtils::readFloatParam(node, nodegraphparams::remesh::NormalLength, 0.05);
+    params.iterations = NodeParamUtils::readIntParam(node, nodegraphparams::remesh::Iterations, params.iterations);
+    params.minAngleDegrees = NodeParamUtils::readFloatParam(node, nodegraphparams::remesh::MinAngleDegrees, params.minAngleDegrees);
+    params.maxEdgeLength = NodeParamUtils::readFloatParam(node, nodegraphparams::remesh::MaxEdgeLength, params.maxEdgeLength);
+    params.stepSize = NodeParamUtils::readFloatParam(node, nodegraphparams::remesh::StepSize, params.stepSize);
+    params.preview.showRemeshOverlay = NodeParamUtils::readBoolParam(node, nodegraphparams::remesh::ShowRemeshOverlay, params.preview.showRemeshOverlay);
+    params.preview.showFaceNormals = NodeParamUtils::readBoolParam(node, nodegraphparams::remesh::ShowFaceNormals, params.preview.showFaceNormals);
+    params.preview.showVertexNormals = NodeParamUtils::readBoolParam(node, nodegraphparams::remesh::ShowVertexNormals, params.preview.showVertexNormals);
+    params.normalLength = NodeParamUtils::readFloatParam(node, nodegraphparams::remesh::NormalLength, params.normalLength);
     return params;
 }
 

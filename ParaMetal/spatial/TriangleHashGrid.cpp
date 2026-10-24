@@ -131,6 +131,51 @@ void TriangleHashGrid::getTrianglesAlongRay(const glm::vec3& origin, const glm::
     deduplicate(outTriangles);
 }
 
+bool TriangleHashGrid::segmentIntersects(
+    const glm::vec3& start,
+    const glm::vec3& end,
+    const std::vector<glm::vec3>& vertices,
+    const std::vector<uint32_t>& indices) const {
+    const glm::vec3 delta = end - start;
+    const float length = glm::length(delta);
+    if (!(length > 1e-9f) || vertices.empty() || indices.size() < 3) {
+        return false;
+    }
+
+    const glm::vec3 direction = delta / length;
+    std::vector<size_t> nearby;
+    getTrianglesAlongRay(start, direction, length, nearby);
+
+    const float epsilon = std::max(1e-6f, length * 1e-6f);
+    for (size_t triangle : nearby) {
+        const size_t base = triangle * 3;
+        if (base + 2 >= indices.size()) continue;
+        if (indices[base] >= vertices.size() ||
+            indices[base + 1] >= vertices.size() ||
+            indices[base + 2] >= vertices.size()) {
+            continue;
+        }
+        float t = 0.0f;
+        float u = 0.0f;
+        float v = 0.0f;
+        if (intersectRayTriangle(
+                start,
+                direction,
+                vertices[indices[base]],
+                vertices[indices[base + 1]],
+                vertices[indices[base + 2]],
+                t,
+                u,
+                v) &&
+            t > epsilon &&
+            t < length - epsilon) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void TriangleHashGrid::buildTriangles(const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices) {
     std::vector<std::unordered_map<size_t, std::vector<size_t>>> threadLocalGrids;
 

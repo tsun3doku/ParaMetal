@@ -6,19 +6,19 @@
 #include <algorithm>
 
 VoronoiNodeParams readVoronoiNodeParams(const NodeGraphNode& node) {
-    constexpr double sdfSize = 0.005;
+    constexpr double cellSize = 0.005;
     constexpr int voxelResolution = 128;
-    constexpr double sdfPadding = 0.01;
+    constexpr double volumePadding = 0.01;
     constexpr double contactRange = voronoi::DefaultContactRange;
 
     VoronoiNodeParams params{};
-    params.sdfSize = NodeParamUtils::readFloatParam(node, nodegraphparams::voronoi::SDFSize, sdfSize);
+    params.cellSize = NodeParamUtils::readFloatParam(node, nodegraphparams::voronoi::CellSize, cellSize);
     params.voxelResolution = NodeParamUtils::readIntParam(node, nodegraphparams::voronoi::VoxelResolution, voxelResolution);
-    params.sdfPadding = NodeParamUtils::readFloatParam(node, nodegraphparams::voronoi::SDFPadding, sdfPadding);
+    params.volumePadding = NodeParamUtils::readFloatParam(node, nodegraphparams::voronoi::VolumePadding, volumePadding);
     params.contactRange = NodeParamUtils::readFloatParam(node, nodegraphparams::voronoi::ContactRange, contactRange);
-    if (params.sdfSize <= 0.0) { params.sdfSize = sdfSize; }
+    if (params.cellSize <= 0.0) { params.cellSize = cellSize; }
     if (params.voxelResolution <= 0) { params.voxelResolution = voxelResolution; }
-    if (params.sdfPadding < 0.0) { params.sdfPadding = 0.0; }
+    if (params.volumePadding < 0.0) { params.volumePadding = 0.0; }
     if (params.contactRange < 0.0) { params.contactRange = contactRange; }
     params.preview.showVoronoi = NodeParamUtils::readBoolParam(node, nodegraphparams::voronoi::ShowVoronoi, false);
     params.preview.showPoints = NodeParamUtils::readBoolParam(node, nodegraphparams::voronoi::ShowPoints, false);
@@ -27,9 +27,9 @@ VoronoiNodeParams readVoronoiNodeParams(const NodeGraphNode& node) {
 }
 
 bool writeVoronoiNodeParams(NodeGraphEditor& editor, NodeGraphNodeId nodeId, const VoronoiNodeParams& params) {
-    return editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::SDFSize, NodeGraphParamType::Float, params.sdfSize}) &&
+    return editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::CellSize, NodeGraphParamType::Float, params.cellSize}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::VoxelResolution, NodeGraphParamType::Int, 0.0, params.voxelResolution}) &&
-        editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::SDFPadding, NodeGraphParamType::Float, params.sdfPadding}) &&
+        editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::VolumePadding, NodeGraphParamType::Float, params.volumePadding}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::ContactRange, NodeGraphParamType::Float, params.contactRange}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::ShowVoronoi, NodeGraphParamType::Bool, 0.0, 0, params.preview.showVoronoi}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::ShowPoints, NodeGraphParamType::Bool, 0.0, 0, params.preview.showPoints}) &&

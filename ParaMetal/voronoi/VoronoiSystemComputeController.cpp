@@ -15,52 +15,55 @@ VoronoiSystemComputeController::VoronoiSystemComputeController(
       commandPool(commandPool) {
 }
 
-void VoronoiSystemComputeController::apply(uint64_t socketKey, const Config& config) {
+bool VoronoiSystemComputeController::apply(uint64_t socketKey, const Config& config) {
     if (socketKey == 0) {
-        return;
-    }
-    auto it = systemsBySocket.find(socketKey);
-    if (it == systemsBySocket.end()) {
-        it = systemsBySocket.emplace(
-            socketKey,
-            std::make_unique<VoronoiSystem>(vulkanDevice, memoryAllocator, commandPool)).first;
-    }
-
-    auto& system = it->second;
-    if (!system) {
-        return;
+        return false;
     }
 
     const auto configIt = configuredHashes.find(socketKey);
     if (configIt != configuredHashes.end() && configIt->second == config.computeHash) {
-        return;
+        return true;
     }
+
     const auto failedIt = failedComputeHashes.find(socketKey);
     if (failedIt != failedComputeHashes.end() && failedIt->second == config.computeHash) {
-        return;
+        return false;
     }
     failedComputeHashes.erase(socketKey);
 
-    system->setParams(config.cellSize, config.voxelResolution);
-    system->setContactRange(config.contactRange);
-    system->clearGeometry();
-    system->setSeedPositions(config.pointPositions, config.pointDomainCorners);
-    system->setGlobalGeometry(
+    // Build replacement generation off to the side while active generation remains live
+    auto candidate = std::make_unique<VoronoiSystem>(vulkanDevice, memoryAllocator, commandPool);
+    candidate->setParams(config.cellSize, config.voxelResolution);
+    candidate->setContactRange(config.contactRange);
+    candidate->setSeedPositions(config.pointPositions, config.pointDomainCorners);
+    candidate->setGlobalGeometry(
         config.globalRemeshRuntimeModelIds,
         config.globalRemeshPositions,
         config.globalRemeshTriangleIndices,
         config.globalRemeshSurfacePositions,
         config.globalRemeshSurfaceTriangleIndices,
-        config.sdfPadding);
-    const bool configured = system->ensureConfigured();
+        config.volumePadding);
 
-    if (configured) {
-        configuredHashes[socketKey] = config.computeHash;
-        failedComputeHashes.erase(socketKey);
-    } else {
-        configuredHashes.erase(socketKey);
+    if (!candidate->ensureConfigured()) {
+        // Retain failed candidate to avoid destroying resources with in-flight GPU work
+        retainedSystems.push_back(std::move(candidate));
         failedComputeHashes[socketKey] = config.computeHash;
+        return false;
     }
+
+    auto it = systemsBySocket.find(socketKey);
+    if (it != systemsBySocket.end()) {
+        if (it->second) {
+            retainedSystems.push_back(std::move(it->second));
+        }
+        it->second = std::move(candidate);
+    } else {
+        systemsBySocket.emplace(socketKey, std::move(candidate));
+    }
+
+    configuredHashes[socketKey] = config.computeHash;
+    failedComputeHashes.erase(socketKey);
+    return true;
 }
 
 void VoronoiSystemComputeController::remove(uint64_t socketKey) {
@@ -72,7 +75,9 @@ void VoronoiSystemComputeController::remove(uint64_t socketKey) {
     failedComputeHashes.erase(socketKey);
     auto it = systemsBySocket.find(socketKey);
     if (it != systemsBySocket.end()) {
-        vkDeviceWaitIdle(vulkanDevice.getDevice());
+        if (it->second) {
+            retainedSystems.push_back(std::move(it->second));
+        }
         systemsBySocket.erase(it);
     }
 }
@@ -80,8 +85,11 @@ void VoronoiSystemComputeController::remove(uint64_t socketKey) {
 void VoronoiSystemComputeController::disableAll() {
     configuredHashes.clear();
     failedComputeHashes.clear();
-    if (!systemsBySocket.empty()) {
-        vkDeviceWaitIdle(vulkanDevice.getDevice());
+    for (auto& [socketKey, system] : systemsBySocket) {
+        (void)socketKey;
+        if (system) {
+            retainedSystems.push_back(std::move(system));
+        }
     }
     systemsBySocket.clear();
 }
@@ -116,37 +124,36 @@ bool VoronoiSystemComputeController::buildProduct(uint64_t socketKey, VoronoiPro
     outProduct.globalDisplayRuntimeModelIds = buildStage.getGlobalDisplayRuntimeModelIds();
     outProduct.globalSeedPositions = buildStage.getGlobalSeedPositions();
     outProduct.globalDomainCorners = buildStage.getGlobalDomainCorners();
-    outProduct.globalSdfGridMin = buildStage.getGlobalSdfGridMin();
-    outProduct.globalSdfGridDim = buildStage.getGlobalSdfGridDim();
-    outProduct.globalSdfCellSize = buildStage.getGlobalSdfCellSize();
-    outProduct.globalSdfValues = buildStage.getGlobalSdfValues();
-    outProduct.globalSdfRuntimeModelIds = buildStage.getGlobalSdfRuntimeModelIds();
+    outProduct.globalVolumeGridMin = buildStage.getGlobalVolumeGridMin();
+    outProduct.globalVolumeGridDim = buildStage.getGlobalVolumeGridDim();
+    outProduct.globalVolumeGridCellSize = buildStage.getGlobalVolumeGridCellSize();
     outProduct.fragmentInstanceIds = buildStage.getGlobalFragmentInstanceIds();
     outProduct.fragmentSeedIds = buildStage.getGlobalFragmentSeedIds();
+    outProduct.seedToFragment = buildStage.getGlobalSeedToFragment();
     outProduct.fragmentCentroids = buildStage.getGlobalFragmentCentroids();
     outProduct.fragmentVolumes = buildStage.getGlobalFragmentVolumes();
     outProduct.nominalCellSize = buildStage.getGlobalNominalCellSize();
     outProduct.faceFragmentA = buildStage.getGlobalFaceFragmentA();
     outProduct.faceFragmentB = buildStage.getGlobalFaceFragmentB();
-    outProduct.faceAreas = buildStage.getGlobalFaceAreas();
-    outProduct.faceOrthogonalDistancesA = buildStage.getGlobalFaceOrthogonalDistancesA();
-    outProduct.faceOrthogonalDistancesB = buildStage.getGlobalFaceOrthogonalDistancesB();
-    outProduct.faceNormals = buildStage.getGlobalFaceNormals();
-    outProduct.contactFaceFragmentA = buildStage.getGlobalContactFaceFragmentA();
-    outProduct.contactFaceFragmentB = buildStage.getGlobalContactFaceFragmentB();
-    outProduct.contactFaceAreas = buildStage.getGlobalContactFaceAreas();
-    outProduct.contactFaceOrthogonalDistancesA = buildStage.getGlobalContactFaceOrthogonalDistancesA();
-    outProduct.contactFaceOrthogonalDistancesB = buildStage.getGlobalContactFaceOrthogonalDistancesB();
-    outProduct.contactFaceGaps = buildStage.getGlobalContactFaceGaps();
+    outProduct.faceAreasA = buildStage.getGlobalFaceAreasA();
+    outProduct.faceAreaVectorsA = buildStage.getGlobalFaceAreaVectorsA();
+    outProduct.faceMomentsA = buildStage.getGlobalFaceMomentsA();
+    outProduct.faceAreasB = buildStage.getGlobalFaceAreasB();
+    outProduct.faceAreaVectorsB = buildStage.getGlobalFaceAreaVectorsB();
+    outProduct.faceMomentsB = buildStage.getGlobalFaceMomentsB();
+    outProduct.faceTypes = buildStage.getGlobalFaceTypes();
+    outProduct.faceDomainFaces = buildStage.getGlobalFaceDomainFaces();
+    outProduct.contactCouplingFaceA = buildStage.getGlobalContactCouplingFaceA();
+    outProduct.contactCouplingFaceB = buildStage.getGlobalContactCouplingFaceB();
+    outProduct.contactCouplingAreas = buildStage.getGlobalContactCouplingAreas();
+    outProduct.boundaryFaceIndices = buildStage.getGlobalBoundaryFaceIndices();
     outProduct.boundaryFaceFragments = buildStage.getGlobalBoundaryFaceFragments();
     outProduct.boundaryFaceDomainFaces = buildStage.getGlobalBoundaryFaceDomainFaces();
-    outProduct.boundaryFaceAreas = buildStage.getGlobalBoundaryFaceAreas();
-    outProduct.boundaryFaceOrthogonalDistances = buildStage.getGlobalBoundaryFaceOrthogonalDistances();
     outProduct.instanceFragmentCounts = buildStage.getGlobalInstanceFragmentCounts();
     outProduct.globalFragmentCount = static_cast<uint32_t>(outProduct.fragmentInstanceIds.size());
-    outProduct.globalFaceCount = static_cast<uint32_t>(outProduct.faceAreas.size());
-    outProduct.globalContactFaceCount = static_cast<uint32_t>(outProduct.contactFaceAreas.size());
-    outProduct.globalBoundaryFaceCount = static_cast<uint32_t>(outProduct.boundaryFaceAreas.size());
+    outProduct.globalFaceCount = static_cast<uint32_t>(outProduct.faceAreasA.size());
+    outProduct.globalContactCouplingCount = static_cast<uint32_t>(outProduct.contactCouplingFaceA.size());
+    outProduct.globalBoundaryFaceCount = static_cast<uint32_t>(outProduct.boundaryFaceIndices.size());
 
     // Validate CPU topology before taking ownership of GPU resources
     if (!outProduct.isValid()) {
@@ -154,9 +161,11 @@ bool VoronoiSystemComputeController::buildProduct(uint64_t socketKey, VoronoiPro
         return false;
     }
 
-    // Safely transfer GPU resources to outProduct
-    buildStage.releaseGpuResources(outProduct);
+    // Non-detaching copy of GPU resources, ownership transfers on commit
+    buildStage.copyGpu(outProduct);
 
     HashProduct::seal(outProduct);
     return true;
 }
+
+

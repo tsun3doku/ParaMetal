@@ -283,8 +283,7 @@ GeodesicTracer::GeodesicTraceResult GeodesicTracer::traceFromFace(uint32_t start
             
             uint32_t outgoingHe = halfEdges[inHe].opposite;
 
-            // Get the basis vectors
-            // Face basis: vector along the incoming edge 
+            // Face basis vector along incoming edge
             glm::dvec2 faceBase = hvf_face[inHe];
             // Vertex basis: vector along the halfedge that points back to the face 
             glm::dvec2 vertBase = hvv_vert[outgoingHe];         
@@ -530,11 +529,7 @@ GeodesicTracer::FaceStepResult GeodesicTracer::traceInFace(const SurfacePoint& s
         // 1) If trace starts on vertex a or b then skip the edge
         if (nudgedBary[a] > 1.0 - T_EPS || nudgedBary[b] > 1.0 - T_EPS)
             continue;
-        /*
-        // 2) Skip opposite edge too (start is effectively on that edge)
-        if (nudgedBary[opp] < T_EPS)
-            continue;
-        */
+
         glm::dvec2 P = V[i];
         glm::dvec2 Q = V[(i + 1) % 3];
         glm::dvec2 edgeVec = Q - P;
@@ -778,8 +773,7 @@ glm::dvec2 GeodesicTracer::rotateVectorAcrossEdge(uint32_t oldHe, uint32_t newHe
     double cosTheta = glm::dot(eOld, eNew);
     double sinTheta = eOld.x * eNew.y - eOld.y * eNew.x;
 
-    // Build rotation 
-    // GLM's glm::dmat2(a,b,c,d) matrix stores as column major (a,b and c,d), using scalar format instead
+    // Rotate vector using scalar 2D rotation components
     glm::dvec2 mappedVec;
     mappedVec.x = cosTheta * vecInOld.x - sinTheta * vecInOld.y;
     mappedVec.y = sinTheta * vecInOld.x + cosTheta * vecInOld.y;
@@ -886,8 +880,7 @@ GeodesicTracer::GeodesicTraceResult GeodesicTracer::traceFromEdge(uint32_t start
         }
     }
 
-    // Convert edge split to barycentric coordinates
-    // tEdge represents how far along the halfedge from origin to target
+    // Convert edge split parameter to barycentric coordinates
     int edgeTarget = (edgeOrigin + 1) % 3;
     glm::dvec3 startPoint(0.0);
     startPoint[edgeOrigin] = 1.0 - tEdge;       // Origin vertex gets (1-t)

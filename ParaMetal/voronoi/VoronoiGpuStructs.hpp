@@ -29,7 +29,6 @@ struct Fragment {
     uint32_t ownerModelId = InvalidModelId;
     double volume = 0.0;
     glm::dvec3 centroid{0.0};
-    double exposedSurfaceArea = 0.0;
 };
 
 struct ContactMeshVertex {

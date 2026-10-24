@@ -8,27 +8,19 @@
 #include "mesh/remesher/Remesher.hpp"
 #include "mesh/remesher/SupportingHalfedge.hpp"
 
-class ModelRegistry;
-class VulkanDevice;
+struct RemeshProduct;
 
-// RemeshSystem is a product-agnostic backend: it runs a remesh and owns the
-// resulting CPU mesh + GPU resources until the controller takes them. It knows
-// nothing about RemeshProduct - the controller assembles the product.
+// Product-agnostic backend owning CPU mesh and GPU resources until controller handoff
 class RemeshSystem {
 public:
-    RemeshSystem(
-        Remesher& remesher,
-        VulkanDevice& vulkanDevice,
-        ModelRegistry& modelRegistry);
+    explicit RemeshSystem(Remesher& remesher);
     ~RemeshSystem();
 
     void setSourceGeometry(const std::vector<float>& pointPositions, const std::vector<uint32_t>& triangleIndices);
     void setParams(int iterations, float minAngleDegrees, float maxEdgeLength, float stepSize);
     void setRuntimeModelId(uint32_t runtimeModelId);
 
-    // Run the remesh into internal state. Frees any previously-owned GPU
-    // resources from a prior remesh that were never taken. Returns false on
-    // failure (internal state is cleared).
+    // Run remesh into internal state, freeing untaken GPU resources from prior runs
     bool remesh();
 
     // CPU data: borrowed by const ref (controller copies by value into product).
@@ -37,17 +29,12 @@ public:
     const std::vector<uint32_t>& sourceTriangles() const { return triangleIndices; }
     uint32_t runtimeModelId() const { return modelRuntimeId; }
 
-    // GPU resources: ownership transfers OUT to the caller. System's copy is
-    // zeroed, so destructor/disable will not double-free.
-    SupportingHalfedge::GPUResources takeIntrinsicGpuResources();
-
-    void disable();
+    // Non-detaching copy of this generation's handles into a product record.
+    void copyGpu(RemeshProduct& product) const;
 
 private:
-    void releaseOwnedGpuResources();
+    void freeGpu();
 
-    VulkanDevice& vulkanDevice;
-    ModelRegistry& modelRegistry;
     Remesher& remesher;
 
     std::vector<float> pointPositions;

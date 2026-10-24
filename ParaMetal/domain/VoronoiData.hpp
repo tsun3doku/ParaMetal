@@ -15,7 +15,7 @@
 struct VoronoiData {
     float cellSize = 0.005f;
     int voxelResolution = 128;
-    float sdfPadding = 0.01f;
+    float volumePadding = 0.01f;
 
     NodeDataHandle pointsPayloadHandle;
 

@@ -22,15 +22,16 @@ ProductHandle RuntimeRemeshComputeTransport::apply(uint64_t socketKey, const Rem
     config.runtimeModelId = modelProduct->runtimeModelId;
     config.computeHash = package.hashes.geometry;
 
-    controller->apply(socketKey, config);
+    if (!controller->apply(socketKey, config)) {
+        // Replacement failed, previous generation remains active and publish is skipped
+        return {};
+    }
 
     RemeshProduct remeshProduct{};
     if (!controller->buildProduct(socketKey, remeshProduct)) {
         return {};
     }
-
-    ProductHandle handle = products->publish<RemeshProduct>(socketKey, remeshProduct);
-    return handle;
+    return products->publish<RemeshProduct>(socketKey, remeshProduct);
 }
 
 

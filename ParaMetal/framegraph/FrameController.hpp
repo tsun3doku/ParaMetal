@@ -8,8 +8,6 @@
 #include <string>
 #include <vector>
 
-#include "FrameComputeStage.hpp"
-#include "ComputePass.hpp"
 #include "FrameGraphicsStage.hpp"
 #include "FrameTypes.hpp"
 #include "FrameUpdateStage.hpp"
@@ -17,7 +15,6 @@
 struct WindowRuntimeState;
 class VulkanDevice;
 class ViewportTarget;
-class FrameGraph;
 class SceneRenderer;
 class FrameSync;
 class FrameStats;
@@ -29,6 +26,7 @@ class GizmoController;
 class NavigationGizmoController;
 class WireframeRenderer;
 class VkFrameGraphBackend;
+class VkFrameGraphRuntime;
 class InputController;
 class LightingSystem;
 class MaterialSystem;
@@ -51,7 +49,6 @@ public:
         const WindowRuntimeState& windowState,
         VulkanDevice& vulkanDevice,
         ViewportTarget& viewportTarget,
-        FrameGraph& frameGraph,
         VkFrameGraphBackend& frameGraphBackend,
         SceneRenderer& sceneRenderer,
         FrameSync& frameSync,
@@ -64,8 +61,7 @@ public:
     bool drawFrame(
         VkCommandBuffer commandBuffer,
         uint32_t frameIndex,
-        const render::RenderFlags& flags,
-        const std::vector<ComputePass*>& computePasses);
+        const render::RenderFlags& flags);
 
 private:
     const WindowRuntimeState& windowState;
@@ -79,12 +75,12 @@ private:
     std::atomic<bool>& isShuttingDown;
 
     FrameUpdateStage frameUpdateStage;
-    FrameComputeStage frameComputeStage;
     FrameGraphicsStage frameGraphicsStage;
 
     std::vector<std::string> buildFrameTimingLines(uint32_t frameIndex, std::optional<float> computeGpuMs);
     void updateTimingOverlay(std::vector<std::string>& timingLines, const render::RenderFlags& flags);
 
     VulkanDevice& vulkanDevice;
+    VkFrameGraphRuntime& frameGraphRuntime;
 };
 

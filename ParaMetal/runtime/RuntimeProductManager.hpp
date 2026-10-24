@@ -3,22 +3,20 @@
 #include <cstdint>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "runtime/package/RuntimePackages.hpp"
 #include "runtime/RuntimeProducts.hpp"
 
-class MemoryAllocator;
-class VulkanDevice;
-
 class RuntimeProductManager {
 public:
-    RuntimeProductManager(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator);
+    RuntimeProductManager() = default;
     ~RuntimeProductManager();
 
     template <typename ProductT>
     ProductHandle publish(uint64_t socketKey, ProductT& product) {
-        if (socketKey == 0) {
+        if (socketKey == 0 || product.hashes.full == 0) {
             return {};
         }
 
@@ -27,9 +25,10 @@ public:
             return {};
         }
 
-        auto& products = productsFor<ProductT>()[socketKey];
-        products.push_back(product);
+        handle.publicationId = nextPublicationId;
+        productsFor<ProductT>()[socketKey].emplace_back(handle, std::move(product));
         product = {};
+        ++nextPublicationId;
         return handle;
     }
 
@@ -39,27 +38,26 @@ public:
             return nullptr;
         }
 
-        auto productsIt = productsFor<ProductT>().find(handle.outputSocketKey);
+        const auto productsIt = productsFor<ProductT>().find(handle.outputSocketKey);
         if (productsIt == productsFor<ProductT>().end()) {
             return nullptr;
         }
 
-        for (const ProductT& product : productsIt->second) {
-            if (hashesMatch(product.hashes, handle.hashes)) {
-                return &product;
+        for (const auto& [storedHandle, storedProduct] : productsIt->second) {
+            if (storedHandle.publicationId == handle.publicationId &&
+                storedHandle.hashes.full == handle.hashes.full) {
+                return &storedProduct;
             }
         }
         return nullptr;
     }
 
-    void destroyAll();
+    // Clears publication records, buffers are owned and freed by producing runtimes
+    void clear();
 
 private:
-    void destroy(ModelProduct& product);
-    void destroy(RemeshProduct& product);
-    void destroy(VoronoiProduct& product);
-    void destroy(PointProduct& product);
-    void destroy(HeatProduct& product);
+    template <typename ProductT>
+    using ProductStorage = std::vector<std::pair<ProductHandle, ProductT>>;
 
     template <typename ProductT>
     static NodeProductType type() {
@@ -68,17 +66,8 @@ private:
         else if constexpr (std::is_same_v<ProductT, VoronoiProduct>) return NodeProductType::Voronoi;
         else if constexpr (std::is_same_v<ProductT, PointProduct>) return NodeProductType::Point;
         else if constexpr (std::is_same_v<ProductT, HeatProduct>) return NodeProductType::Heat;
+        else if constexpr (std::is_same_v<ProductT, CFDProduct>) return NodeProductType::CFD;
         else return NodeProductType::None;
-    }
-
-    template <typename ProductT>
-    static const char* productTypeName() {
-        if constexpr (std::is_same_v<ProductT, ModelProduct>) return "Model";
-        else if constexpr (std::is_same_v<ProductT, RemeshProduct>) return "Remesh";
-        else if constexpr (std::is_same_v<ProductT, VoronoiProduct>) return "Voronoi";
-        else if constexpr (std::is_same_v<ProductT, PointProduct>) return "Point";
-        else if constexpr (std::is_same_v<ProductT, HeatProduct>) return "Heat";
-        else return "Unknown";
     }
 
     template <typename ProductT>
@@ -90,51 +79,32 @@ private:
         return handle;
     }
 
-    static bool hashesMatch(const HashValues& a, const HashValues& b) {
-        return a.full == b.full &&
-            a.geometry == b.geometry &&
-            a.thermal == b.thermal &&
-            a.simulation == b.simulation &&
-            a.display == b.display;
-    }
-
-
     template <typename ProductT>
-    void destroyAllProducts(std::unordered_map<uint64_t, std::vector<ProductT>>& productsBySocket) {
-        for (auto& [socketKey, products] : productsBySocket) {
-            (void)socketKey;
-            for (auto& product : products) {
-                destroy(product);
-            }
-        }
-        productsBySocket.clear();
-    }
-
-    template <typename ProductT>
-    std::unordered_map<uint64_t, std::vector<ProductT>>& productsFor() {
+    std::unordered_map<uint64_t, ProductStorage<ProductT>>& productsFor() {
         if constexpr (std::is_same_v<ProductT, ModelProduct>) return modelProducts;
         else if constexpr (std::is_same_v<ProductT, RemeshProduct>) return remeshProducts;
         else if constexpr (std::is_same_v<ProductT, VoronoiProduct>) return voronoiProducts;
         else if constexpr (std::is_same_v<ProductT, PointProduct>) return pointProducts;
+        else if constexpr (std::is_same_v<ProductT, CFDProduct>) return cfdProducts;
         else return heatProducts;
     }
 
     template <typename ProductT>
-    const std::unordered_map<uint64_t, std::vector<ProductT>>& productsFor() const {
+    const std::unordered_map<uint64_t, ProductStorage<ProductT>>& productsFor() const {
         if constexpr (std::is_same_v<ProductT, ModelProduct>) return modelProducts;
         else if constexpr (std::is_same_v<ProductT, RemeshProduct>) return remeshProducts;
         else if constexpr (std::is_same_v<ProductT, VoronoiProduct>) return voronoiProducts;
         else if constexpr (std::is_same_v<ProductT, PointProduct>) return pointProducts;
+        else if constexpr (std::is_same_v<ProductT, CFDProduct>) return cfdProducts;
         else return heatProducts;
     }
 
-    VulkanDevice& vulkanDevice;
-    MemoryAllocator& memoryAllocator;
+    std::unordered_map<uint64_t, ProductStorage<ModelProduct>> modelProducts;
+    std::unordered_map<uint64_t, ProductStorage<RemeshProduct>> remeshProducts;
+    std::unordered_map<uint64_t, ProductStorage<VoronoiProduct>> voronoiProducts;
+    std::unordered_map<uint64_t, ProductStorage<PointProduct>> pointProducts;
+    std::unordered_map<uint64_t, ProductStorage<HeatProduct>> heatProducts;
+    std::unordered_map<uint64_t, ProductStorage<CFDProduct>> cfdProducts;
 
-    std::unordered_map<uint64_t, std::vector<ModelProduct>> modelProducts;
-    std::unordered_map<uint64_t, std::vector<RemeshProduct>> remeshProducts;
-    std::unordered_map<uint64_t, std::vector<VoronoiProduct>> voronoiProducts;
-    std::unordered_map<uint64_t, std::vector<PointProduct>> pointProducts;
-    std::unordered_map<uint64_t, std::vector<HeatProduct>> heatProducts;
-
+    uint64_t nextPublicationId = 1;
 };

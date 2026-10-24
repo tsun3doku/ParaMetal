@@ -47,12 +47,6 @@ SceneRenderer::SceneRenderer(VulkanDevice& device, MemoryAllocator& allocator, F
         return;
     }
     createPasses();
-    if (!createCommandBuffers()) {
-        cleanup();
-        ready = false;
-        std::cerr << "[SceneRenderer] Failed to create command buffers" << std::endl;
-        return;
-    }
     createGpuTimingQueryPool();
 }
 
@@ -342,32 +336,6 @@ void SceneRenderer::destroyPasses() {
     blendPass = nullptr;
 }
 
-bool SceneRenderer::createCommandBuffers() {
-    freeCommandBuffers();
-    gbufferCommandBuffers.resize(maxFramesInFlight);
-
-    VkCommandBufferAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandPool = renderCommandPool.getHandle();
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = static_cast<uint32_t>(gbufferCommandBuffers.size());
-
-    if (vkAllocateCommandBuffers(vulkanDevice.getDevice(), &allocInfo, gbufferCommandBuffers.data()) != VK_SUCCESS) {
-        gbufferCommandBuffers.clear();
-        std::cerr << "[SceneRenderer] Failed to allocate command buffers" << std::endl;
-        return false;
-    }
-    return true;
-}
-
-void SceneRenderer::freeCommandBuffers() {
-    if (gbufferCommandBuffers.empty()) {
-        return;
-    }
-    vkFreeCommandBuffers(vulkanDevice.getDevice(), renderCommandPool.getHandle(), static_cast<uint32_t>(gbufferCommandBuffers.size()), gbufferCommandBuffers.data());
-    gbufferCommandBuffers.clear();
-}
-
 void SceneRenderer::resize(VkExtent2D extent) {
     resizePasses(extent);
 }
@@ -447,27 +415,6 @@ VkDescriptorSet SceneRenderer::getGeometryDescriptorSet(uint32_t frameIndex) con
     return geometryPass->getDescriptorSet(frameIndex);
 }
 
-bool SceneRenderer::recordCommandBuffer(
-    const render::RenderFrameRequest& frameRequest,
-    render::RenderServices& services,
-    bool insertComputeToGraphicsBarrier,
-    VkPipelineStageFlags computeToGraphicsDstStageMask,
-    const std::function<void(VkCommandBuffer)>& postRenderCommands) {
-    if (frameRequest.frameIndex >= gbufferCommandBuffers.size()) {
-        std::cerr << "[SceneRenderer] Invalid frame index for command buffer recording" << std::endl;
-        return false;
-    }
-
-    return recordCommands(
-        gbufferCommandBuffers[frameRequest.frameIndex],
-        true,
-        frameRequest,
-        services,
-        insertComputeToGraphicsBarrier,
-        computeToGraphicsDstStageMask,
-        postRenderCommands);
-}
-
 void SceneRenderer::setWorldUnit(units::LengthUnit unit) {
     if (overlayPass) overlayPass->setWorldUnit(unit);
 }
@@ -480,22 +427,18 @@ bool SceneRenderer::recordExternalCommandBuffer(
     VkPipelineStageFlags computeToGraphicsDstStageMask) {
     return recordCommands(
         commandBuffer,
-        false,
         frameRequest,
         services,
         insertComputeToGraphicsBarrier,
-        computeToGraphicsDstStageMask,
-        {});
+        computeToGraphicsDstStageMask);
 }
 
 bool SceneRenderer::recordCommands(
     VkCommandBuffer commandBuffer,
-    bool manageCommandBufferRecording,
     const render::RenderFrameRequest& frameRequest,
     render::RenderServices& services,
     bool insertComputeToGraphicsBarrier,
-    VkPipelineStageFlags computeToGraphicsDstStageMask,
-    const std::function<void(VkCommandBuffer)>& postRenderCommands) {
+    VkPipelineStageFlags computeToGraphicsDstStageMask) {
     if (!ready) {
         return false;
     }
@@ -505,15 +448,6 @@ bool SceneRenderer::recordCommands(
     if (commandBuffer == VK_NULL_HANDLE) {
         std::cerr << "[SceneRenderer] Null command buffer" << std::endl;
         return false;
-    }
-
-    if (manageCommandBufferRecording) {
-        VkCommandBufferBeginInfo beginInfo{};
-        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
-            std::cerr << "[SceneRenderer] Failed to begin command buffer recording" << std::endl;
-            return false;
-        }
     }
 
     uint32_t timingQueryBase = 0;
@@ -536,9 +470,6 @@ bool SceneRenderer::recordCommands(
     renderPassInfo.framebuffer = frameGraphRuntime.getFramebuffer(currentFrame, imageIndex);
     if (renderPassInfo.framebuffer == VK_NULL_HANDLE) {
         std::cerr << "[SceneRenderer] Invalid framebuffer" << std::endl;
-        if (manageCommandBufferRecording) {
-            vkEndCommandBuffer(commandBuffer);
-        }
         return false;
     }
     renderPassInfo.renderArea.offset = { 0, 0 };
@@ -610,10 +541,6 @@ bool SceneRenderer::recordCommands(
 
     vkCmdEndRenderPass(commandBuffer);
 
-    if (postRenderCommands) {
-        postRenderCommands(commandBuffer);
-    }
-
     if (gpuTimingQueryPool != VK_NULL_HANDLE) {
         vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, gpuTimingQueryPool, timingQueryBase + 1);
         if (currentFrame < gpuTimingValidFrames.size()) {
@@ -621,12 +548,6 @@ bool SceneRenderer::recordCommands(
         }
     }
 
-    if (manageCommandBufferRecording) {
-        if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
-            std::cerr << "[SceneRenderer] Failed to finalize command buffer recording" << std::endl;
-            return false;
-        }
-    }
     return true;
 }
 

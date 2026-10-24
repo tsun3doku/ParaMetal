@@ -6,6 +6,10 @@
 #include <vector>
 
 #include "app/AppTypes.hpp"
+#include "app/RawMouseInput.hpp"
+#include "ComputeContext.hpp"
+#include "framegraph/FrameSync.hpp"
+#include "NodeGraphContext.hpp"
 #include "RenderContext.hpp"
 #include "RuntimeController.hpp"
 #include "RuntimeInterfaces.hpp"
@@ -67,6 +71,7 @@ public:
     const ModelSelection* getModelSelection() const;
     NodeGraphController* getNodeGraphController();
     const NodeGraphController* getNodeGraphController() const;
+    void noteFramePresented();
 
 private:
     void cleanup();
@@ -96,7 +101,11 @@ private:
 
     VulkanCoreContext core;
     SceneContext scene;
+    FrameSync frameSync;
+    RawMouseInput rawMouseInput;
+    ComputeContext compute;
     RenderContext render;
+    NodeGraphContext nodeGraph;
     RuntimeController runtimeController;
 
     app::RenderSettings renderSettingsState;

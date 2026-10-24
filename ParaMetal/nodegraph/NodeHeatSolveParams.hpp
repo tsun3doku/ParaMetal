@@ -22,7 +22,9 @@ struct HeatSolveNodeParams {
     bool paused = false;
     uint32_t resetCounter = 0;
     uint32_t rewindFrame = heat::NoRewindFrame;
-    double simulationDuration = 5.0;
+    double simulationDuration = 10.0;
+    uint32_t solverMaxIterations = 100;        // 0 = keep heat solver default
+    float solverConvergenceTolerance = 3e-3f;  // 0 = keep heat solver default
     HeatPreviewSettings preview{};
 
     uint32_t domainBoundaryTypes[6] = {};

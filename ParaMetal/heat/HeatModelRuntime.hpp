@@ -17,7 +17,6 @@
 class HeatSystemPlayback;
 class VulkanDevice;
 class MemoryAllocator;
-class CommandPool;
 
 class HeatModelRuntime {
 public:
@@ -27,7 +26,6 @@ public:
         const std::vector<glm::vec3>& surfacePositions,
         const std::vector<glm::vec3>& surfaceNormals,
         const std::vector<uint32_t>& surfaceTriangleIndices,
-        CommandPool& renderCommandPool,
         float initialTemperatureC);
     ~HeatModelRuntime();
 
@@ -75,6 +73,13 @@ public:
         VkDeviceSize playbackBufferOffset,
         bool forceReallocate = false);
 
+    // Retains the publication's surface buffer pair; owned until cleanup().
+    void retainSurfaceBuffers(
+        VkBuffer surfaceBuffer,
+        VkDeviceSize surfaceBufferOffset,
+        VkBuffer gradientBuffer,
+        VkDeviceSize gradientBufferOffset);
+
     VkDescriptorSet getSurfaceComputeSetA() const { return surfaceComputeSetA; }
     VkDescriptorSet getSurfaceComputeSetB() const { return surfaceComputeSetB; }
     VkDescriptorSet getSurfaceGradientComputeSetA() const { return surfaceGradientComputeSetA; }
@@ -106,12 +111,13 @@ public:
     void updateHistoryDescriptorOffset(uint32_t displayFrame, VkDeviceSize frameStride, uint32_t currentFrame);
 
 private:
+    void releaseSurfaceBuffers();
+
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
     std::vector<glm::vec3> surfacePositions;
     std::vector<glm::vec3> surfaceNormals;
     std::vector<uint32_t> surfaceTriangleIndices;
-    CommandPool& renderCommandPool;
 
     float density = HeatSimDefaults::density;
     float specificHeat = HeatSimDefaults::specificHeat;
@@ -145,6 +151,10 @@ private:
     VkDeviceSize historyBufferOffset = 0;
     uint32_t historyBufferFrameCapacity = 0;
     uint32_t simNodeCount = 0;
+    VkBuffer surfaceBuffer = VK_NULL_HANDLE;
+    VkDeviceSize surfaceBufferOffset = 0;
+    VkBuffer surfaceGradientBuffer = VK_NULL_HANDLE;
+    VkDeviceSize surfaceGradientBufferOffset = 0;
     bool prescribedTemperatureEnabled = false;
     float prescribedTemperatureC = HeatSimDefaults::ambientTemperatureC;
     bool initialized = false;

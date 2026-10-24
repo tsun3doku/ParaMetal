@@ -17,6 +17,11 @@ public:
     void getNearbyTriangles(const glm::vec3& position, std::vector<size_t>& outTriangles) const;
     void getNearbyTriangles(const glm::vec3& position, int radiusCells, std::vector<size_t>& outTriangles) const;
     void getTrianglesAlongRay(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, std::vector<size_t>& outTriangles) const;
+    bool segmentIntersects(
+        const glm::vec3& start,
+        const glm::vec3& end,
+        const std::vector<glm::vec3>& vertices,
+        const std::vector<uint32_t>& indices) const;
 
 private:
     void buildTriangles(const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices);

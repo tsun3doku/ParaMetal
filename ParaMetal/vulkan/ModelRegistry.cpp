@@ -27,6 +27,12 @@ void ModelRegistry::clearModels() {
         }
     }
     models.clear();
+    for (auto& model : retainedModels) {
+        if (model) {
+            model->cleanup();
+        }
+    }
+    retainedModels.clear();
     visibleModelIds.clear();
     recycledModelIds.clear();
     nextModelId = 1;
@@ -54,11 +60,9 @@ bool ModelRegistry::removeModelByID(uint32_t modelID) {
         return false;
     }
 
-    if (it->second) {
-        it->second->cleanup();
-    }
-    
     unregisterModel(modelID);
+
+    retainedModels.push_back(std::move(it->second));
     models.erase(it);
     return true;
 }

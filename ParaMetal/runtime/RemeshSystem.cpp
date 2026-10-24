@@ -1,18 +1,13 @@
 #include "RemeshSystem.hpp"
 
-#include "vulkan/VulkanDevice.hpp"
+#include "runtime/RuntimeProducts.hpp"
 
-RemeshSystem::RemeshSystem(
-    Remesher& remesher,
-    VulkanDevice& vulkanDevice,
-    ModelRegistry& modelRegistry)
-    : vulkanDevice(vulkanDevice),
-      modelRegistry(modelRegistry),
-      remesher(remesher) {
+RemeshSystem::RemeshSystem(Remesher& remesher)
+    : remesher(remesher) {
 }
 
 RemeshSystem::~RemeshSystem() {
-    disable();
+    freeGpu();
 }
 
 void RemeshSystem::setSourceGeometry(const std::vector<float>& updatedPointPositions, const std::vector<uint32_t>& updatedTriangleIndices) {
@@ -32,7 +27,6 @@ void RemeshSystem::setRuntimeModelId(uint32_t nextRuntimeModelId) {
 }
 
 bool RemeshSystem::remesh() {
-    releaseOwnedGpuResources();
     mesh = {};
 
     if (!remesher.remesh(
@@ -60,17 +54,48 @@ bool RemeshSystem::remesh() {
     return true;
 }
 
-SupportingHalfedge::GPUResources RemeshSystem::takeIntrinsicGpuResources() {
-    SupportingHalfedge::GPUResources taken = gpuResources;
-    gpuResources = {};
-    return taken;
+void RemeshSystem::copyGpu(RemeshProduct& product) const {
+    product.intrinsicTriangleCount = gpuResources.triangleCount;
+    product.intrinsicVertexCount = gpuResources.vertexCount;
+    product.averageTriangleArea = gpuResources.averageTriangleArea;
+
+    product.intrinsicTriangleBuffer = gpuResources.intrinsicTriangleBuffer;
+    product.intrinsicTriangleBufferOffset = gpuResources.triangleGeometryOffset;
+    product.intrinsicVertexBuffer = gpuResources.intrinsicVertexBuffer;
+    product.intrinsicVertexBufferOffset = gpuResources.vertexGeometryOffset;
+
+    product.supportingHalfedgeBuffer = gpuResources.bufferS;
+    product.supportingHalfedgeOffset = gpuResources.offsetS;
+    product.supportingHalfedgeView = gpuResources.viewS;
+    product.supportingAngleBuffer = gpuResources.bufferA;
+    product.supportingAngleOffset = gpuResources.offsetA;
+    product.supportingAngleView = gpuResources.viewA;
+    product.halfedgeBuffer = gpuResources.bufferH;
+    product.halfedgeOffset = gpuResources.offsetH;
+    product.halfedgeView = gpuResources.viewH;
+    product.edgeBuffer = gpuResources.bufferE;
+    product.edgeOffset = gpuResources.offsetE;
+    product.edgeView = gpuResources.viewE;
+    product.triangleBuffer = gpuResources.bufferT;
+    product.triangleOffset = gpuResources.offsetT;
+    product.triangleView = gpuResources.viewT;
+    product.lengthBuffer = gpuResources.bufferL;
+    product.lengthOffset = gpuResources.offsetL;
+    product.lengthView = gpuResources.viewL;
+    product.inputHalfedgeBuffer = gpuResources.bufferHInput;
+    product.inputHalfedgeOffset = gpuResources.offsetHInput;
+    product.inputHalfedgeView = gpuResources.viewHInput;
+    product.inputEdgeBuffer = gpuResources.bufferEInput;
+    product.inputEdgeOffset = gpuResources.offsetEInput;
+    product.inputEdgeView = gpuResources.viewEInput;
+    product.inputTriangleBuffer = gpuResources.bufferTInput;
+    product.inputTriangleOffset = gpuResources.offsetTInput;
+    product.inputTriangleView = gpuResources.viewTInput;
+    product.inputLengthBuffer = gpuResources.bufferLInput;
+    product.inputLengthOffset = gpuResources.offsetLInput;
+    product.inputLengthView = gpuResources.viewLInput;
 }
 
-void RemeshSystem::disable() {
-    releaseOwnedGpuResources();
-    mesh = {};
-}
-
-void RemeshSystem::releaseOwnedGpuResources() {
+void RemeshSystem::freeGpu() {
     remesher.cleanupGpuResources(gpuResources);
 }

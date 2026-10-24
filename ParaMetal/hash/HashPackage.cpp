@@ -64,7 +64,7 @@ void HashPackage::seal(VoronoiPackage& pkg, const HashValues& authoredHashes) {
 
     HashBuilder::combineFloat(geometryHash, pkg.authored.cellSize);
     HashBuilder::combine(geometryHash, static_cast<uint64_t>(pkg.authored.voxelResolution));
-    HashBuilder::combineFloat(geometryHash, pkg.authored.sdfPadding);
+    HashBuilder::combineFloat(geometryHash, pkg.authored.volumePadding);
     HashBuilder::combineFloat(geometryHash, pkg.authored.contactRange);
     HashBuilder::combinePod(geometryHash, pkg.localToWorld);
     HashBuilder::combine(geometryHash, pkg.pointsPayloadHandle.key);
@@ -148,13 +148,10 @@ void HashPackage::seal(HeatPackage& pkg, const HashValues& authoredHashes) {
         HashBuilder::combineFloat(simulationHash, pkg.fluidSpecificHeat);
         HashBuilder::combineFloat(simulationHash, pkg.fluidConductivity);
         HashBuilder::combineFloat(simulationHash, pkg.fluidInitialTemperatureC);
-        HashBuilder::combineFloat(simulationHash, pkg.fluidInletTemperatureC);
-        HashBuilder::combineFloat(simulationHash, pkg.fluidVelocity.x);
-        HashBuilder::combineFloat(simulationHash, pkg.fluidVelocity.y);
-        HashBuilder::combineFloat(simulationHash, pkg.fluidVelocity.z);
     }
     HashBuilder::combine(simulationHash, pkg.domainVoronoiHandle.key);
     combineHandleHash(simulationHash, pkg.domainVoronoiProduct, HashDomain::Geometry);
+    combineHandleHash(simulationHash, pkg.cfdProduct, HashDomain::Simulation);
 
     for (uint32_t face = 0; face < 6; ++face) {
         HashBuilder::combine(simulationHash, static_cast<uint64_t>(pkg.domainBoundaryTypes[face]));
@@ -186,4 +183,24 @@ void HashPackage::seal(HeatPackage& pkg, const HashValues& authoredHashes) {
     pkg.hashes.full = fullHash;
     pkg.hashes.display = displayHash;
 }
+
+void HashPackage::seal(CFDPackage& pkg, const HashValues& authoredHashes) {
+    uint64_t simulationHash = HashBuilder::start();
+    HashBuilder::combine(simulationHash, authoredHashes.simulation);
+    HashBuilder::combine(simulationHash, pkg.domainVoronoiHandle.key);
+    combineHandleHash(simulationHash, pkg.domainVoronoiProduct, HashDomain::Geometry);
+    HashBuilder::combineFloat(simulationHash, pkg.fluid.density);
+    HashBuilder::combineFloat(simulationHash, pkg.fluid.kinematicViscosity);
+    HashBuilder::combineFloat(simulationHash, pkg.initialVelocity.x);
+    HashBuilder::combineFloat(simulationHash, pkg.initialVelocity.y);
+    HashBuilder::combineFloat(simulationHash, pkg.initialVelocity.z);
+    HashBuilder::combineFloat(simulationHash, pkg.fixedTimeStep);
+    HashBuilder::combineFloat(simulationHash, pkg.targetCourant);
+    HashBuilder::combine(simulationHash, pkg.active ? 1u : 0u);
+
+    pkg.hashes.full = simulationHash;
+    pkg.hashes.simulation = simulationHash;
+    pkg.hashes.geometry = pkg.domainVoronoiProduct.hashes.geometry;
+}
+
 

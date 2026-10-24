@@ -7,9 +7,6 @@
 #include "render/RenderSettings.hpp"
 
 class RenderRuntime;
-class FrameSync;
-class MemoryAllocator;
-class HeatSystemComputeController;
 
 struct RuntimeRenderFrameResult {
     bool submitted = false;
@@ -18,10 +15,9 @@ struct RuntimeRenderFrameResult {
 
 class RuntimeRenderController {
 public:
-    RuntimeRenderController(RenderRuntime& renderRuntime, FrameSync& frameSync, MemoryAllocator* memoryAllocator, HeatSystemComputeController* heatSystemComputeController);
+    RuntimeRenderController(RenderRuntime& renderRuntime);
 
     RuntimeRenderFrameResult renderFrame(
-        bool allowHeatSolve,
         uint32_t& frameCounter,
         VkCommandBuffer commandBuffer,
         uint32_t frameIndex,
@@ -29,7 +25,4 @@ public:
 
 private:
     RenderRuntime& renderRuntime;
-    FrameSync& frameSync;
-    MemoryAllocator* memoryAllocator = nullptr;
-    HeatSystemComputeController* heatSystemComputeController = nullptr;
 };

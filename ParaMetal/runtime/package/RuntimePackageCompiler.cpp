@@ -1,6 +1,6 @@
 #include "RuntimePackageCompiler.hpp"
 
-#include "domain/HeatFluidData.hpp"
+#include "domain/FluidData.hpp"
 #include "domain/HeatModelData.hpp"
 #include "domain/PointData.hpp"
 #include "hash/HashPackage.hpp"
@@ -10,6 +10,7 @@
 #include "nodegraph/NodeGraphState.hpp"
 #include "nodegraph/NodeGraphUtils.hpp"
 #include "nodegraph/NodeHeatSolveParams.hpp"
+#include "nodegraph/NodeMergeParams.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
 #include "nodegraph/NodeRemeshParams.hpp"
 #include "nodegraph/NodeTransform.hpp"
@@ -21,9 +22,11 @@
 #include "runtime/package/passes/ValidationPass.hpp"
 #include "util/GeometryUtils.hpp"
 
+#include <cmath>
+#include <cstdint>
+#include <limits>
 #include <unordered_map>
 #include <unordered_set>
-#include <limits>
 
 bool RuntimePackageCompiler::validate(
     const NodeGraphState& graph,
@@ -81,6 +84,8 @@ bool RuntimePackageCompiler::compileNode(
             compiled = compileVoronoiPackage(node, outputSocketKey, output, payloads, worldUnit, packages, errors);
         else if (typeId == nodegraphtypes::HeatSolve)
             compiled = compileHeatPackage(node, outputSocketKey, output, payloads, worldUnit, packages, errors);
+        else if (typeId == nodegraphtypes::CFD)
+            compiled = compileCFDPackage(node, outputSocketKey, output, payloads, worldUnit, packages, errors);
         else if (output.dataType == payloadtypes::Points)
             compiled = compilePointPackage(graph, node, outputSocketKey, output, payloads, products, worldUnit, packages, errors);
         else if (output.dataType == payloadtypes::Geometry)
@@ -326,10 +331,10 @@ bool RuntimePackageCompiler::compileHeatPackage(
     package.display.fluxVectorScale = static_cast<float>(params.preview.fluxVectorScale);
 
     for (uint32_t face = 0; face < 6; ++face) {
-        package.domainBoundaryTypes[face] = heat->domainBoundaryTypes[face];
-        package.domainBoundaryTemperaturesC[face] = heat->domainBoundaryTemperaturesC[face];
-        package.domainBoundaryHeatFluxes[face] = heat->domainBoundaryHeatFluxes[face];
-        package.domainBoundaryHeatTransferCoefficients[face] = heat->domainBoundaryHeatTransferCoefficients[face];
+        package.domainBoundaryTypes[face] = static_cast<uint32_t>(heat->boundaries[face].type);
+        package.domainBoundaryTemperaturesC[face] = heat->boundaries[face].temperatureC;
+        package.domainBoundaryHeatFluxes[face] = heat->boundaries[face].heatFlux;
+        package.domainBoundaryHeatTransferCoefficients[face] = heat->boundaries[face].htc;
     }
 
     std::unordered_map<uint64_t, const HeatModelData*> modelsByRemesh;
@@ -436,15 +441,24 @@ bool RuntimePackageCompiler::compileHeatPackage(
 
     package.hasFluid = false;
     if (heat->hasFluid && heat->heatFluidHandle.key != 0) {
-        const HeatFluidData* fluid = payloads.get<HeatFluidData>(heat->heatFluidHandle);
+        const FluidData* fluid = payloads.get<FluidData>(heat->heatFluidHandle);
         if (fluid) {
             package.hasFluid = true;
             package.fluidDensity = fluid->density;
             package.fluidSpecificHeat = fluid->specificHeat;
             package.fluidConductivity = fluid->conductivity;
             package.fluidInitialTemperatureC = fluid->initialTemperatureC;
-            package.fluidInletTemperatureC = fluid->inletTemperatureC;
-            package.fluidVelocity = fluid->velocity;
+        }
+    }
+    if (heat->cfdHandle.key != 0) {
+        const CFDPackage* cfdPackage = packages.findAny<CFDPackage>(heat->cfdHandle.key);
+        if (cfdPackage && cfdPackage->productHandle.isValid()) {
+            if (domainPackage && cfdPackage->domainVoronoiProduct == domainPackage->productHandle) {
+                package.cfdProduct = cfdPackage->productHandle;
+            } else if (domainPackage) {
+                errors.push_back("Heat package CFD input does not share the same Voronoi domain as Heat.");
+                return false;
+            }
         }
     }
 
@@ -454,6 +468,81 @@ bool RuntimePackageCompiler::compileHeatPackage(
     }
     HashPackage::seal(package, output.hashes);
     packages.apply<HeatPackage>(outputSocketKey, package);
+    return true;
+}
+
+bool RuntimePackageCompiler::compileCFDPackage(
+    const NodeGraphNode& node,
+    uint64_t outputSocketKey,
+    const NodeDataBlock& output,
+    const NodePayloadRegistry& payloads,
+    units::LengthUnit worldUnit,
+    RuntimePackageManager& packages,
+    std::vector<std::string>& errors) const {
+    (void)node;
+    (void)worldUnit;
+    const CFDData* cfd = payloads.get<CFDData>(output.payloadHandle);
+    if (!cfd) return true;
+
+    CFDPackage package{};
+    const CFDPackage* previous = packages.findStored<CFDPackage>(outputSocketKey);
+    package.productHandle = previous ? previous->productHandle : ProductHandle{};
+    package.domainVoronoiHandle = cfd->domainVoronoiHandle;
+    package.initialVelocity = cfd->initialVelocity;
+    package.fixedTimeStep = cfd->fixedTimeStep;
+    package.targetCourant = cfd->targetCourant;
+    package.pressureIterations = cfd->pressureIterations;
+    package.pressureTolerance = cfd->pressureTolerance;
+    package.active = cfd->active;
+
+    for (uint32_t i = 0; i < 6; ++i) {
+        package.domainBoundaryTypes[i] = static_cast<uint32_t>(cfd->boundaries[i].type);
+        package.domainBoundaryVelocities[i] = cfd->boundaries[i].velocity;
+    }
+
+    const bool canResolveDomain = cfd->domainVoronoiHandle.key != 0;
+    if (cfd->active) {
+        if (!canResolveDomain) {
+            errors.push_back("CFD requires an active Voronoi domain input.");
+            return false;
+        }
+
+        const VoronoiData* voronoi = payloads.get<VoronoiData>(cfd->domainVoronoiHandle);
+        if (!voronoi || !voronoi->active) {
+            errors.push_back("CFD's domain Voronoi input is invalid.");
+            return false;
+        }
+
+        if (!cfd->hasFluid || cfd->fluidHandle.key == 0) {
+            errors.push_back("CFD requires a Fluid input.");
+            return false;
+        }
+    }
+
+    const VoronoiPackage* domainPackage = canResolveDomain
+        ? packages.findAny<VoronoiPackage>(cfd->domainVoronoiHandle.key)
+        : nullptr;
+    if (canResolveDomain && (!domainPackage || !domainPackage->productHandle.isValid())) {
+        if (cfd->active) {
+            errors.push_back("CFD is missing its Voronoi domain product.");
+            return false;
+        }
+        domainPackage = nullptr;
+    }
+
+    if (domainPackage) {
+        package.domainVoronoiProduct = domainPackage->productHandle;
+    }
+
+    if (cfd->hasFluid && cfd->fluidHandle.key != 0) {
+        const FluidData* fluid = payloads.get<FluidData>(cfd->fluidHandle);
+        if (fluid) {
+            package.fluid = *fluid;
+        }
+    }
+
+    HashPackage::seal(package, output.hashes);
+    packages.apply<CFDPackage>(outputSocketKey, package);
     return true;
 }
 
@@ -524,7 +613,17 @@ bool RuntimePackageCompiler::compilePointPackage(
         package.localToWorld = reference->localToWorld;
         package.domainMinimum = glm::vec3(std::numeric_limits<float>::max());
         package.domainMaximum = glm::vec3(std::numeric_limits<float>::lowest());
-        const glm::mat4 inverseReference = glm::inverse(toMat4(package.localToWorld));
+        const glm::mat4 referenceL2W = toMat4(package.localToWorld);
+        const glm::mat4 inverseReference = glm::inverse(referenceL2W);
+        const float mergeDistance =
+            readMergeNodeParams(node).mergeDistance *
+            units::canonicalToWorldScale(worldUnit);
+        const bool filterPoints = (mergeDistance > 0.0f && std::isfinite(mergeDistance));
+        const float invCellSize = filterPoints ? 1.0f / mergeDistance : 0.0f;
+        const float mergeDistanceSq = mergeDistance * mergeDistance;
+        std::unordered_map<uint64_t, std::vector<uint32_t>> grid;
+        std::vector<glm::vec3> acceptedWorldPositions;
+
         for (const NodeGraphSocket& input : node.inputs) {
             for (NodeSocketKey key : graph.edges.upstreams(node.id, input.id)) {
                 const PointPackage* upstream = packages.findAny<PointPackage>(key.value);
@@ -532,7 +631,56 @@ bool RuntimePackageCompiler::compilePointPackage(
                 const glm::mat4 upstreamToReference =
                     inverseReference * toMat4(upstream->localToWorld);
                 for (const glm::vec4& position : upstream->positions) {
-                    package.positions.push_back(upstreamToReference * position);
+                    const glm::vec4 transformed = upstreamToReference * position;
+                    if (filterPoints) {
+                        const glm::vec4 world = referenceL2W * transformed;
+                        if (!std::isfinite(world.x) || !std::isfinite(world.y) || !std::isfinite(world.z)) {
+                            continue;
+                        }
+
+                        const glm::vec3 worldPosition(world.x, world.y, world.z);
+                        const int64_t cx = static_cast<int64_t>(std::floor(worldPosition.x * invCellSize));
+                        const int64_t cy = static_cast<int64_t>(std::floor(worldPosition.y * invCellSize));
+                        const int64_t cz = static_cast<int64_t>(std::floor(worldPosition.z * invCellSize));
+
+                        bool tooClose = false;
+                        for (int64_t dz = -1; dz <= 1 && !tooClose; ++dz) {
+                            for (int64_t dy = -1; dy <= 1 && !tooClose; ++dy) {
+                                for (int64_t dx = -1; dx <= 1 && !tooClose; ++dx) {
+                                    const uint64_t neighborKey =
+                                        static_cast<uint64_t>(cx + dx) * 0x9e3779b97f4a7c15ULL ^
+                                        static_cast<uint64_t>(cy + dy) * 0xc2b2ae3d27d4eb4fULL ^
+                                        static_cast<uint64_t>(cz + dz) * 0x165667b19e3779f9ULL;
+                                    const auto it = grid.find(neighborKey);
+                                    if (it == grid.end()) {
+                                        continue;
+                                    }
+                                    for (uint32_t acceptedIndex : it->second) {
+                                        const glm::vec3& existing = acceptedWorldPositions[acceptedIndex];
+                                        const float ddx = worldPosition.x - existing.x;
+                                        const float ddy = worldPosition.y - existing.y;
+                                        const float ddz = worldPosition.z - existing.z;
+                                        if (ddx * ddx + ddy * ddy + ddz * ddz < mergeDistanceSq) {
+                                            tooClose = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (tooClose) {
+                            continue;
+                        }
+
+                        const uint64_t cellKey =
+                            static_cast<uint64_t>(cx) * 0x9e3779b97f4a7c15ULL ^
+                            static_cast<uint64_t>(cy) * 0xc2b2ae3d27d4eb4fULL ^
+                            static_cast<uint64_t>(cz) * 0x165667b19e3779f9ULL;
+                        grid[cellKey].push_back(static_cast<uint32_t>(acceptedWorldPositions.size()));
+                        acceptedWorldPositions.push_back(worldPosition);
+                    }
+                    package.positions.push_back(transformed);
                 }
                 for (uint32_t corner = 0; corner < 8; ++corner) {
                     const glm::vec4 point(

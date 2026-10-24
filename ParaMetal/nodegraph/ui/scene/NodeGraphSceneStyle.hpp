@@ -18,6 +18,7 @@ constexpr qreal capWidth = 18.0;
 constexpr qreal socketRadius = 3.0;
 constexpr qreal socketHoverPadding = 3.0;
 constexpr qreal socketRowInset = 6.0;
+constexpr qreal socketSpacing = 10.0;
 constexpr qreal titleTopOffset = 1.0;
 constexpr qreal iconBoxWidth = 37.0;
 constexpr qreal iconBoxHeight = 25.0;

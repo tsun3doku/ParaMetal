@@ -11,21 +11,17 @@
 #include "runtime/RuntimeRemeshDisplayTransport.hpp"
 #include "runtime/RuntimeVoronoiDisplayTransport.hpp"
 #include "runtime/RuntimeProducts.hpp"
-#include "vulkan/MemoryAllocator.hpp"
-#include "vulkan/VulkanDevice.hpp"
 
 #include <iostream>
 #include <unordered_set>
 
 NodeGraphController::NodeGraphController(
     NodePayloadRegistry& payloadRegistry,
-    const RuntimeConnections& connections,
-    VulkanDevice& vulkanDevice,
-    MemoryAllocator& memoryAllocator)
+    const RuntimeConnections& connections)
     : payloadRegistry(payloadRegistry),
       runtimeConnections(connections),
       runtime(&payloadRegistry),
-      packageController(connections, vulkanDevice, memoryAllocator) {
+      packageController(connections) {
     plan.isValid = false;
 }
 
@@ -139,10 +135,11 @@ bool NodeGraphController::compileRuntimePackages() {
                 lastPackageErrors_ += error;
                 std::cerr << "Runtime package compilation failed: " << error << '\n';
             }
+            packageController.finishCompilation(/*success=*/false);
             return false;
         }
     }
-    packageController.finishCompilation();
+    packageController.finishCompilation(/*success=*/true);
     lastPackageErrors_.clear();
     frozenPackageRebuildPending = false;
 

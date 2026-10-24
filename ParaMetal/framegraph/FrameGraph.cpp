@@ -20,8 +20,6 @@ void FrameGraph::clearGraphDesc() {
     attachmentResourceOrder.clear();
     passSyncEdges.clear();
     frameGraphResult = {};
-    transientNoAliasBytes = 0;
-    transientAliasedBytes = 0;
 }
 
 framegraph::ResourceId FrameGraph::addImageResource(framegraph::ImageResourceCreateInfo createInfo) {
@@ -109,8 +107,6 @@ void FrameGraph::rebuildFrameGraphResult() {
     frameGraphResult.attachmentResourceOrder = attachmentResourceOrder;
     frameGraphResult.aliasGroupByResource = aliasGroupByResource;
     frameGraphResult.aliasGroups = aliasGroups;
-    frameGraphResult.transientNoAliasBytes = transientNoAliasBytes;
-    frameGraphResult.transientAliasedBytes = transientAliasedBytes;
 }
 
 std::vector<std::string> FrameGraph::getPassNames() const {

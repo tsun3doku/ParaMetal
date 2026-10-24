@@ -199,7 +199,7 @@ bool ProjectFile::valueTypeFromString(const QString& text, NodeGraphValueType& o
     else if (text == "Mesh") outValue = NodeGraphValueType::Mesh;
     else if (text == "Remesh") outValue = NodeGraphValueType::Remesh;
     else if (text == "HeatModel") outValue = NodeGraphValueType::HeatModel;
-    else if (text == "HeatFluid") outValue = NodeGraphValueType::HeatFluid;
+    else if (text == "Fluid" || text == "HeatFluid") outValue = NodeGraphValueType::Fluid;
     else if (text == "Points") outValue = NodeGraphValueType::Points;
     else if (text == "Volume") outValue = NodeGraphValueType::Volume;
     else if (text == "Field") outValue = NodeGraphValueType::Field;
@@ -207,6 +207,7 @@ bool ProjectFile::valueTypeFromString(const QString& text, NodeGraphValueType& o
     else if (text == "ScalarFloat") outValue = NodeGraphValueType::ScalarFloat;
     else if (text == "ScalarInt") outValue = NodeGraphValueType::ScalarInt;
     else if (text == "ScalarBool") outValue = NodeGraphValueType::ScalarBool;
+    else if (text == "Simulation") outValue = NodeGraphValueType::Simulation;
     else return false;
     return true;
 }

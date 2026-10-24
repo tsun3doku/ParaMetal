@@ -54,17 +54,16 @@ struct GMLSSurfaceGradientWeight {
 };
 static_assert(sizeof(GMLSSurfaceGradientWeight) == 16, "GMLSSurfaceGradientWeight must match GPU stride");
 
+// Shared-face advection topology indexed by canonical global face and boundary face order
 struct AdvectionFace {
     uint32_t nodeA = 0;
     uint32_t nodeB = 0;
-    float invVolA = 0.0f;
-    float invVolB = 0.0f;
 };
-static_assert(sizeof(AdvectionFace) == 16, "AdvectionFace must match GPU stride");
+static_assert(sizeof(AdvectionFace) == 8, "AdvectionFace must match GPU stride");
 
 struct AdvectionBoundaryFace {
     uint32_t node = 0;
-    float invVol = 0.0f;
+    uint32_t domainFace = UINT32_MAX;
 };
 static_assert(sizeof(AdvectionBoundaryFace) == 8, "AdvectionBoundaryFace must match GPU stride");
 

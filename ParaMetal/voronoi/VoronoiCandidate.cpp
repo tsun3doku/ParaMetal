@@ -94,16 +94,14 @@ bool VoronoiCandidate::build(
     return true;
 }
 
-void VoronoiCandidate::releaseGpuResources(VoronoiProduct& product) {
-    product.globalDisplayRuntimeModelIds.swap(runtimeModelIds);
-    product.globalDisplayVertexBuffers.swap(vertexBuffers);
-    product.globalDisplayVertexBufferOffsets.swap(vertexBufferOffsets);
-    product.globalDisplayFaceIndexBuffers.swap(faceIndexBuffers);
-    product.globalDisplayFaceIndexBufferOffsets.swap(faceIndexBufferOffsets);
-    product.globalDisplayCandidateBuffers.swap(candidateBuffers);
-    product.globalDisplayCandidateBufferOffsets.swap(candidateBufferOffsets);
-
-    faceCounts.clear();
+void VoronoiCandidate::copyGpu(VoronoiProduct& product) const {
+    product.globalDisplayRuntimeModelIds = runtimeModelIds;
+    product.globalDisplayVertexBuffers = vertexBuffers;
+    product.globalDisplayVertexBufferOffsets = vertexBufferOffsets;
+    product.globalDisplayFaceIndexBuffers = faceIndexBuffers;
+    product.globalDisplayFaceIndexBufferOffsets = faceIndexBufferOffsets;
+    product.globalDisplayCandidateBuffers = candidateBuffers;
+    product.globalDisplayCandidateBufferOffsets = candidateBufferOffsets;
 }
 
 void VoronoiCandidate::cleanup() {

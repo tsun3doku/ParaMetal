@@ -18,7 +18,4 @@ struct HeatModelNodeParams {
 };
 
 HeatModelNodeParams readHeatModelNodeParams(const NodeGraphNode& node);
-bool writeHeatModelNodeParams(
-    NodeGraphEditor& editor,
-    NodeGraphNodeId nodeId,
-    const HeatModelNodeParams& params);
+bool writeHeatModelNodeParams(NodeGraphEditor& editor, NodeGraphNodeId nodeId, const HeatModelNodeParams& params);

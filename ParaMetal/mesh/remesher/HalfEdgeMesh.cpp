@@ -482,8 +482,7 @@ HalfEdgeMesh::VertexRing2D HalfEdgeMesh::buildVertexRing2D(uint32_t vertexIdx) c
 		return ring;
 	}
 
-	// Lay out neighbors in 2D with center at origin
-	// Place first neighbor on positive x-axis
+	// Place first neighbor on positive x-axis in 2D layout
 	uint32_t firstEdge = ring.edgeIndices[0];
 	double firstLen = edges[firstEdge].intrinsicLength;
 	ring.neighborPositions2D.push_back(glm::dvec2(firstLen, 0.0));
@@ -802,8 +801,7 @@ bool HalfEdgeMesh::flipEdge(uint32_t edgeIdx) {
 	halfEdges[ha1].origin = vc;
 	halfEdges[hb1].origin = vd;
 
-	// Update vertex anchors
-	// vc and vd cant be invalidated by the flip since they keep their outgoing HEs
+	// Update vertex anchors for va and vb
 	if (vertices[va].halfEdgeIdx == ha1) {
 		vertices[va].halfEdgeIdx = hb2;  // hb2 now originates FROM va
 	}
@@ -811,15 +809,13 @@ bool HalfEdgeMesh::flipEdge(uint32_t edgeIdx) {
 		vertices[vb].halfEdgeIdx = ha2;  // ha2 now originates FROM vb
 	}
 	
-	// Update signpost angle for ha1
-	// The clockwise neighbor to ha1 is hb1.next (ha3)
+	// Update signpost angle for ha1 from clockwise neighbor
 	uint32_t ha1Neighbor = halfEdges[hb1].next; 
 	if (ha1Neighbor != INVALID_INDEX) {
 		halfEdges[ha1].signpostAngle = halfEdges[ha1Neighbor].signpostAngle + halfEdges[ha1Neighbor].cornerAngle;
 	}
 
-	// Update signpost angle for hb1
-	// The clockwise neighbor to hb1 is ha1.next (hb3)
+	// Update signpost angle for hb1 from clockwise neighbor
 	uint32_t hb1Neighbor = halfEdges[ha1].next;
 	if (hb1Neighbor != INVALID_INDEX) {
 		halfEdges[hb1].signpostAngle = halfEdges[hb1Neighbor].signpostAngle + halfEdges[hb1Neighbor].cornerAngle;

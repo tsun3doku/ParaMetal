@@ -15,11 +15,12 @@ namespace payloadtypes {
     uint8_t Geometry = 0;
     uint8_t Remesh = 0;
     uint8_t HeatModel = 0;
-    uint8_t HeatFluid = 0;
+    uint8_t Fluid = 0;
     uint8_t Heat = 0;
     uint8_t Voronoi = 0;
     uint8_t Points = 0;
     uint8_t SerialTemperature = 0;
+    uint8_t CFD = 0;
 }
 
 static NodeSocketSignature makeInputSocket(
@@ -211,9 +212,9 @@ static NodeTypeDefinition buildVoronoiNode() {
             makeOutputSocket("Volume", NodeGraphValueType::Volume, payloadtypes::Voronoi),
         },
         {
-            {nodegraphparams::voronoi::SDFSize, "Cell Size", NodeGraphParamType::Float, 0.005, 0, false, "", false},
+            {nodegraphparams::voronoi::CellSize, "Cell Size", NodeGraphParamType::Float, 0.005, 0, false, "", false},
             {nodegraphparams::voronoi::VoxelResolution, "Voxel Resolution", NodeGraphParamType::Int, 0.0, 128, false, "", false},
-            {nodegraphparams::voronoi::SDFPadding, "SDF Padding", NodeGraphParamType::Float, 0.01, 0, false, "", false},
+            {nodegraphparams::voronoi::VolumePadding, "Volume Grid Padding", NodeGraphParamType::Float, 0.01, 0, false, "", false},
             {nodegraphparams::voronoi::ContactRange, "Contact Range", NodeGraphParamType::Float, voronoi::DefaultContactRange, 0, false, "", false},
             {nodegraphparams::voronoi::ShowVoronoi, "Show Voronoi", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::voronoi::ShowPoints, "Show Points", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
@@ -222,23 +223,20 @@ static NodeTypeDefinition buildVoronoiNode() {
     };
 }
 
-static NodeTypeDefinition buildHeatFluidNode() {
+static NodeTypeDefinition buildFluidNode() {
     return {
-        nodegraphtypes::HeatFluid,
-        "Heat Fluid",
+        nodegraphtypes::Fluid,
+        "Fluid",
         NodeGraphNodeCategory::System,
         {
-            makeOutputSocket("HeatFluid", NodeGraphValueType::HeatFluid, payloadtypes::HeatFluid),
+            makeOutputSocket("Fluid", NodeGraphValueType::Fluid, payloadtypes::Fluid),
         },
         {
-            {nodegraphparams::heatfluid::Density, "Density", NodeGraphParamType::Float, 1.225, 0, false, "", false},
-            {nodegraphparams::heatfluid::SpecificHeat, "Specific Heat", NodeGraphParamType::Float, 1005.0, 0, false, "", false},
-            {nodegraphparams::heatfluid::Conductivity, "Conductivity", NodeGraphParamType::Float, 0.026, 0, false, "", false},
-            {nodegraphparams::heatfluid::InitialTemperatureC, "Initial Temperature (C)", NodeGraphParamType::Float, HeatSimDefaults::ambientTemperatureC, 0, false, "", false},
-            {nodegraphparams::heatfluid::VelocityX, "Velocity X (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-            {nodegraphparams::heatfluid::VelocityY, "Velocity Y (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-            {nodegraphparams::heatfluid::VelocityZ, "Velocity Z (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-            {nodegraphparams::heatfluid::InletTemperatureC, "Inlet Temperature (C)", NodeGraphParamType::Float, HeatSimDefaults::ambientTemperatureC, 0, false, "", false},
+            {nodegraphparams::fluid::Density, "Density", NodeGraphParamType::Float, 1.225, 0, false, "", false},
+            {nodegraphparams::fluid::SpecificHeat, "Specific Heat", NodeGraphParamType::Float, 1005.0, 0, false, "", false},
+            {nodegraphparams::fluid::Conductivity, "Conductivity", NodeGraphParamType::Float, 0.026, 0, false, "", false},
+            {nodegraphparams::fluid::InitialTemperatureC, "Initial Temperature (C)", NodeGraphParamType::Float, 20.0, 0, false, "", false},
+            {nodegraphparams::fluid::KinematicViscosity, "Kinematic Viscosity (m2/s)", NodeGraphParamType::Float, 1.516e-5, 0, false, "", false},
         },
     };
 }
@@ -251,11 +249,12 @@ static NodeTypeDefinition buildHeatSolveNode() {
         {
             makeInputSocket("Volume", NodeGraphValueType::Volume),
             makeInputSocket("HeatModel", NodeGraphValueType::HeatModel, true, false),
-            makeInputSocket("Heat Fluid", NodeGraphValueType::HeatFluid, false, false),
-            makeOutputSocket("Heat", NodeGraphValueType::None, payloadtypes::Heat),
+            makeInputSocket("Fluid", NodeGraphValueType::Fluid, false, false),
+            makeInputSocket("CFD", NodeGraphValueType::Simulation, false, false),
+            makeOutputSocket("Heat", NodeGraphValueType::Simulation, payloadtypes::Heat),
         },
         {
-            {nodegraphparams::heatsolve::Enabled, "Enabled", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
+            {nodegraphparams::heatsolve::Enabled, "Enabled", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
             {nodegraphparams::heatsolve::Paused, "Paused", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::ResetRequested, "Reset Requested", NodeGraphParamType::Int, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::ShowHeatOverlay, "Show Heat Overlay", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
@@ -263,10 +262,12 @@ static NodeTypeDefinition buildHeatSolveNode() {
             {nodegraphparams::heatsolve::ShowHeatPalette, "Show Heat Palette", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::FluxVectorScale, "Flux Vector Scale", NodeGraphParamType::Float, 1.0, 0, false, "", false},
             {nodegraphparams::heatsolve::RewindFrame, "Rewind Frame", NodeGraphParamType::Int, 0.0, static_cast<int64_t>(heat::NoRewindFrame), false, "", false},
-            {nodegraphparams::heatsolve::SimulationDuration, "Simulation Duration", NodeGraphParamType::Float, 5.0, 0, false, "", false},
+            {nodegraphparams::heatsolve::SimulationDuration, "Simulation Duration", NodeGraphParamType::Float, 10.0, 0, false, "", false},
             {nodegraphparams::heatsolve::ShowDomainBox, "Show Domain Box", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
-            {nodegraphparams::heatsolve::ShowFluidVolume, "Show Fluid Volume", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
+            {nodegraphparams::heatsolve::ShowFluidVolume, "Show Fluid Volume", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
             {nodegraphparams::heatsolve::FluidVolumeOpacity, "Fluid Volume Opacity", NodeGraphParamType::Float, 0.25, 0, false, "", false},
+            {nodegraphparams::heatsolve::SolverMaxIterations, "Max PCG Iterations (0=default)", NodeGraphParamType::Int, 100.0, 100, false, "", false},
+            {nodegraphparams::heatsolve::SolverConvergenceTolerance, "PCG Tolerance (0=default)", NodeGraphParamType::Float, 3e-3, 0, false, "", false},
 
             makeEnumParamDefinition(
                 nodegraphparams::heatsolve::domainBoundaryTypeParam(0),
@@ -319,6 +320,77 @@ static NodeTypeDefinition buildHeatSolveNode() {
     };
 }
 
+static NodeTypeDefinition buildCFDNode() {
+    return {
+        nodegraphtypes::CFD,
+        "CFD",
+        NodeGraphNodeCategory::System,
+        {
+            makeInputSocket("Volume", NodeGraphValueType::Volume, false, true),
+            makeInputSocket("Fluid", NodeGraphValueType::Fluid, false, false),
+            makeOutputSocket("CFD", NodeGraphValueType::Simulation, payloadtypes::CFD),
+        },
+        {
+            {nodegraphparams::cfd::Enabled, "Enabled", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
+            {nodegraphparams::cfd::TargetCourant, "Target Courant", NodeGraphParamType::Float, 0.5, 0, false, "", false},
+            {nodegraphparams::cfd::TimeStep, "Time Step (s)", NodeGraphParamType::Float, 1.0 / 60.0, 0, false, "", false},
+            {nodegraphparams::cfd::VelocityX, "Initial Velocity X (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::cfd::VelocityY, "Initial Velocity Y (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::cfd::VelocityZ, "Initial Velocity Z (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::cfd::PressureIterations, "Pressure Iterations", NodeGraphParamType::Int, 200.0, 200, false, "", false},
+            {nodegraphparams::cfd::PressureTolerance, "Pressure Tolerance", NodeGraphParamType::Float, 1e-4, 0, false, "", false},
+
+            makeEnumParamDefinition(
+                nodegraphparams::cfd::domainBoundaryTypeParam(0),
+                "-X Boundary Type", "Velocity Inlet",
+                {"No-Slip Wall", "Velocity Inlet", "Pressure Outlet"}),
+            {nodegraphparams::cfd::domainBoundaryVelocityXParam(0), "-X Velocity X (m/s)", NodeGraphParamType::Float, 0.1, 0, false, "", false},
+            {nodegraphparams::cfd::domainBoundaryVelocityYParam(0), "-X Velocity Y (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::cfd::domainBoundaryVelocityZParam(0), "-X Velocity Z (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+
+            makeEnumParamDefinition(
+                nodegraphparams::cfd::domainBoundaryTypeParam(1),
+                "+X Boundary Type", "Pressure Outlet",
+                {"No-Slip Wall", "Velocity Inlet", "Pressure Outlet"}),
+            {nodegraphparams::cfd::domainBoundaryVelocityXParam(1), "+X Velocity X (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::cfd::domainBoundaryVelocityYParam(1), "+X Velocity Y (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::cfd::domainBoundaryVelocityZParam(1), "+X Velocity Z (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+
+            makeEnumParamDefinition(
+                nodegraphparams::cfd::domainBoundaryTypeParam(2),
+                "-Y Boundary Type", "No-Slip Wall",
+                {"No-Slip Wall", "Velocity Inlet", "Pressure Outlet"}),
+            {nodegraphparams::cfd::domainBoundaryVelocityXParam(2), "-Y Velocity X (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::cfd::domainBoundaryVelocityYParam(2), "-Y Velocity Y (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::cfd::domainBoundaryVelocityZParam(2), "-Y Velocity Z (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+
+            makeEnumParamDefinition(
+                nodegraphparams::cfd::domainBoundaryTypeParam(3),
+                "+Y Boundary Type", "No-Slip Wall",
+                {"No-Slip Wall", "Velocity Inlet", "Pressure Outlet"}),
+            {nodegraphparams::cfd::domainBoundaryVelocityXParam(3), "+Y Velocity X (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::cfd::domainBoundaryVelocityYParam(3), "+Y Velocity Y (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::cfd::domainBoundaryVelocityZParam(3), "+Y Velocity Z (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+
+            makeEnumParamDefinition(
+                nodegraphparams::cfd::domainBoundaryTypeParam(4),
+                "-Z Boundary Type", "No-Slip Wall",
+                {"No-Slip Wall", "Velocity Inlet", "Pressure Outlet"}),
+            {nodegraphparams::cfd::domainBoundaryVelocityXParam(4), "-Z Velocity X (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::cfd::domainBoundaryVelocityYParam(4), "-Z Velocity Y (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::cfd::domainBoundaryVelocityZParam(4), "-Z Velocity Z (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+
+            makeEnumParamDefinition(
+                nodegraphparams::cfd::domainBoundaryTypeParam(5),
+                "+Z Boundary Type", "No-Slip Wall",
+                {"No-Slip Wall", "Velocity Inlet", "Pressure Outlet"}),
+            {nodegraphparams::cfd::domainBoundaryVelocityXParam(5), "+Z Velocity X (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::cfd::domainBoundaryVelocityYParam(5), "+Z Velocity Y (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::cfd::domainBoundaryVelocityZParam(5), "+Z Velocity Z (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+        },
+    };
+}
+
 static NodeTypeDefinition buildPointsNode() {
     return {
         nodegraphtypes::Points,
@@ -361,7 +433,7 @@ static NodeTypeDefinition buildMergeNode() {
             makePolymorphicOutputSocket("Geometry", {NodeGraphValueType::Mesh, NodeGraphValueType::Points}, payloadtypes::None),
         },
         {
-            {nodegraphparams::merge::MergeDistance, "Merge Distance", NodeGraphParamType::Float, 0.01, 0, false, "", false},
+            {nodegraphparams::merge::MergeDistance, "Merge Distance", NodeGraphParamType::Float, 0.0005, 0, false, "", false},
         },
     };
 }
@@ -370,19 +442,21 @@ void initNodeGraph(NodeGraphRegistry& registry) {
     payloadtypes::Geometry   = registry.registerPayloadType("geometry", NodeGraphValueType::Mesh);
     payloadtypes::Remesh     = registry.registerPayloadType("remesh",   NodeGraphValueType::Remesh);
     payloadtypes::HeatModel  = registry.registerPayloadType("heat_model", NodeGraphValueType::HeatModel);
-    payloadtypes::HeatFluid  = registry.registerPayloadType("heat_fluid", NodeGraphValueType::HeatFluid);
-    payloadtypes::Heat       = registry.registerPayloadType("heat",      NodeGraphValueType::None);
+    payloadtypes::Fluid      = registry.registerPayloadType("fluid",      NodeGraphValueType::Fluid);
+    payloadtypes::Heat       = registry.registerPayloadType("heat",      NodeGraphValueType::Simulation);
     payloadtypes::Voronoi    = registry.registerPayloadType("voronoi",   NodeGraphValueType::Volume);
     payloadtypes::Points     = registry.registerPayloadType("points",    NodeGraphValueType::Points);
     payloadtypes::SerialTemperature = registry.registerPayloadType("serial_temperature", NodeGraphValueType::ScalarFloat);
+    payloadtypes::CFD        = registry.registerPayloadType("cfd",       NodeGraphValueType::Simulation);
 
     registry.registerNodeType(buildModelNode());
     registry.registerNodeType(buildTransformNode());
     registry.registerNodeType(buildGroupNode());
     registry.registerNodeType(buildRemeshNode());
     registry.registerNodeType(buildHeatModelNode());
-    registry.registerNodeType(buildHeatFluidNode());
+    registry.registerNodeType(buildFluidNode());
     registry.registerNodeType(buildVoronoiNode());
+    registry.registerNodeType(buildCFDNode());
     registry.registerNodeType(buildHeatSolveNode());
     registry.registerNodeType(buildPointsNode());
     registry.registerNodeType(buildMeshPointsNode());

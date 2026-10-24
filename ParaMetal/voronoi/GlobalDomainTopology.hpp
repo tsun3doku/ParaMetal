@@ -9,54 +9,57 @@ namespace topology {
 
 inline constexpr uint32_t InvalidInstanceId = 0xffffffffu;
 
-    // Thermal geometry is strictly fragment based
+enum class FaceType : uint8_t {
+    Shared,          // Internal Voronoi interface
+    ContactSide,     // Solid contact face or fluid closure face 
+    DomainBoundary   // Domain boundary face 
+};
+
+// Thermal geometry is strictly fragment based
 struct Fragment {
     uint32_t instanceId = InvalidInstanceId;
     uint32_t seedId = 0;
-    glm::vec3 centroid{0.0f};
-    float volume = 0.0f;
+    glm::dvec3 centroid{0.0};
+    double volume = 0.0;
 };
 
 struct Face {
-    uint32_t fragmentA = 0;
-    uint32_t fragmentB = 0;
-    // Consistently oriented fragmentA -> fragmentB
-    glm::vec3 normal{0.0f};
-    float area = 0.0f;
-    float orthogonalDistanceA = 0.0f;
-    float orthogonalDistanceB = 0.0f;
+    uint32_t fragmentA = 0xffffffffu;
+    uint32_t fragmentB = 0xffffffffu;
+    double areaA = 0.0;
+    glm::dvec3 areaVectorA{0.0}; // Outward from fragmentA
+    glm::dvec3 momentA{0.0};     
+    double areaB = 0.0;
+    glm::dvec3 areaVectorB{0.0}; // Outward from fragmentB
+    glm::dvec3 momentB{0.0};     
+    FaceType type = FaceType::Shared;
+    uint32_t domainFace = 0xffffffffu;
 };
 
-struct ContactFace {
-    uint32_t fragmentA = 0;
-    uint32_t fragmentB = 0;
-    float area = 0.0f;
-    float orthogonalDistanceA = 0.0f;
-    float orthogonalDistanceB = 0.0f;
-    float gap = 0.0f;
+struct ContactCoupling {
+    uint32_t faceA = 0xffffffffu; // Index into GlobalDomain::faces
+    uint32_t faceB = 0xffffffffu; // Index into GlobalDomain::faces
+    double couplingArea = 0.0;
 };
 
 struct BoundaryFace {
-    uint32_t fragment = 0;
+    uint32_t faceIndex = 0xffffffffu;
+    uint32_t fragment = 0xffffffffu;
     uint32_t domainFace = 0;
-    float area = 0.0f;
-    // Orthogonal distance from fragment centroid to the domain boundary plane
-    float orthogonalDistance = 0.0f;
 };
 
 struct GlobalDomain {
     std::vector<Fragment> fragments;
     std::vector<Face> faces;
-    std::vector<ContactFace> contactFaces;
+    std::vector<ContactCoupling> contactCouplings;
     std::vector<BoundaryFace> boundaryFaces;
     std::vector<uint32_t> instanceFragmentCounts;
-    std::vector<uint32_t> sdfRuntimeModelIds;
     std::vector<glm::vec3> seedPositions;
-    glm::vec3 sdfGridMin{0.0f, 0.0f, 0.0f};
-    glm::ivec3 sdfGridDim{0, 0, 0};
-    float sdfCellSize = 0.0f;
+    std::vector<uint32_t> seedToFragment;
+    glm::vec3 volumeGridMin{0.0f, 0.0f, 0.0f};
+    glm::ivec3 volumeGridDim{0, 0, 0};
+    float volumeGridCellSize = 0.0f;
     float nominalCellSize = 0.0f;
-    std::vector<float> sdfValues;
     VkBuffer seedIdGridBuffer = VK_NULL_HANDLE;
     VkDeviceSize seedIdGridBufferOffset = 0;
     uint32_t seedIdGridCount = 0;
@@ -64,10 +67,8 @@ struct GlobalDomain {
     bool isValid() const {
         return !fragments.empty() && !faces.empty() &&
             nominalCellSize > 0.0f &&
-            sdfGridDim.x > 0 && sdfGridDim.y > 0 && sdfGridDim.z > 0 && sdfCellSize > 0.0f &&
-            sdfValues.size() ==
-                static_cast<size_t>(sdfGridDim.x) * static_cast<size_t>(sdfGridDim.y) *
-                    static_cast<size_t>(sdfGridDim.z) * sdfRuntimeModelIds.size();
+            volumeGridDim.x > 0 && volumeGridDim.y > 0 && volumeGridDim.z > 0 &&
+            volumeGridCellSize > 0.0f;
     }
 };
 

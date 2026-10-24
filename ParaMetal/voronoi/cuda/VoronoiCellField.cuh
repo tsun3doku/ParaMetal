@@ -15,12 +15,12 @@ inline constexpr uint32_t SolidSeed   = 0xFFFFFFFEu;
 
 bool buildSeedIdGrid(
     const DeviceKnn& knn,
-    const float* devUnionSdf,
+    const uint8_t* devSolidMask,
     const std::vector<glm::vec4>& seeds,
     glm::vec3 gridMin,
     glm::ivec3 gridDim,
     float cellSize,
-    std::vector<uint32_t>& outSeedIds,
+    uint32_t* outSeedIds,
     cudaStream_t stream);
 
 } // namespace voronoi

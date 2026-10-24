@@ -2,6 +2,9 @@
 
 #include "NodeGraphUiModel.hpp"
 
+#include <QtCore/QElapsedTimer>
+#include <QtCore/QHash>
+#include <QtGui/QColor>
 #include <QtQuick/QQuickPaintedItem>
 #include <QtGui/QImage>
 
@@ -92,6 +95,11 @@ private:
     void updateHover(const QPointF& graphPosition);
     static bool isSimulationNode(const Node& node);
     void paintSimulationHighlight(QPainter& painter, const Node& node) const;
+    const QImage& simulationRingImage(const QColor& ringColor) const;
+    qreal simulationRingImageScale() const;
+    void updateSimulationRingAnimation();
+    void onSimulationRingFrame();
+    void setSimulationRingFrameHook(bool enabled);
     static bool socketTypesCompatible(const Socket& source, const Socket& target);
     int edgeIndexAt(const QPointF& graphPosition) const;
     void finishConnection(const QPointF& itemPosition);
@@ -120,4 +128,13 @@ private:
     bool hoveredSocketOutput = false;
     bool hoveredSocketCompatible = true;
     int hoveredEdgeIndex = -1;
+    QElapsedTimer simulationRingClock;
+    qreal simulationRingAngle = 0.0;
+    qreal simulationRingSnapFrom = 0.0;
+    qreal simulationRingSnapElapsedMs = 0.0;
+    int simulationRingNodeId = 0;
+    bool simulationRingSpinning = false;
+    bool simulationRingSnapping = false;
+    bool simulationRingFrameHooked = false;
+    mutable QHash<quint64, QImage> simulationRingImageCache;
 };

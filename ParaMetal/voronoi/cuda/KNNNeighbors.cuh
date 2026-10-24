@@ -17,6 +17,7 @@ public:
   ~Implementation();
 
   bool initialize(VulkanDevice &vulkanDevice);
+  bool setupDevice(int ordinal);
   void cleanup();
   bool buildNeighbors(uint32_t neighborCount, const std::vector<uint32_t> &queryIds);
   bool buildSpatialIndex(const std::vector<glm::vec4> &seeds);
@@ -26,7 +27,6 @@ public:
   DeviceKnn makeDeviceKnn() const;
 
 private:
-  bool setupDevice(int ordinal);
   bool buildCellOffsets();
   bool buildGrid(const std::vector<glm::vec4> &seeds);
 

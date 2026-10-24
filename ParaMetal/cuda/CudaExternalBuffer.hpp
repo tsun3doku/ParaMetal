@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <vulkan/vulkan.h>
 
 class VulkanExternalBuffer;
 
@@ -13,6 +14,12 @@ public:
     CudaExternalBuffer& operator=(const CudaExternalBuffer&) = delete;
 
     bool ensureMapped(const VulkanExternalBuffer& buffer, int cudaDevice);
+    bool ensureMapped(
+        VkDevice device,
+        VkDeviceMemory memory,
+        VkDeviceSize allocationSize,
+        VkDeviceSize bufferSize,
+        int cudaDevice);
     void cleanup();
     float* getPointer() const;
 

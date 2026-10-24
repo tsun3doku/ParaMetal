@@ -49,7 +49,7 @@ public:
     void handleMouseRelease(int button, float mouseX, float mouseY);
     void handleMouseButton(int button, float mouseX, float mouseY, bool shiftPressed);
 
-    void processInput(bool shiftPressed, bool middleButtonPressed, double mouseX, double mouseY, float deltaTime);
+    void processRawDrag(bool panActive, float dx, float dy);
     void updateGizmo();
     std::vector<ViewportCommand> takePendingViewportCommands();
     std::optional<GizmoDragBegin> takePendingGizmoDragBegin();

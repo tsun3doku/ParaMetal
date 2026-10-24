@@ -27,7 +27,7 @@ void runtimepackage::CoordinatePass::run(VoronoiPackage& package, units::LengthU
     const float factor = units::canonicalToWorldScale(worldUnit);
     package.canonicalToWorldScale = factor;
     package.authored.cellSize *= factor;
-    package.authored.sdfPadding *= factor;
+    package.authored.volumePadding *= factor;
     package.authored.contactRange *= factor;
 }
 

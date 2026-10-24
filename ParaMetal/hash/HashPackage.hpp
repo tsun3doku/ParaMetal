@@ -13,6 +13,7 @@ struct RemeshPackage;
 struct VoronoiPackage;
 struct PointPackage;
 struct HeatPackage;
+struct CFDPackage;
 
 class HashPackage {
 public:
@@ -21,4 +22,5 @@ public:
     static void seal(VoronoiPackage& pkg, const HashValues& authoredHashes);
     static void seal(PointPackage& pkg, const HashValues& sourceHashes);
     static void seal(HeatPackage& pkg, const HashValues& authoredHashes);
+    static void seal(CFDPackage& pkg, const HashValues& authoredHashes);
 };

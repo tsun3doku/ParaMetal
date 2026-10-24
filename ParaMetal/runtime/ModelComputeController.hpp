@@ -11,10 +11,8 @@
 #include "hash/HashValues.hpp"
 #include "runtime/RuntimeProducts.hpp"
 
-class FrameSync;
 class ModelUploader;
 class ModelRegistry;
-class VulkanDevice;
 
 class ModelComputeController {
 public:
@@ -29,10 +27,8 @@ public:
     };
 
     ModelComputeController(
-        VulkanDevice& vulkanDevice,
         ModelRegistry& modelRegistry,
         ModelUploader& modelUploader,
-        FrameSync& frameSync,
         std::atomic<bool>& isOperating);
 
     void apply(uint64_t socketKey, const Config& config);
@@ -55,10 +51,8 @@ private:
     bool rebuildModel(uint64_t socketKey, const Config& config, uint32_t preferredModelId);
     bool removeModel(uint64_t socketKey);
 
-    VulkanDevice& vulkanDevice;
     ModelRegistry& modelRegistry;
     ModelUploader& modelUploader;
-    FrameSync& frameSync;
     std::atomic<bool>& isOperating;
     mutable std::mutex executionMutex;
     std::unordered_map<uint64_t, uint32_t> runtimeModelIdBySocketKey;

@@ -1,11 +1,25 @@
 #include "RuntimeController.hpp"
 
+#include "ComputeContext.hpp"
+#include "NodeGraphContext.hpp"
 #include "RenderContext.hpp"
 #include "SceneContext.hpp"
 #include "VulkanCoreContext.hpp"
+#include "heat/HeatSystemComputeController.hpp"
 #include "nodegraph/NodeGraphController.hpp"
+#include "simgraph/SimGraphRuntime.hpp"
 #include "render/WindowRuntimeState.hpp"
+#include "render/RenderRuntime.hpp"
 #include "scene/CameraController.hpp"
+#include "scene/InputController.hpp"
+#include "scene/SceneController.hpp"
+#include "scene/MaterialSystem.hpp"
+#include "scene/LightingSystem.hpp"
+#include "vulkan/ModelRegistry.hpp"
+#include "vulkan/UniformBufferManager.hpp"
+#include "vulkan/MemoryAllocator.hpp"
+
+RuntimeController::RuntimeController() = default;
 
 RuntimeController::~RuntimeController() {
     shutdown();
@@ -13,21 +27,14 @@ RuntimeController::~RuntimeController() {
 
 bool RuntimeController::initialize(
     RenderContext& render,
+    ComputeContext& compute,
+    NodeGraphContext& nodeGraph,
     SceneContext& scene,
     VulkanCoreContext& core,
-    WindowRuntimeState& windowRuntimeState) {
+    WindowRuntimeState& windowRuntimeState,
+    RawMouseInput* rawMouseInput) {
     if (initialized) {
         return true;
-    }
-
-    if (!render.heatSystemComputeController() || !render.modelComputeController() || !render.sceneController() || !render.nodeGraphController()) {
-        return false;
-    }
-
-    if (!render.initializeInputPipeline(scene) || !render.runtime() ||
-        !render.inputController()) {
-        shutdown();
-        return false;
     }
 
     auto* allocator = core.allocator();
@@ -37,28 +44,83 @@ bool RuntimeController::initialize(
     }
 
     this->render = &render;
+    this->compute = &compute;
+    this->nodeGraph = &nodeGraph;
     this->scene = &scene;
+
+    sceneControllerState = std::make_unique<SceneController>(
+        *scene.modelRegistry(),
+        scene.cameraController());
+    sceneControllerState->setModelComputeController(compute.modelComputeController());
+    sceneControllerState->focusOnVisibleModel();
+
+    if (!initializeInputPipeline(windowRuntimeState)) {
+        shutdown();
+        return false;
+    }
 
     runtimeInput = std::make_unique<RuntimeInput>(
         windowRuntimeState,
-        *render.inputController(),
-        *render.nodeGraphController(),
-        *render.sceneController(),
-        *scene.modelRegistry());
+        *inputControllerState,
+        *nodeGraph.nodeGraphController(),
+        *sceneControllerState,
+        *scene.modelRegistry(),
+        rawMouseInput);
     runtimeRenderController = std::make_unique<RuntimeRenderController>(
-        *render.runtime(),
-        render.sync(),
-        allocator,
-        render.heatSystemComputeController());
+        *render.runtime());
 
     initialized = true;
+    return true;
+}
+
+bool RuntimeController::initializeInputPipeline(WindowRuntimeState& windowRuntimeState) {
+    if (!render || !scene || !render->runtime()) {
+        return false;
+    }
+
+    RenderRuntime* renderRuntime = render->runtime();
+    auto* modelRegistry = scene->modelRegistry();
+    auto* uniformBufferManager = scene->uniformBufferManager();
+    auto* lightingSystem = scene->lightingSystem();
+    auto* materialSystem = scene->materialSystem();
+    if (!modelRegistry || !uniformBufferManager || !lightingSystem || !materialSystem) {
+        return false;
+    }
+
+    inputControllerState = std::make_unique<InputController>(
+        scene->cameraController(),
+        renderRuntime->getGizmoController(),
+        renderRuntime->getNavigationGizmoController(),
+        renderRuntime->getModelSelection(),
+        *modelRegistry,
+        windowRuntimeState);
+
+    FrameControllerServices frameControllerServices{
+        *modelRegistry,
+        *uniformBufferManager,
+        renderRuntime->getModelSelection(),
+        renderRuntime->getGizmoController(),
+        renderRuntime->getNavigationGizmoController(),
+        renderRuntime->getWireframeRenderer(),
+        *inputControllerState,
+        *lightingSystem,
+        *materialSystem};
+    if (!renderRuntime->initializeFrameController(frameControllerServices)) {
+        inputControllerState.reset();
+        return false;
+    }
+
     return true;
 }
 
 void RuntimeController::shutdown() {
     runtimeRenderController.reset();
     runtimeInput.reset();
+    sceneControllerState.reset();
+    inputControllerState.reset();
     render = nullptr;
+    compute = nullptr;
+    nodeGraph = nullptr;
     scene = nullptr;
     initialized = false;
 }
@@ -68,11 +130,38 @@ bool RuntimeController::isInitialized() const {
 }
 
 NodeGraphController* RuntimeController::nodeGraphController() {
-    return render ? render->nodeGraphController() : nullptr;
+    return nodeGraph ? nodeGraph->nodeGraphController() : nullptr;
 }
 
 CameraController* RuntimeController::cameraController() {
     return scene ? &scene->cameraController() : nullptr;
+}
+
+void RuntimeController::simulateFrame(bool allowSimulation, uint32_t frameIndex) {
+    if (render == nullptr || compute == nullptr) {
+        return;
+    }
+
+    SimGraphRuntime* simGraph = compute->simGraphRuntime();
+    if (simGraph == nullptr) {
+        return;
+    }
+
+    HeatSystemComputeController* heat = compute->heatSystemComputeController();
+    if (heat != nullptr) {
+        heat->updateSerialInputs();
+    }
+
+    simGraph->setEnabled(allowSimulation);
+    const SimTickResult simResult = simGraph->tick(frameIndex);
+    render->runtime()->getFrameStats().setComputeGpuMs(simResult.computeGpuMs);
+    render->runtime()->getFrameStats().setSimStepTotal(simResult.completedStepCount);
+
+    if (simResult.status == SimStatus::Failed && heat != nullptr) {
+        // Unblock queued consumer waits on failed sim before quiescing CUDA work
+        heat->releaseWaits();
+        heat->waitIdle();
+    }
 }
 
 void RuntimeController::tick(
@@ -81,21 +170,22 @@ void RuntimeController::tick(
     VkCommandBuffer commandBuffer,
     uint32_t frameIndex,
     const app::RenderSettings& renderSettings) {
-    if (!runtimeRenderController || !runtimeInput || !render || !scene) {
+    if (!runtimeRenderController || !runtimeInput || !render || !compute || !nodeGraph || !scene) {
         return;
     }
 
     hasFrameSlot = false;
 
-    runtimeInput->tick(deltaTime);
+    runtimeInput->tick();
 
-    NodeGraphController* graphController = render->nodeGraphController();
+    NodeGraphController* graphController = nodeGraph->nodeGraphController();
     graphController->tick();
 
     scene->cameraController().tick(deltaTime);
-    const bool allowHeatSolve = graphController->compiledState().isValid;
+    simulateFrame(
+        graphController->compiledState().isValid && !graphController->runtimeCompilationPending(),
+        frameIndex);
     const RuntimeRenderFrameResult renderResult = runtimeRenderController->renderFrame(
-        allowHeatSolve,
         frameCounter,
         commandBuffer,
         frameIndex,
@@ -124,4 +214,12 @@ bool RuntimeController::takePendingNodeParameters(
     std::vector<NodeGraphParamValue>& outParameters) {
     return runtimeInput &&
         runtimeInput->takePendingNodeParameters(outNodeId, outParameters);
+}
+
+SceneController* RuntimeController::sceneController() {
+    return sceneControllerState.get();
+}
+
+const SceneController* RuntimeController::sceneController() const {
+    return sceneControllerState.get();
 }

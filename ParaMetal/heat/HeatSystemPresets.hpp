@@ -1,5 +1,7 @@
 #pragma once
 
+#include "HeatBoundaryConditions.hpp"
+
 #include <cstdint>
 #include <string>
 
@@ -32,14 +34,11 @@ struct HeatSimDefaults {
     static constexpr float fluidDensity = 1.225f;
     static constexpr float fluidSpecificHeat = 1005.0f;
     static constexpr float fluidConductivity = 0.026f;
+    static constexpr float fluidKinematicViscosity = 1.516e-5f;
 
     static constexpr float minNormalDot = -0.65f;
     static constexpr float contactRadius = 0.01f;
-};
 
-namespace heat::bc {
-inline constexpr uint32_t Adiabatic = 0;
-inline constexpr uint32_t Dirichlet = 1;
-inline constexpr uint32_t Neumann = 2;
-inline constexpr uint32_t Robin = 3;
-}
+    // Interfacial contact conductance per unit area (W/(m^2 K)) between coupled solids.
+    static constexpr float contactConductance = 1.0e4f;
+};

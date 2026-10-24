@@ -194,7 +194,7 @@ void GridLabel::createFontAtlas(VulkanDevice& vulkanDevice) {
     samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     samplerInfo.minLod = 0.0f;
     
-    // The generated atlas has an 8-pixel outer gutter around each glyph.
+    // The generated atlas has an 8-pixel outer gutter around each glyph
     const float atlasPadding = 8.0f;
     const float maxSafeLod = std::floor(std::log2(atlasPadding));
     samplerInfo.maxLod = std::min(static_cast<float>(mipLevels), maxSafeLod);
@@ -587,8 +587,7 @@ void GridLabel::addTextInstances(
         const float planeHeight = info.planeBottom - info.planeTop;
         const float charCenterOffset = cursorX + 0.5f * (info.planeLeft + info.planeRight) * emScale;
         const float glyphCenterYEm = 0.5f * (info.planeTop + info.planeBottom);
-        // Native plane bounds are relative to the font baseline. Keeping the
-        // baseline at position makes labels grow away from the axis as scaled.
+        // Native plane bounds are relative to font baseline
         const float charVerticalOffset = -glyphCenterYEm * emScale;
 
         LabelInstance instance;

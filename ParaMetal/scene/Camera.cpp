@@ -97,31 +97,6 @@ void Camera::setOrthographicHeight(float height) {
     orthographicZoomVelocity = 0.0f;
 }
 
-void Camera::processMouseMovement(bool middleButtonPressed, double mouseX, double mouseY, bool shiftPressed) {
-    if (middleButtonPressed) {
-        if (!isMousePressed) {
-            lastMouseX = mouseX;
-            lastMouseY = mouseY;
-            isMousePressed = true;
-        }
-
-        const double dx = mouseX - lastMouseX;
-        const double dy = mouseY - lastMouseY;
-
-        if (shiftPressed) {
-            pan((float)dx, (float)dy);
-        } else {
-            orbit(static_cast<float>(dx), static_cast<float>(dy));
-        }
-
-        lastMouseX = mouseX;
-        lastMouseY = mouseY;
-    }
-    else {
-        isMousePressed = false;
-    }
-}
-
 void Camera::orbit(float dx, float dy) {
     if (projectionMode == CameraProjectionMode::Orthographic) {
         setProjectionMode(CameraProjectionMode::Perspective);
@@ -130,6 +105,14 @@ void Camera::orbit(float dx, float dy) {
     const glm::vec3 right = orientation * glm::vec3(1.0f, 0.0f, 0.0f);
     const glm::quat pitchQuat = glm::angleAxis(-dy * sensitivity, right);
     orientation = glm::normalize(yawQuat * pitchQuat * orientation);
+}
+
+void Camera::applyDragDelta(float dx, float dy, bool panActive) {
+    if (panActive) {
+        pan(dx, dy);
+    } else {
+        orbit(dx, dy);
+    }
 }
 
 void Camera::pan(float dx, float dy) {

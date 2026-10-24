@@ -5,18 +5,10 @@
 #include "vulkan/ModelRegistry.hpp"
 
 SceneController::SceneController(
-    VulkanDevice& vulkanDevice,
     ModelRegistry& modelRegistry,
-    ModelUploader& modelUploader,
-    FrameSync& frameSync,
-    CameraController& cameraController,
-    std::atomic<bool>& isOperating)
-    : vulkanDevice(vulkanDevice),
-      modelRegistry(modelRegistry),
-      modelUploader(modelUploader),
-      frameSync(frameSync),
-      cameraController(cameraController),
-      isOperating(isOperating) {
+    CameraController& cameraController)
+    : modelRegistry(modelRegistry),
+      cameraController(cameraController) {
 }
 
 void SceneController::setModelComputeController(ModelComputeController* updatedModelComputeController) {
@@ -45,14 +37,5 @@ void SceneController::focusOnVisibleModel() {
 
 void SceneController::focusCameraOn(const glm::vec3& worldCenter) {
     cameraController.focusOn(worldCenter);
-}
-
-SceneController::OperatingScope::OperatingScope(std::atomic<bool>& isOperating)
-    : isOperating(isOperating) {
-    previousState = isOperating.exchange(true, std::memory_order_acq_rel);
-}
-
-SceneController::OperatingScope::~OperatingScope() {
-    isOperating.store(previousState, std::memory_order_release);
 }
 

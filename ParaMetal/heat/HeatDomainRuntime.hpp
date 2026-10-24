@@ -9,10 +9,14 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <vulkan/vulkan.h>
 
 #include "heat/HeatGlobalSolver.hpp"
 #include "heat/HeatSystemPresets.hpp"
-#include "heat/HeatFluidFlow.hpp"
+#include "heat/HeatBoundaryConditions.hpp"
+#include "vem/VEMAgglomerator.hpp"
+#include "cuda/CudaExternalBuffer.hpp"
+#include "vulkan/VulkanExternalBuffer.hpp"
 
 class HeatModelRuntime;
 class HeatFluidRuntime;
@@ -50,13 +54,49 @@ public:
         const float temperaturesC[6],
         const float heatFluxes[6],
         const float heatTransferCoefficients[6]) {
-        for (int i = 0; i < 6; ++i) {
-            domainBoundaryTypes[i] = types[i];
-            domainBoundaryTemperaturesC[i] = temperaturesC[i];
-            domainBoundaryHeatFluxes[i] = heatFluxes[i];
-            domainBoundaryHeatTransferCoefficients[i] = heatTransferCoefficients[i];
-        }
+        domainBoundaries = heat::fromFlatArrays(types, temperaturesC, heatFluxes, heatTransferCoefficients);
     }
+
+    void setDomainBoundaryConditions(const heat::DomainBoundaryConditions& boundaries) {
+        domainBoundaries = boundaries;
+    }
+
+    const heat::DomainBoundaryConditions& getDomainBoundaryConditions() const {
+        return domainBoundaries;
+    }
+
+    struct AdvectionInput {
+        bool enabled = false;
+        // Canonical per-face fluxes on shared fluid faces
+        VkBuffer faceFluxBuffer = VK_NULL_HANDLE;
+        VkDeviceSize faceFluxBufferSize = 0;
+        VkBuffer boundaryFluxBuffer = VK_NULL_HANDLE;
+        VkDeviceSize boundaryFluxBufferSize = 0;
+        uint32_t faceCount = 0;
+        uint32_t boundaryFaceCount = 0;
+    };
+
+    void setAdvectionInput(const AdvectionInput& input) {
+        advectionInput = input;
+        globalAdvectionDirtyFlag = true;
+    }
+
+    void clearAdvectionInput() {
+        advectionInput = {};
+        globalAdvectionDirtyFlag = true;
+    }
+
+    // Update advection connection availability
+    void setAdvectionConnected(bool connected) {
+        if (advectionConnected == connected) {
+            return;
+        }
+        advectionConnected = connected;
+        globalAdvectionDirtyFlag = true;
+    }
+
+    bool advectionStagingCopyScheduled() const { return stagingCopyScheduled; }
+    void resetAdvectionStagingCopySchedule() { stagingCopyScheduled = false; }
 
     bool rebuildGlobalSolver(
         const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& models,
@@ -71,58 +111,82 @@ public:
     bool launchGlobalSolve(bool sourceIsA);
     bool pollGlobalSolve(bool& completedDestinationIsA);
     bool isGlobalSolveInFlight() const { return globalSolveInFlight; }
-    void prepareGlobalRenderSynchronization(bool activeIsA, bool newSolveCompleted);
+    void prepareGlobalRenderSynchronization(bool newSolveCompleted);
+    // Records current frame release value for the active read buffer to sync next solve overwrite
+    void noteTemperatureReader(bool currentIsA);
     void waitGlobalSolveIdle();
+    // Release pending solve wait on host during terminal recovery
+    void releasePendingSolveWaitOnHost();
     bool hasSolveFailed() const { return globalSolver ? globalSolver->hasSolveFailed() : false; }
+
+    void setGlobalSolverParameters(uint32_t maxIterations, float convergenceTolerance) {
+        solverMaxIterations = maxIterations;
+        solverConvergenceTolerance = convergenceTolerance;
+        if (globalSolver) globalSolver->setSolverParameters(maxIterations, convergenceTolerance);
+    }
+
+    float getLastSolveMs() const {
+        return globalSolver ? globalSolver->getLastSolveMs() : 0.0f;
+    }
 
     ComputePass::Synchronization getGlobalSynchronization() const { return globalSynchronization; }
     void clearGlobalSynchronization() { globalSynchronization = ComputePass::Synchronization{}; }
 
     const std::vector<uint32_t>& getGlobalFragmentToFluidNode() const { return globalFragmentToFluidNode; }
 
+    VkBuffer getAdvectionFaceFluxBuffer() const { return advectionFaceFlux.getBuffer(); }
+    VkBuffer getAdvectionBoundaryFluxBuffer() const { return advectionBoundaryFlux.getBuffer(); }
+    const AdvectionInput& getAdvectionInput() const { return advectionInput; }
+
 private:
-    bool assembleGlobalMatrix(
+    bool extractVEMInputs(
         const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& models,
         HeatFluidRuntime* fluidRuntime,
         float fixedTimeStep,
-        std::vector<int>& rowOffsets,
-        std::vector<int>& columnIndices,
-        std::vector<float>& values,
-        std::vector<float>& thermalMasses,
-        std::vector<HeatGlobalSolver::TemperatureNodes>& temperatureNodes,
-        std::vector<float>& rhsAdditions);
+        std::vector<float>& cellConductivity,
+        std::vector<float>& cellCapacityOverDt,
+        std::vector<float>& cellSourceAdditions,
+        std::vector<float>& fixedCellTemperatures,
+        std::array<vem::BoundaryCondition, 6>& vemBcs) const;
 
-    bool updateFluidFlow(HeatFluidRuntime* fluidRuntime, float fixedTimeStep);
+    std::vector<vem::DirichletTrace> buildDirichletTraces(
+        const vem::VEMMesh& vemMesh,
+        const std::vector<float>& fixedCellTemperatures) const;
 
     std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>> activeModels;
 
     topology::GlobalDomain globalDomain;
-    uint32_t domainBoundaryTypes[6] = {};
-    float domainBoundaryTemperaturesC[6] = {
-        HeatSimDefaults::ambientTemperatureC,
-        HeatSimDefaults::ambientTemperatureC,
-        HeatSimDefaults::ambientTemperatureC,
-        HeatSimDefaults::ambientTemperatureC,
-        HeatSimDefaults::ambientTemperatureC,
-        HeatSimDefaults::ambientTemperatureC
-    };
-    float domainBoundaryHeatFluxes[6] = {};
-    float domainBoundaryHeatTransferCoefficients[6] = {};
+    // Cached VEM mesh from last topology build
+    vem::VEMMesh vemMeshCache;
+    vem::VEMCellRemap vemCellRemapCache;
+    heat::DomainBoundaryConditions domainBoundaries = heat::createDefaultDomainBoundaries(HeatSimDefaults::ambientTemperatureC);
 
     bool globalTopologyDirtyFlag = false;
     bool globalValuesDirtyFlag = false;
     bool globalAdvectionDirtyFlag = false;
 
     std::unique_ptr<HeatGlobalSolver> globalSolver;
+    uint32_t solverMaxIterations = 0;
+    float solverConvergenceTolerance = 0.0f;
     ComputePass::Synchronization globalSynchronization;
     bool globalSolveInFlight = false;
     bool pendingDestinationIsA = false;
     uint64_t cudaReadyCounter = 0;
     uint64_t vulkanReleaseCounter = 0;
     uint64_t pendingCudaReadyValue = 0;
-    uint64_t lastVulkanReleaseValue[2]{0, 0};
-    std::vector<uint32_t> fragmentSolverNodes;
+    uint64_t completedCudaReadyValue = 0;
+    uint64_t pendingSolveReleaseValue = 0;
+    // Last reader release values per solution buffer (0 = A, 1 = B)
+    uint64_t lastReaderReleaseValue[2] = {0, 0};
     std::vector<uint32_t> fluidNodeToGlobalFragment;
     std::vector<uint32_t> globalFragmentToFluidNode;
-    heat::HeatFluidFlow heatFluidFlow;
+
+    AdvectionInput advectionInput{};
+    bool advectionConnected = false;
+    bool stagingCopyScheduled = false;
+    VulkanExternalBuffer advectionFaceFlux;
+    VulkanExternalBuffer advectionBoundaryFlux;
+    CudaExternalBuffer advectionFaceFluxCuda;
+    CudaExternalBuffer advectionBoundaryFluxCuda;
+    VkDevice vulkanDeviceHandle = VK_NULL_HANDLE;
 };

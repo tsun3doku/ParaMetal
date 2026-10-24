@@ -11,7 +11,6 @@
 #include "util/Units.hpp"
 
 class MemoryAllocator;
-class ModelRegistry;
 class VulkanDevice;
 
 struct RemeshProduct;
@@ -29,9 +28,10 @@ public:
         uint64_t computeHash = 0;
     };
 
-    RemeshController(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, ModelRegistry& modelRegistry, std::atomic<bool>& isOperating);
+    RemeshController(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, std::atomic<bool>& isOperating);
 
-    void apply(uint64_t socketKey, const Config& config);
+    // Returns false on failure, previous generation stays active and caller skips publish
+    bool apply(uint64_t socketKey, const Config& config);
     bool buildProduct(uint64_t socketKey, RemeshProduct& product);
     void remove(uint64_t socketKey);
     void disableAll();
@@ -47,9 +47,9 @@ private:
         bool previousState = false;
     };
 
-    VulkanDevice& vulkanDevice;
-    ModelRegistry& modelRegistry;
     std::atomic<bool>& isOperating;
     Remesher remesher;
     std::unordered_map<uint64_t, std::unique_ptr<RemeshSystem>> activeSystems;
+    std::unordered_map<uint64_t, uint64_t> failedComputeHashes;
+    std::vector<std::unique_ptr<RemeshSystem>> retainedSystems;
 };

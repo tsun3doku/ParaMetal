@@ -22,14 +22,14 @@ public:
         VkCommandBuffer commandBuffer,
         const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
         bool replayFromHistory,
-        bool finalWritesBufferB,
+        bool currentIsB,
         uint32_t currentFrame) const;
 
     void dispatchSurfaceGradientUpdates(
         VkCommandBuffer commandBuffer,
         const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
         bool replayFromHistory,
-        bool finalWritesBufferB,
+        bool currentIsB,
         uint32_t currentFrame) const;
 
     VkDescriptorPool getDescriptorPool() const { return descriptorPool; }
@@ -43,7 +43,7 @@ private:
         VkPipelineLayout layout,
         const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& activeModels,
         bool replayFromHistory,
-        bool finalWritesBufferB,
+        bool currentIsB,
         bool isGradientPass,
         uint32_t currentFrame) const;
 

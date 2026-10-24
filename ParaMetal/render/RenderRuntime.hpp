@@ -7,7 +7,6 @@
 #include <memory>
 #include <vector>
 
-#include "framegraph/ComputePass.hpp"
 #include "framegraph/FrameStats.hpp"
 #include "framegraph/FramePass.hpp"
 #include "WindowRuntimeState.hpp"
@@ -55,11 +54,14 @@ public:
     bool renderFrame(
         VkCommandBuffer commandBuffer,
         uint32_t frameIndex,
-        const render::RenderFlags& flags,
-        const std::vector<ComputePass*>& computePasses);
+        const render::RenderFlags& flags);
     bool updateViewportTarget(VkImage image, VkFormat format, VkExtent2D extent);
     void cleanup();
 
+    VulkanDevice& getVulkanDevice();
+    const VulkanDevice& getVulkanDevice() const;
+    FrameStats& getFrameStats();
+    const FrameStats& getFrameStats() const;
     FrameGraph& getFrameGraph();
     const FrameGraph& getFrameGraph() const;
     VkFrameGraphRuntime& getFrameGraphRuntime();

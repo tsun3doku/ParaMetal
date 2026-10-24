@@ -83,6 +83,14 @@ private:
         units::LengthUnit worldUnit,
         RuntimePackageManager& packages,
         std::vector<std::string>& errors) const;
+    bool compileCFDPackage(
+        const NodeGraphNode& node,
+        uint64_t outputSocketKey,
+        const NodeDataBlock& output,
+        const NodePayloadRegistry& payloads,
+        units::LengthUnit worldUnit,
+        RuntimePackageManager& packages,
+        std::vector<std::string>& errors) const;
     static HashValues resolveHandleHashes(
         const NodePayloadRegistry& payloads,
         const NodeDataHandle& handle);

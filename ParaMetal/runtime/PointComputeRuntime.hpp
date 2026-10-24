@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -10,9 +11,7 @@
 #include "runtime/RuntimeProducts.hpp"
 #include "util/Units.hpp"
 
-class VulkanDevice;
 class MemoryAllocator;
-class CommandPool;
 
 class PointComputeRuntime {
 public:
@@ -23,7 +22,7 @@ public:
         uint64_t computeHash = 0;
     };
 
-    PointComputeRuntime(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, CommandPool& commandPool);
+    explicit PointComputeRuntime(MemoryAllocator& memoryAllocator);
     ~PointComputeRuntime();
 
     bool buildProduct(const Config& config, PointProduct& product);
@@ -31,8 +30,8 @@ public:
     void disableAll();
 
 private:
-    VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
-    CommandPool& commandPool;
     std::unordered_map<uint64_t, uint64_t> activeHashes;
+    // Every buffer ever published, owned until teardown
+    std::vector<std::pair<VkBuffer, VkDeviceSize>> ownedBuffers;
 };

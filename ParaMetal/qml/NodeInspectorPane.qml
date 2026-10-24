@@ -260,6 +260,7 @@ Item {
             InspectorField { width: parent.width; theme: root.theme; label: qsTr("Initial Temperature (C)"); parameter: root.parameter(4); decimals: 2; onValueEdited: value => root.setValue(4, value) }
             InspectorField { width: parent.width; theme: root.theme; label: qsTr("Inlet Temperature (C)"); parameter: root.parameter(8); decimals: 2; onValueEdited: value => root.setValue(8, value) }
             InspectorField { width: parent.width; theme: root.theme; label: qsTr("Density (kg/m³)"); parameter: root.parameter(1); decimals: 3; onValueEdited: value => root.setValue(1, value) }
+            InspectorField { width: parent.width; theme: root.theme; label: qsTr("Kinematic Viscosity (m²/s)"); parameter: root.parameter(9); decimals: 8; onValueEdited: value => root.setValue(9, value) }
             InspectorField { width: parent.width; theme: root.theme; label: qsTr("Specific Heat (J/(kg·K))"); parameter: root.parameter(2); decimals: 1; onValueEdited: value => root.setValue(2, value) }
             InspectorField { width: parent.width; theme: root.theme; label: qsTr("Conductivity (W/(m·K))"); parameter: root.parameter(3); decimals: 3; onValueEdited: value => root.setValue(3, value) }
             RowLayout {
@@ -292,6 +293,8 @@ Item {
             }
             InspectorField { width: parent.width; theme: root.theme; editor: "slider"; label: qsTr("Thermal Contact Conductance"); parameter: root.parameter(6); minimum: 0; maximum: 100000; decimals: 0; onValueEdited: value => root.setValue(6, value) }
             InspectorField { width: parent.width; theme: root.theme; editor: "slider"; label: qsTr("Simulation Duration (s)"); parameter: root.parameter(11); minimum: .1; maximum: 60; decimals: 1; onValueEdited: value => root.setValue(11, value) }
+            InspectorField { width: parent.width; theme: root.theme; label: qsTr("Max PCG Iterations"); parameter: root.parameter(30); decimals: 0; onValueEdited: value => root.setValue(30, value) }
+            InspectorField { width: parent.width; theme: root.theme; label: qsTr("PCG Tolerance"); parameter: root.parameter(31); decimals: 6; onValueEdited: value => root.setValue(31, value) }
             InspectorField { width: parent.width; theme: root.theme; editor: "bool"; label: qsTr("Heat Overlay"); parameter: root.parameter(5); onValueEdited: value => root.setValue(5, value) }
             InspectorField { width: parent.width; theme: root.theme; editor: "bool"; label: qsTr("Flux Vectors"); parameter: root.parameter(7); onValueEdited: value => root.setValue(7, value) }
             InspectorField { width: parent.width; theme: root.theme; editor: "bool"; label: qsTr("Heat Palette"); parameter: root.parameter(9); onValueEdited: value => root.setValue(9, value) }

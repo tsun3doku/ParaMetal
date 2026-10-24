@@ -131,7 +131,6 @@ bool RenderRuntime::initializeFrameController(const FrameControllerServices& ser
         windowState,
         vulkanDevice,
         viewportTarget,
-        *frameGraph,
         *frameGraphBackend,
         *sceneRenderer,
         frameSync,
@@ -147,12 +146,27 @@ bool RenderRuntime::initializeFrameController(const FrameControllerServices& ser
 bool RenderRuntime::renderFrame(
     VkCommandBuffer commandBuffer,
     uint32_t frameIndex,
-    const render::RenderFlags& flags,
-    const std::vector<ComputePass*>& computePasses) {
+    const render::RenderFlags& flags) {
     if (frameController) {
-        return frameController->drawFrame(commandBuffer, frameIndex, flags, computePasses);
+        return frameController->drawFrame(commandBuffer, frameIndex, flags);
     }
     return false;
+}
+
+VulkanDevice& RenderRuntime::getVulkanDevice() {
+    return vulkanDevice;
+}
+
+const VulkanDevice& RenderRuntime::getVulkanDevice() const {
+    return vulkanDevice;
+}
+
+FrameStats& RenderRuntime::getFrameStats() {
+    return frameStats;
+}
+
+const FrameStats& RenderRuntime::getFrameStats() const {
+    return frameStats;
 }
 
 bool RenderRuntime::updateViewportTarget(VkImage image, VkFormat format, VkExtent2D extent) {

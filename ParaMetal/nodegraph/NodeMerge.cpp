@@ -36,7 +36,7 @@ void NodeMerge::execute(NodeKernelEval& eval) const {
 
     const std::vector<const NodeDataBlock*>& inputs = eval.inputs[geometrySocketIndex];
 
-    // Determine the effective dataType based on the first valid input
+    // Determine the dataType 
     uint8_t dataType = payloadtypes::None;
     for (const NodeDataBlock* block : inputs) {
         if (block && block->payloadHandle.key != 0) {
@@ -95,7 +95,7 @@ void NodeMerge::execute(NodeKernelEval& eval) const {
                     payload.positions.push_back(inputToReference * pos);
                 }
 
-                // Preserve the existing transformed input-domain union unchanged
+                // Preserve the existing transformed input union 
                 const glm::vec3& minimum = input->domainMinimum;
                 const glm::vec3& maximum = input->domainMaximum;
                 for (uint32_t corner = 0; corner < 8; ++corner) {
@@ -179,8 +179,6 @@ void NodeMerge::execute(NodeKernelEval& eval) const {
                     }
                 }
 
-                // Point filtering affects positions only.
-                // Preserve the existing transformed input-domain union unchanged.
                 const glm::vec3& minimum = input->domainMinimum;
                 const glm::vec3& maximum = input->domainMaximum;
                 for (uint32_t corner = 0; corner < 8; ++corner) {

@@ -31,11 +31,20 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
             config.fluidDensity,
             config.fluidSpecificHeat,
             config.fluidConductivity,
-            config.fluidInitialTemperatureC,
-            config.fluidInletTemperatureC,
-            config.fluidVelocity);
+            config.fluidInitialTemperatureC);
     } else {
         system.clearHeatFluid();
+    }
+    if (config.hasAdvection) {
+        system.setAdvectionInput(
+            config.advectionFaceFluxBuffer,
+            config.advectionFaceFluxBufferSize,
+            config.advectionBoundaryFluxBuffer,
+            config.advectionBoundaryFluxBufferSize,
+            config.advectionFaceCount,
+            config.advectionBoundaryFaceCount);
+    } else {
+        system.clearAdvectionInput();
     }
     if (config.domainVoronoiProduct.isValid()) {
         system.setGlobalVoronoiInput(config.domainVoronoiProduct, config.modelLocalToWorldByModelId);
@@ -59,6 +68,7 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
         config.domainBoundaryTemperaturesC,
         config.domainBoundaryHeatFluxes,
         config.domainBoundaryHeatTransferCoefficients);
+    system.setGlobalSolverParameters(config.solverMaxIterations, config.solverConvergenceTolerance);
 }
 
 void HeatSystemComputeController::applyRuntimeState(HeatSystem& system, const Config& config) {
@@ -79,11 +89,12 @@ void HeatSystemComputeController::setTimelinePlaying(bool playing) {
 
 void HeatSystemComputeController::resetTimeline() {
     ++timelineResetCounter;
-    timelinePlaying = true;
+    timelinePlaying = false;
     timelineScrubFrame = heat::NoRewindFrame;
     for (auto& [key, system] : systemsBySocket) {
         if (!system || !system->getIsActive()) continue;
-        system->setPlaybackState(false, timelineResetCounter);
+        // Reset pauses heat so it does not advance against a paused CFD producer
+        system->setPlaybackState(true, timelineResetCounter);
     }
 }
 
@@ -97,70 +108,55 @@ void HeatSystemComputeController::scrubTimeline(uint32_t frame) {
     }
 }
 
-void HeatSystemComputeController::apply(uint64_t socketKey, const Config& config) {
+bool HeatSystemComputeController::apply(uint64_t socketKey, const Config& config) {
     if (socketKey == 0) {
-        return;
-    }
-
-    auto it = systemsBySocket.find(socketKey);
-    if (it == systemsBySocket.end()) {
-        auto system = buildHeatSystem();
-        it = systemsBySocket.emplace(socketKey, std::move(system)).first;
-    }
-
-    auto& system = it->second;
-    if (!system) {
-        return;
+        return false;
     }
 
     const auto configIt = configuredConfigs.find(socketKey);
     if (configIt != configuredConfigs.end() && configIt->second.computeHash == config.computeHash) {
-        applyRuntimeState(*system, config);
-        return;
+        const auto it = systemsBySocket.find(socketKey);
+        if (it != systemsBySocket.end() && it->second) {
+            applyRuntimeState(*it->second, config);
+        }
+        return true;
     }
 
-    if (configIt != configuredConfigs.end() && config.structuralHash != 0 &&
-        configIt->second.structuralHash == config.structuralHash) {
-        bool updated = true;
-        for (uint32_t runtimeModelId : config.modelRuntimeModelIds) {
-            updated = system->setRuntimeVolumetricPowerDensity(
-                runtimeModelId, config.modelVolumetricPowerDensitiesByRuntimeId.at(runtimeModelId)) && updated;
-            const auto prescribedIt = config.modelPrescribedTemperaturesCByRuntimeId.find(runtimeModelId);
-            if (prescribedIt != config.modelPrescribedTemperaturesCByRuntimeId.end()) {
-                updated = system->setRuntimePrescribedTemperature(runtimeModelId, prescribedIt->second) && updated;
-            }
-        }
-        system->setInitialTemperatures(config.modelInitialTemperaturesCByRuntimeId);
-        if (config.hasFluid) {
-            system->setRuntimeFluidInitialTemperature(config.fluidInitialTemperatureC);
-            system->setRuntimeFluidInletTemperature(config.fluidInletTemperatureC);
-            system->setFluidPrescribedVelocity(config.fluidVelocity);
-        }
-        system->setDomainBoundaryConditions(
-            config.domainBoundaryTypes,
-            config.domainBoundaryTemperaturesC,
-            config.domainBoundaryHeatFluxes,
-            config.domainBoundaryHeatTransferCoefficients);
-        system->setParams(config.simulationDuration);
-        if (updated) {
-            configuredConfigs[socketKey] = config;
-            syncSerialInputs();
-            system->resetSimulationState();
-            applyRuntimeState(*system, config);
-            return;
-        }
+    const auto failedIt = failedComputeHashes.find(socketKey);
+    if (failedIt != failedComputeHashes.end() && failedIt->second == config.computeHash) {
+        return false;
+    }
+    failedComputeHashes.erase(socketKey);
+
+    // Build replacement generation off to the side while active generation remains live
+    std::unique_ptr<HeatSystem> candidate = buildHeatSystem();
+    if (!candidate) {
+        failedComputeHashes[socketKey] = config.computeHash;
+        return false;
     }
 
-    configureHeatSystem(*system, config);
-    const bool configured = system->ensureConfigured();
-    if (configured) {
-        configuredConfigs[socketKey] = config;
+    configureHeatSystem(*candidate, config);
+    if (!candidate->ensureConfigured()) {
+        // Retain failed candidate to avoid destroying resources with in-flight GPU work
+        retainedSystems.push_back(std::move(candidate));
+        failedComputeHashes[socketKey] = config.computeHash;
+        return false;
+    }
+
+    auto it = systemsBySocket.find(socketKey);
+    if (it != systemsBySocket.end()) {
+        if (it->second) {
+            retainedSystems.push_back(std::move(it->second));
+        }
+        it->second = std::move(candidate);
     } else {
-        configuredConfigs.erase(socketKey);
+        systemsBySocket.emplace(socketKey, std::move(candidate));
     }
-    syncSerialInputs();
 
-    applyRuntimeState(*system, config);
+    configuredConfigs[socketKey] = config;
+    syncSerialInputs();
+    applyRuntimeState(*systemsBySocket[socketKey], config);
+    return true;
 }
 
 void HeatSystemComputeController::remove(uint64_t socketKey) {
@@ -168,14 +164,14 @@ void HeatSystemComputeController::remove(uint64_t socketKey) {
         return;
     }
 
+    failedComputeHashes.erase(socketKey);
     configuredConfigs.erase(socketKey);
     auto it = systemsBySocket.find(socketKey);
     if (it != systemsBySocket.end()) {
         if (it->second) {
             it->second->setPlaybackState(false, 0);
             it->second->setActive(false);
-            vkDeviceWaitIdle(vulkanDevice.getDevice());
-            it->second->cleanup();
+            retainedSystems.push_back(std::move(it->second));
         }
         systemsBySocket.erase(it);
     }
@@ -184,14 +180,13 @@ void HeatSystemComputeController::remove(uint64_t socketKey) {
 
 void HeatSystemComputeController::disableAll() {
     configuredConfigs.clear();
-    if (!systemsBySocket.empty()) {
-        vkDeviceWaitIdle(vulkanDevice.getDevice());
-    }
+    failedComputeHashes.clear();
     for (auto& [key, system] : systemsBySocket) {
+        (void)key;
         if (system) {
             system->setPlaybackState(false, 0);
             system->setActive(false);
-            system->cleanup();
+            retainedSystems.push_back(std::move(system));
         }
     }
     systemsBySocket.clear();
@@ -272,8 +267,8 @@ std::unique_ptr<HeatSystem> HeatSystemComputeController::buildHeatSystem() {
     return system;
 }
 
-std::vector<ComputePass*> HeatSystemComputeController::getActiveSystems() const {
-    std::vector<ComputePass*> systems;
+std::vector<HeatSystem*> HeatSystemComputeController::getActiveSystems() const {
+    std::vector<HeatSystem*> systems;
     systems.reserve(systemsBySocket.size());
     for (const auto& [key, system] : systemsBySocket) {
         if (system && system->hasDispatchableComputeWork()) {
@@ -281,6 +276,39 @@ std::vector<ComputePass*> HeatSystemComputeController::getActiveSystems() const 
         }
     }
     return systems;
+}
+
+
+
+
+
+
+void HeatSystemComputeController::waitIdle() {
+    for (auto& [key, system] : systemsBySocket) {
+        (void)key;
+        if (system) {
+            system->waitForSolvesIdle();
+        }
+    }
+    for (auto& system : retainedSystems) {
+        if (system) {
+            system->waitForSolvesIdle();
+        }
+    }
+}
+
+void HeatSystemComputeController::releaseWaits() {
+    for (auto& [key, system] : systemsBySocket) {
+        (void)key;
+        if (system) {
+            system->releasePendingSolveWaitOnHost();
+        }
+    }
+    for (auto& system : retainedSystems) {
+        if (system) {
+            system->releasePendingSolveWaitOnHost();
+        }
+    }
 }
 
 bool HeatSystemComputeController::buildProduct(uint64_t socketKey, HeatProduct& outProduct) {
@@ -406,6 +434,14 @@ bool HeatSystemComputeController::buildProduct(uint64_t socketKey, HeatProduct& 
 }
 
 const HeatSystem* HeatSystemComputeController::getSystem(uint64_t socketKey) const {
+    const auto systemIt = systemsBySocket.find(socketKey);
+    if (systemIt == systemsBySocket.end() || !systemIt->second) {
+        return nullptr;
+    }
+    return systemIt->second.get();
+}
+
+HeatSystem* HeatSystemComputeController::getSystem(uint64_t socketKey) {
     const auto systemIt = systemsBySocket.find(socketKey);
     if (systemIt == systemsBySocket.end() || !systemIt->second) {
         return nullptr;

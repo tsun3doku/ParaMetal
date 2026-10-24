@@ -52,9 +52,9 @@ void HeatDisplayController::apply(uint64_t socketKey, const Config& config) {
             volumeRenderer->setVolumeTexture(
                 config.fluidTemperatureVolumeView,
                 config.fluidTemperatureVolumeSampler,
-                config.globalSdfGridMin,
-                config.globalSdfGridDim,
-                config.globalSdfCellSize);
+                config.globalVolumeGridMin,
+                config.globalVolumeGridDim,
+                config.globalVolumeGridCellSize);
         } else {
             volumeRenderer->setEnabled(false);
         }

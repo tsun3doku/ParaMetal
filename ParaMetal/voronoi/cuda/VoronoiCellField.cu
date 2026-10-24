@@ -1,5 +1,5 @@
 #include "VoronoiCellField.cuh"
-#include "../../cuda/CudaBuffer.cuh"
+#include "../../cuda/CudaCheck.cuh"
 
 #include <cuda_runtime.h>
 #include <cmath>
@@ -7,14 +7,12 @@
 
 namespace voronoi {
 
-template <class T>
-using DeviceBuffer = cudaUtils::CudaBuffer<T>;
 constexpr auto cudaOk = cudaUtils::cudaCheck;
 constexpr uint32_t BlockSize = 256;
 
 __global__ void buildSeedIdGridKernel(
     uint32_t* outSeedIds,
-    const float* devUnionSdf,
+    const uint8_t* devSolidMask,
     DeviceKnn knn,
     float3 gridMin,
     int3 gridDim,
@@ -24,7 +22,7 @@ __global__ void buildSeedIdGridKernel(
     const uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index >= totalVoxels) return;
 
-    if (devUnionSdf && devUnionSdf[index] <= 0.0f) {
+    if (devSolidMask != nullptr && devSolidMask[index] != 0u) {
         outSeedIds[index] = SolidSeed;
         return;
     }
@@ -43,16 +41,14 @@ __global__ void buildSeedIdGridKernel(
 
 bool buildSeedIdGrid(
     const DeviceKnn& knn,
-    const float* devUnionSdf,
+    const uint8_t* devSolidMask,
     const std::vector<glm::vec4>& seeds,
     glm::vec3 gridMin,
     glm::ivec3 gridDim,
     float cellSize,
-    std::vector<uint32_t>& outSeedIds,
+    uint32_t* outSeedIds,
     cudaStream_t stream)
 {
-    outSeedIds.clear();
-
     if (seeds.empty()) {
         std::cerr << "[VoronoiCellField] Seeds are empty." << std::endl;
         return false;
@@ -73,14 +69,8 @@ bool buildSeedIdGrid(
     }
 
     const size_t totalVoxels64 = size_t(gridDim.x) * gridDim.y * gridDim.z;
-    if (totalVoxels64 == 0 || totalVoxels64 > UINT32_MAX) {
-        std::cerr << "[VoronoiCellField] Total voxels out of bounds: " << totalVoxels64 << std::endl;
-        return false;
-    }
-
-    DeviceBuffer<uint32_t> devSeedIds;
-    if (!devSeedIds.allocate(totalVoxels64)) {
-        std::cerr << "[VoronoiCellField] Failed to allocate device memory for seed IDs." << std::endl;
+    if (totalVoxels64 == 0 || totalVoxels64 > UINT32_MAX || outSeedIds == nullptr) {
+        std::cerr << "[VoronoiCellField] Invalid seed ID grid output." << std::endl;
         return false;
     }
 
@@ -91,8 +81,8 @@ bool buildSeedIdGrid(
     const int3 devGridDim = make_int3(gridDim.x, gridDim.y, gridDim.z);
 
     buildSeedIdGridKernel<<<gridBlocks, BlockSize, 0, stream>>>(
-        devSeedIds.get(),
-        devUnionSdf,
+        outSeedIds,
+        devSolidMask,
         knn,
         devGridMin,
         devGridDim,
@@ -103,19 +93,7 @@ bool buildSeedIdGrid(
         return false;
     }
 
-    outSeedIds.resize(totalVoxels64);
-    if (!devSeedIds.downloadAsync(outSeedIds.data(), totalVoxels64, stream)) {
-        std::cerr << "[VoronoiCellField] Failed to download seed IDs." << std::endl;
-        outSeedIds.clear();
-        return false;
-    }
-
-    if (!cudaOk(cudaStreamSynchronize(stream), "synchronize buildSeedIdGrid")) {
-        outSeedIds.clear();
-        return false;
-    }
-
-    return true;
+    return cudaOk(cudaStreamSynchronize(stream), "synchronize buildSeedIdGrid");
 }
 
 } // namespace voronoi

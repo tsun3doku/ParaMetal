@@ -1,26 +1,20 @@
 #include "ModelComputeController.hpp"
 
-#include "framegraph/FrameSync.hpp"
 #include "hash/HashProduct.hpp"
 #include "render/RenderConfig.hpp"
 #include "scene/Model.hpp"
 #include "scene/ModelUploader.hpp"
 #include "vulkan/ModelRegistry.hpp"
-#include "vulkan/VulkanDevice.hpp"
 
 #include <chrono>
 #include <thread>
 
 ModelComputeController::ModelComputeController(
-    VulkanDevice& vulkanDevice,
     ModelRegistry& modelRegistry,
     ModelUploader& modelUploader,
-    FrameSync& frameSync,
     std::atomic<bool>& isOperating)
-    : vulkanDevice(vulkanDevice),
-      modelRegistry(modelRegistry),
+    : modelRegistry(modelRegistry),
       modelUploader(modelUploader),
-      frameSync(frameSync),
       isOperating(isOperating) {
 }
 
@@ -69,8 +63,7 @@ void ModelComputeController::disableAll() {
     if (runtimeModelIdBySocketKey.empty()) return;
 
     OperatingScope operatingScope(isOperating);
-    frameSync.waitForAllFrameFences();
-    vkDeviceWaitIdle(vulkanDevice.getDevice());
+    // Removed models are retained whole, no in-place destruction needs a wait
     for (const auto& [socketKey, runtimeModelId] : runtimeModelIdBySocketKey) {
         (void)socketKey;
         modelRegistry.removeModelByID(runtimeModelId);
@@ -92,8 +85,6 @@ bool ModelComputeController::tryGetSocketKey(uint32_t runtimeModelId, uint64_t& 
 bool ModelComputeController::rebuildModel(uint64_t socketKey, const Config& config, uint32_t preferredModelId) {
     OperatingScope operatingScope(isOperating);
     std::this_thread::sleep_for(std::chrono::milliseconds(renderconfig::ModelLoadPauseMs));
-    frameSync.waitForAllFrameFences();
-    vkDeviceWaitIdle(vulkanDevice.getDevice());
 
     std::unique_ptr<Model> model = modelUploader.createModel();
     if (!model) return false;
@@ -130,8 +121,6 @@ bool ModelComputeController::removeModel(uint64_t socketKey) {
     const uint32_t runtimeModelId = runtimeIt->second;
 
     OperatingScope operatingScope(isOperating);
-    frameSync.waitForAllFrameFences();
-    vkDeviceWaitIdle(vulkanDevice.getDevice());
     const bool removed = modelRegistry.removeModelByID(runtimeModelId);
     runtimeModelIdBySocketKey.erase(runtimeIt);
     socketKeyByRuntimeModelId.erase(runtimeModelId);

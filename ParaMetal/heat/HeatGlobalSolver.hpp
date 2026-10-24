@@ -1,6 +1,7 @@
 #pragma once
 
 #include "HeatGpuStructs.hpp"
+#include "../vem/VEMDiffusion.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -14,8 +15,12 @@ class CudaExternalBuffer;
 class HeatGlobalSolver {
 public:
     struct TemperatureNodes {
-        uint32_t solverNodeOffset = 0;
-        std::vector<uint32_t> localNodeIds;
+        std::vector<uint32_t> gatherOffsets;
+        std::vector<uint32_t> gatherLocalNodeIds;
+        std::vector<float> gatherWeights;
+        std::vector<uint32_t> gatherSolverNodeIds;
+        std::vector<uint32_t> scatterLocalNodeIds;
+        std::vector<uint32_t> scatterSolverNodeIds;
         const VulkanExternalBuffer* externalA = nullptr;
         const VulkanExternalBuffer* externalB = nullptr;
         CudaExternalBuffer* temperatureA = nullptr;
@@ -30,12 +35,11 @@ public:
 
     bool initialize(
         VulkanDevice& vulkanDevice,
-        const std::vector<int>& rowOffsets,
-        const std::vector<int>& columnIndices,
-        const std::vector<float>& values,
-        const std::vector<float>& thermalMasses,
+        const vem::VEMTraceSystem& traceSystem,
+        const std::vector<float>& cellCapacityOverDt,
+        const std::vector<float>& cellSourceAdditions,
         const std::vector<TemperatureNodes>& temperatureNodes,
-        const std::vector<float>& rhsAdditions);
+        const std::vector<float>& fixedCellTemperatures = {});
 
     enum class SolvePollResult {
         Pending,
@@ -52,25 +56,29 @@ public:
     void waitIdle();
 
     bool updateValues(
-        const std::vector<float>& values,
-        const std::vector<float>& thermalMasses,
-        const std::vector<float>& rhsAdditions);
+        const vem::VEMTraceSystem& traceSystem,
+        const std::vector<float>& cellCapacityOverDt,
+        const std::vector<float>& cellSourceAdditions,
+        const std::vector<float>& fixedCellTemperatures = {});
 
     bool configureAdvectionTopology(
+        uint32_t faceCount,
+        uint32_t boundaryFaceCount,
         const std::vector<heat::AdvectionFace>& faces,
         const std::vector<heat::AdvectionBoundaryFace>& boundaryFaces,
         const float* deviceFaceFlux,
-        const float* deviceBoundaryFlux);
+        const float* deviceBoundaryFlux,
+        const std::vector<float>& cellVolumes);
 
-    void updateAdvectionStep(
-        float inletTemperatureC,
-        uint32_t subcycleCount,
-        float subcycleDt);
+    bool updateAdvectionStep(
+        const float* inflowTemperaturesC,
+        float stepDt);
 
     VkSemaphore getCudaReadySemaphore() const;
     VkSemaphore getVulkanReleaseSemaphore() const;
     bool hasSolveFailed() const;
-    void cleanup();
+    void setSolverParameters(uint32_t maxIterations, float convergenceTolerance);
+    float getLastSolveMs() const;
 
 private:
     class Implementation;

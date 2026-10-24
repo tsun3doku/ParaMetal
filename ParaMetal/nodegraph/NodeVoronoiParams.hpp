@@ -13,9 +13,9 @@ struct VoronoiPreviewSettings {
 };
 
 struct VoronoiNodeParams {
-    double sdfSize = 0.005;
+    double cellSize = 0.005;
     int voxelResolution = 128;
-    double sdfPadding = 0.01;
+    double volumePadding = 0.01;
     double contactRange = voronoi::DefaultContactRange;
     VoronoiPreviewSettings preview{};
 };

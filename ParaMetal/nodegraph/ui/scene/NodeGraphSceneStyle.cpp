@@ -12,9 +12,9 @@ QColor valueTypeColor(NodeGraphValueType valueType) {
     case NodeGraphValueType::Mesh:
         return QColor(105, 164, 231);
     case NodeGraphValueType::Remesh:
-        return QColor(72, 180, 180);
+        return QColor(242, 201, 76);
     case NodeGraphValueType::HeatModel:
-    case NodeGraphValueType::HeatFluid:
+    case NodeGraphValueType::Fluid:
         return QColor(232, 120, 80);
     case NodeGraphValueType::Volume:
         return QColor(86, 196, 160);
@@ -28,6 +28,8 @@ QColor valueTypeColor(NodeGraphValueType valueType) {
         return QColor(139, 126, 246);
     case NodeGraphValueType::ScalarBool:
         return QColor(233, 218, 104);
+    case NodeGraphValueType::Simulation:
+        return QColor(200, 115, 200);
     }
 
     return QColor(164, 172, 186);
@@ -78,7 +80,7 @@ QColor dragPreviewColor() {
 }
 
 QColor simulationRingColor() {
-    return QColor(224, 171, 226, 210);
+    return QColor(200, 115, 200, 210);
 }
 
 QRectF nodeRect() {
@@ -188,27 +190,37 @@ qreal socketBottomY() {
     return outerFrameRect().bottom() + socketRadius * socketDistance;
 }
 
+static void socketRowSpan(qreal& minX, qreal& maxX) {
+    const QRectF frame = outerFrameRect();
+    minX = frame.left() + capWidth + socketRowInset;
+    maxX = frame.right() - capWidth - socketRowInset;
+    if (maxX < minX) {
+        maxX = minX;
+    }
+}
+
 static qreal socketX(std::size_t index, std::size_t total, qreal minX, qreal maxX) {
+    const qreal center = (minX + maxX) * 0.5;
     if (total <= 1) {
-        return (minX + maxX) * 0.5;
+        return center;
     }
 
-    const qreal t = static_cast<qreal>(index) / static_cast<qreal>(total - 1);
-    return minX + (maxX - minX) * t;
+    const qreal pitch = std::min(socketSpacing, (maxX - minX) / static_cast<qreal>(total - 1));
+    return center + (static_cast<qreal>(index) - (static_cast<qreal>(total) - 1) * 0.5) * pitch;
 }
 
 QPointF inputSocketPosition(std::size_t index, std::size_t total) {
-    const QRectF panel = centerPanelRect();
-    const qreal minX = outerFrameRect().left() + capWidth + socketRowInset;
-    const qreal maxX = panel.center().x() - socketRowInset;
-    return QPointF(socketX(index, total, minX, std::max(minX, maxX)), socketTopY());
+    qreal minX = 0.0;
+    qreal maxX = 0.0;
+    socketRowSpan(minX, maxX);
+    return QPointF(socketX(index, total, minX, maxX), socketTopY());
 }
 
 QPointF outputSocketPosition(std::size_t index, std::size_t total) {
-    const QRectF panel = centerPanelRect();
-    const qreal minX = panel.center().x() + socketRowInset;
-    const qreal maxX = outerFrameRect().right() - capWidth - socketRowInset;
-    return QPointF(socketX(index, total, std::min(minX, maxX), maxX), socketBottomY());
+    qreal minX = 0.0;
+    qreal maxX = 0.0;
+    socketRowSpan(minX, maxX);
+    return QPointF(socketX(index, total, minX, maxX), socketBottomY());
 }
 
 NodeHitRegion hitRegionAt(const QPointF& localPos) {

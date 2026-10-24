@@ -35,8 +35,8 @@ void VoronoiSystem::setGlobalGeometry(
     const std::vector<std::vector<uint32_t>>& triangleIndices,
     const std::vector<std::vector<glm::vec3>>& surfacePositions,
     const std::vector<std::vector<uint32_t>>& surfaceTriangleIndices,
-    float sdfPadding) {
-    runtime.setGlobalGeometry(runtimeModelIds, positions, triangleIndices, surfacePositions, surfaceTriangleIndices, sdfPadding);
+    float volumePadding) {
+    runtime.setGlobalGeometry(runtimeModelIds, positions, triangleIndices, surfacePositions, surfaceTriangleIndices, volumePadding);
 }
 
 void VoronoiSystem::clearGeometry() {

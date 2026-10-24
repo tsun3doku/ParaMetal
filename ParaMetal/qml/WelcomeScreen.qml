@@ -8,8 +8,8 @@ Item {
 
     required property QtObject theme
 
-    readonly property int choicePreviewSize: 160
-    readonly property int choiceContentSpacing: 8
+    readonly property int choicePreviewSize: 152
+    readonly property int choiceContentSpacing: 10
     readonly property int choiceTitleHeight: 18
     readonly property int choiceTileHeight: choicePreviewSize + choiceContentSpacing + choiceTitleHeight
 
@@ -17,13 +17,16 @@ Item {
     signal defaultGraphRequested()
     signal openProjectRequested()
 
+    focus: visible
+    Keys.onEscapePressed: root.visible = false
+
     Rectangle {
         anchors.fill: parent
         color: root.theme.welcomeBackdrop
 
         MouseArea {
             anchors.fill: parent
-            acceptedButtons: Qt.AllButtons
+            onClicked: root.visible = false
         }
     }
 
@@ -40,6 +43,7 @@ Item {
         Layout.minimumHeight: root.choiceTileHeight
         Layout.maximumHeight: root.choiceTileHeight
         padding: 0
+        hoverEnabled: true
 
         contentItem: ColumnLayout {
             anchors.fill: parent
@@ -57,6 +61,7 @@ Item {
 
                 Image {
                     anchors.fill: parent
+                    anchors.margins: 16
                     source: "../textures/preview.png"
                     fillMode: Image.PreserveAspectFit
                     smooth: true
@@ -66,6 +71,7 @@ Item {
 
                 Image {
                     anchors.fill: parent
+                    anchors.margins: 12
                     source: "../textures/grid.png"
                     fillMode: Image.PreserveAspectFit
                     smooth: true
@@ -78,43 +84,110 @@ Item {
                 Layout.fillWidth: true
                 Layout.preferredHeight: root.choiceTitleHeight
                 text: choice.titleText
-                color: root.theme.welcomeSubtext
+                color: choice.hovered ? root.theme.welcomeText : root.theme.welcomeSubtext
                 font.family: root.theme.fontFamily
-                font.pixelSize: root.theme.regularFontSize
+                font.pixelSize: 13
                 font.weight: Font.Medium
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
             }
-
         }
 
         background: Rectangle {
             width: parent.width
             height: root.choicePreviewSize
-            radius: 0
+            radius: 2
             color: choice.hovered ? root.theme.welcomeOptionHover : root.theme.welcomeOptionBackground
             border.width: choice.hovered ? 2 : 1
-            border.color: choice.hovered ? root.theme.accent : root.theme.border
+            border.color: choice.hovered ? root.theme.accent : root.theme.welcomeCardBorder
         }
     }
 
     Rectangle {
         id: welcomeCard
-        x: Math.round((parent.width - width) / 2)
-        y: Math.round((parent.height - height) / 2)
-        width: Math.min(780, parent.width - 80)
-        height: Math.min(510, parent.height - 80)
+        anchors.centerIn: parent
+        width: Math.min(820, parent.width - 60)
+        height: Math.min(520, parent.height - 60)
         radius: 0
-        color: "transparent"
+        color: root.theme.welcomeCardBackground
         clip: true
 
-        Image {
+        MouseArea {
             anchors.fill: parent
-            source: "../textures/welcome2.jpg"
-            fillMode: Image.PreserveAspectCrop
-            opacity: 0.75
+            // Intercept clicks on the card background so they do not dismiss the splash screen
+        }
+
+        Image {
+            id: splashImage
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: Math.round(parent.width * 0.48)
+            source: "../textures/burning_man.jpg"
+            fillMode: Image.PreserveAspectFit
+            horizontalAlignment: Image.AlignLeft
+            verticalAlignment: Image.AlignBottom
             smooth: true
             mipmap: true
+
+            onStatusChanged: {
+                if (status === Image.Error && source == "../textures/burning_man.jpg") {
+                    source = "../../textures/burning_man.jpg"
+                }
+            }
+        }
+
+        Image {
+            id: logoImage
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.leftMargin: 24
+            anchors.topMargin: 24
+            width: 42
+            height: 42
+            source: "../resources/Logo/app_icon.png"
+            sourceSize.width: 84
+            sourceSize.height: 84
+            fillMode: Image.PreserveAspectFit
+            smooth: true
+            mipmap: true
+
+            onStatusChanged: {
+                if (status === Image.Error) {
+                    if (source == "../resources/Logo/app_icon.png") {
+                        source = "../../../resources/Logo/app_icon.png"
+                    } else if (source == "../../../resources/Logo/app_icon.png") {
+                        source = "../../resources/Logo/app_icon.png"
+                    }
+                }
+            }
+        }
+
+        Text {
+            id: artistCredit
+            x: Math.round((splashImage.paintedWidth > 0 ? splashImage.paintedWidth : splashImage.width) - width - 20)
+            anchors.bottom: splashImage.bottom
+            anchors.bottomMargin: 14
+            text: qsTr("Art by Daniel Isles")
+            color: root.theme.welcomeSubtext
+            font.family: root.theme.fontFamily
+            font.pixelSize: root.theme.consoleFontSize
+            font.weight: Font.Normal
+            opacity: 0.7
+        }
+
+        Text {
+            id: versionText
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.rightMargin: 24
+            anchors.topMargin: 20
+            text: "v1.7.0"
+            color: root.theme.welcomeSubtext
+            font.family: root.theme.fontFamily
+            font.pixelSize: root.theme.consoleFontSize
+            font.weight: Font.Normal
+            opacity: 0.7
         }
 
         Rectangle {
@@ -125,98 +198,30 @@ Item {
             border.color: root.theme.welcomeCardBorder
         }
 
-        Rectangle {
-            id: titleBar
-            x: 0
-            y: 0
-            width: parent.width
-            height: 32
-            color: root.theme.welcomeOptionBackground
-
-            MouseArea {
-                anchors.fill: parent
-                anchors.rightMargin: 36
-                cursorShape: Qt.SizeAllCursor
-                property real pressX: 0
-                property real pressY: 0
-
-                onPressed: function(mouse) {
-                    pressX = mouse.x
-                    pressY = mouse.y
-                }
-
-                onPositionChanged: function(mouse) {
-                    if (!pressed) return
-                    const maximumX = Math.max(0, welcomeCard.parent.width - welcomeCard.width)
-                    const maximumY = Math.max(0, welcomeCard.parent.height - welcomeCard.height)
-                    welcomeCard.x = Math.max(0, Math.min(maximumX, welcomeCard.x + mouse.x - pressX))
-                    welcomeCard.y = Math.max(0, Math.min(maximumY, welcomeCard.y + mouse.y - pressY))
-                }
-            }
-
-            Item {
-                anchors.right: parent.right
-                anchors.top: parent.top
-                width: 36
-                height: 32
-
-                MouseArea {
-                    id: closeArea
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.visible = false
-                }
-
-                Image {
-                    anchors.centerIn: parent
-                    width: 13
-                    height: 13
-                    source: "../textures/icons/Menu/x/128w/Artboard 1.png"
-                    sourceSize.width: width
-                    sourceSize.height: height
-                    fillMode: Image.PreserveAspectFit
-                    opacity: closeArea.containsMouse ? 1.0 : 0.7
-                }
-            }
-
-            Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                height: 1
-                color: root.theme.border
-            }
-        }
-
         ColumnLayout {
             anchors.right: parent.right
-            anchors.top: titleBar.bottom
-            anchors.bottom: parent.bottom
-            anchors.rightMargin: 48
-            anchors.topMargin: 48
-            anchors.bottomMargin: 48
-            spacing: 2
+            anchors.rightMargin: 68
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 20
 
             ColumnLayout {
                 Layout.alignment: Qt.AlignLeft
-                spacing: 0
+                spacing: 6
 
                 Text {
                     text: qsTr("Start a Project")
                     color: root.theme.welcomeText
                     font.family: root.theme.fontFamily
-                    font.pixelSize: root.theme.titleFontSize + 40
+                    font.pixelSize: 26
                     font.weight: Font.DemiBold
                     horizontalAlignment: Text.AlignLeft
                 }
 
                 Text {
-                    id: subtitleText
                     text: qsTr("Choose a starting point for your workspace")
                     color: root.theme.welcomeSubtext
                     font.family: root.theme.fontFamily
-                    font.pixelSize: root.theme.regularFontSize + 2
+                    font.pixelSize: 13
                     font.weight: Font.Normal
                     horizontalAlignment: Text.AlignLeft
                 }
@@ -225,49 +230,47 @@ Item {
             Button {
                 id: openProjectButton
                 Layout.alignment: Qt.AlignLeft
-                Layout.preferredHeight: 32
+                Layout.preferredHeight: 28
                 padding: 0
+                hoverEnabled: true
                 onClicked: root.openProjectRequested()
 
-                contentItem: Row {
-                    anchors.left: parent.left
+                contentItem: RowLayout {
                     spacing: 8
 
                     Image {
-                        width: 20
-                        height: 20
+                        Layout.preferredWidth: 18
+                        Layout.preferredHeight: 18
+                        Layout.alignment: Qt.AlignVCenter
                         source: "../textures/icons/File/open/32w/Artboard 1.png"
-                        sourceSize.width: width
-                        sourceSize.height: height
-                        anchors.verticalCenter: parent.verticalCenter
+                        sourceSize.width: 36
+                        sourceSize.height: 36
+                        fillMode: Image.PreserveAspectFit
                         layer.enabled: true
                         layer.effect: MultiEffect {
                             colorization: openProjectButton.hovered || openProjectButton.pressed ? 1.0 : 0.0
                             colorizationColor: root.theme.accent
-                            brightness: openProjectButton.hovered || openProjectButton.pressed ? 0.0 : -0.55
-                            contrast: openProjectButton.hovered || openProjectButton.pressed ? 0.0 : 0.1
                         }
+                        opacity: openProjectButton.hovered || openProjectButton.pressed ? 1.0 : 0.85
                     }
 
                     Text {
+                        Layout.alignment: Qt.AlignVCenter
                         text: qsTr("Open Project")
                         color: openProjectButton.hovered || openProjectButton.pressed
                                ? root.theme.accent : root.theme.welcomeText
                         font.family: root.theme.fontFamily
-                        font.pixelSize: root.theme.regularFontSize + 2
+                        font.pixelSize: 13
                         font.weight: Font.Medium
-                        anchors.verticalCenter: parent.verticalCenter
                     }
                 }
 
                 background: Item {}
             }
 
-            Item { Layout.preferredHeight: 10 }
-
             RowLayout {
                 Layout.alignment: Qt.AlignLeft
-                spacing: 16
+                spacing: 20
 
                 ChoiceButton {
                     titleText: qsTr("Empty Graph")

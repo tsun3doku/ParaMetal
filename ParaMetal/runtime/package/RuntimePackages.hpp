@@ -9,20 +9,15 @@
 
 #include "domain/GeometryData.hpp"
 #include "domain/HeatData.hpp"
+#include "domain/FluidData.hpp"
 #include "domain/RemeshData.hpp"
 #include "domain/VoronoiData.hpp"
 #include "domain/SerialTemperatureData.hpp"
+#include "heat/HeatSystemPresets.hpp"
 #include "hash/HashValues.hpp"
 #include "nodegraph/NodeGraphProductTypes.hpp"
 #include "util/Units.hpp"
 
-//                                                   [ Invariant:
-//                                                     - Package types are the compiled runtime transport contract
-//                                                       consumed by compute and display transports
-//                                                     - Packages may combine authored/compiled settings with resolved
-//                                                       runtime dependency handles needed by compute or display transports
-//                                                     - Packages must not contain resolved runtime Products
-//                                                     - Packages are the runtime application boundary ]
 
 struct ModelPackage {
     HashValues hashes{};
@@ -187,11 +182,10 @@ struct HeatPackage {
     float fluidSpecificHeat = 0.0f;
     float fluidConductivity = 0.0f;
     float fluidInitialTemperatureC = 0.0f;
-    float fluidInletTemperatureC = HeatSimDefaults::ambientTemperatureC;
-    glm::vec3 fluidVelocity{0.0f};
 
     NodeDataHandle domainVoronoiHandle{};
     ProductHandle domainVoronoiProduct{};
+    ProductHandle cfdProduct{};
     std::unordered_map<uint64_t, SerialTemperatureData> resolvedSerialSources;
 
     uint32_t domainBoundaryTypes[6] = {};
@@ -210,3 +204,27 @@ struct HeatPackage {
     uint64_t displayHash() const { return hashes.display; }
     bool hasValidProduct() const { return productHandle.isValid(); }
 };
+
+struct CFDPackage {
+    HashValues hashes{};
+    ProductHandle productHandle{};
+
+    ProductHandle domainVoronoiProduct{};
+    NodeDataHandle domainVoronoiHandle{};
+
+    FluidData fluid{};
+    glm::vec3 initialVelocity{0.0f};
+
+    uint32_t domainBoundaryTypes[6] = {};
+    glm::vec3 domainBoundaryVelocities[6] = {};
+
+    float fixedTimeStep = 1.0f / 60.0f;
+    float targetCourant = 0.5f;
+    int pressureIterations = 0;
+    float pressureTolerance = 0.0f;
+    bool active = true;
+
+    uint64_t computeHash() const { return hashes.simulation; }
+    bool hasValidProduct() const { return productHandle.isValid(); }
+};
+

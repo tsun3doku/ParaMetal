@@ -4,7 +4,11 @@
 #include "NodePointsParams.hpp"
 #include "NodeMergeParams.hpp"
 #include "NodeTransformParams.hpp"
-#include "NodeHeatFluidParams.hpp"
+#include "NodeFluidParams.hpp"
+#include "NodeModelParams.hpp"
+#include "NodeRemeshParams.hpp"
+#include "NodeHeatModelParams.hpp"
+#include "NodeVoronoiParams.hpp"
 #include "voronoi/VoronoiConfig.hpp"
 
 #include "NodeGraph.hpp"
@@ -94,7 +98,7 @@ void NodeGraphEditor::resetToDefaultGraph() {
     const CreatedNode sourceMeshPoints = createNode(nodegraphtypes::MeshPoints, "Mesh Points", farRightColumnX, row4Y);
     const CreatedNode merge = createNode(nodegraphtypes::Merge, "Merge", centerColumnX, row5Y);
     const CreatedNode voronoi = createNode(nodegraphtypes::Voronoi, "Voronoi", centerColumnX, row6Y);
-    const CreatedNode heatFluid = createNode(nodegraphtypes::HeatFluid, "Heat Fluid", rightColumnX, row6Y);
+    const CreatedNode heatFluid = createNode(nodegraphtypes::Fluid, "Fluid", rightColumnX, row6Y);
     const CreatedNode heatSolve = createNode(nodegraphtypes::HeatSolve, "Ember", centerColumnX, row7Y);
 
     if (!receiverModel.id.isValid() || !receiverTransform.id.isValid() || !receiverRemesh.id.isValid() ||
@@ -140,7 +144,7 @@ void NodeGraphEditor::resetToDefaultGraph() {
     writePointsNodeParams(*this, points.id, pointsParams);
 
     MergeNodeParams mergeParams{};
-    mergeParams.mergeDistance = 0.01f;
+    mergeParams.mergeDistance = 0.0015f;
     writeMergeNodeParams(*this, merge.id, mergeParams);
 
     const NodeGraphSocketId receiverModelOutputId = outputSocketByType(receiverModel.node, NodeGraphValueType::Mesh);
@@ -159,7 +163,7 @@ void NodeGraphEditor::resetToDefaultGraph() {
     const NodeGraphSocketId voronoiPointsInputId = inputSocketByType(voronoi.node, NodeGraphValueType::Points);
     const NodeGraphSocketId heatSolveVoronoiInputId = inputSocketByType(heatSolve.node, NodeGraphValueType::Volume);
     const NodeGraphSocketId heatSolveHeatModelInputId = inputSocketByType(heatSolve.node, NodeGraphValueType::HeatModel);
-    const NodeGraphSocketId heatSolveHeatFluidInputId = inputSocketByType(heatSolve.node, NodeGraphValueType::HeatFluid);
+    const NodeGraphSocketId heatSolveHeatFluidInputId = inputSocketByType(heatSolve.node, NodeGraphValueType::Fluid);
     const NodeGraphSocketId heatFluidOutputId = firstOutputSocket(heatFluid.node);
     const NodeGraphSocketId receiverHeatModelOutputId = firstOutputSocket(receiverHeatModel.node);
     const NodeGraphSocketId sourceHeatModelOutputId = firstOutputSocket(sourceHeatModel.node);
@@ -189,65 +193,37 @@ void NodeGraphEditor::resetToDefaultGraph() {
         return;
     }
 
-    NodeGraphParamValue receiverModelPath{};
-    receiverModelPath.id = nodegraphparams::model::Path;
-    receiverModelPath.type = NodeGraphParamType::String;
-    receiverModelPath.stringValue = "models/heatsink.obj";
-    setNodeParameter(receiverModel.id, receiverModelPath);
+    ModelNodeParams receiverModelParams{};
+    receiverModelParams.path = "models/heatsink.obj";
+    writeModelNodeParams(*this, receiverModel.id, receiverModelParams);
 
-    NodeGraphParamValue sourceModelPath{};
-    sourceModelPath.id = nodegraphparams::model::Path;
-    sourceModelPath.type = NodeGraphParamType::String;
-    sourceModelPath.stringValue = "models/heatsource_torus.obj";
-    setNodeParameter(sourceModel.id, sourceModelPath);
+    ModelNodeParams sourceModelParams{};
+    sourceModelParams.path = "models/heatsource_torus.obj";
+    writeModelNodeParams(*this, sourceModel.id, sourceModelParams);
 
-    NodeGraphParamValue receiverHeatModelDensity{};
-    receiverHeatModelDensity.id = nodegraphparams::heatmodel::Density;
-    receiverHeatModelDensity.type = NodeGraphParamType::Float;
-    receiverHeatModelDensity.floatValue = 100.0;
-    setNodeParameter(receiverHeatModel.id, receiverHeatModelDensity);
+    RemeshNodeParams receiverRemeshParams{};
+    receiverRemeshParams.maxEdgeLength = 0.005;
+    writeRemeshNodeParams(*this, receiverRemesh.id, receiverRemeshParams);
 
-    NodeGraphParamValue receiverHeatModelConductivity{};
-    receiverHeatModelConductivity.id = nodegraphparams::heatmodel::Conductivity;
-    receiverHeatModelConductivity.type = NodeGraphParamType::Float;
-    receiverHeatModelConductivity.floatValue = 5.0;
-    setNodeParameter(receiverHeatModel.id, receiverHeatModelConductivity);
+    RemeshNodeParams sourceRemeshParams{};
+    sourceRemeshParams.maxEdgeLength = 0.005;
+    writeRemeshNodeParams(*this, sourceRemesh.id, sourceRemeshParams);
 
-    NodeGraphParamValue sourceHeatModelDensity{};
-    sourceHeatModelDensity.id = nodegraphparams::heatmodel::Density;
-    sourceHeatModelDensity.type = NodeGraphParamType::Float;
-    sourceHeatModelDensity.floatValue = 100.0;
-    setNodeParameter(sourceHeatModel.id, sourceHeatModelDensity);
+    HeatModelNodeParams receiverHeatModelParams{};
+    receiverHeatModelParams.density = 100.0;
+    receiverHeatModelParams.conductivity = 5.0;
+    writeHeatModelNodeParams(*this, receiverHeatModel.id, receiverHeatModelParams);
 
-    NodeGraphParamValue sourceHeatModelConductivity{};
-    sourceHeatModelConductivity.id = nodegraphparams::heatmodel::Conductivity;
-    sourceHeatModelConductivity.type = NodeGraphParamType::Float;
-    sourceHeatModelConductivity.floatValue = 5.0;
-    setNodeParameter(sourceHeatModel.id, sourceHeatModelConductivity);
+    HeatModelNodeParams sourceHeatModelParams{};
+    sourceHeatModelParams.density = 500.0;
+    sourceHeatModelParams.conductivity = 5.0;
+    sourceHeatModelParams.initialTemperatureC = 75.0;
+    writeHeatModelNodeParams(*this, sourceHeatModel.id, sourceHeatModelParams);
 
-    NodeGraphParamValue receiverRemeshMaxEdge{};
-    receiverRemeshMaxEdge.id = nodegraphparams::remesh::MaxEdgeLength;
-    receiverRemeshMaxEdge.type = NodeGraphParamType::Float;
-    receiverRemeshMaxEdge.floatValue = 0.005;
-    setNodeParameter(receiverRemesh.id, receiverRemeshMaxEdge);
-
-    NodeGraphParamValue sourceRemeshMaxEdge{};
-    sourceRemeshMaxEdge.id = nodegraphparams::remesh::MaxEdgeLength;
-    sourceRemeshMaxEdge.type = NodeGraphParamType::Float;
-    sourceRemeshMaxEdge.floatValue = 0.005;
-    setNodeParameter(sourceRemesh.id, sourceRemeshMaxEdge);
-
-    NodeGraphParamValue voronoiSDFSize{};
-    voronoiSDFSize.id = nodegraphparams::voronoi::SDFSize;
-    voronoiSDFSize.type = NodeGraphParamType::Float;
-    voronoiSDFSize.floatValue = 0.005f;
-    setNodeParameter(voronoi.id, voronoiSDFSize);
-
-    NodeGraphParamValue voronoiContactRange{};
-    voronoiContactRange.id = nodegraphparams::voronoi::ContactRange;
-    voronoiContactRange.type = NodeGraphParamType::Float;
-    voronoiContactRange.floatValue = voronoi::DefaultContactRange;
-    setNodeParameter(voronoi.id, voronoiContactRange);
+    VoronoiNodeParams voronoiParams{};
+    voronoiParams.cellSize = 0.005;
+    voronoiParams.contactRange = voronoi::DefaultContactRange;
+    writeVoronoiNodeParams(*this, voronoi.id, voronoiParams);
 
     HeatFluidNodeParams fluidParams{};
     writeHeatFluidNodeParams(*this, heatFluid.id, fluidParams);

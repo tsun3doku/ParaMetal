@@ -8,7 +8,7 @@ void VoronoiRuntime::invalidateMaterialization() {
     globalRemeshTriangleIndices.clear();
     globalRemeshSurfacePositions.clear();
     globalRemeshSurfaceTriangleIndices.clear();
-    globalSdfPadding = 0.0f;
+    globalVolumePadding = 0.0f;
 }
 
 void VoronoiRuntime::setSeedPositions(
@@ -24,13 +24,13 @@ void VoronoiRuntime::setGlobalGeometry(
     const std::vector<std::vector<uint32_t>>& triangleIndices,
     const std::vector<std::vector<glm::vec3>>& surfacePositions,
     const std::vector<std::vector<uint32_t>>& surfaceTriangleIndices,
-    float sdfPadding) {
+    float volumePadding) {
     globalRemeshRuntimeModelIds = runtimeModelIds;
     globalRemeshPositions = positions;
     globalRemeshTriangleIndices = triangleIndices;
     globalRemeshSurfacePositions = surfacePositions;
     globalRemeshSurfaceTriangleIndices = surfaceTriangleIndices;
-    globalSdfPadding = sdfPadding;
+    globalVolumePadding = volumePadding;
     voronoiReady = false;
 }
 

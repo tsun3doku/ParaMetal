@@ -47,9 +47,9 @@ public:
         std::vector<VkBuffer> modelSurfaceGradientBuffers;
         std::vector<VkDeviceSize> modelSurfaceGradientBufferOffsets;
 
-        glm::vec3 globalSdfGridMin{0.0f};
-        glm::ivec3 globalSdfGridDim{0};
-        float globalSdfCellSize = 0.0f;
+        glm::vec3 globalVolumeGridMin{0.0f};
+        glm::ivec3 globalVolumeGridDim{0};
+        float globalVolumeGridCellSize = 0.0f;
 
         bool hasFluidVolume = false;
         VkImageView fluidTemperatureVolumeView = VK_NULL_HANDLE;

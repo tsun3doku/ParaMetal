@@ -62,6 +62,12 @@ const float EARLY_EXIT_REL_IMPROVEMENT = 1e-4;
 
 const uint SECOND_RING_NEIGHBORS = 2;
 
+const vec3 INTRINSIC_LOOKUP_ERROR = vec3(1.0, 0.0, 0.0);
+const vec3 CANDIDATE_RANGE_ERROR = vec3(1.0, 0.5, 0.0);
+const vec3 NO_CANDIDATE_ERROR = vec3(0.0, 0.25, 1.0);
+const uint REFINED_OWNER_AUDIT_PIXEL_PERIOD = 4093u;
+const vec3 REFINED_OWNER_AUDIT_COLOR = vec3(0.0, 1.0, 0.0);
+
 const float WIRE_DIST_WIDTH = 0.005;
 const float EXIT_PLANE_DEPTH_SCALE = 0.90;
 const float EXIT_PLANE_MIN_DEPTH = 0.08;
@@ -71,7 +77,7 @@ const float VORONOI_ROUGHNESS = 0.05;
 const float VORONOI_METALNESS = 0.0;
 const float VORONOI_LIGHTING_MIX = 0.5;
 const float PI = 3.14159265359;
-const int IMAX = 128;
+const int IMAX = 512;
 
 vec4 voronoiMaterial() {
     return vec4(VORONOI_ROUGHNESS, VORONOI_METALNESS, VORONOI_LIGHTING_MIX, 0.0);
@@ -345,7 +351,7 @@ void main() {
     int inputTri = gl_PrimitiveID;
     int intrinsicTri = findIntrinsicTriangle(inputTri, vIntrinsicCoord);
     if (intrinsicTri < 0) {
-        writeVoronoiSurface(vec3(1, 0, 1));
+        writeVoronoiSurface(INTRINSIC_LOOKUP_ERROR);
         return;
     }
 
@@ -355,6 +361,10 @@ void main() {
     float minDistSq = 3.402823466e+38;
 
     uint candBase = uint(intrinsicTri) * K_CANDIDATES;
+    if (candBase >= candidates.length()) {
+        writeVoronoiSurface(CANDIDATE_RANGE_ERROR);
+        return;
+    }
     uint limit = min(candidates.length() - candBase, K_CANDIDATES);
     for (uint i = 0; i < limit; ++i) {
         uint cid = candidates[candBase + i];
@@ -369,9 +379,10 @@ void main() {
     }
 
     if (bestCellID == 0xFFFFFFFF) {
-        writeVoronoiSurface(vec3(1, 0, 1));
+        writeVoronoiSurface(NO_CANDIDATE_ERROR);
         return;
     }
+    const uint initialCandidateCellID = bestCellID;
 
     float hintSeedDist = sqrt(max(minDistSq, 1e-12));
     float pixelScale = length(dFdx(samplePos)) + length(dFdy(samplePos));
@@ -403,6 +414,16 @@ void main() {
         }
         if (!improved || (prevMinDistSq - minDistSq) <= prevMinDistSq * EARLY_EXIT_REL_IMPROVEMENT) break;
         prevMinDistSq = minDistSq;
+    }
+
+    // Sparse diagnostic: show pixels where neighbor refinement changes the
+    // best owner from the per-triangle candidate set. This is intentionally
+    // bounded and does not scan the full seed buffer.
+    const uvec2 auditPixel = uvec2(gl_FragCoord.xy);
+    if (bestCellID != initialCandidateCellID &&
+        (auditPixel.x + auditPixel.y * 131u) % REFINED_OWNER_AUDIT_PIXEL_PERIOD == 0u) {
+        writeVoronoiSurface(REFINED_OWNER_AUDIT_COLOR);
+        return;
     }
 
     vec3 bestPos = seeds[bestCellID].xyz;

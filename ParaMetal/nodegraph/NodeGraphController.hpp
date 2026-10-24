@@ -12,17 +12,13 @@
 #include <memory>
 #include <vector>
 
-class VulkanDevice;
-class MemoryAllocator;
 class NodePayloadRegistry;
 
 class NodeGraphController {
 public:
     NodeGraphController(
         NodePayloadRegistry& payloadRegistry,
-        const RuntimeConnections& connections,
-        VulkanDevice& vulkanDevice,
-        MemoryAllocator& memoryAllocator);
+        const RuntimeConnections& connections);
 
     void tick();
     void resetGraph(const NodeGraphState& state);
@@ -32,6 +28,7 @@ public:
     void updateDisplayTransports();
     void setWorldUnit(units::LengthUnit unit);
     units::LengthUnit worldUnit() const { return activeWorldUnit; }
+    bool runtimeCompilationPending() const { return packageCompilationPending; }
     const NodeGraphCompiled& compiledState() const;
 
     bool runtimeModelIdsForNode(NodeGraphNodeId nodeId,

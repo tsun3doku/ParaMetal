@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include "runtime/RemeshController.hpp"
 #include "runtime/package/RuntimePackages.hpp"
 #include "runtime/RuntimeProductManager.hpp"

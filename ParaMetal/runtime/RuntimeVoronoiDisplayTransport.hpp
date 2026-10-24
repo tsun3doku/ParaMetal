@@ -97,7 +97,8 @@ private:
         outConfig.candidateNeighborIndicesBuffer = computeProduct->candidateNeighborIndicesBuffer;
         outConfig.candidateNeighborIndicesBufferOffset = computeProduct->candidateNeighborIndicesBufferOffset;
         if (outConfig.showVoronoi) {
-            if (package.globalRemeshProducts.size() != computeProduct->globalDisplayCandidateBuffers.size()) {
+            if (package.globalRemeshProducts.size() != package.globalModelProducts.size() ||
+                package.globalRemeshProducts.size() != computeProduct->globalDisplayCandidateBuffers.size()) {
                 std::cerr << "[VoronoiDisplayTransport] display instance mismatch for socketKey=" << socketKey
                           << " remeshes=" << package.globalRemeshProducts.size()
                           << " display=" << computeProduct->globalDisplayCandidateBuffers.size() << std::endl;

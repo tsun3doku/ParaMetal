@@ -2,6 +2,7 @@
 
 #include "heat/TimelineSimulation.hpp"
 #include "framegraph/ComputePass.hpp"
+#include "simgraph/SimNode.hpp"
 #include "util/Structs.hpp"
 #include "util/Units.hpp"
 #include "HeatPlaybackRuntime.hpp"
@@ -23,7 +24,7 @@ class VulkanDevice;
 class CommandPool;
 class HeatSystemSurfaceStage;
 
-class HeatSystem : public ComputePass {
+class HeatSystem : public SimNode {
 public:
     HeatSystem(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator,
         uint32_t maxFramesInFlight, CommandPool& renderCommandPool, CommandPool& transferCommandPool);
@@ -33,7 +34,6 @@ public:
     bool ensureConfigured();
     bool setupDescriptors(const std::vector<VkBuffer>& surfaceBuffers, const std::vector<VkDeviceSize>& surfaceOffsets, const std::vector<VkBuffer>& gradientBuffers, const std::vector<VkDeviceSize>& gradientOffsets);
     void recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t currentFrame) override;
-    void setComputeTimingQueries(VkQueryPool queryPool, uint32_t startQuery, uint32_t endQuery) override;
     bool createComputeCommandBuffers(uint32_t maxFramesInFlight);
     void cleanup();
 
@@ -61,12 +61,32 @@ public:
         float density,
         float specificHeat,
         float conductivity,
-        float initialTemperatureC,
-        float inletTemperatureC,
-        const glm::vec3& prescribedVelocity = glm::vec3{0.0f});
+        float initialTemperatureC);
     void clearHeatFluid();
-    void setFluidPrescribedVelocity(const glm::vec3& prescribedVelocity);
-    bool setRuntimeFluidInletTemperature(float temperatureC);
+
+    void setAdvectionInput(
+        VkBuffer faceFluxBuffer,
+        VkDeviceSize faceFluxBufferSize,
+        VkBuffer boundaryFluxBuffer,
+        VkDeviceSize boundaryFluxBufferSize,
+        uint32_t faceCount,
+        uint32_t boundaryFaceCount);
+    void clearAdvectionInput();
+
+    // SimNode consumer side for cross-simulation publication
+    void bindConsumedInput(uint64_t connectionId, VkSemaphore producerReady, uint64_t producerReadyValue) override {
+        (void)producerReady;
+        (void)producerReadyValue;
+        boundInputConnectionId = connectionId;
+    }
+    void clearConsumedInputs() override {
+        boundInputConnectionId = 0;
+    }
+    bool consumedInput(uint64_t connectionId) const override {
+        return connectionId != 0 &&
+            connectionId == boundInputConnectionId &&
+            domainRuntime.advectionStagingCopyScheduled();
+    }
 
     void setGlobalVoronoiInput(
         const topology::GlobalDomain& domain,
@@ -78,6 +98,13 @@ public:
         const float temperaturesC[6],
         const float heatFluxes[6],
         const float heatTransferCoefficients[6]);
+    void setDomainBoundaryConditions(const heat::DomainBoundaryConditions& boundaries);
+    const heat::DomainBoundaryConditions& getDomainBoundaryConditions() const { return domainBoundaries; }
+    void setGlobalSolverParameters(uint32_t maxIterations, float convergenceTolerance) {
+        domainRuntime.setGlobalSolverParameters(maxIterations, convergenceTolerance);
+    }
+    void waitForSolvesIdle() { domainRuntime.waitGlobalSolveIdle(); }
+    void releasePendingSolveWaitOnHost() { domainRuntime.releasePendingSolveWaitOnHost(); }
     void setInitialTemperatures(const std::unordered_map<uint32_t, float>& temperatures);
     bool setRuntimeFluidInitialTemperature(float temperatureC);
     bool setRuntimeVolumetricPowerDensity(uint32_t runtimeModelId, float powerDensity);
@@ -87,6 +114,9 @@ public:
     bool getIsPaused() const { return timeline.isPaused(); }
     bool isInitialized() const { return initialized; }
     bool hasDispatchableComputeWork() const override;
+    float computeGpuMs() const override { return domainRuntime.getLastSolveMs(); }
+    uint64_t completedStepCount() const override { return completedSteps; }
+    bool advectionStagingCopyScheduled() const { return domainRuntime.advectionStagingCopyScheduled(); }
     bool voronoiReady() const;
 
     uint32_t getResetCounter() const { return timeline.getResetCounter(); }
@@ -116,7 +146,6 @@ private:
     uint32_t computeTimelineFrameCount() const;
     uint32_t computeHistoryFrameCapacity() const { return computeTimelineFrameCount() + 1; }
     void failInitialization(const char* stage);
-    bool rebuildVoronoiRuntime();
     bool rebuildGlobalThermalDomain();
     float getInitialTemperatureC(uint32_t runtimeModelId) const;
     void configureModelProperties(HeatModelRuntime& model, uint32_t runtimeModelId) const;
@@ -125,6 +154,7 @@ private:
 
     void processResetTrigger();
     void forwardSim(float deltaTime);
+    void releaseGmlsBuffers();
     void configureGMLSSurfaceWeights(bool heatVoronoiReady);
     bool recreateDescriptorPools();
     void configureModelSimResources();
@@ -134,9 +164,6 @@ private:
     CommandPool& renderCommandPool;
     CommandPool& transferCommandPool;
     std::vector<VkCommandBuffer> computeCommandBuffers;
-    VkQueryPool timingQueryPool = VK_NULL_HANDLE;
-    uint32_t timingStartQuery = 0;
-    uint32_t timingEndQuery = 0;
     uint32_t maxFramesInFlight;
 
     std::unique_ptr<HeatSystemSurfaceStage> surfaceStage;
@@ -162,6 +189,9 @@ private:
     float simulatedTime = 0.0f;
     bool shouldStepPhysics = false;
     bool physicsStepCompletedThisFrame = false;
+    // Terminal solve failure: heat physics halts until the next reset
+    bool physicsFailed = false;
+    uint64_t completedSteps = 0;
     bool needsInitialCapture = false;
     float physicsAccumulator = 0.0f;
     bool temperatureBufferAIsCurrent = true;
@@ -173,18 +203,9 @@ private:
     bool voronoiConfigDirty = true;
     bool heatParamsDirty = true;
     uint32_t processedResetCounter = 0;
+    uint64_t boundInputConnectionId = 0;
 
-    uint32_t domainBoundaryTypes[6] = {};
-    float domainBoundaryTemperaturesC[6] = {
-        HeatSimDefaults::ambientTemperatureC,
-        HeatSimDefaults::ambientTemperatureC,
-        HeatSimDefaults::ambientTemperatureC,
-        HeatSimDefaults::ambientTemperatureC,
-        HeatSimDefaults::ambientTemperatureC,
-        HeatSimDefaults::ambientTemperatureC
-    };
-    float domainBoundaryHeatFluxes[6] = {};
-    float domainBoundaryHeatTransferCoefficients[6] = {};
+    heat::DomainBoundaryConditions domainBoundaries = heat::createDefaultDomainBoundaries(HeatSimDefaults::ambientTemperatureC);
 
     std::unordered_map<uint32_t, uint32_t> simNodeCounts;
     std::unordered_map<uint32_t, std::array<float, 16>> modelLocalToWorldByModelId;
@@ -201,4 +222,9 @@ private:
     bool fluidVolumeDirty = false;
     bool lastFluidReplayFromHistory = false;
     uint32_t lastFluidDisplayFrame = 0;
+
+    // Surface dispatches only run when displayed data changes, not every frame
+    bool surfaceDataDirty = true;
+    // Monotonic rendered frame counter for cadence decisions
+    uint64_t renderedFrameCounter = 0;
 };

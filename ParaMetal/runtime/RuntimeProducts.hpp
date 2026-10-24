@@ -8,17 +8,10 @@
 #include <glm/vec3.hpp>
 #include <vulkan/vulkan.h>
 
-#include "heat/HeatGpuStructs.hpp"
 #include "hash/HashValues.hpp"
 
-//                                                      [ Invariant:
-//                                                        - Products are outputs produced by runtime backends
-//                                                        - Products contain runtime identities, generated CPU result
-//                                                          data, GPU resources, offsets and counts
-//                                                        - Products are published through RuntimeProductManager and
-//                                                          referenced through ProductHandle
-//                                                        - Runtime inputs are carried by Packages and controller Configs ]
 
+// Borrowed view, owned by ModelRegistry
 struct ModelProduct {
     uint32_t runtimeModelId = 0;
     VkBuffer vertexBuffer = VK_NULL_HANDLE;
@@ -45,6 +38,7 @@ struct ModelProduct {
 
 };
 
+// Borrowed view, owned by RemeshSystem
 struct RemeshProduct {
     uint32_t runtimeModelId = 0;
     std::vector<glm::vec3> geometryPositions;
@@ -134,6 +128,7 @@ struct RemeshProduct {
 
 };
 
+// Borrowed view, owned by VoronoiSystem
 struct VoronoiProduct {
     uint32_t candidateNodeCount = 0;
     VkBuffer candidateNeighborIndicesBuffer = VK_NULL_HANDLE;
@@ -154,36 +149,36 @@ struct VoronoiProduct {
 
     std::vector<glm::vec4> globalSeedPositions;
     std::array<glm::vec3, 8> globalDomainCorners{};
-    glm::vec3 globalSdfGridMin{};
-    glm::ivec3 globalSdfGridDim{};
-    float globalSdfCellSize = 0.0f;
-    std::vector<float> globalSdfValues;
-    std::vector<uint32_t> globalSdfRuntimeModelIds;
+    glm::vec3 globalVolumeGridMin{};
+    glm::ivec3 globalVolumeGridDim{};
+    float globalVolumeGridCellSize = 0.0f;
     uint32_t globalFragmentCount = 0;
     std::vector<uint32_t> fragmentInstanceIds;
     std::vector<uint32_t> fragmentSeedIds;
-    std::vector<glm::vec3> fragmentCentroids;
-    std::vector<float> fragmentVolumes;
+    std::vector<glm::dvec3> fragmentCentroids;
+    std::vector<double> fragmentVolumes;
+    // Seed to fluid fragment provenance with InvalidId for empty seeds
+    std::vector<uint32_t> seedToFragment;
     float nominalCellSize = 0.0f;
     uint32_t globalFaceCount = 0;
     std::vector<uint32_t> faceFragmentA;
     std::vector<uint32_t> faceFragmentB;
-    std::vector<float> faceAreas;
-    std::vector<float> faceOrthogonalDistancesA;
-    std::vector<float> faceOrthogonalDistancesB;
-    std::vector<glm::vec3> faceNormals;
-    uint32_t globalContactFaceCount = 0;
-    std::vector<uint32_t> contactFaceFragmentA;
-    std::vector<uint32_t> contactFaceFragmentB;
-    std::vector<float> contactFaceAreas;
-    std::vector<float> contactFaceOrthogonalDistancesA;
-    std::vector<float> contactFaceOrthogonalDistancesB;
-    std::vector<float> contactFaceGaps;
+    std::vector<double> faceAreasA;
+    std::vector<glm::dvec3> faceAreaVectorsA;
+    std::vector<glm::dvec3> faceMomentsA;
+    std::vector<double> faceAreasB;
+    std::vector<glm::dvec3> faceAreaVectorsB;
+    std::vector<glm::dvec3> faceMomentsB;
+    std::vector<uint8_t> faceTypes;
+    std::vector<uint32_t> faceDomainFaces;
+    uint32_t globalContactCouplingCount = 0;
+    std::vector<uint32_t> contactCouplingFaceA;
+    std::vector<uint32_t> contactCouplingFaceB;
+    std::vector<double> contactCouplingAreas;
     uint32_t globalBoundaryFaceCount = 0;
+    std::vector<uint32_t> boundaryFaceIndices;
     std::vector<uint32_t> boundaryFaceFragments;
     std::vector<uint32_t> boundaryFaceDomainFaces;
-    std::vector<float> boundaryFaceAreas;
-    std::vector<float> boundaryFaceOrthogonalDistances;
     std::vector<uint32_t> instanceFragmentCounts;
 
     std::vector<uint32_t> globalDisplayRuntimeModelIds;
@@ -196,11 +191,7 @@ struct VoronoiProduct {
 
     bool isValid() const {
         return !globalSeedPositions.empty() &&
-            globalSdfGridDim.x >= 2 && globalSdfGridDim.y >= 2 && globalSdfGridDim.z >= 2 &&
-            globalSdfValues.size() ==
-                size_t(globalSdfGridDim.x) * globalSdfGridDim.y * globalSdfGridDim.z *
-                    globalSdfRuntimeModelIds.size() &&
-            globalSdfRuntimeModelIds.size() == instanceFragmentCounts.size() &&
+            globalVolumeGridDim.x >= 2 && globalVolumeGridDim.y >= 2 && globalVolumeGridDim.z >= 2 &&
             fragmentInstanceIds.size() == globalFragmentCount &&
             fragmentSeedIds.size() == globalFragmentCount &&
             fragmentCentroids.size() == globalFragmentCount &&
@@ -208,23 +199,25 @@ struct VoronoiProduct {
             nominalCellSize > 0.0f &&
             faceFragmentA.size() == globalFaceCount &&
             faceFragmentB.size() == globalFaceCount &&
-            faceAreas.size() == globalFaceCount &&
-            faceOrthogonalDistancesA.size() == globalFaceCount &&
-            faceOrthogonalDistancesB.size() == globalFaceCount &&
-            contactFaceFragmentA.size() == globalContactFaceCount &&
-            contactFaceFragmentB.size() == globalContactFaceCount &&
-            contactFaceAreas.size() == globalContactFaceCount &&
-            contactFaceOrthogonalDistancesA.size() == globalContactFaceCount &&
-            contactFaceOrthogonalDistancesB.size() == globalContactFaceCount &&
-            contactFaceGaps.size() == globalContactFaceCount &&
+            faceAreasA.size() == globalFaceCount &&
+            faceAreaVectorsA.size() == globalFaceCount &&
+            faceMomentsA.size() == globalFaceCount &&
+            faceAreasB.size() == globalFaceCount &&
+            faceAreaVectorsB.size() == globalFaceCount &&
+            faceMomentsB.size() == globalFaceCount &&
+            faceTypes.size() == globalFaceCount &&
+            faceDomainFaces.size() == globalFaceCount &&
+            contactCouplingFaceA.size() == globalContactCouplingCount &&
+            contactCouplingFaceB.size() == globalContactCouplingCount &&
+            contactCouplingAreas.size() == globalContactCouplingCount &&
+            boundaryFaceIndices.size() == globalBoundaryFaceCount &&
             boundaryFaceFragments.size() == globalBoundaryFaceCount &&
             boundaryFaceDomainFaces.size() == globalBoundaryFaceCount &&
-            boundaryFaceAreas.size() == globalBoundaryFaceCount &&
-            boundaryFaceOrthogonalDistances.size() == globalBoundaryFaceCount &&
             !instanceFragmentCounts.empty();
     }
 };
 
+// Borrowed view, owned by PointComputeRuntime
 struct PointProduct {
     VkBuffer positionBuffer = VK_NULL_HANDLE;
     VkDeviceSize positionBufferOffset = 0;
@@ -237,6 +230,7 @@ struct PointProduct {
     }
 };
 
+// Borrowed view, surface buffers owned by HeatModelRuntime and volume view by HeatSystem
 struct HeatProduct {
     std::vector<uint32_t> modelRuntimeModelIds;
     std::vector<VkBuffer> modelSurfaceBuffers;
@@ -259,5 +253,33 @@ struct HeatProduct {
             modelRuntimeModelIds.size() == modelSurfaceGradientBuffers.size() &&
             modelRuntimeModelIds.size() == modelSurfaceGradientBufferOffsets.size();
     }
-
 };
+
+// Borrowed view, owned by CFDSystem
+struct CFDProduct {
+    uint32_t fluidNodeCount = 0;
+
+    VkBuffer velocityBuffer = VK_NULL_HANDLE;
+    VkDeviceSize velocityBufferSize = 0;
+    VkDeviceSize velocityBufferOffset = 0;
+
+    VkBuffer faceFluxBuffer = VK_NULL_HANDLE;
+    VkDeviceSize faceFluxBufferSize = 0;
+    VkDeviceSize faceFluxBufferOffset = 0;
+    uint32_t faceFluxCount = 0;
+
+    VkBuffer boundaryFluxBuffer = VK_NULL_HANDLE;
+    VkDeviceSize boundaryFluxBufferSize = 0;
+    VkDeviceSize boundaryFluxBufferOffset = 0;
+    uint32_t boundaryFluxCount = 0;
+
+    HashValues hashes{};
+
+    bool isValid() const {
+        return fluidNodeCount != 0 &&
+            velocityBuffer != VK_NULL_HANDLE &&
+            (faceFluxCount == 0 || faceFluxBuffer != VK_NULL_HANDLE) &&
+            (boundaryFluxCount == 0 || boundaryFluxBuffer != VK_NULL_HANDLE);
+    }
+};
+

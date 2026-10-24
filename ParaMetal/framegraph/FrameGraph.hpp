@@ -23,14 +23,6 @@ public:
     const framegraph::FrameGraphResult& getFrameGraphResult() const;
     std::vector<std::string> getPassNames() const;
 
-    framegraph::SizeBytes getTransientNoAliasBytes() const {
-        return transientNoAliasBytes;
-    }
-
-    framegraph::SizeBytes getTransientAliasedBytes() const {
-        return transientAliasedBytes;
-    }
-
 private:
     struct ResourceLifetimeRange {
         int32_t firstPass = -1;
@@ -75,8 +67,6 @@ private:
     std::vector<int32_t> aliasGroupByResource;
     std::vector<std::vector<uint32_t>> aliasGroups;
 
-    framegraph::SizeBytes transientNoAliasBytes = 0;
-    framegraph::SizeBytes transientAliasedBytes = 0;
     framegraph::FrameGraphResult frameGraphResult;
 };
 

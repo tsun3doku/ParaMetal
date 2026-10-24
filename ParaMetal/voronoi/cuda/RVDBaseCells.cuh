@@ -10,115 +10,106 @@
 #include <vector>
 #include <array>
 #include <cstdint>
+#include <algorithm>
+#include <cmath>
+#include <limits>
 #include <glm/glm.hpp>
 
 namespace voronoi {
 
-struct BaseCellData {
-    double volume = 0.0;
-    glm::dvec3 localMoment{0.0};
-};
-
 struct DeviceBaseCells {
-    const rvdDevice::ConvexCellStorage<rvdDevice::NormalLimits>* cells = nullptr;
-    const rvdDevice::ConvexCellStorage<rvdDevice::DiscoveryLimits>* retryCells = nullptr;
-    const int32_t* retrySlots = nullptr;
+    const rvdDevice::ConvexCellStorage* cells = nullptr;
+    const rvdDevice::ConvexCellOverflowStorage* overflowCells = nullptr;
+    const int32_t* overflowSlots = nullptr;
+    uint32_t overflowCount = 0;
     uint32_t cellCount = 0;
-    uint32_t retryCount = 0;
 };
 
-inline constexpr float BasePlaneTolerance = 1e-6f;
+struct BaseCellArrays {
+    const double4* planes = nullptr;
+    const uint64_t* planeTags = nullptr;
+    const int* planeNeighborIds = nullptr;
+    const uint3* vertices = nullptr;
+    const double* planeAreas = nullptr;
+    const double* planeAreaAbsSums = nullptr;
+    const double3* planeMoments = nullptr;
+    uint32_t planeCount = 0;
+    uint32_t vertexCount = 0;
+};
 
-__device__ inline uint32_t basePlaneCount(DeviceBaseCells cells, uint32_t cell) {
-    if (cell >= cells.cellCount) return 0;
-    const int32_t rSlot = cells.retrySlots[cell];
-    if (rSlot >= 0 && uint32_t(rSlot) < cells.retryCount) {
-        return cells.retryCells[uint32_t(rSlot)].planeCount;
-    }
-    return cells.cells[cell].planeCount;
+template <typename StorageT>
+__device__ inline BaseCellArrays toBaseCellArrays(const StorageT& storage) {
+    BaseCellArrays arrays{};
+    arrays.planes = storage.planes;
+    arrays.planeTags = storage.planeTags;
+    arrays.planeNeighborIds = storage.planeNeighborIds;
+    arrays.vertices = storage.vertices;
+    arrays.planeAreas = storage.planeAreas;
+    arrays.planeAreaAbsSums = storage.planeAreaAbsSums;
+    arrays.planeMoments = storage.planeMoments;
+    arrays.planeCount = storage.planeCount;
+    arrays.vertexCount = storage.vertexCount;
+    return arrays;
 }
 
-__device__ inline float4 basePlane(DeviceBaseCells cells, uint32_t cell, uint32_t plane) {
-    const int32_t rSlot = cells.retrySlots[cell];
-    if (rSlot >= 0 && uint32_t(rSlot) < cells.retryCount) {
-        return cells.retryCells[uint32_t(rSlot)].planes[plane];
+__device__ inline BaseCellArrays resolveBaseCell(const DeviceBaseCells& baseCells, uint32_t cellId) {
+    if (baseCells.overflowSlots != nullptr && baseCells.overflowCells != nullptr) {
+        const int32_t slot = baseCells.overflowSlots[cellId];
+        if (slot >= 0 && uint32_t(slot) < baseCells.overflowCount) {
+            return toBaseCellArrays(baseCells.overflowCells[slot]);
+        }
     }
-    return cells.cells[cell].planes[plane];
+    return toBaseCellArrays(baseCells.cells[cellId]);
 }
 
-__device__ inline int basePlaneNeighbor(DeviceBaseCells cells, uint32_t cell, uint32_t plane) {
-    if (cell >= cells.cellCount) return -1;
-    const int32_t rSlot = cells.retrySlots[cell];
-    if (rSlot >= 0 && uint32_t(rSlot) < cells.retryCount) {
-        return cells.retryCells[uint32_t(rSlot)].planeNeighborIds[plane];
-    }
-    return cells.cells[cell].planeNeighborIds[plane];
-}
-
-struct BaseCellsContext {
+struct BaseCellDomain {
     uint32_t count = 0;
     float baseScale = 1.0f;
     double invBaseScale = 1.0;
     double invBaseVolumeScale = 1.0;
     double invBaseMomentScale = 1.0;
     double invBaseAreaScale = 1.0;
-    double areaTolerance = 0.0;
 
     glm::vec3 domainMin{0.0f};
     glm::vec3 domainMax{0.0f};
     std::array<glm::dvec4, 6> outwardDomainPlanes{};
 
     cudaGeometry::DeviceVoxelGrid baseGrid;
-    float4 domainPlanes[6];
+    double4 domainPlanes[6];
 
-    std::vector<BaseCellData> baseCells;
-    std::vector<rvdDevice::ConvexCellStorage<rvdDevice::NormalLimits>> hostBaseStates;
-    std::vector<rvdDevice::ConvexCellStorage<rvdDevice::DiscoveryLimits>> hostRetryBaseStates;
-    std::vector<int32_t> retrySlots;
-    std::vector<uint32_t> cellPlaneOffsets;
+    uint32_t totalPlanes = 0;
 
-    cudaUtils::CudaBuffer<int32_t> devRetrySlots;
     cudaUtils::CudaBuffer<uint32_t> devCellPlaneOffsets;
-    cudaUtils::CudaBuffer<rvdDevice::ConvexCellStorage<rvdDevice::NormalLimits>> devBaseStates;
-    cudaUtils::CudaBuffer<rvdDevice::ConvexCellStorage<rvdDevice::DiscoveryLimits>> devRetryBaseStates;
+    cudaUtils::CudaBuffer<rvdDevice::ConvexCellStorage> devBaseStates;
+    cudaUtils::CudaBuffer<double4> devBaseMoments;
+    cudaUtils::CudaBuffer<rvdDevice::ConvexCellOverflowStorage> devOverflowStates;
+    cudaUtils::CudaBuffer<int32_t> devOverflowSlots;
+    uint32_t overflowCount = 0;
 
     DeviceBaseCells deviceView() const {
         DeviceBaseCells view{};
         view.cells = devBaseStates.get();
-        view.retryCells = devRetryBaseStates.get();
-        view.retrySlots = devRetrySlots.get();
+        view.overflowCells = devOverflowStates.get();
+        view.overflowSlots = devOverflowSlots.get();
+        view.overflowCount = overflowCount;
         view.cellCount = count;
-        view.retryCount = uint32_t(devRetryBaseStates.size());
         return view;
     }
 
-    uint32_t planeCount(uint32_t cell) const {
-        const int32_t rSlot = retrySlots[cell];
-        return rSlot >= 0 ? hostRetryBaseStates[size_t(rSlot)].planeCount
-                          : hostBaseStates[cell].planeCount;
-    }
+    float nominalCellSize = 0.0f;
 
-    int planeNeighbor(uint32_t cell, uint32_t localPlane) const {
-        const int32_t rSlot = retrySlots[cell];
-        return rSlot >= 0 ? hostRetryBaseStates[size_t(rSlot)].planeNeighborIds[localPlane]
-                          : hostBaseStates[cell].planeNeighborIds[localPlane];
-    }
-
-    double baseFaceArea(uint32_t cell, uint32_t localPlane) const {
-        const int32_t rSlot = retrySlots[cell];
-        const double canonicalArea = rSlot >= 0
-            ? double(hostRetryBaseStates[size_t(rSlot)].planeAreas[localPlane])
-            : double(hostBaseStates[cell].planeAreas[localPlane]);
-        return canonicalArea * invBaseAreaScale;
+    double facetFloor() const {
+        return 64.0 * std::numeric_limits<double>::epsilon()
+               * double(nominalCellSize * nominalCellSize);
     }
 };
 
-bool prepareBaseDomain(const RVDInput& input, BaseCellsContext& ctx);
+bool prepareBaseDomain(const RVDInput& input, BaseCellDomain& baseDomain);
 
 bool buildBaseCells(
     const RVDInput& input,
     const RVDConfig& config,
-    BaseCellsContext& ctx,
+    BaseCellDomain& baseDomain,
     cudaStream_t stream);
 
 } // namespace voronoi

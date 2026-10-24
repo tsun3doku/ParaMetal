@@ -6,7 +6,7 @@ class NodeGraphEditor;
 struct NodeGraphNode;
 
 struct MergeNodeParams {
-    float mergeDistance = 0.01f;
+    float mergeDistance = 0.0005f;
 };
 
 MergeNodeParams readMergeNodeParams(const NodeGraphNode& node);

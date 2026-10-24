@@ -19,86 +19,23 @@ HeatModelNodeParams readHeatModelNodeParams(const NodeGraphNode& node) {
             }
         }
     }
-    params.density = NodeParamUtils::readFloatParam(
-        node,
-        nodegraphparams::heatmodel::Density,
-        HeatSimDefaults::density);
-    params.specificHeat = NodeParamUtils::readFloatParam(
-        node,
-        nodegraphparams::heatmodel::SpecificHeat,
-        HeatSimDefaults::specificHeat);
-    params.conductivity = NodeParamUtils::readFloatParam(
-        node,
-        nodegraphparams::heatmodel::Conductivity,
-        HeatSimDefaults::conductivity);
-    params.initialTemperatureC = NodeParamUtils::readFloatParam(
-        node,
-        nodegraphparams::heatmodel::InitialTemperatureC,
-        HeatSimDefaults::ambientTemperatureC);
-    params.volumetricPowerDensity = NodeParamUtils::readFloatParam(
-        node, nodegraphparams::heatmodel::VolumetricPowerDensity, 0.0);
-    params.prescribedTemperatureEnabled = NodeParamUtils::readBoolParam(
-        node, nodegraphparams::heatmodel::PrescribedTemperatureEnabled, false);
-    params.prescribedTemperatureC = NodeParamUtils::readFloatParam(
-        node, nodegraphparams::heatmodel::PrescribedTemperatureC, HeatSimDefaults::ambientTemperatureC);
+    params.density = NodeParamUtils::readFloatParam(node, nodegraphparams::heatmodel::Density, HeatSimDefaults::density);
+    params.specificHeat = NodeParamUtils::readFloatParam(node, nodegraphparams::heatmodel::SpecificHeat, HeatSimDefaults::specificHeat);
+    params.conductivity = NodeParamUtils::readFloatParam(node, nodegraphparams::heatmodel::Conductivity, HeatSimDefaults::conductivity);
+    params.initialTemperatureC = NodeParamUtils::readFloatParam(node, nodegraphparams::heatmodel::InitialTemperatureC, HeatSimDefaults::ambientTemperatureC);
+    params.volumetricPowerDensity = NodeParamUtils::readFloatParam(node, nodegraphparams::heatmodel::VolumetricPowerDensity, 0.0);
+    params.prescribedTemperatureEnabled = NodeParamUtils::readBoolParam(node, nodegraphparams::heatmodel::PrescribedTemperatureEnabled, false);
+    params.prescribedTemperatureC = NodeParamUtils::readFloatParam(node, nodegraphparams::heatmodel::PrescribedTemperatureC, HeatSimDefaults::ambientTemperatureC);
     return params;
 }
 
-bool writeHeatModelNodeParams(
-    NodeGraphEditor& editor,
-    NodeGraphNodeId nodeId,
-    const HeatModelNodeParams& params) {
-    bool ok = true;
-    ok &= editor.setNodeParameter(
-        nodeId,
-        NodeGraphParamValue{
-            nodegraphparams::heatmodel::MaterialPreset,
-            NodeGraphParamType::Enum,
-            0.0,
-            0,
-            false,
-            "",
-            heatMaterialPresetName(params.materialPreset)});
-    ok &= editor.setNodeParameter(
-        nodeId,
-        NodeGraphParamValue{
-            nodegraphparams::heatmodel::Density,
-            NodeGraphParamType::Float,
-            params.density});
-    ok &= editor.setNodeParameter(
-        nodeId,
-        NodeGraphParamValue{
-            nodegraphparams::heatmodel::SpecificHeat,
-            NodeGraphParamType::Float,
-            params.specificHeat});
-    ok &= editor.setNodeParameter(
-        nodeId,
-        NodeGraphParamValue{
-            nodegraphparams::heatmodel::Conductivity,
-            NodeGraphParamType::Float,
-            params.conductivity});
-    ok &= editor.setNodeParameter(
-        nodeId,
-        NodeGraphParamValue{
-            nodegraphparams::heatmodel::InitialTemperatureC,
-            NodeGraphParamType::Float,
-            params.initialTemperatureC});
-    ok &= editor.setNodeParameter(
-        nodeId,
-        NodeGraphParamValue{nodegraphparams::heatmodel::VolumetricPowerDensity, NodeGraphParamType::Float, params.volumetricPowerDensity});
-    ok &= editor.setNodeParameter(
-        nodeId,
-        NodeGraphParamValue{
-            nodegraphparams::heatmodel::PrescribedTemperatureEnabled,
-            NodeGraphParamType::Bool,
-            0.0,
-            0,
-            params.prescribedTemperatureEnabled});
-    ok &= editor.setNodeParameter(
-        nodeId,
-        NodeGraphParamValue{
-            nodegraphparams::heatmodel::PrescribedTemperatureC,
-            NodeGraphParamType::Float,
-            params.prescribedTemperatureC});
-    return ok;
+bool writeHeatModelNodeParams(NodeGraphEditor& editor, NodeGraphNodeId nodeId, const HeatModelNodeParams& params) {
+    return editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatmodel::MaterialPreset, NodeGraphParamType::Enum, 0.0, 0, false, "", heatMaterialPresetName(params.materialPreset)}) &&
+           editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatmodel::Density, NodeGraphParamType::Float, params.density}) &&
+           editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatmodel::SpecificHeat, NodeGraphParamType::Float, params.specificHeat}) &&
+           editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatmodel::Conductivity, NodeGraphParamType::Float, params.conductivity}) &&
+           editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatmodel::InitialTemperatureC, NodeGraphParamType::Float, params.initialTemperatureC}) &&
+           editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatmodel::VolumetricPowerDensity, NodeGraphParamType::Float, params.volumetricPowerDensity}) &&
+           editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatmodel::PrescribedTemperatureEnabled, NodeGraphParamType::Bool, 0.0, 0, params.prescribedTemperatureEnabled}) &&
+           editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatmodel::PrescribedTemperatureC, NodeGraphParamType::Float, params.prescribedTemperatureC});
 }

@@ -151,7 +151,7 @@ std::string valueTypeToString(NodeGraphValueType value) {
     case NodeGraphValueType::Mesh:        return "Mesh";
     case NodeGraphValueType::Remesh:      return "Remesh";
     case NodeGraphValueType::HeatModel:   return "HeatModel";
-    case NodeGraphValueType::HeatFluid:   return "HeatFluid";
+    case NodeGraphValueType::Fluid:       return "Fluid";
     case NodeGraphValueType::Points:      return "Points";
     case NodeGraphValueType::Volume:      return "Volume";
     case NodeGraphValueType::Field:       return "Field";
@@ -159,6 +159,7 @@ std::string valueTypeToString(NodeGraphValueType value) {
     case NodeGraphValueType::ScalarFloat: return "ScalarFloat";
     case NodeGraphValueType::ScalarInt:   return "ScalarInt";
     case NodeGraphValueType::ScalarBool:  return "ScalarBool";
+    case NodeGraphValueType::Simulation:  return "Simulation";
     }
     return "None";
 }

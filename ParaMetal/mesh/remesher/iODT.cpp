@@ -526,7 +526,6 @@ bool iODT::delaunayRefinement(int maxIters, float minAngleDegrees) {
         }
     }
 
-    // std::cerr << "[iODT] Reached max refinement insertions" << std::endl;
     return true;
 }
 
@@ -1401,8 +1400,7 @@ bool iODT::resolveVertex(uint32_t newVertexIdx) {
         return false;
     }
 
-    // Choose best adjacent vertex to trace from
-    // Priority: original vertices (1) > inserted vertices (2) > boundary vertices (3)
+    // Select adjacent vertex prioritizing original then inserted then boundary vertices
     uint32_t inputTraceHe = incomingHEs[0]; // default
     int bestPriority = 9999;
     double bestLength = std::numeric_limits<double>::max();

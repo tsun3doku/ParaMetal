@@ -1,5 +1,12 @@
 #include "RuntimeSystems.hpp"
 
+#include "app/RawMouseInput.hpp"
+#include "cfd/CFDSystemComputeController.hpp"
+#include "cuda/CudaVulkanDevice.hpp"
+#include "heat/HeatSystem.hpp"
+#include "heat/HeatSystemComputeController.hpp"
+#include "nodegraph/NodeGraphController.hpp"
+#include "render/RenderConfig.hpp"
 #include "render/WindowRuntimeState.hpp"
 #include "render/SceneRenderer.hpp"
 #include "render/HeatOverlayRenderer.hpp"
@@ -8,7 +15,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <iostream>
 #include <utility>
+
+#include <cuda_runtime.h>
 
 RuntimeSystems::~RuntimeSystems() {
     shutdown();
@@ -33,17 +44,32 @@ bool RuntimeSystems::initialize(WindowRuntimeState& runtimeState, const AppVulka
         cleanup();
         return false;
     }
-    if (!render.initialize(core, scene, runtimeState, vulkanContext, runtimeBusy, isShuttingDown)) {
+    if (!frameSync.initialize(core.device().getDevice(), renderconfig::MaxFramesInFlight)) {
         cleanup();
         return false;
     }
-    timelineControllerInstance.bindPlaybackTarget(render.heatSystemComputeController());
-    if (!render.initializeSyncObjects()) {
+    if (!rawMouseInput.initialize()) {
+        std::cerr << "[RuntimeSystems] raw mouse input unavailable" << std::endl;
+    }
+    if (!render.initialize(core, scene, frameSync, runtimeState, vulkanContext, runtimeBusy, isShuttingDown)) {
         cleanup();
         return false;
     }
+    if (!compute.initialize(core, scene, frameSync, runtimeBusy)) {
+        cleanup();
+        return false;
+    }
+    if (!nodeGraph.initialize(core, compute, render.displayControllers())) {
+        cleanup();
+        return false;
+    }
+
+    timelineControllerInstance.clearPlaybackTargets();
+    timelineControllerInstance.addPlaybackTarget(compute.heatSystemComputeController());
+    timelineControllerInstance.addPlaybackTarget(compute.cfdSystemComputeController());
+
     if (!runtimeController.initialize(
-            render, scene, core, runtimeState)) {
+            render, compute, nodeGraph, scene, core, runtimeState, &rawMouseInput)) {
         cleanup();
         return false;
     }
@@ -152,12 +178,16 @@ bool RuntimeSystems::isInitialized() const {
     return initialized;
 }
 
+void RuntimeSystems::noteFramePresented() {
+    render.runtime()->getFrameStats().notePresentedFrame();
+}
+
 const RuntimeQuery* RuntimeSystems::runtimeQuery() const {
     return this;
 }
 
 bool RuntimeSystems::getSerialTemperatureStatus(uint64_t sourceKey, SerialTemperatureRuntime::Status& outStatus) const {
-    const HeatSystemComputeController* controller = render.heatSystemComputeController();
+    const HeatSystemComputeController* controller = compute.heatSystemComputeController();
     return controller && controller->getSerialTemperatureStatus(sourceKey, outStatus);
 }
 
@@ -257,11 +287,11 @@ const CameraController* RuntimeSystems::getCameraController() const {
 }
 
 SceneController* RuntimeSystems::getSceneController() {
-    return render.sceneController();
+    return runtimeController.sceneController();
 }
 
 const SceneController* RuntimeSystems::getSceneController() const {
-    return render.sceneController();
+    return runtimeController.sceneController();
 }
 
 ModelSelection* RuntimeSystems::getModelSelection() {
@@ -281,38 +311,73 @@ const ModelSelection* RuntimeSystems::getModelSelection() const {
 }
 
 NodeGraphController* RuntimeSystems::getNodeGraphController() {
-    return render.nodeGraphController();
+    return nodeGraph.nodeGraphController();
 }
 
 const NodeGraphController* RuntimeSystems::getNodeGraphController() const {
-    return render.nodeGraphController();
+    return nodeGraph.nodeGraphController();
 }
 
 void RuntimeSystems::cleanup() {
-    timelineControllerInstance.bindPlaybackTarget(nullptr);
+    timelineControllerInstance.clearPlaybackTargets();
+    rawMouseInput.shutdown();
     runtimeController.shutdown();
+
+    HeatSystemComputeController* heatSystemController = compute.heatSystemComputeController();
+    cfd::CFDSystemComputeController* cfdSystemController = compute.cfdSystemComputeController();
+
+    // Host-signal undelivered release waits to prevent cross-API deadlock before global idle
+    if (heatSystemController) {
+        heatSystemController->releaseWaits();
+    }
+    if (cfdSystemController) {
+        cfdSystemController->releaseWaits();
+    }
+
+    // Device may not exist yet when cleanup runs from failed initialization
+    const VkDevice device = core.device().getDevice();
+    const VkResult vkResult = device != VK_NULL_HANDLE ? vkDeviceWaitIdle(device) : VK_SUCCESS;
+    cudaError_t cudaResult = cudaSuccess;
+    const int cudaDevice = cudaVulkan::findDevice(core.device().getPhysicalDevice());
+    if (cudaDevice >= 0) {
+        const cudaError_t setDeviceResult = cudaSetDevice(cudaDevice);
+        cudaResult = setDeviceResult != cudaSuccess ? setDeviceResult : cudaDeviceSynchronize();
+    } else if (cudaVulkan::deviceWasFound()) {
+        cudaResult = cudaErrorInvalidDevice;
+    }
+
+    // Failed quiescence is terminal, destructors will execute regardless
+    if (vkResult != VK_SUCCESS || cudaResult != cudaSuccess) {
+        std::cerr << "[RuntimeSystems] terminal shutdown quiesce failure: vk="
+                  << static_cast<int>(vkResult)
+                  << " cuda=" << static_cast<int>(cudaResult) << std::endl;
+        std::abort();
+    }
+
+    nodeGraph.shutdown();
+    compute.shutdown();
     render.shutdown();
+    frameSync.shutdown();
     scene.shutdown();
     core.shutdown();
     windowRuntimeState = nullptr;
 }
 
 bool RuntimeSystems::isSimulationActive() const {
-    const HeatSystemComputeController* heatSystemController = render.heatSystemComputeController();
+    const HeatSystemComputeController* heatSystemController = compute.heatSystemComputeController();
     return heatSystemController && heatSystemController->isAnyHeatSystemActive();
 }
 
 bool RuntimeSystems::isSimulationPaused() const {
-    const HeatSystemComputeController* heatSystemController = render.heatSystemComputeController();
+    const HeatSystemComputeController* heatSystemController = compute.heatSystemComputeController();
     return heatSystemController && heatSystemController->isAnyHeatSystemPaused();
 }
 
 float RuntimeSystems::getSimulationTotalTime() const {
-    const HeatSystemComputeController* controller = render.heatSystemComputeController();
+    const HeatSystemComputeController* controller = compute.heatSystemComputeController();
     if (!controller) return 0.0f;
     float total = 0.0f;
-    for (ComputePass* pass : controller->getActiveSystems()) {
-        const HeatSystem* system = dynamic_cast<const HeatSystem*>(pass);
+    for (const HeatSystem* system : controller->getActiveSystems()) {
         if (system && system->getIsActive()) {
             total = std::max(total, system->getSimulationTimeSeconds());
         }
@@ -321,11 +386,10 @@ float RuntimeSystems::getSimulationTotalTime() const {
 }
 
 uint32_t RuntimeSystems::getSimulationRecordedTimelineFrames() const {
-    const HeatSystemComputeController* controller = render.heatSystemComputeController();
+    const HeatSystemComputeController* controller = compute.heatSystemComputeController();
     if (!controller) return 0;
     uint32_t maxRecorded = 0;
-    for (ComputePass* pass : controller->getActiveSystems()) {
-        const HeatSystem* system = dynamic_cast<const HeatSystem*>(pass);
+    for (const HeatSystem* system : controller->getActiveSystems()) {
         if (system && system->getIsActive()) {
             maxRecorded = std::max(maxRecorded, system->getRecordedTimelineFrames());
         }
@@ -334,10 +398,9 @@ uint32_t RuntimeSystems::getSimulationRecordedTimelineFrames() const {
 }
 
 uint32_t RuntimeSystems::getSimulationTimelineFrameCount() const {
-    const HeatSystemComputeController* controller = render.heatSystemComputeController();
+    const HeatSystemComputeController* controller = compute.heatSystemComputeController();
     if (!controller) return 0;
-    for (ComputePass* pass : controller->getActiveSystems()) {
-        const HeatSystem* system = dynamic_cast<const HeatSystem*>(pass);
+    for (const HeatSystem* system : controller->getActiveSystems()) {
         if (system && system->getIsActive()) {
             return system->getTimelineFrameCount();
         }
@@ -346,10 +409,9 @@ uint32_t RuntimeSystems::getSimulationTimelineFrameCount() const {
 }
 
 float RuntimeSystems::getSimulationDuration() const {
-    const HeatSystemComputeController* controller = render.heatSystemComputeController();
+    const HeatSystemComputeController* controller = compute.heatSystemComputeController();
     if (!controller) return 0.0f;
-    for (ComputePass* pass : controller->getActiveSystems()) {
-        const HeatSystem* system = dynamic_cast<const HeatSystem*>(pass);
+    for (const HeatSystem* system : controller->getActiveSystems()) {
         if (system && system->getIsActive()) {
             return system->getSimulationDurationSeconds();
         }
@@ -358,10 +420,9 @@ float RuntimeSystems::getSimulationDuration() const {
 }
 
 uint32_t RuntimeSystems::getSimulationResetCounter() const {
-    const HeatSystemComputeController* controller = render.heatSystemComputeController();
+    const HeatSystemComputeController* controller = compute.heatSystemComputeController();
     if (!controller) return 0;
-    for (ComputePass* pass : controller->getActiveSystems()) {
-        const HeatSystem* system = dynamic_cast<const HeatSystem*>(pass);
+    for (const HeatSystem* system : controller->getActiveSystems()) {
         if (system && system->getIsActive()) {
             return system->getResetCounter();
         }
@@ -370,10 +431,9 @@ uint32_t RuntimeSystems::getSimulationResetCounter() const {
 }
 
 uint32_t RuntimeSystems::getSimulationRewindFrame() const {
-    const HeatSystemComputeController* controller = render.heatSystemComputeController();
+    const HeatSystemComputeController* controller = compute.heatSystemComputeController();
     if (!controller) return UINT32_MAX;
-    for (ComputePass* pass : controller->getActiveSystems()) {
-        const HeatSystem* system = dynamic_cast<const HeatSystem*>(pass);
+    for (const HeatSystem* system : controller->getActiveSystems()) {
         if (system && system->getIsActive()) {
             return system->getRewindFrame();
         }
