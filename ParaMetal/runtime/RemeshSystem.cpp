@@ -58,12 +58,10 @@ void RemeshSystem::copyGpu(RemeshProduct& product) const {
     product.intrinsicTriangleCount = gpuResources.triangleCount;
     product.intrinsicVertexCount = gpuResources.vertexCount;
     product.averageTriangleArea = gpuResources.averageTriangleArea;
-
     product.intrinsicTriangleBuffer = gpuResources.intrinsicTriangleBuffer;
     product.intrinsicTriangleBufferOffset = gpuResources.triangleGeometryOffset;
     product.intrinsicVertexBuffer = gpuResources.intrinsicVertexBuffer;
     product.intrinsicVertexBufferOffset = gpuResources.vertexGeometryOffset;
-
     product.supportingHalfedgeBuffer = gpuResources.bufferS;
     product.supportingHalfedgeOffset = gpuResources.offsetS;
     product.supportingHalfedgeView = gpuResources.viewS;

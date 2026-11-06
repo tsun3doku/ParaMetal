@@ -9,7 +9,11 @@ public:
     static constexpr float DefaultFps = 60.0f;
 
     void reset();
+    void clearSimulationMetadata();
     void tick(float deltaSeconds);
+    void tick(float deltaSeconds, uint32_t maxAdvanceFrame);
+
+    uint32_t getResetEpoch() const { return resetEpoch; }
 
     void setPlaying(bool playing);
     bool isPlaying() const { return playing; }
@@ -34,6 +38,7 @@ public:
 private:
     uint32_t frameCount = DefaultFrameCount;
     uint32_t currentFrame = 0;
+    uint32_t resetEpoch = 0;
     float fps = DefaultFps;
     float frameAccumulator = 0.0f;
     bool playing = false;

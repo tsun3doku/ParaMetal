@@ -1,14 +1,26 @@
 #pragma once
 
-#include "NodeGraph.hpp"
+#include "NodeGraphTypes.hpp"
 
 #include <string>
 #include <vector>
 
-class NodeGraphTypeRegistry;
+class NodeGraph;
 
 class NodeGraphValidator {
 public:
+    static bool socketTypesAccept(
+        NodeGraphValueType srcResolved,
+        const std::vector<NodeGraphValueType>& srcAccepted,
+        NodeGraphValueType dstResolved,
+        const std::vector<NodeGraphValueType>& dstAccepted);
+
+    static bool socketAccepts(
+        const NodeSocketSignature& srcSocket,
+        NodeGraphValueType srcResolved,
+        const NodeSocketSignature& dstSocket,
+        NodeGraphValueType dstResolved);
+
     static bool canCreateConnection(
         const NodeGraph& document,
         NodeGraphNodeId fromNode,

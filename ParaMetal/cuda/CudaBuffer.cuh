@@ -45,6 +45,11 @@ public:
         return true;
     }
 
+    bool ensureCapacity(size_t count) {
+        if (elementCount >= count) return true;
+        return allocate(count);
+    }
+
     bool upload(const T* source, size_t count) {
         return count <= elementCount &&
                (count == 0 || cudaCheck(cudaMemcpy(data, source, count * sizeof(T),

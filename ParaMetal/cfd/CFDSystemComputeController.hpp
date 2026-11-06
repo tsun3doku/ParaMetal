@@ -1,7 +1,6 @@
 #pragma once
 
 #include "cfd/CFDSystem.hpp"
-#include "runtime/TimelinePlaybackTarget.hpp"
 #include <unordered_map>
 #include <memory>
 #include <vector>
@@ -11,10 +10,9 @@ struct CFDProduct;
 
 namespace cfd {
 
-class CFDSystemComputeController : public TimelinePlaybackTarget {
+class CFDSystemComputeController {
 public:
     struct Config {
-        bool active = true;
         const topology::GlobalDomain* domain = nullptr;
         float kinematicViscosity = 1.516e-5f;
         glm::vec3 initialVelocity{0.0f};
@@ -28,45 +26,53 @@ public:
         uint64_t geometryHash = 0;
     };
 
-    // Tier 2 eligibility check shared by apply and transport domain-skip logic
     static bool canUpdateInPlace(const Config& previous, const Config& next);
 
     CFDSystemComputeController(
         VulkanDevice& device,
         CommandPool& cmdPool,
         uint32_t maxFramesInFlight);
-    ~CFDSystemComputeController() override;
+    ~CFDSystemComputeController();
 
-    // Returns false on failure, previous generation stays active and caller skips publish
     bool apply(uint64_t socketKey, const Config& config);
     void remove(uint64_t socketKey);
-    void disableAll();
 
-    // Host-signals pending Vulkan release waits for current and retained systems
     void releaseWaits();
-
-    void setTimelinePlaying(bool playing) override;
-    void resetTimeline() override;
-    void scrubTimeline(uint32_t frame) override;
 
     bool buildProduct(uint64_t socketKey, CFDProduct& outProduct);
     const CFDSystem* getSystem(uint64_t socketKey) const;
     CFDSystem* getSystem(uint64_t socketKey);
     const Config* getConfig(uint64_t socketKey) const;
+    uint64_t getCurrentComputeHash(uint64_t socketKey) const {
+        const auto it = configuredConfigs.find(socketKey);
+        return it != configuredConfigs.end() ? it->second.computeHash : 0;
+    }
+
+    bool hasAnyRetiring() const;
+    void clearAllRetiring();
+    void commitPending(uint64_t socketKey);
+    void cancelCandidate(uint64_t socketKey);
+    void quiescedClear() noexcept;
 
 private:
-    void applyRuntimeState(CFDSystem& system, const Config& config);
+    void retireCurrent(uint64_t socketKey);
+
+    struct GenerationSlot {
+        std::unique_ptr<CFDSystem> current;
+        std::unique_ptr<CFDSystem> retiring;
+        std::unique_ptr<CFDSystem> candidate;
+    };
+
+    const Config* getBuildConfig(uint64_t socketKey) const;
 
     VulkanDevice& vulkanDevice;
     CommandPool& commandPool;
     uint32_t maxFramesInFlight;
 
-    bool timelinePlaying = false;
-
-    std::unordered_map<uint64_t, std::unique_ptr<CFDSystem>> systemsBySocket;
+    std::unordered_map<uint64_t, GenerationSlot> generationSlots;
     std::unordered_map<uint64_t, Config> configuredConfigs;
+    std::unordered_map<uint64_t, Config> pendingConfigs;
     std::unordered_map<uint64_t, uint64_t> failedComputeHashes;
-    std::vector<std::unique_ptr<CFDSystem>> retainedSystems;
 };
 
 } // namespace cfd

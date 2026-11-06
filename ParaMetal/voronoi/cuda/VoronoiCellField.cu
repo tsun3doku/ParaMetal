@@ -54,15 +54,6 @@ bool buildSeedIdGrid(
         return false;
     }
 
-    // Validate that all seed weights equal each other within tolerance
-    const float w0 = seeds[0].w;
-    for (size_t i = 1; i < seeds.size(); ++i) {
-        if (std::abs(seeds[i].w - w0) > 1e-5f) {
-            std::cerr << "[VoronoiCellField] Seeds have non-uniform weights; cannot reconstruct Euclidean Voronoi field." << std::endl;
-            return false;
-        }
-    }
-
     if (gridDim.x < 2 || gridDim.y < 2 || gridDim.z < 2 || !(cellSize > 0.0f) || !std::isfinite(cellSize)) {
         std::cerr << "[VoronoiCellField] Invalid grid dimensions or cell size." << std::endl;
         return false;

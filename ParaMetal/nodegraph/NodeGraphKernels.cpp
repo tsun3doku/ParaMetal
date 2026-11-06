@@ -14,6 +14,7 @@
 #include "NodeRemesh.hpp"
 #include "NodeMerge.hpp"
 #include "NodeSerialTemperature.hpp"
+#include "NodeHeatProbe.hpp"
 #include "NodeCFD.hpp"
 
 #include <utility>
@@ -70,6 +71,7 @@ void NodeGraphKernels::registerDefaultKernels() {
     registerKernel(std::make_unique<NodePoints>());
     registerKernel(std::make_unique<NodeMerge>());
     registerKernel(std::make_unique<NodeSerialTemperature>());
+    registerKernel(std::make_unique<NodeHeatProbe>());
     registerKernel(std::make_unique<NodeCFD>());
 }
 

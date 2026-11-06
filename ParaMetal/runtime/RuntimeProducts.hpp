@@ -9,6 +9,7 @@
 #include <vulkan/vulkan.h>
 
 #include "hash/HashValues.hpp"
+#include "voronoi/GlobalDomainTopology.hpp"
 
 
 // Borrowed view, owned by ModelRegistry
@@ -137,12 +138,14 @@ struct VoronoiProduct {
     VkDeviceSize seedPositionBufferOffset = 0;
     VkBuffer candidatePointVertexBuffer = VK_NULL_HANDLE;
     VkDeviceSize candidatePointVertexBufferOffset = 0;
-    VkBuffer contactVertexBuffer = VK_NULL_HANDLE;
-    VkDeviceSize contactVertexBufferOffset = 0;
-    uint32_t contactVertexCount = 0;
 
     VkBuffer globalSeedIdGridBuffer = VK_NULL_HANDLE;
     VkDeviceSize globalSeedIdGridBufferOffset = 0;
+
+    std::vector<uint32_t> vemTraceRuntimeModelIds;
+    std::vector<VkBuffer> vemTraceVertexBuffers;
+    std::vector<VkDeviceSize> vemTraceVertexBufferOffsets;
+    std::vector<uint32_t> vemTraceVertexCounts;
 
     HashValues hashes{};
 
@@ -156,8 +159,8 @@ struct VoronoiProduct {
     std::vector<uint32_t> fragmentSeedIds;
     std::vector<glm::dvec3> fragmentCentroids;
     std::vector<double> fragmentVolumes;
-    // Seed to fluid fragment provenance with InvalidId for empty seeds
-    std::vector<uint32_t> seedToFragment;
+    std::vector<uint32_t> cellFragmentOffsets;
+    std::vector<uint32_t> cellFragments;
     float nominalCellSize = 0.0f;
     uint32_t globalFaceCount = 0;
     std::vector<uint32_t> faceFragmentA;
@@ -172,7 +175,9 @@ struct VoronoiProduct {
     std::vector<uint32_t> faceDomainFaces;
     uint32_t globalContactCouplingCount = 0;
     std::vector<uint32_t> contactCouplingFaceA;
+    std::vector<uint32_t> contactCouplingFragmentA;
     std::vector<uint32_t> contactCouplingFaceB;
+    std::vector<uint32_t> contactCouplingFragmentB;
     std::vector<double> contactCouplingAreas;
     uint32_t globalBoundaryFaceCount = 0;
     std::vector<uint32_t> boundaryFaceIndices;
@@ -193,6 +198,9 @@ struct VoronoiProduct {
             globalVolumeGridDim.x >= 2 && globalVolumeGridDim.y >= 2 && globalVolumeGridDim.z >= 2 &&
             fragmentInstanceIds.size() == globalFragmentCount &&
             fragmentSeedIds.size() == globalFragmentCount &&
+            cellFragmentOffsets.size() == globalSeedPositions.size() + 1 &&
+            (!cellFragmentOffsets.empty() &&
+             cellFragmentOffsets.back() == cellFragments.size()) &&
             fragmentCentroids.size() == globalFragmentCount &&
             fragmentVolumes.size() == globalFragmentCount &&
             nominalCellSize > 0.0f &&
@@ -207,7 +215,9 @@ struct VoronoiProduct {
             faceTypes.size() == globalFaceCount &&
             faceDomainFaces.size() == globalFaceCount &&
             contactCouplingFaceA.size() == globalContactCouplingCount &&
+            contactCouplingFragmentA.size() == globalContactCouplingCount &&
             contactCouplingFaceB.size() == globalContactCouplingCount &&
+            contactCouplingFragmentB.size() == globalContactCouplingCount &&
             contactCouplingAreas.size() == globalContactCouplingCount &&
             boundaryFaceIndices.size() == globalBoundaryFaceCount &&
             boundaryFaceFragments.size() == globalBoundaryFaceCount &&
@@ -241,6 +251,10 @@ struct HeatProduct {
     VkImageView fluidTemperatureVolumeView = VK_NULL_HANDLE;
     VkSampler fluidTemperatureVolumeSampler = VK_NULL_HANDLE;
     bool hasFluidVolume = false;
+
+    VkBuffer vemTraceTemperatureBuffer = VK_NULL_HANDLE;
+    uint32_t vemTraceCount = 0;
+    bool vemTraceValid = false;
 
     HashValues hashes{};
 
@@ -281,4 +295,3 @@ struct CFDProduct {
             (boundaryFluxCount == 0 || boundaryFluxBuffer != VK_NULL_HANDLE);
     }
 };
-

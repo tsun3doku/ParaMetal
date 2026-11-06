@@ -8,6 +8,7 @@
 #include "UiRuntimeTypes.hpp"
 #include "ViewportItem.hpp"
 #include "ui/UiFontRegistry.hpp"
+#include "ui/UiPaletteQml.hpp"
 #include "ui/UiTypographyQml.hpp"
 
 #include <QtCore/QCoreApplication>
@@ -56,6 +57,11 @@ int App::initializePresentation() {
 
     qmlRegisterType<ViewportItem>("ParaMetal", 1, 0, "ViewportItem");
     qmlRegisterType<NodeGraphCanvasItem>("ParaMetal", 1, 0, "NodeGraphCanvasItem");
+    qmlRegisterSingletonType<ui::UiPaletteQml>(
+        "ParaMetal", 1, 0, "UiPalette",
+        [](QQmlEngine*, QJSEngine*) -> QObject* {
+            return new ui::UiPaletteQml;
+        });
     qmlRegisterSingletonType<ui::UiTypographyQml>(
         "ParaMetal", 1, 0, "UiTypography",
         [](QQmlEngine*, QJSEngine*) -> QObject* {
@@ -159,6 +165,12 @@ void App::connectUi(ViewportItem& viewport, GraphHost& graphHost) {
                      &viewport, &ViewportItem::requestTimelineStep);
     QObject::connect(uiModel.nodeGraph(), &NodeGraphUiModel::selectionRequested,
                      &viewport, &ViewportItem::requestSelection);
+    QObject::connect(uiModel.nodeGraph(), &NodeGraphUiModel::probePickingRequested,
+                     &viewport, &ViewportItem::requestProbePicking);
+    QObject::connect(uiModel.nodeGraph(), &NodeGraphUiModel::exportRequested,
+                     &graphHost, &GraphHost::requestExport, Qt::QueuedConnection);
+    QObject::connect(uiModel.nodeGraph(), &NodeGraphUiModel::exportProductsRequested,
+                     &graphHost, &GraphHost::requestExportProducts, Qt::QueuedConnection);
 
     QObject::connect(uiModel.nodeGraph(), &NodeGraphUiModel::resetRequested,
                      &graphHost, &GraphHost::resetGraph, Qt::QueuedConnection);
@@ -207,6 +219,12 @@ void App::connectRuntime(GraphHost& graphHost) {
                                               const std::vector<NodeGraphParamValue>& parameters) {
                          graphHost.setParameters(nodeId, parameters);
                      }, Qt::QueuedConnection);
+    QObject::connect(&runtimeNotifier, &RuntimeNotifier::exportProductsReady,
+                     uiModel.nodeGraph(), &NodeGraphUiModel::applyExportProducts,
+                     Qt::QueuedConnection);
+    QObject::connect(&runtimeNotifier, &RuntimeNotifier::probePickingCompleted,
+                     uiModel.nodeGraph(), &NodeGraphUiModel::cancelProbePicking,
+                     Qt::QueuedConnection);
 }
 
 void App::connectGraph(ViewportItem& viewport, GraphHost& graphHost) {
@@ -232,6 +250,10 @@ void App::connectGraph(ViewportItem& viewport, GraphHost& graphHost) {
                      uiModel.console(), &ConsoleUiModel::applyResult, Qt::QueuedConnection);
     QObject::connect(&graphHost, &GraphHost::timelineRangeChanged,
                      &viewport, &ViewportItem::requestTimelineRange, Qt::QueuedConnection);
+    QObject::connect(&graphHost, &GraphHost::exportRequested,
+                     &viewport, &ViewportItem::requestExport, Qt::QueuedConnection);
+    QObject::connect(&graphHost, &GraphHost::exportProductsRequested,
+                     &viewport, &ViewportItem::requestExportProducts, Qt::QueuedConnection);
     QObject::connect(projectController.get(), &ProjectController::viewportStateRequested,
                      &viewport, &ViewportItem::requestCurrentViewportProjectState,
                      Qt::QueuedConnection);

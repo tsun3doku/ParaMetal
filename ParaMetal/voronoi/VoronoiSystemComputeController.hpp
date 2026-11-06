@@ -22,9 +22,11 @@ struct VoronoiProduct;
 class VoronoiSystemComputeController {
 public:
     struct Config {
-        bool active = false;
         float cellSize = 0.005f;
         int voxelResolution = 128;
+        int lloydIterations = int(voronoi::DefaultLloydIterations);
+        float lloydVolumeThreshold = voronoi::DefaultLloydVolumeThresholdFraction;
+        float lloydDamping = voronoi::DefaultLloydDamping;
         float contactRange = voronoi::DefaultContactRange;
         std::vector<glm::vec4> pointPositions;
         std::array<glm::vec3, 8> pointDomainCorners{};
@@ -35,6 +37,7 @@ public:
         std::vector<std::vector<uint32_t>> globalRemeshTriangleIndices;
         std::vector<std::vector<glm::vec3>> globalRemeshSurfacePositions;
         std::vector<std::vector<uint32_t>> globalRemeshSurfaceTriangleIndices;
+        std::vector<std::array<float, 16>> globalRemeshWorldToModel;
 
         uint64_t computeHash = 0;
     };
@@ -44,23 +47,36 @@ public:
         MemoryAllocator& memoryAllocator,
         CommandPool& commandPool);
 
-    // Returns false on failure, previous generation stays active and caller skips publish
     bool apply(uint64_t socketKey, const Config& config);
     bool buildProduct(uint64_t socketKey, VoronoiProduct& product);
     void remove(uint64_t socketKey);
-    void disableAll();
     VoronoiSystem* getSystem(uint64_t socketKey);
-    const VoronoiSystem* getSystem(uint64_t socketKey) const;
 
+    uint64_t getCurrentComputeHash(uint64_t socketKey) const {
+        const auto it = configuredHashes.find(socketKey);
+        return it != configuredHashes.end() ? it->second : 0;
+    }
 
-    bool isConfigured(uint64_t socketKey) const { return configuredHashes.find(socketKey) != configuredHashes.end(); }
+    bool hasAnyRetiring() const;
+    void clearAllRetiring();
+    void commitPending(uint64_t socketKey) noexcept;
+    void cancelCandidate(uint64_t socketKey);
+    void quiescedClear() noexcept;
 
 private:
+    void retireCurrent(uint64_t socketKey);
+
+    struct GenerationSlot {
+        std::unique_ptr<VoronoiSystem> current;
+        std::unique_ptr<VoronoiSystem> retiring;
+        std::unique_ptr<VoronoiSystem> candidate;
+    };
+
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
     CommandPool& commandPool;
-    std::unordered_map<uint64_t, std::unique_ptr<VoronoiSystem>> systemsBySocket;
+    std::unordered_map<uint64_t, GenerationSlot> generationSlots;
     std::unordered_map<uint64_t, uint64_t> configuredHashes;
+    std::unordered_map<uint64_t, uint64_t> pendingHashes;
     std::unordered_map<uint64_t, uint64_t> failedComputeHashes;
-    std::vector<std::unique_ptr<VoronoiSystem>> retainedSystems;
 };

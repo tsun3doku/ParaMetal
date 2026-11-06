@@ -2,9 +2,12 @@
 
 #include <cstdint>
 
+#include "runtime/ComputeTransportResult.hpp"
 #include "runtime/RemeshController.hpp"
+#include "runtime/RuntimeProducts.hpp"
 #include "runtime/package/RuntimePackages.hpp"
-#include "runtime/RuntimeProductManager.hpp"
+
+class RuntimeProductManager;
 
 class RuntimeRemeshComputeTransport {
 public:
@@ -16,7 +19,9 @@ public:
         products = updatedProducts;
     }
 
-    ProductHandle apply(uint64_t socketKey, const RemeshPackage& package);
+    ComputeApplyResult apply(uint64_t socketKey, const RemeshPackage& package, RemeshProduct& outProduct);
+    void commitPending(uint64_t socketKey);
+    void cancelPending(uint64_t socketKey);
     void remove(uint64_t socketKey);
 
 private:

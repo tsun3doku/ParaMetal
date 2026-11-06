@@ -117,7 +117,6 @@ render::SceneView CameraController::buildSceneView(VkExtent2D extent) const {
     render::SceneView sceneView{};
     sceneView.view = camera.getViewMatrix();
     sceneView.proj = camera.getProjectionMatrix(static_cast<float>(extent.width) / static_cast<float>(extent.height));
-    sceneView.proj[1][1] *= -1.0f;
     sceneView.cameraPosition = camera.getPosition();
     sceneView.cameraFov = camera.getFov();
     sceneView.orthographic = camera.getProjectionMode() == CameraProjectionMode::Orthographic;

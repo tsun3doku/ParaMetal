@@ -1,9 +1,13 @@
 #pragma once
 
+#include <cstdint>
+
 #include "cfd/CFDSystemComputeController.hpp"
+#include "runtime/ComputeTransportResult.hpp"
+#include "runtime/RuntimeProducts.hpp"
 #include "runtime/package/RuntimePackages.hpp"
-#include "runtime/RuntimeProductManager.hpp"
-#include "simgraph/SimGraphRuntime.hpp"
+
+class RuntimeProductManager;
 
 class RuntimeCFDComputeTransport {
 public:
@@ -11,15 +15,16 @@ public:
         controller = updatedController;
     }
 
-    void setSimGraph(SimGraphRuntime* updatedSimGraph) {
-        simGraph = updatedSimGraph;
-    }
-
     void setProducts(RuntimeProductManager* updatedProducts) {
         products = updatedProducts;
     }
 
-    ProductHandle apply(uint64_t socketKey, const CFDPackage& package);
+    ComputeApplyResult apply(
+        uint64_t socketKey,
+        const CFDPackage& package,
+        CFDProduct& outProduct);
+    void commitPending(uint64_t socketKey);
+    void cancelPending(uint64_t socketKey);
     void remove(uint64_t socketKey);
 
 private:
@@ -30,7 +35,5 @@ private:
         topology::GlobalDomain& outDomain) const;
 
     cfd::CFDSystemComputeController* controller = nullptr;
-
-    SimGraphRuntime* simGraph = nullptr;
     RuntimeProductManager* products = nullptr;
 };

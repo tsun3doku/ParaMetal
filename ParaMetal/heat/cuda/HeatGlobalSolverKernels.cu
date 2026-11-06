@@ -88,7 +88,7 @@ __global__ void accumulateFineAdvectionOutflowKernel(
     }
 }
 
-// Conservative upwind transport across shared fluid faces with monotone updates for CFL <= 1
+// monotone upwind flux for CFL <= 1
 __global__ void advectFineFacesKernel(
     uint32_t faceCount,
     const heat::AdvectionFace* __restrict__ faces,
@@ -147,7 +147,6 @@ __global__ void applyAdvectionUpdatesKernel(
     x[idx] += deltaT[idx];
 }
 
-// Fills device buffer with quiet NaN sentinels for inactive fixed temperature overrides
 __global__ void fillNaNKernel(uint32_t count, float* __restrict__ x) {
     const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= count) return;
@@ -179,7 +178,7 @@ __global__ void assembleTraceRhsKernel(
     const uint32_t t = blockIdx.x * blockDim.x + threadIdx.x;
     if (t >= traceCount) return;
 
-    // Constrained Dirichlet traces are held exactly at T_D with zero cell-source scatter
+    // Dirichlet traces held at T_D
     if (traceIsDirichlet[t]) {
         traceRhs[t] = traceDirichletValue[t];
         return;
@@ -213,7 +212,7 @@ __global__ void recoverCellTemperaturesKernel(
     const uint32_t c = blockIdx.x * blockDim.x + threadIdx.x;
     if (c >= cellCount) return;
 
-    // If cell belongs to a prescribed body, enforce its recovered cell state to T_fix exactly
+    // enforce prescribed body cells to T_fix
     if (!isnan(fixedCellTemperatures[c])) {
         cellState[c] = fixedCellTemperatures[c];
         return;

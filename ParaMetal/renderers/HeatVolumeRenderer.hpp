@@ -58,6 +58,8 @@ private:
     bool createPaletteTextures();
     void destroyPaletteTextures();
 
+    VkDescriptorSet allocateDescriptorSet();
+    void writeDescriptorSet(VkDescriptorSet set, uint32_t frameIndex, bool includeVolume);
     void updateStaticDescriptorSets();
     void updateVolumeDescriptorSets();
 
@@ -67,7 +69,7 @@ private:
     CommandPool& commandPool;
 
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
-    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
+    std::vector<VkDescriptorPool> descriptorPools;
     std::vector<VkDescriptorSet> descriptorSets;
 
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;

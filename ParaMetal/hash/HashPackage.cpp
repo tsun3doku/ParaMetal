@@ -6,9 +6,12 @@
 #include <algorithm>
 #include <vector>
 
+// Dependency identity is part of the hash: a republished upstream is a different
+// generation even when its content hashes match.
 static void combineHandleHash(uint64_t& hash, const ProductHandle& handle, HashDomain domain) {
     HashBuilder::combine(hash, static_cast<uint64_t>(handle.type));
     HashBuilder::combine(hash, handle.outputSocketKey);
+    HashBuilder::combine(hash, handle.publicationId);
     HashBuilder::combine(hash, handle.hashes.get(domain));
 }
 
@@ -34,7 +37,6 @@ void HashPackage::seal(RemeshPackage& pkg, const HashValues& sourceGeometryHashe
     uint64_t geometryHash = HashBuilder::start();
     HashBuilder::combine(geometryHash, sourceGeometryHashes.full);
     HashBuilder::combine(geometryHash, pkg.sourceMeshHandle.key);
-    HashBuilder::combinePod(geometryHash, pkg.localToWorld);
     combineHandleHash(geometryHash, pkg.sourceModelProduct, HashDomain::Geometry);
     HashBuilder::combine(geometryHash, static_cast<uint64_t>(pkg.iterations));
     HashBuilder::combineFloat(geometryHash, pkg.minAngleDegrees);
@@ -46,6 +48,7 @@ void HashPackage::seal(RemeshPackage& pkg, const HashValues& sourceGeometryHashe
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showFaceNormals ? 1u : 0u));
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showVertexNormals ? 1u : 0u));
     HashBuilder::combineFloat(displayHash, pkg.display.normalLength);
+    HashBuilder::combinePod(displayHash, pkg.localToWorld);
 
     uint64_t fullHash = HashBuilder::start();
     HashBuilder::combine(fullHash, geometryHash);
@@ -66,8 +69,14 @@ void HashPackage::seal(VoronoiPackage& pkg, const HashValues& authoredHashes) {
     HashBuilder::combine(geometryHash, static_cast<uint64_t>(pkg.authored.voxelResolution));
     HashBuilder::combineFloat(geometryHash, pkg.authored.volumePadding);
     HashBuilder::combineFloat(geometryHash, pkg.authored.contactRange);
+    HashBuilder::combine(geometryHash, static_cast<uint64_t>(pkg.authored.lloydIterations));
+    HashBuilder::combineFloat(geometryHash, pkg.authored.lloydVolumeThreshold);
+    HashBuilder::combineFloat(geometryHash, pkg.authored.lloydDamping);
     HashBuilder::combinePod(geometryHash, pkg.localToWorld);
     HashBuilder::combine(geometryHash, pkg.pointsPayloadHandle.key);
+    for (const glm::vec3& corner : pkg.pointDomainCorners) {
+        HashBuilder::combinePod(geometryHash, corner);
+    }
     HashBuilder::combine(geometryHash, static_cast<uint64_t>(pkg.globalRemeshProducts.size()));
     for (const ProductHandle& handle : pkg.globalRemeshProducts) {
         combineHandleHash(geometryHash, handle, HashDomain::Geometry);
@@ -75,13 +84,15 @@ void HashPackage::seal(VoronoiPackage& pkg, const HashValues& authoredHashes) {
     for (const ProductHandle& handle : pkg.globalModelProducts) {
         combineHandleHash(geometryHash, handle, HashDomain::Geometry);
     }
+    for (const std::array<float, 16>& transform : pkg.globalRemeshLocalToWorld) {
+        HashBuilder::combinePod(geometryHash, transform);
+    }
     HashBuilder::combinePodVector(geometryHash, pkg.pointPositions);
     HashBuilder::combineFloat(geometryHash, pkg.canonicalToWorldScale);
 
     uint64_t displayHash = HashBuilder::start();
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showVoronoi ? 1u : 0u));
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showPoints ? 1u : 0u));
-    HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showContactManifold ? 1u : 0u));
 
     uint64_t fullHash = HashBuilder::start();
     HashBuilder::combine(fullHash, geometryHash);
@@ -100,6 +111,8 @@ void HashPackage::seal(PointPackage& pkg, const HashValues& sourceHashes) {
     HashBuilder::combine(geometryHash, pkg.pointsPayloadHandle.key);
     HashBuilder::combinePodVector(geometryHash, pkg.positions);
     HashBuilder::combine(geometryHash, static_cast<uint64_t>(pkg.pointCount));
+    HashBuilder::combinePod(geometryHash, pkg.domainMinimum);
+    HashBuilder::combinePod(geometryHash, pkg.domainMaximum);
     for (float v : pkg.localToWorld) {
         HashBuilder::combineFloat(geometryHash, v);
     }
@@ -120,6 +133,7 @@ void HashPackage::seal(HeatPackage& pkg, const HashValues& authoredHashes) {
     for (const HeatModelPackage& model : pkg.models) {
         combineHandleHash(simulationHash, model.remeshProduct, HashDomain::Geometry);
         combineHandleHash(simulationHash, model.modelProduct, HashDomain::Geometry);
+        HashBuilder::combinePod(simulationHash, model.remeshLocalToWorld);
         HashBuilder::combineFloat(simulationHash, model.density);
         HashBuilder::combineFloat(simulationHash, model.specificHeat);
         HashBuilder::combineFloat(simulationHash, model.conductivity);
@@ -127,20 +141,6 @@ void HashPackage::seal(HeatPackage& pkg, const HashValues& authoredHashes) {
         HashBuilder::combineFloat(simulationHash, model.volumetricPowerDensity);
         HashBuilder::combine(simulationHash, model.prescribedTemperatureEnabled ? 1u : 0u);
         HashBuilder::combineFloat(simulationHash, model.prescribedTemperatureC);
-    }
-    std::vector<uint64_t> serialKeys;
-    serialKeys.reserve(pkg.resolvedSerialSources.size());
-    for (const auto& [key, unused] : pkg.resolvedSerialSources) {
-        (void)unused;
-        serialKeys.push_back(key);
-    }
-    std::sort(serialKeys.begin(), serialKeys.end());
-    for (uint64_t key : serialKeys) {
-        const auto& source = pkg.resolvedSerialSources.at(key);
-        HashBuilder::combine(simulationHash, key);
-        HashBuilder::combine(simulationHash, source.enabled ? 1u : 0u);
-        HashBuilder::combineString(simulationHash, source.portName);
-        HashBuilder::combine(simulationHash, source.baudRate);
     }
     HashBuilder::combine(simulationHash, pkg.hasFluid ? 1u : 0u);
     if (pkg.hasFluid) {
@@ -162,12 +162,15 @@ void HashPackage::seal(HeatPackage& pkg, const HashValues& authoredHashes) {
 
     uint64_t displayHash = HashBuilder::start();
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showHeatOverlay ? 1u : 0u));
+    HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.useVemTraceSurface ? 1u : 0u));
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showFluxVectors ? 1u : 0u));
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showHeatPalette ? 1u : 0u));
+    HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showIsocontours ? 1u : 0u));
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showDomainBox ? 1u : 0u));
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showFluidVolume ? 1u : 0u));
     HashBuilder::combineFloat(displayHash, pkg.display.fluidVolumeOpacity);
     HashBuilder::combineFloat(displayHash, pkg.display.fluxVectorScale);
+    HashBuilder::combineFloat(displayHash, pkg.display.isocontourSpacingC);
     HashBuilder::combineFloat(displayHash, pkg.canonicalToWorldScale);
     for (const HeatModelPackage& model : pkg.models) {
         HashBuilder::combinePod(displayHash, model.localToWorld);

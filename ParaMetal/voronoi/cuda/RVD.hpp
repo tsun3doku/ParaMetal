@@ -12,7 +12,6 @@
 #include "../../cuda/CudaBuffer.cuh"
 #include <glm/glm.hpp>
 
-class VoxelGrid;
 class VulkanDevice;
 
 namespace voronoi {
@@ -23,20 +22,27 @@ constexpr uint32_t RVDRetryPlaneCount = 256;
 constexpr uint32_t RVDRetryVertexCount = 256;
 constexpr uint32_t RVDRetryTriangleCount = 768;
 
-// Overflow tier: failing base cells are re-run once at full capacity
+// overflow tier re-run at full capacity
 constexpr uint32_t RVDOverflowPlaneCount = 512;
 constexpr uint32_t RVDOverflowVertexCount = 512;
 
 struct RVDConfig {
   uint32_t baseChunkSize = 8192;
   uint32_t restrictedChunkSize = 1024;
-  float contactRange = DefaultContactRange;
+
+  uint32_t lloydIterations = DefaultLloydIterations;
+  float lloydDamping = DefaultLloydDamping;
+  float lloydVolumeThresholdFraction = DefaultLloydVolumeThresholdFraction;
+  float contactRange = DefaultContactRange; // maximum accepted physical contact gap
 };
 
 struct ModelGeometry {
   uint32_t runtimeModelId = 0;
-  const VoxelGrid *voxelGrid = nullptr;
-  const std::vector<std::array<glm::vec4, 3>> *triangles = nullptr;
+  const std::vector<glm::vec3> *positions = nullptr;
+  const std::vector<uint32_t> *indices = nullptr;
+  // optional inverse model transform to recover local vertices
+  const std::array<float, 16> *worldToModel = nullptr;
+  uint32_t voxelResolution = 128;
 };
 
 struct RVDInput {
@@ -61,6 +67,9 @@ struct RestrictedSurface {
   uint32_t triangleId = InvalidId;
 };
 
+using VemTraceSurfaceVertex = topology::VemTraceSurfaceVertex;
+using VemTraceSurfaceMesh = topology::VemTraceSurfaceMesh;
+
 using FaceType = topology::FaceType;
 using FragmentFace = topology::Face;
 using ContactCoupling = topology::ContactCoupling;
@@ -69,10 +78,13 @@ struct RVDResult {
   std::vector<Fragment> fragments;
   std::vector<FragmentFace> fragmentFaces;
   std::vector<ContactCoupling> contactCouplings;
-  std::vector<ContactMeshVertex> contactMesh;
 
-  // Seed-to-fragment provenance for fluid visualization
-  std::vector<uint32_t> seedToFragment;
+  // triangle-list mesh per model from clipped patches
+  std::vector<VemTraceSurfaceMesh> vemTraceSurfaceMeshes;
+
+  std::vector<glm::vec4> seedPositions;
+  std::vector<uint32_t> cellFragmentOffsets;
+  std::vector<uint32_t> cellFragments;
 };
 
 class RVD {

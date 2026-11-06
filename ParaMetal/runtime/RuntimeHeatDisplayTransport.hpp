@@ -1,15 +1,19 @@
 #pragma once
 
 #include "nodegraph/NodeGraphProductTypes.hpp"
+#include "heat/HeatSystemComputeController.hpp"
 #include "runtime/HeatDisplayController.hpp"
 #include "runtime/package/RuntimePackageManager.hpp"
 #include "runtime/RuntimeProductManager.hpp"
 #include "util/GeometryUtils.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <iostream>
 #include <unordered_set>
 #include <vector>
+
+class HeatSystemComputeController;
 
 class RuntimeHeatDisplayTransport {
 public:
@@ -21,6 +25,10 @@ public:
         products = updatedProducts;
     }
 
+    void setComputeController(HeatSystemComputeController* updatedController) {
+        computeController = updatedController;
+    }
+
     void sync(const RuntimePackageManager& registry, const std::unordered_set<uint64_t>& visibleKeys) {
         if (!controller) {
             return;
@@ -28,7 +36,7 @@ public:
 
         std::unordered_set<uint64_t> nextSocketKeys;
         for (const auto& [socketKey, package] : registry.heatSystems()) {
-            if (!registry.isCurrent(socketKey)) continue;
+            if (!registry.isPackageCurrent(socketKey)) continue;
             if (visibleKeys.find(socketKey) == visibleKeys.end()) {
                 continue;
             }
@@ -59,6 +67,23 @@ public:
         controller->finalizeSync();
     }
 
+    void detach(uint64_t socketKey) {
+        if (!controller || socketKey == 0) {
+            return;
+        }
+        controller->remove(socketKey);
+        activeSocketKeys.erase(socketKey);
+    }
+
+    void detachAll() {
+        for (uint64_t socketKey : activeSocketKeys) {
+            if (controller) {
+                controller->remove(socketKey);
+            }
+        }
+        activeSocketKeys.clear();
+    }
+
 private:
     bool tryBuildConfig(
         uint64_t socketKey,
@@ -67,10 +92,22 @@ private:
         if (!controller || !products || socketKey == 0) {
             return false;
         }
-        if (!package.display.anyVisible()) {
+
+        bool hasProbes = false;
+        for (const auto& [nodeId, probeData] : package.resolvedHeatProbes) {
+            if (probeData.enabled && !probeData.items.empty()) {
+                hasProbes = true;
+                break;
+            }
+        }
+
+        if (!package.display.anyVisible() && !hasProbes) {
             return false;
         }
 
+        if (!products->isCurrent<HeatProduct>(package.productHandle)) {
+            return false;
+        }
         const HeatProduct* computeProduct = products->resolve<HeatProduct>(package.productHandle);
         if (!computeProduct || !computeProduct->isValid()) {
             return false;
@@ -78,12 +115,31 @@ private:
 
         outConfig = {};
         outConfig.showHeatOverlay = package.display.showHeatOverlay;
+        outConfig.surfaceSource = package.display.useVemTraceSurface
+            ? HeatDisplayController::SurfaceSource::VemTraceDirect
+            : HeatDisplayController::SurfaceSource::GmlsIntrinsic;
+        static const bool forceVemTrace = [] {
+            char* value = nullptr;
+            size_t length = 0;
+            if (_dupenv_s(&value, &length, "HEATSPECTRA_FORCE_VEM_TRACE") == 0 &&
+                value != nullptr) {
+                const bool enabled = value[0] != '\0' && value[0] != '0';
+                std::free(value);
+                return enabled;
+            }
+            return false;
+        }();
+        if (forceVemTrace) {
+            outConfig.surfaceSource = HeatDisplayController::SurfaceSource::VemTraceDirect;
+        }
         outConfig.showFluxVectors = package.display.showFluxVectors;
         outConfig.showHeatPalette = package.display.showHeatPalette;
+        outConfig.showIsocontours = package.display.showIsocontours;
         outConfig.showDomainBox = package.display.showDomainBox;
         outConfig.showFluidVolume = package.display.showFluidVolume;
         outConfig.fluidVolumeOpacity = package.display.fluidVolumeOpacity;
         outConfig.fluxVectorScale = package.display.fluxVectorScale;
+        outConfig.isocontourSpacingC = package.display.isocontourSpacingC;
         outConfig.authoredActive = package.authored.active;
         outConfig.active = package.authored.active;
         outConfig.canonicalToWorldScale = package.canonicalToWorldScale;
@@ -92,9 +148,39 @@ private:
             outConfig.fluidTemperatureVolumeSampler = computeProduct->fluidTemperatureVolumeSampler;
             outConfig.hasFluidVolume = true;
         }
+        outConfig.vemTraceTemperatureBuffer = computeProduct->vemTraceTemperatureBuffer;
+        outConfig.vemTraceCount = computeProduct->vemTraceCount;
+        outConfig.vemTraceValid = computeProduct->vemTraceValid;
+        if (computeController) {
+            VkBuffer liveBuffer = VK_NULL_HANDLE;
+            uint32_t liveCount = 0;
+            bool liveValid = false;
+            if (computeController->getVemTraceState(
+                    socketKey, liveBuffer, liveCount, liveValid)) {
+                outConfig.vemTraceTemperatureBuffer = liveBuffer;
+                outConfig.vemTraceCount = liveCount;
+                outConfig.vemTraceValid = liveValid;
+            }
+        }
+
+        for (const auto& [nodeId, probeData] : package.resolvedHeatProbes) {
+            if (!probeData.enabled) continue;
+            for (const auto& item : probeData.items) {
+                if (!item.enabled) continue;
+                outConfig.probePositions.push_back(item.worldPosition);
+                outConfig.probeIds.push_back(item.id);
+                outConfig.probeNames.push_back(item.name.empty() ? ("Probe_" + std::to_string(item.id)) : item.name);
+                outConfig.probeShowTemperatures.push_back(probeData.showTemperature);
+                outConfig.probeShowNames.push_back(probeData.showName);
+                outConfig.probeNodeIds.push_back(nodeId);
+            }
+        }
         uint64_t productDisplayHash = computeProduct->hashes.display;
 
         if (package.domainVoronoiProduct.isValid()) {
+            if (!products->isCurrent<VoronoiProduct>(package.domainVoronoiProduct)) {
+                return false;
+            }
             const VoronoiProduct* voronoi = products->resolve<VoronoiProduct>(package.domainVoronoiProduct);
             if (voronoi && voronoi->isValid()) {
                 outConfig.globalDomainCorners = voronoi->globalDomainCorners;
@@ -102,12 +188,21 @@ private:
                 outConfig.globalVolumeGridMin = voronoi->globalVolumeGridMin;
                 outConfig.globalVolumeGridDim = voronoi->globalVolumeGridDim;
                 outConfig.globalVolumeGridCellSize = voronoi->globalVolumeGridCellSize;
+                outConfig.vemTraceRuntimeModelIds = voronoi->vemTraceRuntimeModelIds;
+                outConfig.vemTraceVertexBuffers = voronoi->vemTraceVertexBuffers;
+                outConfig.vemTraceVertexBufferOffsets = voronoi->vemTraceVertexBufferOffsets;
+                outConfig.vemTraceVertexCounts = voronoi->vemTraceVertexCounts;
                 HashBuilder::combine(productDisplayHash, voronoi->hashes.geometry);
                 HashBuilder::combine(productDisplayHash, voronoi->hashes.display);
             }
         }
 
+        std::unordered_map<uint32_t, glm::mat4> remeshMatrixByRuntimeId;
         for (const HeatModelPackage& model : package.models) {
+            if (!products->isCurrent<ModelProduct>(model.modelProduct) ||
+                !products->isCurrent<RemeshProduct>(model.remeshProduct)) {
+                return false;
+            }
             const ModelProduct* modelProduct = products->resolve<ModelProduct>(
                 model.modelProduct);
             const RemeshProduct* remeshProduct = products->resolve<RemeshProduct>(
@@ -141,6 +236,8 @@ private:
             }
 
             outConfig.modelRuntimeIds.push_back(modelProduct->runtimeModelId);
+            remeshMatrixByRuntimeId[modelProduct->runtimeModelId] =
+                toMat4(model.remeshLocalToWorld);
             outConfig.modelRenderVertexBuffers.push_back(modelProduct->renderVertexBuffer);
             outConfig.modelRenderVertexBufferOffsets.push_back(modelProduct->renderVertexBufferOffset);
             outConfig.modelRenderIndexBuffers.push_back(modelProduct->renderIndexBuffer);
@@ -181,15 +278,29 @@ private:
                 outConfig.modelSurfaceGradientBuffers.push_back(VK_NULL_HANDLE);
                 outConfig.modelSurfaceGradientBufferOffsets.push_back(0);
             }
+        }
 
-
+        outConfig.vemTraceModelMatrices.clear();
+        outConfig.vemTraceModelMatrices.reserve(
+            outConfig.vemTraceRuntimeModelIds.size());
+        for (uint32_t runtimeModelId : outConfig.vemTraceRuntimeModelIds) {
+            const auto matrixIt = remeshMatrixByRuntimeId.find(runtimeModelId);
+            outConfig.vemTraceModelMatrices.push_back(
+                matrixIt != remeshMatrixByRuntimeId.end()
+                    ? matrixIt->second
+                    : glm::mat4(1.0f));
         }
 
         outConfig.displayHash = buildDisplayHash(outConfig, productDisplayHash);
+        HashBuilder::combine(outConfig.displayHash, package.productHandle.publicationId);
+        if (computeController) {
+                    HashBuilder::combine(outConfig.displayHash, computeController->getDisplayRevision());
+        }
         return true;
     }
 
     HeatDisplayController* controller = nullptr;
     RuntimeProductManager* products = nullptr;
+    HeatSystemComputeController* computeController = nullptr;
     std::unordered_set<uint64_t> activeSocketKeys;
 };

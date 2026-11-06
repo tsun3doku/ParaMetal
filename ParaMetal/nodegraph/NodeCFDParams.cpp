@@ -15,32 +15,12 @@ CFDNodeParams readCFDNodeParams(const NodeGraphNode& node) {
     params.pressureIterations = NodeParamUtils::readFloatParam(node, nodegraphparams::cfd::PressureIterations, 200.0);
     params.pressureTolerance = NodeParamUtils::readFloatParam(node, nodegraphparams::cfd::PressureTolerance, 1e-4);
 
-    // Backward migration check: if -X boundary type is not present, migrate once
-    const int face0Type = NodeParamUtils::readEnumParam(node, nodegraphparams::cfd::domainBoundaryTypeParam(0), -1);
-
-    if (face0Type == -1) {
-        // One-time backward migration:
-        // -X VelocityInlet with old initialVelocity
-        params.boundaries[0].type = CFDData::BoundaryType::VelocityInlet;
-        params.boundaries[0].velocity = params.initialVelocity;
-
-        // +X PressureOutlet
-        params.boundaries[1].type = CFDData::BoundaryType::PressureOutlet;
-        params.boundaries[1].velocity = glm::vec3(0.0f);
-
-        // Faces 2..5 (±Y, ±Z) NoSlipWall
-        for (uint32_t face = 2; face < 6; ++face) {
-            params.boundaries[face].type = CFDData::BoundaryType::NoSlipWall;
-            params.boundaries[face].velocity = glm::vec3(0.0f);
-        }
-    } else {
-        for (uint32_t face = 0; face < 6; ++face) {
-            const int typeInt = NodeParamUtils::readEnumParam(node, nodegraphparams::cfd::domainBoundaryTypeParam(face), static_cast<int>(CFDData::BoundaryType::NoSlipWall));
-            params.boundaries[face].type = static_cast<CFDData::BoundaryType>(typeInt);
-            params.boundaries[face].velocity.x = static_cast<float>(NodeParamUtils::readFloatParam(node, nodegraphparams::cfd::domainBoundaryVelocityXParam(face), 0.0));
-            params.boundaries[face].velocity.y = static_cast<float>(NodeParamUtils::readFloatParam(node, nodegraphparams::cfd::domainBoundaryVelocityYParam(face), 0.0));
-            params.boundaries[face].velocity.z = static_cast<float>(NodeParamUtils::readFloatParam(node, nodegraphparams::cfd::domainBoundaryVelocityZParam(face), 0.0));
-        }
+    for (uint32_t face = 0; face < 6; ++face) {
+        const int typeInt = NodeParamUtils::readEnumParam(node, nodegraphparams::cfd::domainBoundaryTypeParam(face), static_cast<int>(CFDData::BoundaryType::NoSlipWall));
+        params.boundaries[face].type = static_cast<CFDData::BoundaryType>(typeInt);
+        params.boundaries[face].velocity.x = static_cast<float>(NodeParamUtils::readFloatParam(node, nodegraphparams::cfd::domainBoundaryVelocityXParam(face), 0.0));
+        params.boundaries[face].velocity.y = static_cast<float>(NodeParamUtils::readFloatParam(node, nodegraphparams::cfd::domainBoundaryVelocityYParam(face), 0.0));
+        params.boundaries[face].velocity.z = static_cast<float>(NodeParamUtils::readFloatParam(node, nodegraphparams::cfd::domainBoundaryVelocityZParam(face), 0.0));
     }
 
     return params;

@@ -1,53 +1,58 @@
 #include "RuntimeCFDComputeTransport.hpp"
-#include "runtime/RuntimeProducts.hpp"
-#include <iostream>
+#include "runtime/RuntimeProductManager.hpp"
 
-ProductHandle RuntimeCFDComputeTransport::apply(uint64_t socketKey, const CFDPackage& package) {
+ComputeApplyResult RuntimeCFDComputeTransport::apply(
+    uint64_t socketKey,
+    const CFDPackage& package,
+    CFDProduct& outProduct) {
     if (!controller || !products || socketKey == 0) {
-        return {};
+        return ComputeApplyResult::Failed;
     }
 
-    if (!package.active) {
-        remove(socketKey);
-        return {};
+    if (!products->isCurrent<VoronoiProduct>(package.domainVoronoiProduct)) {
+        return ComputeApplyResult::Failed;
+    }
+
+    const uint64_t computeHash = package.hashes.simulation;
+    if (controller->getCurrentComputeHash(socketKey) == computeHash) {
+        return ComputeApplyResult::Unchanged;
     }
 
     cfd::CFDSystemComputeController::Config config{};
     topology::GlobalDomain tempDomain;
     if (!tryBuildConfig(socketKey, package, config, tempDomain)) {
-        remove(socketKey);
-        return {};
+        return ComputeApplyResult::Failed;
     }
 
     if (!controller->apply(socketKey, config)) {
-        // Replacement failed, previous generation remains active and publish is skipped
-        return {};
+        return ComputeApplyResult::Failed;
     }
 
-    if (simGraph) {
-        cfd::CFDSystem* system = controller->getSystem(socketKey);
-        if (system != nullptr) {
-            simGraph->registerNode(socketKey, system);
-        } else {
-            simGraph->unregisterNode(socketKey);
-        }
+    outProduct = {};
+    if (!controller->buildProduct(socketKey, outProduct)) {
+        controller->cancelCandidate(socketKey);
+        return ComputeApplyResult::Failed;
     }
+    return ComputeApplyResult::Prepared;
+}
 
-    CFDProduct cfdProduct{};
-    if (!controller->buildProduct(socketKey, cfdProduct)) {
-        return {};
+void RuntimeCFDComputeTransport::commitPending(uint64_t socketKey) {
+    if (!controller || socketKey == 0) {
+        return;
     }
+    controller->commitPending(socketKey);
+}
 
-    return products->publish<CFDProduct>(socketKey, cfdProduct);
+void RuntimeCFDComputeTransport::cancelPending(uint64_t socketKey) {
+    if (!controller || socketKey == 0) {
+        return;
+    }
+    controller->cancelCandidate(socketKey);
 }
 
 void RuntimeCFDComputeTransport::remove(uint64_t socketKey) {
     if (!controller || socketKey == 0) {
         return;
-    }
-    // Deregister before the controller destroys the system the graph points at
-    if (simGraph) {
-        simGraph->unregisterNode(socketKey);
     }
     controller->remove(socketKey);
 }
@@ -58,6 +63,9 @@ bool RuntimeCFDComputeTransport::tryBuildConfig(
     cfd::CFDSystemComputeController::Config& outConfig,
     topology::GlobalDomain& outDomain) const {
 
+    if (!products->isCurrent<VoronoiProduct>(package.domainVoronoiProduct)) {
+        return false;
+    }
     const VoronoiProduct* domainProduct = products->resolve<VoronoiProduct>(
         package.domainVoronoiProduct);
     if (!domainProduct || !domainProduct->isValid()) {
@@ -65,7 +73,6 @@ bool RuntimeCFDComputeTransport::tryBuildConfig(
     }
 
     outConfig = {};
-    outConfig.active = package.active;
     outConfig.kinematicViscosity = package.fluid.kinematicViscosity;
     outConfig.initialVelocity = package.initialVelocity;
     outConfig.fixedTimeStep = package.fixedTimeStep;
@@ -80,7 +87,6 @@ bool RuntimeCFDComputeTransport::tryBuildConfig(
         outConfig.domainBoundaryVelocities[i] = package.domainBoundaryVelocities[i];
     }
 
-    // Skip domain only when update is guaranteed in-place, replacement requires domain
     const auto* existingConfig = controller ? controller->getConfig(socketKey) : nullptr;
     if (existingConfig &&
         cfd::CFDSystemComputeController::canUpdateInPlace(*existingConfig, outConfig)) {

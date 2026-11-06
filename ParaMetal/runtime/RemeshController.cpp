@@ -5,6 +5,8 @@
 #include "util/GeometryUtils.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 
+#include <cassert>
+
 RemeshController::OperatingScope::OperatingScope(std::atomic<bool>& isOperating)
     : isOperating(isOperating) {
     previousState = isOperating.exchange(true, std::memory_order_acq_rel);
@@ -27,11 +29,24 @@ bool RemeshController::apply(uint64_t socketKey, const Config& config) {
         return false;
     }
 
+    const auto configIt = configuredHashes.find(socketKey);
+    if (configIt != configuredHashes.end() && configIt->second == config.computeHash) {
+        cancelCandidate(socketKey);
+        return true;
+    }
+
     const auto failedIt = failedComputeHashes.find(socketKey);
     if (failedIt != failedComputeHashes.end() && failedIt->second == config.computeHash) {
         return false;
     }
     failedComputeHashes.erase(socketKey);
+
+    // A generation cannot be admitted while the socket still owns a pending or retiring one.
+    const auto slotIt = generationSlots.find(socketKey);
+    if (slotIt != generationSlots.end() &&
+        (slotIt->second.retiring || slotIt->second.candidate)) {
+        return false;
+    }
 
     // Build replacement generation off to the side while active generation remains live
     auto candidate = std::make_unique<RemeshSystem>(remesher);
@@ -41,21 +56,17 @@ bool RemeshController::apply(uint64_t socketKey, const Config& config) {
 
     OperatingScope operatingScope(isOperating);
     if (!candidate->remesh()) {
-        // Retain failed candidate to avoid destroying resources with in-flight GPU work
-        retainedSystems.push_back(std::move(candidate));
+        // The failed candidate holds GPU allocations; the boundary releases it after quiescence.
+        generationSlots[socketKey].retiring = std::move(candidate);
         failedComputeHashes[socketKey] = config.computeHash;
         return false;
     }
 
-    auto it = activeSystems.find(socketKey);
-    if (it != activeSystems.end()) {
-        if (it->second) {
-            retainedSystems.push_back(std::move(it->second));
-        }
-        it->second = std::move(candidate);
-    } else {
-        activeSystems.emplace(socketKey, std::move(candidate));
-    }
+    GenerationSlot& slot = generationSlots[socketKey];
+    // Reserve the committed-hash entry so commit performs no allocation.
+    configuredHashes.try_emplace(socketKey, 0);
+    pendingHashes[socketKey] = config.computeHash;
+    slot.candidate = std::move(candidate);
     return true;
 }
 
@@ -64,11 +75,17 @@ bool RemeshController::buildProduct(uint64_t socketKey, RemeshProduct& product) 
         return false;
     }
 
-    const auto it = activeSystems.find(socketKey);
-    if (it == activeSystems.end() || !it->second) {
+    const auto it = generationSlots.find(socketKey);
+    if (it == generationSlots.end()) {
         return false;
     }
-    RemeshSystem& system = *it->second;
+    RemeshSystem* systemPtr = it->second.candidate
+        ? it->second.candidate.get()
+        : it->second.current.get();
+    if (!systemPtr) {
+        return false;
+    }
+    RemeshSystem& system = *systemPtr;
 
     product = {};
 
@@ -100,22 +117,101 @@ void RemeshController::remove(uint64_t socketKey) {
     }
 
     failedComputeHashes.erase(socketKey);
-    auto it = activeSystems.find(socketKey);
-    if (it != activeSystems.end()) {
-        if (it->second) {
-            retainedSystems.push_back(std::move(it->second));
+    retireCurrent(socketKey);
+}
+
+bool RemeshController::hasAnyRetiring() const {
+    for (const auto& [socketKey, slot] : generationSlots) {
+        (void)socketKey;
+        if (slot.retiring) return true;
+    }
+    return false;
+}
+
+void RemeshController::clearAllRetiring() {
+    for (auto it = generationSlots.begin(); it != generationSlots.end();) {
+        GenerationSlot& slot = it->second;
+        slot.retiring.reset();
+        // A socket with no committed configuration owns no generation; release the rest.
+        if (configuredHashes.find(it->first) == configuredHashes.end()) {
+            slot.current.reset();
+            slot.candidate.reset();
         }
-        activeSystems.erase(it);
+        if (!slot.current && !slot.candidate && !slot.retiring) {
+            it = generationSlots.erase(it);
+        } else {
+            ++it;
+        }
     }
 }
 
-void RemeshController::disableAll() {
-    failedComputeHashes.clear();
-    for (auto& [socketKey, system] : activeSystems) {
-        (void)socketKey;
-        if (system) {
-            retainedSystems.push_back(std::move(system));
+void RemeshController::commitPending(uint64_t socketKey) noexcept {
+    const auto it = generationSlots.find(socketKey);
+    if (it == generationSlots.end()) {
+        return;
+    }
+    GenerationSlot& slot = it->second;
+    assert(slot.retiring == nullptr);
+    if (slot.retiring != nullptr) {
+        return;
+    }
+    if (slot.candidate) {
+        slot.retiring = std::move(slot.current);
+        slot.current = std::move(slot.candidate);
+    }
+
+    const auto pending = pendingHashes.find(socketKey);
+    if (pending != pendingHashes.end()) {
+        const auto committed = configuredHashes.find(socketKey);
+        if (committed != configuredHashes.end()) {
+            committed->second = pending->second;
+        }
+        pendingHashes.erase(pending);
+    }
+    failedComputeHashes.erase(socketKey);
+}
+
+void RemeshController::cancelCandidate(uint64_t socketKey) {
+    const auto it = generationSlots.find(socketKey);
+    if (it != generationSlots.end() && it->second.candidate) {
+        // A candidate only exists after admission, which requires an empty retiring slot.
+        assert(it->second.retiring == nullptr);
+        if (!it->second.retiring) {
+            it->second.retiring = std::move(it->second.candidate);
+        }
+        // A socket that never committed a generation must not keep its reserved entry.
+        if (!it->second.current) {
+            const auto committed = configuredHashes.find(socketKey);
+            if (committed != configuredHashes.end() && committed->second == 0) {
+                configuredHashes.erase(committed);
+            }
         }
     }
-    activeSystems.clear();
+    pendingHashes.erase(socketKey);
+}
+
+void RemeshController::retireCurrent(uint64_t socketKey) {
+    configuredHashes.erase(socketKey);
+    pendingHashes.erase(socketKey);
+
+    const auto it = generationSlots.find(socketKey);
+    if (it == generationSlots.end()) {
+        return;
+    }
+    GenerationSlot& slot = it->second;
+    if (slot.candidate && !slot.retiring) {
+        slot.retiring = std::move(slot.candidate);
+    }
+    if (slot.current && !slot.retiring) {
+        slot.retiring = std::move(slot.current);
+    }
+    // A system that cannot enter retiring stays as the ownerless current and is
+    // released by clearAllRetiring after the next successful quiesce.
+}
+
+void RemeshController::quiescedClear() noexcept {
+    generationSlots.clear();
+    configuredHashes.clear();
+    pendingHashes.clear();
+    failedComputeHashes.clear();
 }

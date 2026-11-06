@@ -94,58 +94,32 @@ bool ComputeContext::isInitialized() const {
     return initialized;
 }
 
-SimGraphRuntime* ComputeContext::simGraphRuntime() {
-    return simGraphRuntimeState.get();
+void ComputeContext::quiescedClear() {
+    if (simGraphRuntimeState) {
+        simGraphRuntimeState->clear();
+    }
+    if (modelComputeControllerState) {
+        modelComputeControllerState->disableAll();
+    }
+    if (pointComputeRuntimeState) {
+        pointComputeRuntimeState->quiescedClear();
+    }
+    if (remeshControllerState) {
+        remeshControllerState->quiescedClear();
+    }
+    if (voronoiSystemComputeControllerState) {
+        voronoiSystemComputeControllerState->quiescedClear();
+    }
+    if (heatSystemComputeControllerState) {
+        heatSystemComputeControllerState->quiescedClear();
+    }
+    if (cfdSystemComputeControllerState) {
+        cfdSystemComputeControllerState->quiescedClear();
+    }
 }
 
-const SimGraphRuntime* ComputeContext::simGraphRuntime() const {
-    return simGraphRuntimeState.get();
-}
-
-ModelComputeController* ComputeContext::modelComputeController() {
-    return modelComputeControllerState.get();
-}
-
-const ModelComputeController* ComputeContext::modelComputeController() const {
-    return modelComputeControllerState.get();
-}
-
-PointComputeRuntime* ComputeContext::pointComputeRuntime() {
-    return pointComputeRuntimeState.get();
-}
-
-const PointComputeRuntime* ComputeContext::pointComputeRuntime() const {
-    return pointComputeRuntimeState.get();
-}
-
-RemeshController* ComputeContext::remeshController() {
-    return remeshControllerState.get();
-}
-
-const RemeshController* ComputeContext::remeshController() const {
-    return remeshControllerState.get();
-}
-
-VoronoiSystemComputeController* ComputeContext::voronoiSystemComputeController() {
-    return voronoiSystemComputeControllerState.get();
-}
-
-const VoronoiSystemComputeController* ComputeContext::voronoiSystemComputeController() const {
-    return voronoiSystemComputeControllerState.get();
-}
-
-HeatSystemComputeController* ComputeContext::heatSystemComputeController() {
-    return heatSystemComputeControllerState.get();
-}
-
-const HeatSystemComputeController* ComputeContext::heatSystemComputeController() const {
-    return heatSystemComputeControllerState.get();
-}
-
-cfd::CFDSystemComputeController* ComputeContext::cfdSystemComputeController() {
-    return cfdSystemComputeControllerState.get();
-}
-
-const cfd::CFDSystemComputeController* ComputeContext::cfdSystemComputeController() const {
-    return cfdSystemComputeControllerState.get();
+void ComputeContext::tickDomainServices() {
+    if (heatSystemComputeControllerState) {
+        heatSystemComputeControllerState->updateSerialInputs();
+    }
 }

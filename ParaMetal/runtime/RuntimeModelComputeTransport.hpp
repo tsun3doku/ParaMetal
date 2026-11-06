@@ -1,8 +1,10 @@
 #pragma once
 
 #include <cstdint>
+
+#include "runtime/ComputeTransportResult.hpp"
+#include "runtime/RuntimeProducts.hpp"
 #include "runtime/package/RuntimePackages.hpp"
-#include "runtime/RuntimeProductManager.hpp"
 
 class ModelComputeController;
 
@@ -12,14 +14,9 @@ public:
         controller = updatedController;
     }
 
-    void setProducts(RuntimeProductManager* updatedProducts) {
-        products = updatedProducts;
-    }
-
-    ProductHandle apply(uint64_t socketKey, const ModelPackage& package);
+    ComputeApplyResult apply(uint64_t socketKey, const ModelPackage& package, ModelProduct& outProduct);
     void remove(uint64_t socketKey);
 
 private:
     ModelComputeController* controller = nullptr;
-    RuntimeProductManager* products = nullptr;
 };

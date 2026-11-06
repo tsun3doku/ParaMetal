@@ -208,7 +208,6 @@ void HalfEdgeMesh::applyToModel(class Model& dstModel) const {
 	}
 
 	dstModel.updateGeometry(newVertices, newIndices);
-	dstModel.recalculateNormals();
 }
 
 void HalfEdgeMesh::initializeIntrinsicLengths() {

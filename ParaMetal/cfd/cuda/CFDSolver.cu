@@ -190,7 +190,6 @@ bool CFDSolver::buildTopology(
 
     cudaStream_t stream = reinterpret_cast<cudaStream_t>(flowStreamHandle);
 
-    // Allocate GPU buffers via CudaBuffer
     if (!d_cellVolumes.allocate(fluidNodeCount) ||
         !d_velocity.allocate(fluidNodeCount) ||
         !d_velocityStar.allocate(fluidNodeCount) ||
@@ -219,7 +218,6 @@ bool CFDSolver::buildTopology(
         }
     }
 
-    // Upload topology and boundary buffers
     auto initialGpuBcs = toGpuArray(boundaryConditions);
     if (!d_cellVolumes.uploadAsync(this->hostCellVolumes.data(), fluidNodeCount, stream) ||
         !d_boundaryConditions.uploadAsync(initialGpuBcs.data(), 7, stream) ||
@@ -397,14 +395,12 @@ void CFDSolver::setPressureSolverParameters(int maxIterations, float tolerance) 
 void CFDSolver::computeAndReduceOutflowRate(cudaStream_t stream) {
     if (fluidNodeCount == 0) return;
 
-    // Compute cell outflow rates for CFL determination
     fluidkernels::launchComputeOutflowRate(
         fluidNodeCount, faceCount, boundaryFaceCount,
         d_faces.get(), d_boundaryFaces.get(),
         d_faceFlux.get(), d_boundaryFlux.get(),
         d_cellVolumes.get(), d_outflowRates.get(), stream);
 
-    // Argmax over the per-cell rates
     if (!cudaUtils::cudaCheck(cudaMemsetAsync(d_cflPacked.get(), 0, sizeof(unsigned long long), stream), "zero d_cflPacked")) {
         return;
     }
@@ -459,7 +455,7 @@ bool CFDSolver::initializeVelocity(const glm::vec3& initialVelocity) {
         return true;
     }
 
-    failed = false;   // (re)initialization clears any terminal failure
+    failed = false;
     cudaSetDevice(cudaDevice);
     cudaStream_t stream = reinterpret_cast<cudaStream_t>(flowStreamHandle);
 
@@ -479,7 +475,6 @@ bool CFDSolver::initializeVelocity(const glm::vec3& initialVelocity) {
         return false;
     }
 
-    // Publish velocity and per-face fluxes (cells == fluid nodes)
     if (externalVelocity && fluidNodeCount > 0) {
         fluidkernels::publishVelocity(fluidNodeCount, d_velocity.get(), externalVelocity, projectionSolver.getPublishGate(), stream);
     }
@@ -520,7 +515,7 @@ CFDSolver::StepOutcome CFDSolver::stepCfd(
     uint64_t completionValue,
     uint64_t releaseWaitValue) {
     if (failed) {
-        return StepOutcome::Failed;   // terminal: awaiting reinitialization
+        return StepOutcome::Failed;
     }
 
     switch (projectionSolver.pollNativeSolveResult()) {
@@ -534,8 +529,7 @@ CFDSolver::StepOutcome CFDSolver::stepCfd(
         return StepOutcome::Failed;
     case CFDProjectionSolver::SolvePollResult::Pending:
         if (projectionSolver.hasPendingNativeSolve()) {
-            // Backpressure: previous solve still in flight
-            return StepOutcome::Deferred;
+                    return StepOutcome::Deferred;
         }
         break;
     case CFDProjectionSolver::SolvePollResult::Succeeded:
@@ -575,7 +569,6 @@ CFDSolver::StepOutcome CFDSolver::stepCfd(
         cudaEventRecord(stepStartEvent, stream);
     }
 
-    // Wait on Vulkan release timeline semaphore before writing to published buffers
     if (releaseSemaphore != nullptr && releaseWaitValue > 0) {
         cudaExternalSemaphoreWaitParams waitParams{};
         waitParams.flags = 0;
@@ -601,13 +594,11 @@ CFDSolver::StepOutcome CFDSolver::stepCfd(
         return StepOutcome::Failed;
     }
 
-    // Launch device-planned momentum subcycling graph
     if (!cudaUtils::cudaCheck(cudaGraphLaunch(momentumExec, stream), "launch momentum subcycle graph")) {
         failed = true;
         return StepOutcome::Failed;
     }
 
-    // Asynchronous subcycle status readback
     if (!d_subcycleTimestep.downloadAsync(pinnedSubcycleTimestep, 1, stream)) {
         failed = true;
         return StepOutcome::Failed;
@@ -633,7 +624,6 @@ CFDSolver::StepOutcome CFDSolver::stepCfd(
         fluidkernels::publishVelocity(fluidNodeCount, d_velocity.get(), externalVelocity, projectionSolver.getPublishGate(), stream);
     }
 
-    // Publish face fluxes into canonical global-face buffers
     if (externalCanonicalFaceFlux && externalCanonicalFaceCount > 0) {
         fluidkernels::publishFineFaceFluxes(faceCount, d_faceGlobalIndex.get(), d_faceFlux.get(), externalCanonicalFaceFlux, projectionSolver.getPublishGate(), stream);
     }

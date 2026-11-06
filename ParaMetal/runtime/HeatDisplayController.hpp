@@ -3,6 +3,7 @@
 #include "hash/HashBuilder.hpp"
 #include "heat/HeatGpuStructs.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <glm/mat4x4.hpp>
@@ -19,16 +20,24 @@ class HeatVolumeRenderer;
 
 class HeatDisplayController {
 public:
+    enum class SurfaceSource : uint32_t {
+        GmlsIntrinsic = 0,
+        VemTraceDirect = 1
+    };
+
     struct Config {
         bool showHeatOverlay = false;
+        SurfaceSource surfaceSource = SurfaceSource::GmlsIntrinsic;
         bool showFluxVectors = false;
         bool showHeatPalette = false;
+        bool showIsocontours = false;
         bool showDomainBox = false;
         bool showFluidVolume = false;
         float fluidVolumeOpacity = 0.25f;
         std::array<glm::vec3, 8> globalDomainCorners{};
         bool hasGlobalDomain = false;
         float fluxVectorScale = 1.0f;
+        float isocontourSpacingC = 10.0f;
         bool authoredActive = false;
         bool active = false;
         std::vector<uint32_t> modelRuntimeIds;
@@ -47,6 +56,15 @@ public:
         std::vector<VkBuffer> modelSurfaceGradientBuffers;
         std::vector<VkDeviceSize> modelSurfaceGradientBufferOffsets;
 
+        std::vector<uint32_t> vemTraceRuntimeModelIds;
+        std::vector<VkBuffer> vemTraceVertexBuffers;
+        std::vector<VkDeviceSize> vemTraceVertexBufferOffsets;
+        std::vector<uint32_t> vemTraceVertexCounts;
+        std::vector<glm::mat4> vemTraceModelMatrices;
+        VkBuffer vemTraceTemperatureBuffer = VK_NULL_HANDLE;
+        uint32_t vemTraceCount = 0;
+        bool vemTraceValid = false;
+
         glm::vec3 globalVolumeGridMin{0.0f};
         glm::ivec3 globalVolumeGridDim{0};
         float globalVolumeGridCellSize = 0.0f;
@@ -55,10 +73,17 @@ public:
         VkImageView fluidTemperatureVolumeView = VK_NULL_HANDLE;
         VkSampler fluidTemperatureVolumeSampler = VK_NULL_HANDLE;
 
+        std::vector<glm::vec3> probePositions;
+        std::vector<uint32_t> probeIds;
+        std::vector<std::string> probeNames;
+        std::vector<bool> probeShowTemperatures;
+        std::vector<bool> probeShowNames;
+        std::vector<uint64_t> probeNodeIds;
+
         uint64_t displayHash = 0;
 
         bool anyVisible() const {
-            return showHeatOverlay || showFluxVectors || showHeatPalette || showDomainBox || showFluidVolume;
+            return showHeatOverlay || showFluxVectors || showHeatPalette || showIsocontours || showDomainBox || showFluidVolume || !probePositions.empty();
         }
 
         bool isValid() const {
@@ -97,15 +122,48 @@ private:
 inline uint64_t buildDisplayHash(const HeatDisplayController::Config& config, uint64_t productDisplayHash) {
     uint64_t hash = HashBuilder::start();
     HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showHeatOverlay ? 1u : 0u));
+    HashBuilder::combinePod(hash, static_cast<uint64_t>(config.surfaceSource));
+    HashBuilder::combinePod(hash, static_cast<uint64_t>(config.vemTraceVertexBuffers.size()));
+    const size_t vemCount = std::min(
+        config.vemTraceVertexBuffers.size(),
+        config.vemTraceVertexCounts.size());
+    for (size_t i = 0; i < vemCount; ++i) {
+        HashBuilder::combine(hash, reinterpret_cast<uint64_t>(config.vemTraceVertexBuffers[i]));
+        HashBuilder::combine(hash, static_cast<uint64_t>(config.vemTraceVertexCounts[i]));
+    }
+    HashBuilder::combine(hash, reinterpret_cast<uint64_t>(config.vemTraceTemperatureBuffer));
+    HashBuilder::combine(hash, static_cast<uint64_t>(config.vemTraceCount));
     HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showFluxVectors ? 1u : 0u));
     HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showHeatPalette ? 1u : 0u));
+    HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showIsocontours ? 1u : 0u));
     HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showDomainBox ? 1u : 0u));
     HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showFluidVolume ? 1u : 0u));
     HashBuilder::combinePod(hash, config.fluidVolumeOpacity);
     HashBuilder::combinePod(hash, config.fluxVectorScale);
+    HashBuilder::combinePod(hash, config.isocontourSpacingC);
     HashBuilder::combinePod(hash, static_cast<uint64_t>(config.authoredActive ? 1u : 0u));
     HashBuilder::combinePod(hash, static_cast<uint64_t>(config.active ? 1u : 0u));
     HashBuilder::combinePod(hash, config.canonicalToWorldScale);
+    HashBuilder::combine(hash, static_cast<uint64_t>(config.probePositions.size()));
+    for (size_t i = 0; i < config.probePositions.size(); ++i) {
+        if (i < config.probeIds.size()) {
+            HashBuilder::combine(hash, static_cast<uint64_t>(config.probeIds[i]));
+        }
+        if (i < config.probeNames.size()) {
+            for (char ch : config.probeNames[i]) {
+                HashBuilder::combinePod(hash, static_cast<uint64_t>(ch));
+            }
+        }
+        if (i < config.probeShowTemperatures.size()) {
+            HashBuilder::combine(hash, config.probeShowTemperatures[i] ? 1u : 0u);
+        }
+        if (i < config.probeShowNames.size()) {
+            HashBuilder::combine(hash, config.probeShowNames[i] ? 1u : 0u);
+        }
+        HashBuilder::combineFloat(hash, config.probePositions[i].x);
+        HashBuilder::combineFloat(hash, config.probePositions[i].y);
+        HashBuilder::combineFloat(hash, config.probePositions[i].z);
+    }
     HashBuilder::combine(hash, productDisplayHash);
     return hash;
 }

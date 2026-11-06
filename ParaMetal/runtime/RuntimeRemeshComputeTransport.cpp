@@ -1,15 +1,26 @@
 #include "RuntimeRemeshComputeTransport.hpp"
-#include "runtime/RuntimeProducts.hpp"
 
-ProductHandle RuntimeRemeshComputeTransport::apply(uint64_t socketKey, const RemeshPackage& package) {
+#include "runtime/RuntimeProductManager.hpp"
+
+ComputeApplyResult RuntimeRemeshComputeTransport::apply(
+    uint64_t socketKey,
+    const RemeshPackage& package,
+    RemeshProduct& outProduct) {
     if (!controller || !products || socketKey == 0) {
-        return {};
+        return ComputeApplyResult::Failed;
     }
 
+    if (!products->isCurrent<ModelProduct>(package.sourceModelProduct)) {
+        return ComputeApplyResult::Failed;
+    }
     const ModelProduct* modelProduct = products->resolve<ModelProduct>(package.sourceModelProduct);
     if (!modelProduct || modelProduct->runtimeModelId == 0) {
-        remove(socketKey);
-        return {};
+        return ComputeApplyResult::Failed;
+    }
+
+    const uint64_t computeHash = package.hashes.geometry;
+    if (controller->getCurrentComputeHash(socketKey) == computeHash) {
+        return ComputeApplyResult::Unchanged;
     }
 
     RemeshController::Config config{};
@@ -20,20 +31,33 @@ ProductHandle RuntimeRemeshComputeTransport::apply(uint64_t socketKey, const Rem
     config.maxEdgeLength = package.maxEdgeLength;
     config.stepSize = package.stepSize;
     config.runtimeModelId = modelProduct->runtimeModelId;
-    config.computeHash = package.hashes.geometry;
+    config.computeHash = computeHash;
 
     if (!controller->apply(socketKey, config)) {
-        // Replacement failed, previous generation remains active and publish is skipped
-        return {};
+        return ComputeApplyResult::Failed;
     }
 
-    RemeshProduct remeshProduct{};
-    if (!controller->buildProduct(socketKey, remeshProduct)) {
-        return {};
+    outProduct = {};
+    if (!controller->buildProduct(socketKey, outProduct)) {
+        controller->cancelCandidate(socketKey);
+        return ComputeApplyResult::Failed;
     }
-    return products->publish<RemeshProduct>(socketKey, remeshProduct);
+    return ComputeApplyResult::Prepared;
 }
 
+void RuntimeRemeshComputeTransport::commitPending(uint64_t socketKey) {
+    if (!controller || socketKey == 0) {
+        return;
+    }
+    controller->commitPending(socketKey);
+}
+
+void RuntimeRemeshComputeTransport::cancelPending(uint64_t socketKey) {
+    if (!controller || socketKey == 0) {
+        return;
+    }
+    controller->cancelCandidate(socketKey);
+}
 
 void RuntimeRemeshComputeTransport::remove(uint64_t socketKey) {
     if (!controller || socketKey == 0) {

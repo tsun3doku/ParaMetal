@@ -17,9 +17,7 @@ public:
     VkMemoryPropertyFlags memProperties = 0;
     void* mappedPtr = nullptr;
 
-    VkDeviceSize getPoolSize() const { return poolSize; }
-    uint32_t getMaxOrder() const { return maxOrder; }
-    const std::vector<std::vector<VkDeviceSize>>& getFreeLists() const { return freeList; }
+    bool isCompletelyFree() const;
 
     MemoryPool(const MemoryPool&) = delete;
     MemoryPool& operator=(const MemoryPool&) = delete;

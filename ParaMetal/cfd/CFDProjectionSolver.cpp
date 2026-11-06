@@ -19,8 +19,7 @@ float nativeTolerance(float authoredTolerance) {
     return (authoredTolerance > 0.0f) ? authoredTolerance : 1e-4f;
 }
 
-} // anonymous namespace
-
+} 
 CFDProjectionSolver::~CFDProjectionSolver() {
     cleanup();
 }
@@ -49,7 +48,7 @@ bool CFDProjectionSolver::build(
     cudaSetDevice(cudaDevice);
     cudaStream_t stream = reinterpret_cast<cudaStream_t>(flowStreamHandle);
 
-    // Identify connected components that reach a PressureOutlet (bc.type == BoundaryType::PressureOutlet)
+    // identify connected components reaching PressureOutlet
     std::vector<bool> componentHasOutlet(componentCount, false);
     for (const auto& cbf : boundaryFaces) {
         if (cbf.boundaryCondition < boundaryConditions.size()) {
@@ -62,7 +61,7 @@ bool CFDProjectionSolver::build(
         }
     }
 
-    // Only pin a reference cell for components that have NO outlet (pure Neumann boundaries)
+    // pin reference cell for components without outlet
     std::vector<uint32_t> componentPinnedCell(componentCount, UINT32_MAX);
     std::vector<float> componentMaxVol(componentCount, -1.0f);
 
@@ -83,8 +82,7 @@ bool CFDProjectionSolver::build(
         }
     }
 
-    // Build face adjacency via flat CSR
-    std::vector<uint32_t> adjDeg(cellCount, 0);
+        std::vector<uint32_t> adjDeg(cellCount, 0);
     for (const auto& cf : faces) {
         if (cf.cellA < cellCount && cf.cellB < cellCount && cf.cellA != cf.cellB) {
             adjDeg[cf.cellA]++;
@@ -110,7 +108,7 @@ bool CFDProjectionSolver::build(
         }
     }
 
-    // Accumulate outlet Dirichlet boundary weights (PressureOutlet: psi = 0 at outlet face)
+    // outlet Dirichlet boundary weights (psi = 0)
     std::vector<float> outletWeights(cellCount, 0.0f);
     for (const auto& cbf : boundaryFaces) {
         if (cbf.boundaryCondition < boundaryConditions.size()) {
@@ -120,7 +118,7 @@ bool CFDProjectionSolver::build(
         }
     }
 
-    // Assemble Sparse Symmetric CSR Laplacian for Pressure Poisson equation
+    // assemble Laplacian for Pressure Poisson equation
     std::vector<int> rowOffsets;
     std::vector<int> columnIndices;
     std::vector<float> values;
@@ -363,7 +361,7 @@ bool CFDProjectionSolver::projectVelocity(
     cudaSetDevice(cudaDevice);
     cudaStream_t stream = reinterpret_cast<cudaStream_t>(flowStreamHandle);
 
-    // 1. Interpolate provisional face fluxes phi* from velocityStar directly into published flux buffers
+    // provisional face fluxes phi* from velocityStar
     fluidkernels::launchProvisionalFlux(
         faceCount, boundaryFaceCount,
         d_faces, d_boundaryFaces,
@@ -372,14 +370,14 @@ bool CFDProjectionSolver::projectVelocity(
         d_faceFlux, d_boundaryFlux,
         stream);
 
-    // 2. Accumulate pressure RHS b = -div(phi*) into d_pressureRhs on flowStream
+    // pressure RHS b = -div(phi*)
     fluidkernels::launchBuildPressureRhs(
         inCellCount, faceCount, boundaryFaceCount,
         d_faces, d_boundaryFaces,
         d_faceFlux, d_boundaryFlux,
         d_pressureRhs.get(), stream);
 
-    // 3. Set RHS = 0 on pinned reference nodes (for pure Neumann closed components)
+    // set RHS = 0 on pinned reference nodes
     fluidkernels::launchZeroMasked(inCellCount, d_isPinned.get(), d_pressureRhs.get(), stream);
 
     if (!pressurePcgExec) {
@@ -409,19 +407,19 @@ bool CFDProjectionSolver::projectVelocity(
     }
     pcgStatusPending = true;
 
-    // 7. Ensure pinned nodes have zero potential
+    // ensure pinned nodes have zero potential
     fluidkernels::launchZeroMasked(inCellCount, d_isPinned.get(), d_psi.get(), stream);
 
-    // 8. Correct internal face fluxes: phi_corr = phi - W * (psi_B - psi_A)
+    // correct internal face fluxes: phi_corr = phi - W * (psi_B - psi_A)
     fluidkernels::launchCorrectFluxes(faceCount, d_faces, d_psi.get(), d_faceFlux, stream);
 
-    // 9. Correct outlet boundary face fluxes: phi_corr = phi + W * psi_cell
+    // correct outlet boundary face fluxes: phi_corr = phi + W * psi_cell
     if (boundaryFaceCount > 0 && d_boundaryConditions) {
         fluidkernels::launchCorrectBoundaryFluxes(
             boundaryFaceCount, d_boundaryFaces, d_boundaryConditions, d_psi.get(), d_boundaryFlux, stream);
     }
 
-    // 10. Direct velocity correction: u^{n+1} = u* - impulse / V_cell
+    // direct velocity correction: u^{n+1} = u* - impulse / V_cell
     fluidkernels::launchCorrectVelocity(
         inCellCount, faceCount, boundaryFaceCount,
         d_faces, d_boundaryFaces,

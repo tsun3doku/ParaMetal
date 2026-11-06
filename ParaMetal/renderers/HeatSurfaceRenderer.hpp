@@ -21,6 +21,7 @@ public:
         uint32_t palette = 0;
         float minTemperature = 0.0f;
         float maxTemperature = 100.0f;
+        float isocontourSpacing = 0.0f;
     };
 
     struct SurfaceRenderBinding {
@@ -43,9 +44,18 @@ public:
     void cleanup();
     void setPalette(uint32_t updatedPalette) { palette = updatedPalette < 4 ? updatedPalette : 0u; }
     void setRange(float minimum, float maximum) { minTemperature = minimum; maxTemperature = maximum; }
+    void setIsocontourSpacing(float spacing) { isocontourSpacing = spacing; }
     uint32_t getPalette() const { return palette; }
     float getMinTemperature() const { return minTemperature; }
     float getMaxTemperature() const { return maxTemperature; }
+    float getIsocontourSpacing() const { return isocontourSpacing; }
+    VkSampler getPaletteSampler() const { return paletteSampler; }
+    VkImageView getInfernoView() const { return infernoView; }
+    VkImageView getViridisView() const { return viridisView; }
+    VkImageView getInferno2View() const { return inferno2View; }
+    VkImageView getParulaView() const { return parulaView; }
+    VkImageView getIsocontourTextureView() const { return isocontourTextureView; }
+    VkSampler getIsocontourTextureSampler() const { return isocontourTextureSampler; }
     void render(VkCommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<SurfaceRenderBinding>& surfaces);
 
 private:
@@ -54,6 +64,8 @@ private:
     bool createPipeline(VkRenderPass renderPass, uint32_t subpass);
     bool createPaletteTextures();
     void destroyPaletteTextures();
+    bool createIsocontourTexture();
+    void destroyIsocontourTexture();
     void drawModel(VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet, const SurfaceRenderBinding& binding) const;
     
     VkDescriptorSet allocateDescriptorSet(VkDescriptorPool pool);
@@ -84,11 +96,17 @@ private:
     VkDeviceMemory parulaMemory = VK_NULL_HANDLE;
     VkImageView parulaView = VK_NULL_HANDLE;
     VkSampler paletteSampler = VK_NULL_HANDLE;
+    VkImage isocontourTextureImage = VK_NULL_HANDLE;
+    VkDeviceMemory isocontourTextureMemory = VK_NULL_HANDLE;
+    VkImageView isocontourTextureView = VK_NULL_HANDLE;
+    VkSampler isocontourTextureSampler = VK_NULL_HANDLE;
     uint32_t palette = 0;
     float minTemperature = 0.0f;
     float maxTemperature = 100.0f;
+    float isocontourSpacing = 0.0f;
 };
 
 static_assert(offsetof(HeatSurfaceRenderer::BufferPushConstant, palette) == 80);
 static_assert(offsetof(HeatSurfaceRenderer::BufferPushConstant, minTemperature) == 84);
 static_assert(offsetof(HeatSurfaceRenderer::BufferPushConstant, maxTemperature) == 88);
+static_assert(offsetof(HeatSurfaceRenderer::BufferPushConstant, isocontourSpacing) == 92);

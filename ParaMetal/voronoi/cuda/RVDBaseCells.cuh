@@ -1,7 +1,7 @@
 #pragma once
 
 #include "RVD.hpp"
-#include "RVDGeometry.cuh"
+#include "RVDModelGeometry.cuh"
 #include "ConvexCell.cuh"
 #include "KNNNeighbors.hpp"
 #include "../../cuda/CudaBuffer.cuh"

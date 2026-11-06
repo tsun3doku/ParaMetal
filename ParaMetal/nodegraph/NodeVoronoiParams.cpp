@@ -9,20 +9,38 @@ VoronoiNodeParams readVoronoiNodeParams(const NodeGraphNode& node) {
     constexpr double cellSize = 0.005;
     constexpr int voxelResolution = 128;
     constexpr double volumePadding = 0.01;
+    constexpr int lloydIterations = int(voronoi::DefaultLloydIterations);
+    constexpr double lloydVolumeThreshold =
+        voronoi::DefaultLloydVolumeThresholdFraction;
+    constexpr double lloydDamping = voronoi::DefaultLloydDamping;
     constexpr double contactRange = voronoi::DefaultContactRange;
 
     VoronoiNodeParams params{};
     params.cellSize = NodeParamUtils::readFloatParam(node, nodegraphparams::voronoi::CellSize, cellSize);
     params.voxelResolution = NodeParamUtils::readIntParam(node, nodegraphparams::voronoi::VoxelResolution, voxelResolution);
     params.volumePadding = NodeParamUtils::readFloatParam(node, nodegraphparams::voronoi::VolumePadding, volumePadding);
-    params.contactRange = NodeParamUtils::readFloatParam(node, nodegraphparams::voronoi::ContactRange, contactRange);
+    params.contactRange = NodeParamUtils::readFloatParam(
+        node, nodegraphparams::voronoi::ContactRange, contactRange);
+    params.lloydIterations = NodeParamUtils::readIntParam(
+        node, nodegraphparams::voronoi::LloydIterations, lloydIterations);
+    params.lloydVolumeThreshold = NodeParamUtils::readFloatParam(
+        node, nodegraphparams::voronoi::LloydVolumeThreshold,
+        lloydVolumeThreshold);
+    params.lloydDamping = NodeParamUtils::readFloatParam(
+        node, nodegraphparams::voronoi::LloydDamping, lloydDamping);
     if (params.cellSize <= 0.0) { params.cellSize = cellSize; }
     if (params.voxelResolution <= 0) { params.voxelResolution = voxelResolution; }
     if (params.volumePadding < 0.0) { params.volumePadding = 0.0; }
     if (params.contactRange < 0.0) { params.contactRange = contactRange; }
+    if (params.lloydIterations < 0) { params.lloydIterations = 0; }
+    if (params.lloydVolumeThreshold <= 0.0) {
+        params.lloydVolumeThreshold = lloydVolumeThreshold;
+    }
+    if (params.lloydDamping <= 0.0 || params.lloydDamping > 1.0) {
+        params.lloydDamping = lloydDamping;
+    }
     params.preview.showVoronoi = NodeParamUtils::readBoolParam(node, nodegraphparams::voronoi::ShowVoronoi, false);
     params.preview.showPoints = NodeParamUtils::readBoolParam(node, nodegraphparams::voronoi::ShowPoints, false);
-    params.preview.showContactManifold = NodeParamUtils::readBoolParam(node, nodegraphparams::voronoi::ShowContactManifold, false);
     return params;
 }
 
@@ -31,7 +49,9 @@ bool writeVoronoiNodeParams(NodeGraphEditor& editor, NodeGraphNodeId nodeId, con
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::VoxelResolution, NodeGraphParamType::Int, 0.0, params.voxelResolution}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::VolumePadding, NodeGraphParamType::Float, params.volumePadding}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::ContactRange, NodeGraphParamType::Float, params.contactRange}) &&
+        editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::LloydIterations, NodeGraphParamType::Int, 0.0, params.lloydIterations}) &&
+        editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::LloydVolumeThreshold, NodeGraphParamType::Float, params.lloydVolumeThreshold}) &&
+        editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::LloydDamping, NodeGraphParamType::Float, params.lloydDamping}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::ShowVoronoi, NodeGraphParamType::Bool, 0.0, 0, params.preview.showVoronoi}) &&
-        editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::ShowPoints, NodeGraphParamType::Bool, 0.0, 0, params.preview.showPoints}) &&
-        editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::ShowContactManifold, NodeGraphParamType::Bool, 0.0, 0, params.preview.showContactManifold});
+        editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::ShowPoints, NodeGraphParamType::Bool, 0.0, 0, params.preview.showPoints});
 }

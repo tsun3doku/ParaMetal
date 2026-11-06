@@ -10,11 +10,12 @@
 #include "vulkan/VulkanImage.hpp"
 
 #include <array>
+#include <algorithm>
 #include <iostream>
 #include <vector>
 
-HeatSystemSurfaceStage::HeatSystemSurfaceStage(VulkanDevice& device)
-    : vulkanDevice(device) {
+HeatSystemSurfaceStage::HeatSystemSurfaceStage(VulkanDevice& device, uint32_t frames)
+    : vulkanDevice(device), maxFramesInFlight(frames) {
 }
 
 HeatSystemSurfaceStage::~HeatSystemSurfaceStage() {
@@ -117,7 +118,6 @@ bool HeatSystemSurfaceStage::createDescriptorSetLayout() {
 }
 
 bool HeatSystemSurfaceStage::createPipeline() {
-    // Temperature pipeline 
     auto tempShaderCode = readFile("shaders/heat_surface_temp_comp.spv");
     VkShaderModule tempShaderModule = VK_NULL_HANDLE;
     if (createShaderModule(vulkanDevice, tempShaderCode, tempShaderModule) != VK_SUCCESS) {
@@ -166,7 +166,6 @@ bool HeatSystemSurfaceStage::createPipeline() {
 
     vkDestroyShaderModule(vulkanDevice.getDevice(), tempShaderModule, nullptr);
 
-    // Gradient pipeline 
     auto gradientShaderCode = readFile("shaders/heat_surface_gradient_comp.spv");
     VkShaderModule gradientShaderModule = VK_NULL_HANDLE;
     if (createShaderModule(vulkanDevice, gradientShaderCode, gradientShaderModule) != VK_SUCCESS) {
@@ -229,7 +228,6 @@ void HeatSystemSurfaceStage::dispatchSurfaceGradientUpdates(
     uint32_t currentFrame) const {
     dispatchSurfacePass(commandBuffer, gradientPipeline, gradientPipelineLayout, activeModels, replayFromHistory, currentIsB, true, currentFrame);
 }
-
 
 void HeatSystemSurfaceStage::dispatchSurfacePass(
     VkCommandBuffer commandBuffer,

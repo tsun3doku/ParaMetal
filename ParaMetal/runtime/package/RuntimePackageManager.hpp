@@ -10,17 +10,7 @@
 
 class RuntimePackageManager {
 public:
-    void beginCompile() {
-        staleSockets.clear();
-        retainedSockets.clear();
-        clearPending();
-        collectKeys(modelPackages);
-        collectKeys(pointPackages);
-        collectKeys(remeshPackages);
-        collectKeys(voronoiPackages);
-        collectKeys(heatPackages);
-        collectKeys(cfdPackages);
-    }
+    void beginCompile();
 
     template <typename PackageT>
     void apply(uint64_t socketKey, const PackageT& package) {
@@ -47,22 +37,8 @@ public:
         }
     }
 
-    void retain(uint64_t socketKey) {
-        if (socketKey == 0 || !hasPackage(socketKey)) {
-            return;
-        }
-        staleSockets.erase(socketKey);
-        retainedSockets.insert(socketKey);
-    }
-
-    void setProductHandle(uint64_t socketKey, const ProductHandle& handle) {
-        setProductHandle(socketKey, handle, modelPackages, pendingModelPackages);
-        setProductHandle(socketKey, handle, pointPackages, pendingPointPackages);
-        setProductHandle(socketKey, handle, remeshPackages, pendingRemeshPackages);
-        setProductHandle(socketKey, handle, voronoiPackages, pendingVoronoiPackages);
-        setProductHandle(socketKey, handle, heatPackages, pendingHeatPackages);
-        setProductHandle(socketKey, handle, cfdPackages, pendingCfdPackages);
-    }
+    void erasePackagesForSocket(uint64_t socketKey);
+    void setProductHandle(uint64_t socketKey, const ProductHandle& handle);
 
     template <typename PackageT>
     const PackageT* find(uint64_t socketKey) const {
@@ -112,43 +88,16 @@ public:
     const std::unordered_map<uint64_t, CFDPackage>& cfdSystems() const { return cfdPackages; }
     const std::unordered_set<uint64_t>& staleSocketKeys() const { return staleSockets; }
 
-    bool isCurrent(uint64_t socketKey) const {
+    bool isPackageCurrent(uint64_t socketKey) const {
         return staleSockets.find(socketKey) == staleSockets.end();
     }
 
-    void destroyStale() {
-        eraseStale(modelPackages);
-        eraseStale(pointPackages);
-        eraseStale(remeshPackages);
-        eraseStale(voronoiPackages);
-        eraseStale(heatPackages);
-        eraseStale(cfdPackages);
-        staleSockets.clear();
-    }
-
+    void clearAll();
+    void destroyStale();
     // Success finalize: staged packages become the committed generation
-    void commitStaged() {
-        commitPendingInto(modelPackages, pendingModelPackages);
-        commitPendingInto(pointPackages, pendingPointPackages);
-        commitPendingInto(remeshPackages, pendingRemeshPackages);
-        commitPendingInto(voronoiPackages, pendingVoronoiPackages);
-        commitPendingInto(heatPackages, pendingHeatPackages);
-        commitPendingInto(cfdPackages, pendingCfdPackages);
-        clearPending();
-    }
-
+    void commitStaged();
     // Abort finalize commits successful packages and retains previous packages for failed nodes
-    void commitApplied(const std::unordered_set<uint64_t>& appliedSockets) {
-        commitAppliedInto(modelPackages, pendingModelPackages, appliedSockets);
-        commitAppliedInto(pointPackages, pendingPointPackages, appliedSockets);
-        commitAppliedInto(remeshPackages, pendingRemeshPackages, appliedSockets);
-        commitAppliedInto(voronoiPackages, pendingVoronoiPackages, appliedSockets);
-        commitAppliedInto(heatPackages, pendingHeatPackages, appliedSockets);
-        commitAppliedInto(cfdPackages, pendingCfdPackages, appliedSockets);
-        clearPending();
-        staleSockets.clear();
-        retainedSockets.clear();
-    }
+    void commitProcessed(const std::unordered_set<uint64_t>& processedSockets);
 
 private:
     template <typename PackageT>
@@ -161,15 +110,24 @@ private:
     }
 
     template <typename PackageT>
-    static void commitAppliedInto(
+    static void commitProcessedInto(
         std::unordered_map<uint64_t, PackageT>& committed,
         const std::unordered_map<uint64_t, PackageT>& pending,
-        const std::unordered_set<uint64_t>& appliedSockets) {
+        const std::unordered_set<uint64_t>& processedSockets) {
         for (const auto& [socketKey, package] : pending) {
-            if (appliedSockets.find(socketKey) != appliedSockets.end()) {
+            if (processedSockets.find(socketKey) != processedSockets.end()) {
                 committed.insert_or_assign(socketKey, package);
             }
         }
+    }
+
+    template <typename PackageT>
+    static void eraseFrom(
+        std::unordered_map<uint64_t, PackageT>& committed,
+        std::unordered_map<uint64_t, PackageT>& pending,
+        uint64_t socketKey) {
+        committed.erase(socketKey);
+        pending.erase(socketKey);
     }
 
     template <typename PackageT>
@@ -212,14 +170,7 @@ private:
         else if constexpr (std::is_same_v<PackageT, CFDPackage>) return pendingCfdPackages;
     }
 
-    void clearPending() {
-        pendingModelPackages.clear();
-        pendingPointPackages.clear();
-        pendingRemeshPackages.clear();
-        pendingVoronoiPackages.clear();
-        pendingHeatPackages.clear();
-        pendingCfdPackages.clear();
-    }
+    void clearPending();
 
     template <typename PackageT>
     static void setProductHandle(
@@ -255,21 +206,6 @@ private:
                 ++it;
             }
         }
-    }
-
-    bool hasPackage(uint64_t socketKey) const {
-        return modelPackages.find(socketKey) != modelPackages.end() ||
-            pendingModelPackages.find(socketKey) != pendingModelPackages.end() ||
-            pointPackages.find(socketKey) != pointPackages.end() ||
-            pendingPointPackages.find(socketKey) != pendingPointPackages.end() ||
-            remeshPackages.find(socketKey) != remeshPackages.end() ||
-            pendingRemeshPackages.find(socketKey) != pendingRemeshPackages.end() ||
-            voronoiPackages.find(socketKey) != voronoiPackages.end() ||
-            pendingVoronoiPackages.find(socketKey) != pendingVoronoiPackages.end() ||
-            heatPackages.find(socketKey) != heatPackages.end() ||
-            pendingHeatPackages.find(socketKey) != pendingHeatPackages.end() ||
-            cfdPackages.find(socketKey) != cfdPackages.end() ||
-            pendingCfdPackages.find(socketKey) != pendingCfdPackages.end();
     }
 
     std::unordered_map<uint64_t, ModelPackage> modelPackages;

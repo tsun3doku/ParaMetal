@@ -100,7 +100,7 @@ public:
     void createRenderVertexBuffer();
     void createRenderIndexBuffer();
 
-    void recalculateNormals();
+    void recalculateNormals(bool fillMissingOnly = false);
     void setGeometry(
         const std::vector<float>& positions,
         const std::vector<uint32_t>& newIndices);

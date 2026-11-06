@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 
 Item {
     id: root
@@ -18,6 +19,11 @@ Item {
         sourceSize.height: height
         fillMode: Image.PreserveAspectFit
         opacity: settingsMouseArea.pressed ? 0.65 : settingsMouseArea.containsMouse ? 0.85 : 1.0
+        layer.enabled: true
+        layer.effect: MultiEffect {
+            colorization: 1.0
+            colorizationColor: settingsMouseArea.containsMouse ? root.theme.text : root.theme.toolIconColor
+        }
     }
 
     MouseArea {

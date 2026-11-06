@@ -19,8 +19,7 @@ struct EvaluatedSocketValue {
     std::string error;
 };
 
-// Per-execution socket outputs produced by NodeGraphRuntime.
-// Runtime packages and backend products are deliberately outside this type.
+// socket outputs evaluated per execution
 struct NodeGraphEvaluation {
     std::unordered_map<uint64_t, EvaluatedSocketValue> outputsBySocket;
 

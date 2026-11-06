@@ -44,7 +44,7 @@ bool SceneContext::initialize(VulkanCoreContext& core) {
 
 void SceneContext::shutdown() {
     if (modelRegistryState) {
-        modelRegistryState->cleanup();
+        modelRegistryState->clearModels();
     }
     if (uniformBufferManagerState) {
         uniformBufferManagerState->cleanup(renderconfig::MaxFramesInFlight);

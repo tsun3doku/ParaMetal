@@ -406,7 +406,7 @@ bool BlendPass::createBlendPipeline() {
 bool BlendPass::createBackgroundResources() {
     const std::string path = resolveBackgroundPath();
     if (path.empty()) {
-        std::cerr << "[BlendPass] Missing textures/background.png" << std::endl;
+        std::cerr << "[BlendPass] Missing textures/background2.png" << std::endl;
         return false;
     }
 
@@ -534,21 +534,10 @@ void BlendPass::destroyBackgroundResources() {
 }
 
 std::string BlendPass::resolveBackgroundPath() {
-    const std::array<const char*, 6> candidates = {
-        "textures/background.png",
-        "ParaMetal/textures/background.png",
-        "../textures/background.png",
-        "../../textures/background.png",
-        "../ParaMetal/textures/background.png",
-        "../../ParaMetal/textures/background.png"
-    };
-
-    for (const char* candidate : candidates) {
-        if (std::filesystem::exists(candidate)) {
-            return candidate;
-        }
+    for (const char* prefix : { "textures/", "ParaMetal/textures/", "../textures/", "../../textures/", "../ParaMetal/textures/", "../../ParaMetal/textures/" }) {
+        const std::string path = std::string(prefix) + "background2.png";
+        if (std::filesystem::exists(path)) return path;
     }
-
     return {};
 }
 

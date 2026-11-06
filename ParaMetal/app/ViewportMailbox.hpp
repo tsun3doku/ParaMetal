@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdint>
 #include <limits>
+#include <mutex>
 #include <vector>
 
 #include "AppTypes.hpp"
@@ -10,6 +11,12 @@
 #include "nodegraph/NodeGraphState.hpp"
 #include "project/ProjectFile.hpp"
 #include "render/WindowRuntimeState.hpp"
+
+struct ExportProductsRequest {
+    int nodeId = 0;
+    uint64_t requestId = 0;
+    uint64_t graphRevision = 0;
+};
 
 class ViewportMailbox final {
 public:
@@ -40,11 +47,15 @@ public:
     void requestHeatPaletteRange(float minimum, float maximum);
     void requestHeatPalette(int palette);
     void requestWorldUnit(int unit);
+    void requestProbePicking(int nodeId, int probeIndex = 0);
+    void requestExport(int nodeId);
+    void requestExportProducts(int nodeId, uint64_t requestId, uint64_t graphRevision);
     void replaceGraphState(const NodeGraphState& graphState);
     void applyViewportProjectState(const ProjectFile::Viewport& viewport);
     void requestCurrentViewportProjectState();
     void appendGraphDelta(const NodeGraphDelta& delta);
 
+    bool takeProbePicking(int& outNodeId, int& outProbeIndex);
     bool takeWireframeMode(app::WireframeMode& mode, bool force = false);
     bool takeGridEnabled(bool& enabled, bool force = false);
     bool takeBackgroundMode(app::BackgroundMode& mode, bool force = false);
@@ -66,6 +77,8 @@ public:
     bool takeWorldUnit(int& unit, bool force = false);
     bool takeAppliedViewportProjectState(ProjectFile::Viewport& viewport);
     bool takeCurrentViewportProjectState();
+    std::vector<int> takePendingExports();
+    std::vector<ExportProductsRequest> takePendingExportProducts();
 
     const NodeGraphState* graphReplacement(bool force = false) const;
     void graphReplacementApplied();
@@ -74,6 +87,9 @@ public:
 
 private:
     WindowRuntimeState state;
+    std::mutex exportMutex;
+    std::vector<int> pendingExportNodes;
+    std::vector<ExportProductsRequest> pendingExportProductRequests;
 
     app::WireframeMode requestedWireframeMode = app::WireframeMode::Off;
     bool wireframeDirty = false;
@@ -106,6 +122,9 @@ private:
 
     int requestedSelectedNode = 0;
     bool selectionDirty = false;
+    int requestedProbePickingNode = 0;
+    int requestedProbePickingIndex = 0;
+    bool probePickingDirty = false;
 
     float requestedHeatPaletteMin = 0.0f;
     float requestedHeatPaletteMax = 100.0f;

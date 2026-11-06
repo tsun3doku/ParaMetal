@@ -157,7 +157,6 @@ void CFDSystem::setPressureSolverParameters(int maxIterations, float tolerance) 
 }
 
 bool CFDSystem::rebuildTopology(const topology::GlobalDomain& domain) {
-    // Fresh replacement candidates have no in-flight work, quiescence not required
     fluidNodeToGlobalFragment.clear();
     globalFragmentToFluidNode.assign(domain.fragments.size(), UINT32_MAX);
 
@@ -243,8 +242,7 @@ bool CFDSystem::rebuildTopology(const topology::GlobalDomain& domain) {
 
 bool CFDSystem::createSyncObjects() {
     if (cfdReadyVkSemaphore != VK_NULL_HANDLE && cfdVulkanReleaseVkSemaphore != VK_NULL_HANDLE) {
-        // Timeline semaphores persist across CFDSystem lifetime to preserve timeline ordering
-        return true;
+            return true;
     }
 
     cleanupSyncObjects();
@@ -318,7 +316,6 @@ bool CFDSystem::createComputeCommandBuffers(uint32_t count) {
 }
 
 void CFDSystem::cleanup() {
-    // Destruction occurs only after global shutdown quiesce, per-system waits unnecessary
     cleanupSyncObjects();
 
     if (!computeCommandBuffers.empty()) {
@@ -340,7 +337,6 @@ void CFDSystem::releaseWaits() {
         return;
     }
 
-    // Semaphore indicates actual completion, release counter only tracks accepted submissions
     uint64_t completed = 0;
     if (vkGetSemaphoreCounterValue(vulkanDevice.getDevice(), cfdVulkanReleaseVkSemaphore, &completed) != VK_SUCCESS) {
         return;
@@ -350,7 +346,6 @@ void CFDSystem::releaseWaits() {
         return;
     }
 
-    // Queued non-blocked submissions are owned by queue, host signal would double-signal
     if (cfdVulkanReleaseCounter >= cfdReleaseWaitValue) {
         uint64_t readyCompleted = 0;
         const bool queueCanDeliver =
@@ -373,14 +368,27 @@ void CFDSystem::releaseWaits() {
 }
 
 void CFDSystem::resetSimulationState() {
+    pendingSubmission = false;
     if (initialized) {
         solver.setBoundaryConditions(boundaryConditions);
         solver.initializeVelocity(initialVelocity);
     }
 }
 
-void CFDSystem::update() {
-    if (!initialized || !isActive || isPaused || runtime.getFluidNodeCount() == 0) {
+void CFDSystem::update(const SimTickContext& context) {
+    if (context.resetEpoch != processedResetEpoch) {
+        processedResetEpoch = context.resetEpoch;
+        resetLifecycleState();
+        resetSimulationState();
+    }
+
+    const bool inputsValid = initialized &&
+        runtime.getFluidNodeCount() > 0 &&
+        !solver.hasFailed();
+    updateLifecycleState(inputsValid, false, context.playing);
+
+    pendingSubmission = false;
+    if (getSimNodeState() != SimNodeState::Running) {
         return;
     }
 
@@ -391,21 +399,23 @@ void CFDSystem::update() {
         pendingCfdReadyValue = completionVal;
         cfdReleaseWaitValue = 0;
         ++completedSteps;
+        pendingSubmission = true;
         break;
     case CFDSolver::StepOutcome::Deferred:
-        // Previous solve still in flight: no new publication this tick
-        break;
+            break;
     case CFDSolver::StepOutcome::Failed:
-        // Terminal failure: unbind consumer publication
-        pendingCfdReadyValue = 0;
+            pendingCfdReadyValue = 0;
         cfdReleaseWaitValue = 0;
+        updateLifecycleState(false, false, context.playing);
         break;
     }
 }
 
-bool CFDSystem::hasDispatchableComputeWork() const {
-    return initialized && isActive && !isPaused && !solver.hasFailed() &&
-        (runtime.getFluidNodeCount() > 0) && !computeCommandBuffers.empty();
+bool CFDSystem::isSubmissionReady() const {
+    return initialized &&
+        runtime.getFluidNodeCount() > 0 &&
+        !solver.hasFailed() &&
+        !computeCommandBuffers.empty();
 }
 
 void CFDSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t currentFrame) {
@@ -418,7 +428,6 @@ void CFDSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t cu
         return;
     }
 
-    // Pipeline barrier to make external buffer writes visible to subsequent compute/transfer
     VkBufferMemoryBarrier barriers[3]{};
     uint32_t barrierCount = 0;
 
@@ -466,7 +475,7 @@ void CFDSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t cu
 
 ComputePass::Synchronization CFDSystem::getSynchronization() const {
     ComputePass::Synchronization sync{};
-    if (pendingCfdReadyValue > 0 && cfdReadyVkSemaphore != VK_NULL_HANDLE) {
+    if (pendingSubmission && pendingCfdReadyValue > 0 && cfdReadyVkSemaphore != VK_NULL_HANDLE) {
         sync.addWait(cfdReadyVkSemaphore, pendingCfdReadyValue, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
     }
     return sync;

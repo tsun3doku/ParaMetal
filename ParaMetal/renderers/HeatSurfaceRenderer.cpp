@@ -2,15 +2,20 @@
 
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/UniformBufferManager.hpp"
+#include "vulkan/VulkanBuffer.hpp"
 #include "scene/Model.hpp"
 #include "util/Structs.hpp"
 #include "vulkan/VulkanImage.hpp"
 #include "util/file_utils.h"
 
 #include <array>
+#include <algorithm>
+#include <cmath>
+#include <cstring>
 #include <glm/glm.hpp>
 #include <iostream>
 #include <unordered_set>
+#include <vector>
 
 HeatSurfaceRenderer::HeatSurfaceRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uboManager, CommandPool& paletteCommandPool)
     : vulkanDevice(device), memoryAllocator(allocator), uniformBufferManager(uboManager), commandPool(paletteCommandPool) {
@@ -26,6 +31,7 @@ void HeatSurfaceRenderer::initialize(VkRenderPass renderPass, uint32_t subpass, 
     }
 
     if (!createPaletteTextures() ||
+        !createIsocontourTexture() ||
         !createDescriptorPool(maxFramesInFlight) ||
         !createDescriptorSetLayout() ||
         !createPipeline(renderPass, subpass)) {
@@ -47,7 +53,7 @@ bool HeatSurfaceRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     poolSizes[2].descriptorCount = maxRenderableHeatModels;
     poolSizes[3].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[3].descriptorCount = maxRenderableHeatModels * 4;
+    poolSizes[3].descriptorCount = maxRenderableHeatModels * 5;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -67,7 +73,7 @@ bool HeatSurfaceRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
 }
 
 bool HeatSurfaceRenderer::createDescriptorSetLayout() {
-    std::array<VkDescriptorSetLayoutBinding, 16> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 17> bindings{};
 
     bindings[0].binding = 0;
     bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -96,6 +102,8 @@ bool HeatSurfaceRenderer::createDescriptorSetLayout() {
     bindings[14].binding = 14;
     bindings[15] = bindings[12];
     bindings[15].binding = 15;
+    bindings[16] = bindings[12];
+    bindings[16].binding = 16;
 
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
@@ -146,6 +154,203 @@ void HeatSurfaceRenderer::destroyPaletteTextures() {
     infernoView = viridisView = inferno2View = parulaView = VK_NULL_HANDLE;
     infernoImage = viridisImage = inferno2Image = parulaImage = VK_NULL_HANDLE;
     infernoMemory = viridisMemory = inferno2Memory = parulaMemory = VK_NULL_HANDLE;
+}
+
+bool HeatSurfaceRenderer::createIsocontourTexture() {
+    if (isocontourTextureSampler != VK_NULL_HANDLE ||
+        isocontourTextureView != VK_NULL_HANDLE ||
+        isocontourTextureImage != VK_NULL_HANDLE ||
+        isocontourTextureMemory != VK_NULL_HANDLE) {
+        return true;
+    }
+
+    const uint32_t width = 4096;
+    const uint32_t height = 1;
+    const float thickness = 2.0f;
+    const VkFormat wireFormat = VK_FORMAT_R8G8B8A8_UNORM;
+
+    uint32_t mipLevels = 1;
+    uint32_t w = width;
+    while (w > 1) {
+        w = std::max(1u, w / 2);
+        ++mipLevels;
+    }
+
+    std::vector<uint8_t> pixels;
+    std::vector<VkBufferImageCopy> copyRegions;
+    pixels.reserve(width * height * 4 * mipLevels);
+    copyRegions.reserve(mipLevels);
+
+    uint32_t mipWidth = width;
+    uint32_t mipHeight = height;
+    for (uint32_t level = 0; level < mipLevels; ++level) {
+        const size_t levelOffset = pixels.size();
+        const size_t levelSize = static_cast<size_t>(mipWidth) * static_cast<size_t>(mipHeight) * 4;
+        pixels.resize(levelOffset + levelSize, 0);
+
+        float mipWidthFloat = static_cast<float>(mipWidth);
+        float levelThickness;
+        if (thickness < mipWidthFloat / 3.0f) {
+            levelThickness = thickness;
+        } else {
+            levelThickness = mipWidthFloat / 3.0f;
+        }
+        int integerThickness = static_cast<int>(std::floor(levelThickness / 2.0f));
+        float fractionalThickness = std::fmod(levelThickness, 2.0f);
+
+        for (uint32_t i = 0; i < mipWidth; ++i) {
+            const size_t idx = levelOffset + static_cast<size_t>(i) * 4;
+            pixels[idx + 0] = 0;
+            pixels[idx + 1] = 0;
+            pixels[idx + 2] = 0;
+            pixels[idx + 3] = 0;
+
+            if (i < static_cast<uint32_t>(integerThickness)) {
+                pixels[idx + 3] = 255;
+            } else if (i == static_cast<uint32_t>(integerThickness) && fractionalThickness > 0.0f) {
+                pixels[idx + 3] = static_cast<uint8_t>(fractionalThickness * 255.0f);
+            } else if (i >= mipWidth - static_cast<uint32_t>(integerThickness)) {
+                pixels[idx + 3] = 255;
+            } else if (i == mipWidth - 1 - static_cast<uint32_t>(integerThickness) && fractionalThickness > 0.0f) {
+                pixels[idx + 3] = static_cast<uint8_t>(fractionalThickness * 255.0f);
+            }
+        }
+
+        VkBufferImageCopy region{};
+        region.bufferOffset = static_cast<VkDeviceSize>(levelOffset);
+        region.bufferRowLength = 0;
+        region.bufferImageHeight = 0;
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.mipLevel = level;
+        region.imageSubresource.baseArrayLayer = 0;
+        region.imageSubresource.layerCount = 1;
+        region.imageOffset = {0, 0, 0};
+        region.imageExtent = {mipWidth, mipHeight, 1};
+        copyRegions.push_back(region);
+
+        if (mipWidth > 1) {
+            mipWidth /= 2;
+        }
+        if (mipHeight > 1) {
+            mipHeight /= 2;
+        }
+    }
+
+    const VkDeviceSize imageSize = static_cast<VkDeviceSize>(pixels.size());
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    VkDeviceSize stagingBufferOffset = 0;
+    void* data = nullptr;
+    if (createStagingBuffer(memoryAllocator, imageSize, stagingBuffer, stagingBufferOffset, &data) != VK_SUCCESS || !data) {
+        std::cerr << "HeatSurfaceRenderer: Failed to create isocontour staging buffer" << std::endl;
+        return false;
+    }
+    std::memcpy(data, pixels.data(), static_cast<size_t>(imageSize));
+
+    if (createImage(
+            vulkanDevice,
+            memoryAllocator,
+            width,
+            height,
+            wireFormat,
+            VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            isocontourTextureImage,
+            isocontourTextureMemory,
+            VK_SAMPLE_COUNT_1_BIT,
+            mipLevels) != VK_SUCCESS) {
+        memoryAllocator.free(stagingBuffer, stagingBufferOffset);
+        return false;
+    }
+
+    if (transitionImageLayout(
+            commandPool,
+            isocontourTextureImage,
+            wireFormat,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            mipLevels) != VK_SUCCESS) {
+        memoryAllocator.free(stagingBuffer, stagingBufferOffset);
+        return false;
+    }
+
+    {
+        VkCommandBuffer cmd = commandPool.beginCommands();
+        if (cmd == VK_NULL_HANDLE) {
+            memoryAllocator.free(stagingBuffer, stagingBufferOffset);
+            return false;
+        }
+        vkCmdCopyBufferToImage(
+            cmd,
+            stagingBuffer,
+            isocontourTextureImage,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            static_cast<uint32_t>(copyRegions.size()),
+            copyRegions.data());
+        commandPool.endCommands(cmd);
+    }
+
+    if (transitionImageLayout(
+            commandPool,
+            isocontourTextureImage,
+            wireFormat,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            mipLevels) != VK_SUCCESS) {
+        memoryAllocator.free(stagingBuffer, stagingBufferOffset);
+        return false;
+    }
+
+    memoryAllocator.free(stagingBuffer, stagingBufferOffset);
+
+    isocontourTextureView = createImageView(
+        vulkanDevice,
+        isocontourTextureImage,
+        wireFormat,
+        VK_IMAGE_ASPECT_COLOR_BIT,
+        mipLevels);
+    if (isocontourTextureView == VK_NULL_HANDLE) {
+        return false;
+    }
+
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = static_cast<float>(mipLevels - 1);
+    samplerInfo.anisotropyEnable = VK_FALSE;
+
+    if (vkCreateSampler(vulkanDevice.getDevice(), &samplerInfo, nullptr, &isocontourTextureSampler) != VK_SUCCESS) {
+        std::cerr << "HeatSurfaceRenderer: Failed to create isocontour sampler" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+void HeatSurfaceRenderer::destroyIsocontourTexture() {
+    VkDevice device = vulkanDevice.getDevice();
+    if (isocontourTextureSampler != VK_NULL_HANDLE) {
+        vkDestroySampler(device, isocontourTextureSampler, nullptr);
+        isocontourTextureSampler = VK_NULL_HANDLE;
+    }
+    if (isocontourTextureView != VK_NULL_HANDLE) {
+        vkDestroyImageView(device, isocontourTextureView, nullptr);
+        isocontourTextureView = VK_NULL_HANDLE;
+    }
+    if (isocontourTextureImage != VK_NULL_HANDLE) {
+        vkDestroyImage(device, isocontourTextureImage, nullptr);
+        isocontourTextureImage = VK_NULL_HANDLE;
+    }
+    if (isocontourTextureMemory != VK_NULL_HANDLE) {
+        memoryAllocator.freeImageMemory(isocontourTextureMemory);
+        isocontourTextureMemory = VK_NULL_HANDLE;
+    }
 }
 
 bool HeatSurfaceRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpass) {
@@ -326,6 +531,7 @@ bool HeatSurfaceRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpa
     vkDestroyShaderModule(vulkanDevice.getDevice(), vertShaderModule, nullptr);
     vkDestroyShaderModule(vulkanDevice.getDevice(), geomShaderModule, nullptr);
     vkDestroyShaderModule(vulkanDevice.getDevice(), fragShaderModule, nullptr);
+
     return true;
 }
 
@@ -338,6 +544,7 @@ void HeatSurfaceRenderer::drawModel(VkCommandBuffer commandBuffer, VkDescriptorS
     pushConstants.palette = palette;
     pushConstants.minTemperature = minTemperature;
     pushConstants.maxTemperature = maxTemperature;
+    pushConstants.isocontourSpacing = isocontourSpacing;
     vkCmdPushConstants(
         commandBuffer,
         pipelineLayout,
@@ -371,7 +578,7 @@ VkDescriptorSet HeatSurfaceRenderer::allocateDescriptorSet(VkDescriptorPool pool
 }
 
 void HeatSurfaceRenderer::updateDescriptorSet(VkDescriptorSet set, uint32_t frameIndex, const SurfaceRenderBinding& binding) {
-    std::array<VkWriteDescriptorSet, 16> descriptorWrites{};
+    std::array<VkWriteDescriptorSet, 17> descriptorWrites{};
 
     VkDescriptorBufferInfo uboBufferInfo{};
     uboBufferInfo.buffer = uniformBufferManager.getUniformBuffers()[frameIndex];
@@ -436,7 +643,20 @@ void HeatSurfaceRenderer::updateDescriptorSet(VkDescriptorSet set, uint32_t fram
     descriptorWrites[15].dstBinding = 15;
     descriptorWrites[15].pImageInfo = &parulaInfo;
 
-    vkUpdateDescriptorSets(vulkanDevice.getDevice(), 16, descriptorWrites.data(), 0, nullptr);
+    VkDescriptorImageInfo isocontourInfo{};
+    isocontourInfo.sampler = isocontourTextureSampler;
+    isocontourInfo.imageView = isocontourTextureView;
+    isocontourInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    descriptorWrites[16].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[16].dstSet = set;
+    descriptorWrites[16].dstBinding = 16;
+    descriptorWrites[16].dstArrayElement = 0;
+    descriptorWrites[16].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrites[16].descriptorCount = 1;
+    descriptorWrites[16].pImageInfo = &isocontourInfo;
+
+    vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 }
 
 void HeatSurfaceRenderer::render(VkCommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<SurfaceRenderBinding>& surfaces) {
@@ -486,6 +706,7 @@ void HeatSurfaceRenderer::cleanup() {
     }
 
     destroyPaletteTextures();
+    destroyIsocontourTexture();
 
     initialized = false;
 }

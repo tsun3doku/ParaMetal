@@ -21,30 +21,31 @@ struct NodeGraphState {
 };
 
 
+inline void applyNodeGraphChange(NodeGraphState& state, const NodeGraphChange& change) {
+    switch (change.type) {
+    case NodeGraphChangeType::Reset:
+        state.nodes.clear();
+        state.edges.clear();
+        break;
+    case NodeGraphChangeType::NodeUpsert:
+        state.nodes[change.node.id.value] = change.node;
+        break;
+    case NodeGraphChangeType::NodeRemoved:
+        state.nodes.erase(change.nodeId.value);
+        state.edges.removeIncident(change.nodeId);
+        break;
+    case NodeGraphChangeType::EdgeUpsert:
+        state.edges.upsert(change.edge);
+        break;
+    case NodeGraphChangeType::EdgeRemoved:
+        state.edges.remove(change.edgeId);
+        break;
+    }
+}
+
 inline bool applyNodeGraphDelta(NodeGraphState& state, const NodeGraphDelta& delta) {
-    if (delta.fromRevision != state.revision) {
-        return false;
-    }
-    for (const NodeGraphChange& change : delta.changes) {
-        switch (change.type) {
-        case NodeGraphChangeType::Reset:
-            state.nodes.clear();
-            state.edges.clear();
-            break;
-        case NodeGraphChangeType::NodeUpsert:
-            state.nodes[change.node.id.value] = change.node;
-            break;
-        case NodeGraphChangeType::NodeRemoved:
-            state.nodes.erase(change.nodeId.value);
-            break;
-        case NodeGraphChangeType::EdgeUpsert:
-            state.edges.upsert(change.edge);
-            break;
-        case NodeGraphChangeType::EdgeRemoved:
-            state.edges.remove(change.edgeId);
-            break;
-        }
-    }
+    if (delta.fromRevision != state.revision) return false;
+    for (const NodeGraphChange& change : delta.changes) applyNodeGraphChange(state, change);
     state.revision = delta.toRevision;
     return true;
 }

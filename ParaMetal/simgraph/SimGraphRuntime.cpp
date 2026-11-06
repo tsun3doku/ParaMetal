@@ -82,6 +82,11 @@ void SimGraphRuntime::connect(const SimConnection& connection) {
 
     for (SimConnection& existing : connections) {
         if (existing.connectionId == connection.connectionId) {
+            if (existing.producerSocket == connection.producerSocket &&
+                existing.consumerSocket == connection.consumerSocket &&
+                existing.mode == connection.mode) {
+                return;
+            }
             existing = connection;
             graphDirty = true;
             return;
@@ -201,7 +206,7 @@ void SimGraphRuntime::bindIncomingConnections(size_t nodeIndex) {
     }
 }
 
-SimTickResult SimGraphRuntime::tick(uint32_t frameIndex) {
+SimTickResult SimGraphRuntime::tick(const SimTickContext& context) {
     SimTickResult result{};
 
     if (vulkanDevice == nullptr || frameSync == nullptr) {
@@ -210,7 +215,7 @@ SimTickResult SimGraphRuntime::tick(uint32_t frameIndex) {
 
     // Slot fence before any work is scheduled, so a pass cannot write resources a
     // previous submission on the same slot is still using.
-    frameSync->prepareExternalFrame(frameIndex);
+    frameSync->prepareExternalFrame(context.renderFrameSlot);
 
     if (!enabled) {
         return result;
@@ -224,18 +229,22 @@ SimTickResult SimGraphRuntime::tick(uint32_t frameIndex) {
         return result;
     }
 
+    SimTickContext stamped = context;
+    stamped.tick = ++tickCounter;
+
     for (size_t nodeIndex : topologicalOrder) {
         // Bind before the node updates: a consumer decides what it consumes from
         // the publications the graph has confirmed are available this frame.
         bindIncomingConnections(nodeIndex);
+        nodes[nodeIndex].node->setTickContext(stamped);
         nodes[nodeIndex].node->update();
     }
 
-    result = recordAndSubmit(frameIndex);
+    result = recordAndSubmit(stamped.renderFrameSlot);
     return result;
 }
 
-SimTickResult SimGraphRuntime::recordAndSubmit(uint32_t frameIndex) {
+SimTickResult SimGraphRuntime::recordAndSubmit(uint32_t renderFrameSlot) {
     SimTickResult result{};
 
     std::vector<size_t> activeNodes;
@@ -273,17 +282,17 @@ SimTickResult SimGraphRuntime::recordAndSubmit(uint32_t frameIndex) {
 
         SimNode* node = nodes[nodeIndex].node;
         const std::vector<VkCommandBuffer>& commandBuffers = node->getComputeCommandBuffers();
-        if (frameIndex >= commandBuffers.size()) {
-            std::cerr << "[SimGraphRuntime] frame " << frameIndex
+        if (renderFrameSlot >= commandBuffers.size()) {
+            std::cerr << "[SimGraphRuntime] frame " << renderFrameSlot
                       << " exceeds command buffer count for socket " << nodes[nodeIndex].socketKey << std::endl;
             result.status = SimStatus::Failed;
             return result;
         }
-        VkCommandBuffer commandBuffer = commandBuffers[frameIndex];
+        VkCommandBuffer commandBuffer = commandBuffers[renderFrameSlot];
 
         vkResetCommandBuffer(commandBuffer, VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT);
 
-        node->recordComputeCommands(commandBuffer, frameIndex);
+        node->recordComputeCommands(commandBuffer, renderFrameSlot);
 
         FrameComputeSubmission submission{};
         submission.commandBuffer = commandBuffer;
@@ -367,7 +376,7 @@ SimTickResult SimGraphRuntime::recordAndSubmit(uint32_t frameIndex) {
         submissions);
     if (submitResult != VK_SUCCESS) {
         std::cerr << "[SimGraphRuntime] compute submission failed VkResult="
-                  << static_cast<int>(submitResult) << " frame=" << frameIndex << std::endl;
+                  << static_cast<int>(submitResult) << " frame=" << renderFrameSlot << std::endl;
         result.status = submitResult == VK_ERROR_DEVICE_LOST ? SimStatus::DeviceLost : SimStatus::Failed;
         return result;
     }
@@ -381,6 +390,116 @@ SimTickResult SimGraphRuntime::recordAndSubmit(uint32_t frameIndex) {
 
     result.status = SimStatus::Ok;
     return result;
+}
+
+bool SimGraphRuntime::hasNodeInState(SimNodeState state) const {
+    for (const RegisteredNode& registered : nodes) {
+        if (registered.node != nullptr && registered.node->getSimNodeState() == state) {
+            return true;
+        }
+    }
+    return false;
+}
+
+SimNodeState SimGraphRuntime::getAggregateSimulationState() const {
+    bool hasReady = false;
+    bool hasCompleted = false;
+    bool hasPaused = false;
+    bool hasRunning = false;
+    for (const RegisteredNode& registered : nodes) {
+        if (registered.node == nullptr) {
+            continue;
+        }
+        switch (registered.node->getSimNodeState()) {
+        case SimNodeState::Running: hasRunning = true; break;
+        case SimNodeState::Paused: hasPaused = true; break;
+        case SimNodeState::Completed: hasCompleted = true; break;
+        case SimNodeState::Ready: hasReady = true; break;
+        case SimNodeState::Inactive: break;
+        }
+    }
+    if (hasRunning) return SimNodeState::Running;
+    if (hasPaused) return SimNodeState::Paused;
+    if (hasCompleted) return SimNodeState::Completed;
+    if (hasReady) return SimNodeState::Ready;
+    return SimNodeState::Inactive;
+}
+
+bool SimGraphRuntime::hasSimulationTimelineMetadata() const {
+    for (const RegisteredNode& registered : nodes) {
+        if (registered.node != nullptr && registered.node->hasTimelineMetadata()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+float SimGraphRuntime::getSimulationTotalTime() const {
+    float totalTime = 0.0f;
+    for (const RegisteredNode& registered : nodes) {
+        if (registered.node == nullptr) {
+            continue;
+        }
+        const SimNodeState state = registered.node->getSimNodeState();
+        if (state == SimNodeState::Running ||
+            state == SimNodeState::Paused ||
+            state == SimNodeState::Completed) {
+            totalTime = std::max(totalTime, registered.node->getSimulationTimeSeconds());
+        }
+    }
+    return totalTime;
+}
+
+float SimGraphRuntime::getSimulationDuration() const {
+    float duration = 0.0f;
+    for (const RegisteredNode& registered : nodes) {
+        if (registered.node != nullptr && registered.node->hasTimelineMetadata()) {
+            duration = std::max(duration, registered.node->getSimulationDurationSeconds());
+        }
+    }
+    return duration;
+}
+
+uint32_t SimGraphRuntime::getSimulationTimelineFrameCount() const {
+    uint32_t frameCount = 0;
+    for (const RegisteredNode& registered : nodes) {
+        if (registered.node != nullptr && registered.node->hasTimelineMetadata()) {
+            frameCount = std::max(frameCount, registered.node->getTimelineFrameCount());
+        }
+    }
+    return frameCount;
+}
+
+uint32_t SimGraphRuntime::getSimulationRecordedTimelineFrames() const {
+    uint32_t recordedFrames = 0;
+    for (const RegisteredNode& registered : nodes) {
+        if (registered.node == nullptr) {
+            continue;
+        }
+        const SimNodeState state = registered.node->getSimNodeState();
+        if (state == SimNodeState::Running ||
+            state == SimNodeState::Paused ||
+            state == SimNodeState::Completed) {
+            recordedFrames = std::max(recordedFrames, registered.node->getRecordedTimelineFrames());
+        }
+    }
+    return recordedFrames;
+}
+
+uint32_t SimGraphRuntime::getPlaybackAvailableFrame() const {
+    uint32_t availableFrame = UINT32_MAX;
+    for (const RegisteredNode& registered : nodes) {
+        if (registered.node == nullptr ||
+            registered.node->getSimNodeState() != SimNodeState::Running ||
+            !registered.node->hasTimelineMetadata()) {
+            continue;
+        }
+        const uint32_t nodeFrame = registered.node->getPlaybackAvailableFrame();
+        if (nodeFrame != UINT32_MAX) {
+            availableFrame = std::min(availableFrame, nodeFrame);
+        }
+    }
+    return availableFrame;
 }
 
 void SimGraphRuntime::clear() {

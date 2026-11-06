@@ -172,6 +172,116 @@ __device__ inline int expansionSign(int hlen, const double* h) {
     return 0;
 }
 
+__device__ inline int det3x3ExactSign(double3 p0, double3 p1, double3 p2) {
+    auto compute2x2 = [](double ax, double ay, double bx, double by, double* res) {
+        double v0, v1, v2, v3;
+        twoProduct(ax, by, v0, v1);
+        twoProduct(bx, ay, v2, v3);
+        twoTwoDiff(v0, v1, v2, v3, res);
+    };
+
+    double m01[4], m02[4], m12[4];
+    compute2x2(p1.y, p1.z, p2.y, p2.z, m01);
+    compute2x2(p1.x, p1.z, p2.x, p2.z, m02);
+    compute2x2(p1.x, p1.y, p2.x, p2.y, m12);
+
+    double t0[8], t1[8], t2[8];
+    const int l0 = scaleExpansion(4, m01, p0.x, t0);
+    const int l1 = scaleExpansion(4, m02, -p0.y, t1);
+    const int l2 = scaleExpansion(4, m12, p0.z, t2);
+
+    double s0[16], sFinal[32];
+    const int ls0 = expansionSum(l0, t0, l1, t1, s0);
+    const int lFinal = expansionSum(ls0, s0, l2, t2, sFinal);
+    return expansionSign(lFinal, sFinal);
+}
+
+struct Dot3Result {
+    int sign = 0;
+    double value = 0.0;
+    double errorBound = 0.0;
+};
+
+__device__ inline Dot3Result dot3FilteredExact(double3 a, double3 b) {
+    const double p0 = a.x * b.x;
+    const double p1 = a.y * b.y;
+    const double p2 = a.z * b.z;
+    const double value = p0 + p1 + p2;
+    const double errorBound =
+        (fabs(p0) + fabs(p1) + fabs(p2)) * 3.3306690738754716e-16;
+    if (value > errorBound) return {1, value, errorBound};
+    if (value < -errorBound) return {-1, value, errorBound};
+
+    double e0[2], e1[2], e2[2];
+    twoProduct(a.x, b.x, e0[1], e0[0]);
+    twoProduct(a.y, b.y, e1[1], e1[0]);
+    twoProduct(a.z, b.z, e2[1], e2[0]);
+    double s0[4], s[8];
+    const int l0 = expansionSum(2, e0, 2, e1, s0);
+    const int l = expansionSum(l0, s0, 2, e2, s);
+    return {expansionSign(l, s), value, errorBound};
+}
+
+struct PlaneEvalResult {
+    int sign = 0;
+    double value = 0.0;
+    double errorBound = 0.0;
+};
+
+__device__ inline int planeEvaluateExactSign(double4 plane, double3 point) {
+    double e0[2], e1[2], e2[2];
+    twoProduct(plane.x, point.x, e0[1], e0[0]);
+    twoProduct(plane.y, point.y, e1[1], e1[0]);
+    twoProduct(plane.z, point.z, e2[1], e2[0]);
+    double s0[4], s1[8], s2[16];
+    const int l0 = expansionSum(2, e0, 2, e1, s0);
+    const int l1 = expansionSum(l0, s0, 2, e2, s1);
+    const double w[1] = {plane.w};
+    const int l2 = expansionSum(l1, s1, 1, w, s2);
+    return expansionSign(l2, s2);
+}
+
+__device__ inline PlaneEvalResult planeEvaluateFilteredExact(
+    double4 plane, double3 point) {
+    const double px = plane.x * point.x;
+    const double py = plane.y * point.y;
+    const double pz = plane.z * point.z;
+    const double value = px + py + pz + plane.w;
+    const double magnitude =
+        fabs(px) + fabs(py) + fabs(pz) + fabs(plane.w);
+    const double errorBound = magnitude * 3.3306690738754716e-16;
+    if (value > errorBound) return {1, value, errorBound};
+    if (value < -errorBound) return {-1, value, errorBound};
+    return {planeEvaluateExactSign(plane, point), value, errorBound};
+}
+
+struct Orient2DResult {
+    int sign = 0;
+    double value = 0.0;
+    double errorBound = 0.0;
+};
+
+__device__ inline Orient2DResult orient2dFilteredDouble(
+    double2 a, double2 b, double2 c) {
+    const double acx = a.x - c.x;
+    const double acy = a.y - c.y;
+    const double bcx = b.x - c.x;
+    const double bcy = b.y - c.y;
+    const double detleft = acx * bcy;
+    const double detright = acy * bcx;
+    const double det = detleft - detright;
+    const double detsum = fabs(detleft) + fabs(detright);
+    constexpr double errorFactor = 3.3306690738754716e-16;
+    const double errorBound = errorFactor * detsum;
+    if (det > errorBound) return {1, det, errorBound};
+    if (det < -errorBound) return {-1, det, errorBound};
+    const int exact = det3x3ExactSign(
+        make_double3(a.x, a.y, 1.0),
+        make_double3(b.x, b.y, 1.0),
+        make_double3(c.x, c.y, 1.0));
+    return {exact, det, errorBound};
+}
+
 __device__ inline int det4x4ExactSign(double4 p0, double4 p1, double4 p2, double4 p3) {
     auto compute2x2 = [](double ax, double ay, double bx, double by, double* res) {
         double v0, v1, v2, v3;

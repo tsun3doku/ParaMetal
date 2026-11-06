@@ -36,8 +36,7 @@ inline const char *rvdStatusName(RVDStatus status) {
   }
 }
 
-// Passes publish the first failure as a packed (code, id) pair through a
-// single device slot so the host can report it without a full status readback.
+// first failure packed as (code, id)
 using RvdPackedError = unsigned long long;
 
 __host__ __device__ inline RvdPackedError rvdPackError(uint32_t code, uint32_t id) {

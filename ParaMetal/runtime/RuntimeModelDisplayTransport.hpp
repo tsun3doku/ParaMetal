@@ -22,6 +22,10 @@ public:
     void sync(const RuntimePackageManager& registry, const std::unordered_set<uint64_t>& visibleKeys);
     void finalizeSync();
 
+    // Deterministic detach used by the removal protocol before a backend retires.
+    void detach(uint64_t socketKey);
+    void detachAll();
+
 private:
     ModelDisplayController* controller = nullptr;
     RuntimeProductManager* products = nullptr;

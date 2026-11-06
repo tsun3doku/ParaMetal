@@ -222,7 +222,6 @@ void NodeGraphEditor::resetToDefaultGraph() {
 
     VoronoiNodeParams voronoiParams{};
     voronoiParams.cellSize = 0.005;
-    voronoiParams.contactRange = voronoi::DefaultContactRange;
     writeVoronoiNodeParams(*this, voronoi.id, voronoiParams);
 
     HeatFluidNodeParams fluidParams{};

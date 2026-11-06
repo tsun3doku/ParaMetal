@@ -1,8 +1,10 @@
 #include "NodeGraphCanvasItem.hpp"
 
 #include "NodeGraphUiModel.hpp"
+#include "nodegraph/NodeGraphValidator.hpp"
 #include "nodegraph/NodeGraphRegistry.hpp"
 #include "nodegraph/ui/scene/NodeGraphSceneStyle.hpp"
+#include "ui/UiPalette.hpp"
 #include "ui/UiTypography.hpp"
 
 #include <QtCore/QAbstractItemModel>
@@ -23,9 +25,6 @@
 #include <algorithm>
 #include <cmath>
 
-// The animation bitmap is rendered at a resolution matching the current zoom
-// (bucketed), so minification stays within bilinear's range. A fixed high
-// supersample aliases badly when the whole graph is zoomed out.
 static constexpr qreal simulationRingBitmapMinScale = 0.5;
 static constexpr qreal simulationRingBitmapMaxScale = 4.0;
 static constexpr qreal simulationRingBitmapScaleStep = 0.25;
@@ -118,11 +117,8 @@ static void paintArcText(
     for (const QChar character : text) {
         const QString glyph(character);
         const qreal advance = metrics.horizontalAdvance(glyph);
-        const qreal angle = firstAngleRadians + direction *
-            (advanceBefore + advance * 0.5) / radius * sweepScale;
-        const QPointF position(
-            center.x() + std::cos(angle) * radius,
-            center.y() + std::sin(angle) * radius);
+        const qreal angle = firstAngleRadians + direction * (advanceBefore + advance * 0.5) / radius * sweepScale;
+        const QPointF position(center.x() + std::cos(angle) * radius, center.y() + std::sin(angle) * radius);
 
         painter.save();
         painter.translate(position);
@@ -139,8 +135,6 @@ static qreal simulationRingRadius() {
         nodegraphscene::simulationRingPadding;
 }
 
-// Shared by the static vector path and the cached animation bitmap so both
-// render the same ring geometry and carved labels.
 static void paintSimulationRing(
     QPainter& painter,
     const QPointF& center,
@@ -151,9 +145,8 @@ static void paintSimulationRing(
     painter.setBrush(Qt::NoBrush);
     painter.drawEllipse(center, ringRadius, ringRadius);
 
-    // Remove both labels from the solid circle so the graph background shows through them.
-    painter.setCompositionMode(QPainter::CompositionMode_Clear);
-    painter.setPen(QColor(0, 0, 0, 255));
+    painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+    painter.setPen(QColor(22, 22, 24));
     paintArcText(
         painter,
         QStringLiteral("SIMULATION"),
@@ -231,6 +224,8 @@ void NodeGraphCanvasItem::setModel(NodeGraphUiModel* updatedModel) {
 void NodeGraphCanvasItem::refreshModel() {
     nodes.clear();
     edges.clear();
+    nodeIndexById.clear();
+    nodeSpriteCache.clear();
     if (graphModel) {
         nodes.reserve(graphModel->rowCount());
         for (int row = 0; row < graphModel->rowCount(); ++row) {
@@ -251,17 +246,18 @@ void NodeGraphCanvasItem::refreshModel() {
                     const QVariantMap map = value.toMap();
                     Socket socket;
                     socket.id = map.value(QStringLiteral("socketId")).toInt();
-                    socket.valueType = map.value(QStringLiteral("valueType")).toInt();
+                    socket.valueType = static_cast<NodeGraphValueType>(map.value(QStringLiteral("valueType")).toInt());
                     const QVariantList accepted = map.value(QStringLiteral("acceptedValueTypes")).toList();
                     socket.acceptedValueTypes.reserve(accepted.size());
                     for (const QVariant& acceptedType : accepted) {
-                        socket.acceptedValueTypes.push_back(acceptedType.toInt());
+                        socket.acceptedValueTypes.push_back(static_cast<NodeGraphValueType>(acceptedType.toInt()));
                     }
                     destination.push_back(socket);
                 }
             };
             readSockets(graphModel->data(index, NodeGraphUiModel::InputsRole).toList(), node.inputs);
             readSockets(graphModel->data(index, NodeGraphUiModel::OutputsRole).toList(), node.outputs);
+            nodeIndexById.insert(node.id, static_cast<int>(nodes.size()));
             nodes.push_back(node);
         }
         for (const QVariant& value : graphModel->edges()) {
@@ -286,40 +282,23 @@ bool NodeGraphCanvasItem::isSimulationNode(const Node& node) {
 }
 
 void NodeGraphCanvasItem::paintSimulationHighlight(QPainter& painter, const Node& node) const {
-    const QPointF center(
-        node.x + nodegraphscene::nodeWidth * 0.5,
-        node.y + nodegraphscene::nodeHeight * 0.5);
+    const QPointF center(node.x + nodegraphscene::nodeWidth * 0.5, node.y + nodegraphscene::nodeHeight * 0.5);
 
     QColor ringColor = nodegraphscene::simulationRingColor();
     if (node.selected || node.id == hoveredNodeId) ringColor = ringColor.lighter(120);
 
-    // Static rings stay vector so they remain crisp at every zoom. While a ring
-    // animates, swap to the pre-rendered bitmap and rotate it as a whole:
-    // re-rasterizing the arc glyphs under a rotating transform makes the text
-    // jitter because pixel hinting re-snaps glyphs every frame. Both transitions
-    // happen at angle 0, where the two renderings closely match.
-    const bool animating = node.id == simulationRingNodeId &&
-        (simulationRingSpinning || simulationRingSnapping);
-    if (animating) {
-        const qreal imageScale = simulationRingImageScale();
-        const QImage& ringImage = simulationRingImage(ringColor);
-        const qreal halfExtent = ringImage.width() / (2.0 * imageScale);
-        painter.save();
-        if (simulationRingAngle != 0.0) {
-            painter.translate(center);
-            painter.rotate(simulationRingAngle);
-            painter.translate(-center);
-        }
-        painter.drawImage(
-            QRectF(center.x() - halfExtent, center.y() - halfExtent,
-                   halfExtent * 2.0, halfExtent * 2.0),
-            ringImage);
-        painter.restore();
-        return;
-    }
-
+    const qreal imageScale = simulationRingImageScale();
+    const QImage& ringImage = simulationRingImage(ringColor);
+    const qreal halfExtent = ringImage.width() / (2.0 * imageScale);
+    const bool animatedNode = node.id == simulationRingNodeId &&
+        (simulationRingSpinning || simulationRingSnapping || simulationRingAngle != 0.0);
     painter.save();
-    paintSimulationRing(painter, center, simulationRingRadius(), ringColor);
+    if (animatedNode && simulationRingAngle != 0.0) {
+        painter.translate(center);
+        painter.rotate(simulationRingAngle);
+        painter.translate(-center);
+    }
+    painter.drawImage(QRectF(center.x() - halfExtent, center.y() - halfExtent, halfExtent * 2.0, halfExtent * 2.0), ringImage);
     painter.restore();
 }
 
@@ -343,8 +322,7 @@ const QImage& NodeGraphCanvasItem::simulationRingImage(const QColor& ringColor) 
     const qreal ringRadius = simulationRingRadius();
     const qreal halfExtent = ringRadius + nodegraphscene::simulationRingWidth;
 
-    const int pixelSize = static_cast<int>(
-        std::ceil(halfExtent * 2.0 * imageScale)) + 2;
+    const int pixelSize = static_cast<int>(std::ceil(halfExtent * 2.0 * imageScale)) + 2;
     QImage image(pixelSize, pixelSize, QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::transparent);
 
@@ -352,9 +330,7 @@ const QImage& NodeGraphCanvasItem::simulationRingImage(const QColor& ringColor) 
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setRenderHint(QPainter::TextAntialiasing, true);
     painter.scale(imageScale, imageScale);
-    const QPointF center(
-        pixelSize / (2.0 * imageScale),
-        pixelSize / (2.0 * imageScale));
+    const QPointF center(pixelSize / (2.0 * imageScale), pixelSize / (2.0 * imageScale));
 
     paintSimulationRing(painter, center, ringRadius, ringColor);
     painter.end();
@@ -383,7 +359,6 @@ void NodeGraphCanvasItem::updateSimulationRingAnimation() {
     }
 
     if (!simulationRingSnapping) {
-        // Snap along the shortest arc back to zero.
         qreal from = std::fmod(simulationRingAngle, 360.0);
         if (from > 180.0) {
             from -= 360.0;
@@ -423,8 +398,7 @@ void NodeGraphCanvasItem::onSimulationRingFrame() {
 
     if (simulationRingSpinning) {
         constexpr qreal rotationDegreesPerSecond = 18.0; // one revolution per 20 s
-        simulationRingAngle = std::fmod(
-            simulationRingAngle + rotationDegreesPerSecond * elapsedMs / 1000.0, 360.0);
+        simulationRingAngle = std::fmod(simulationRingAngle + rotationDegreesPerSecond * elapsedMs / 1000.0, 360.0);
         requestRender();
         return;
     }
@@ -475,13 +449,21 @@ QPointF NodeGraphCanvasItem::socketPositionById(const Node& node, bool output, i
 }
 
 const NodeGraphCanvasItem::Node* NodeGraphCanvasItem::findNode(int nodeId) const {
-    const auto it = std::find_if(nodes.begin(), nodes.end(), [nodeId](const Node& node) { return node.id == nodeId; });
-    return it == nodes.end() ? nullptr : &*it;
+    const auto it = nodeIndexById.find(nodeId);
+    if (it == nodeIndexById.end() || it.value() < 0 ||
+        static_cast<size_t>(it.value()) >= nodes.size()) {
+        return nullptr;
+    }
+    return &nodes[static_cast<size_t>(it.value())];
 }
 
 NodeGraphCanvasItem::Node* NodeGraphCanvasItem::findNode(int nodeId) {
-    const auto it = std::find_if(nodes.begin(), nodes.end(), [nodeId](const Node& node) { return node.id == nodeId; });
-    return it == nodes.end() ? nullptr : &*it;
+    const auto it = nodeIndexById.find(nodeId);
+    if (it == nodeIndexById.end() || it.value() < 0 ||
+        static_cast<size_t>(it.value()) >= nodes.size()) {
+        return nullptr;
+    }
+    return &nodes[static_cast<size_t>(it.value())];
 }
 
 int NodeGraphCanvasItem::nodeIndexAt(const QPointF& position) const {
@@ -591,26 +573,11 @@ void NodeGraphCanvasItem::updateHover(const QPointF& position) {
 }
 
 bool NodeGraphCanvasItem::socketTypesCompatible(const Socket& source, const Socket& target) {
-    const auto contains = [](const std::vector<int>& values, int value) {
-        return std::find(values.begin(), values.end(), value) != values.end();
-    };
-
-    if (source.valueType != 0 && target.valueType != 0) {
-        return source.valueType == target.valueType;
-    }
-    if (!source.acceptedValueTypes.empty()) {
-        if (target.valueType != 0) {
-            return contains(source.acceptedValueTypes, target.valueType);
-        }
-        if (!target.acceptedValueTypes.empty()) {
-            return std::any_of(source.acceptedValueTypes.begin(), source.acceptedValueTypes.end(),
-                [&target, &contains](int value) { return contains(target.acceptedValueTypes, value); });
-        }
-    }
-    if (!target.acceptedValueTypes.empty() && source.valueType != 0) {
-        return contains(target.acceptedValueTypes, source.valueType);
-    }
-    return source.valueType == target.valueType;
+    return NodeGraphValidator::socketTypesAccept(
+        source.valueType,
+        source.acceptedValueTypes,
+        target.valueType,
+        target.acceptedValueTypes);
 }
 
 void NodeGraphCanvasItem::hoverMoveEvent(QHoverEvent* event) {
@@ -859,8 +826,19 @@ void NodeGraphCanvasItem::paint(QPainter* painter) {
     painter->translate(pan);
     painter->scale(zoomValue, zoomValue);
 
+    const QRectF visibleGraph = QRectF(
+        graphPosition(QPointF(0.0, 0.0)),
+        graphPosition(QPointF(width(), height()))).normalized();
+
+    const QRectF frameRect = nodegraphscene::outerFrameRect();
+    const qreal highlightMargin = frameRect.width() + nodegraphscene::simulationRingPadding * 2.0 +
+        nodegraphscene::simulationRingWidth * 2.0;
     for (const Node& node : nodes) {
-        if (isSimulationNode(node)) {
+        if (!isSimulationNode(node)) {
+            continue;
+        }
+        const QRectF bounds(node.x - highlightMargin, node.y - highlightMargin, highlightMargin * 2.0, highlightMargin * 2.0);
+        if (visibleGraph.intersects(bounds)) {
             paintSimulationHighlight(*painter, node);
         }
     }
@@ -872,6 +850,16 @@ void NodeGraphCanvasItem::paint(QPainter* painter) {
         if (!from || !to) continue;
         const QPointF start = socketPositionById(*from, true, edge.fromSocket);
         const QPointF end = socketPositionById(*to, false, edge.toSocket);
+        const qreal coarseMargin = nodegraphscene::edgeMaxTangent + nodegraphscene::edgeDefaultWidth * 2.0;
+        const QRectF coarseBounds = QRectF(start, end).normalized().adjusted(
+            -coarseMargin, -coarseMargin, coarseMargin, coarseMargin);
+        if (!coarseBounds.intersects(visibleGraph)) {
+            continue;
+        }
+        const QPainterPath path = nodegraphscene::buildEdgePath(start, end);
+        if (!path.boundingRect().adjusted(-8.0, -8.0, 8.0, 8.0).intersects(visibleGraph)) {
+            continue;
+        }
         QColor color = nodegraphscene::valueTypeColor(static_cast<NodeGraphValueType>(edge.valueType)).lighter(135);
         const bool hovered = edgeIndex == hoveredEdgeIndex;
         if (hovered) color = color.lighter(nodegraphscene::edgeHoverLightenFactor);
@@ -879,7 +867,7 @@ void NodeGraphCanvasItem::paint(QPainter* painter) {
                  Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
         painter->setPen(pen);
         painter->setBrush(Qt::NoBrush);
-        painter->drawPath(nodegraphscene::buildEdgePath(start, end));
+        painter->drawPath(path);
     }
 
     if (interaction == Interaction::Connect) {
@@ -895,9 +883,8 @@ void NodeGraphCanvasItem::paint(QPainter* painter) {
                 }
             }
             QColor previewColor = nodegraphscene::dragPreviewColor();
-            if (sourceSocket && sourceSocket->valueType != 0) {
-                previewColor = nodegraphscene::valueTypeColor(
-                    static_cast<NodeGraphValueType>(sourceSocket->valueType)).lighter(135);
+            if (sourceSocket && sourceSocket->valueType != NodeGraphValueType::None) {
+                previewColor = nodegraphscene::valueTypeColor(sourceSocket->valueType).lighter(135);
             }
             QPen pen(previewColor, nodegraphscene::edgeDefaultWidth,
                      Qt::DashLine, Qt::RoundCap, Qt::RoundJoin);
@@ -917,56 +904,26 @@ void NodeGraphCanvasItem::paint(QPainter* painter) {
         painter->drawRect(selection);
     }
 
+    const qreal cacheMargin = 16.0;
+    const QRectF frame = nodegraphscene::outerFrameRect();
     for (const Node& node : nodes) {
-        painter->save();
-        painter->translate(node.x, node.y);
-        const QRectF shellRect = nodegraphscene::outerFrameRect();
-        const QRectF centerRect = nodegraphscene::centerPanelRect();
-        QPainterPath shellPath;
-        shellPath.addRoundedRect(shellRect, nodegraphscene::roundCorners, nodegraphscene::roundCorners);
+        const QRectF nodeBounds(
+            node.x + frame.left() - cacheMargin,
+            node.y + frame.top() - cacheMargin,
+            frame.width() + cacheMargin * 2.0,
+            frame.height() + cacheMargin * 2.0);
+        if (!visibleGraph.intersects(nodeBounds)) continue;
 
-        painter->setPen(Qt::NoPen);
-        painter->setBrush(QColor(0, 0, 0, nodegraphscene::nodeShadowAlpha));
-        painter->drawRoundedRect(
-            shellRect.translated(nodegraphscene::nodeShadowOffsetX, nodegraphscene::nodeShadowOffsetY),
-            nodegraphscene::roundCorners, nodegraphscene::roundCorners);
-
-        painter->setPen(Qt::NoPen);
-        painter->setBrush(nodegraphscene::nodeShellColor());
-        painter->drawPath(shellPath);
-        painter->save();
-        painter->setClipPath(shellPath);
-        paintGraphCap(*painter, nodegraphscene::leftCapPath(),
-                      nodegraphscene::frozenCapActiveColor(), nodegraphscene::frozenCapInactiveColor(),
-                      node.frozen, node.id == hoveredNodeId && hoveredCap == 1);
-        paintGraphCap(*painter, nodegraphscene::rightCapPath(),
-                      nodegraphscene::displayCapActiveColor(), nodegraphscene::displayCapInactiveColor(),
-                      node.displayEnabled, node.id == hoveredNodeId && hoveredCap == 2);
-        QLinearGradient centerGradient(centerRect.topLeft(), centerRect.bottomLeft());
-        centerGradient.setColorAt(0.0, nodegraphscene::nodeCenterFillColor());
-        centerGradient.setColorAt(1.0, nodegraphscene::nodeCenterFillColor().darker(nodegraphscene::centerGradientDarken));
-        painter->setPen(Qt::NoPen);
-        painter->setBrush(centerGradient);
-        painter->drawPath(nodegraphscene::centerPanelPath());
-        painter->setPen(QPen(nodegraphscene::nodeShellOutlineColor(), nodegraphscene::capBorderWidth));
-        painter->drawLine(QLineF(centerRect.topLeft(), centerRect.bottomLeft()));
-        painter->drawLine(QLineF(centerRect.topRight(), centerRect.bottomRight()));
-        painter->restore();
-
-        painter->setBrush(Qt::NoBrush);
-        painter->setPen(QPen(node.selected ? nodegraphscene::selectedBorderColor() : nodegraphscene::nodeShellOutlineColor(),
-                             node.selected ? nodegraphscene::selectedBorderWidth : nodegraphscene::nodeOuterBorderWidth));
-        painter->drawPath(shellPath);
-
-        if (!node.icon.isNull()) {
-            const QRectF bounds = nodegraphscene::iconRect();
-            const QSizeF sourceSize = node.icon.size();
-            const qreal scale = std::min(bounds.width() / sourceSize.width(), bounds.height() / sourceSize.height());
-            const QSizeF size(sourceSize.width() * scale, sourceSize.height() * scale);
-            const QRectF target(bounds.center().x() - size.width() * 0.5,
-                                bounds.center().y() - size.height() * 0.5,
-                                size.width(), size.height());
-            painter->drawImage(target, node.icon);
+        const quint64 key = nodePaintKey(node);
+        auto spriteIt = nodeSpriteCache.find(node.id);
+        if (spriteIt == nodeSpriteCache.end() || spriteIt->key != key) {
+            CachedNodeSprite sprite;
+            sprite.key = key;
+            sprite.image = renderNodeImage(node);
+            spriteIt = nodeSpriteCache.insert(node.id, std::move(sprite));
+        }
+        if (spriteIt != nodeSpriteCache.end()) {
+            painter->drawImage(nodeBounds, spriteIt->image);
         }
 
         const QString title = node.title.isEmpty() ? node.typeId : node.title;
@@ -976,30 +933,159 @@ void NodeGraphCanvasItem::paint(QPainter* painter) {
         const QFontMetricsF metrics(titleFont);
         const QRectF titleBounds = metrics.boundingRect(title);
         const QPointF titlePosition = nodegraphscene::titlePosition(titleBounds);
-        painter->drawText(QPointF(titlePosition.x(), titlePosition.y() + metrics.ascent()), title);
-
-        const auto paintSockets = [this, painter, &node](bool output) {
-            const auto& sockets = output ? node.outputs : node.inputs;
-            for (int index = 0; index < static_cast<int>(sockets.size()); ++index) {
-                const QPointF center = output
-                    ? nodegraphscene::outputSocketPosition(static_cast<std::size_t>(index), sockets.size())
-                    : nodegraphscene::inputSocketPosition(static_cast<std::size_t>(index), sockets.size());
-                const bool hovered = node.id == hoveredSocketNodeId &&
-                    sockets[index].id == hoveredSocketId && output == hoveredSocketOutput;
-                QColor fill = nodegraphscene::valueTypeColor(static_cast<NodeGraphValueType>(sockets[index].valueType));
-                if (output && isSimulationNode(node)) {
-                    fill = nodegraphscene::valueTypeColor(NodeGraphValueType::Simulation);
-                }
-                if (hovered) fill = hoveredSocketCompatible ? fill.lighter(nodegraphscene::edgeHoverLightenFactor) : QColor(220, 75, 75);
-                painter->setPen(QPen(hovered ? (hoveredSocketCompatible ? nodegraphscene::titleColor() : QColor(255, 120, 120)) : nodegraphscene::socketBorderColor(),
-                                     hovered ? nodegraphscene::socketBorderWidth * 1.5 : nodegraphscene::socketBorderWidth));
-                painter->setBrush(fill);
-                const qreal radius = hovered ? nodegraphscene::socketRadius + 1.0 : nodegraphscene::socketRadius;
-                painter->drawEllipse(center, radius, radius);
-            }
-        };
-        paintSockets(false);
-        paintSockets(true);
-        painter->restore();
+        painter->drawText(QPointF(node.x + titlePosition.x(), node.y + titlePosition.y() + metrics.ascent()), title);
     }
+}
+
+void NodeGraphCanvasItem::paintNodeContent(QPainter& painter, const Node& node) const {
+    painter.save();
+    const QRectF shellRect = nodegraphscene::outerFrameRect();
+    const QRectF centerRect = nodegraphscene::centerPanelRect();
+    QPainterPath shellPath;
+    shellPath.addRoundedRect(shellRect, nodegraphscene::roundCorners, nodegraphscene::roundCorners);
+
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(0, 0, 0, nodegraphscene::nodeShadowAlpha));
+    painter.drawRoundedRect(
+        shellRect.translated(nodegraphscene::nodeShadowOffsetX, nodegraphscene::nodeShadowOffsetY),
+        nodegraphscene::roundCorners, nodegraphscene::roundCorners);
+
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(nodegraphscene::nodeShellColor());
+    painter.drawPath(shellPath);
+    painter.save();
+    painter.setClipPath(shellPath);
+    paintGraphCap(painter, nodegraphscene::leftCapPath(),
+                  nodegraphscene::frozenCapActiveColor(), nodegraphscene::frozenCapInactiveColor(),
+                  node.frozen, node.id == hoveredNodeId && hoveredCap == 1);
+    paintGraphCap(painter, nodegraphscene::rightCapPath(),
+                  nodegraphscene::displayCapActiveColor(), nodegraphscene::displayCapInactiveColor(),
+                  node.displayEnabled, node.id == hoveredNodeId && hoveredCap == 2);
+    QLinearGradient centerGradient(centerRect.topLeft(), centerRect.bottomLeft());
+    centerGradient.setColorAt(0.0, nodegraphscene::nodeCenterFillColor());
+    centerGradient.setColorAt(1.0, nodegraphscene::nodeCenterFillColor().darker(nodegraphscene::centerGradientDarken));
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(centerGradient);
+    painter.drawPath(nodegraphscene::centerPanelPath());
+    painter.setPen(QPen(nodegraphscene::nodeShellOutlineColor(), nodegraphscene::capBorderWidth));
+    painter.drawLine(QLineF(centerRect.topLeft(), centerRect.bottomLeft()));
+    painter.drawLine(QLineF(centerRect.topRight(), centerRect.bottomRight()));
+    painter.restore();
+
+    painter.setBrush(Qt::NoBrush);
+    painter.setPen(QPen(node.selected ? nodegraphscene::selectedBorderColor() : nodegraphscene::nodeShellOutlineColor(),
+                        node.selected ? nodegraphscene::selectedBorderWidth : nodegraphscene::nodeOuterBorderWidth));
+    painter.drawPath(shellPath);
+
+    if (!node.icon.isNull()) {
+        const QRectF bounds = nodegraphscene::iconRect();
+        const QSizeF sourceSize = node.icon.size();
+        const qreal scale = std::min(bounds.width() / sourceSize.width(), bounds.height() / sourceSize.height());
+        const QSizeF size(sourceSize.width() * scale, sourceSize.height() * scale);
+        const QRectF target(bounds.center().x() - size.width() * 0.5,
+                            bounds.center().y() - size.height() * 0.5,
+                            size.width(), size.height());
+        painter.drawImage(target, node.icon);
+    }
+
+    const auto paintSockets = [this, &painter, &node](bool output) {
+        const auto& sockets = output ? node.outputs : node.inputs;
+        for (int index = 0; index < static_cast<int>(sockets.size()); ++index) {
+            const QPointF center = output
+                ? nodegraphscene::outputSocketPosition(static_cast<std::size_t>(index), sockets.size())
+                : nodegraphscene::inputSocketPosition(static_cast<std::size_t>(index), sockets.size());
+            const bool hovered = node.id == hoveredSocketNodeId &&
+                sockets[index].id == hoveredSocketId && output == hoveredSocketOutput;
+            QColor fill = nodegraphscene::valueTypeColor(sockets[index].valueType);
+            if (output && isSimulationNode(node)) {
+                fill = nodegraphscene::valueTypeColor(NodeGraphValueType::Simulation);
+            }
+            if (hovered) fill = hoveredSocketCompatible ? fill.lighter(nodegraphscene::edgeHoverLightenFactor) : QColor(220, 75, 75);
+            painter.setPen(QPen(hovered ? (hoveredSocketCompatible ? nodegraphscene::titleColor() : QColor(255, 120, 120)) : nodegraphscene::socketBorderColor(),
+                                hovered ? nodegraphscene::socketHoveredBorderWidth : nodegraphscene::socketBorderWidth));
+            painter.setBrush(fill);
+            const qreal radius = hovered ? nodegraphscene::socketHoveredRadius : nodegraphscene::socketRadius;
+            painter.drawEllipse(center, radius, radius);
+        }
+    };
+    paintSockets(false);
+    paintSockets(true);
+    painter.restore();
+}
+
+static qreal nodeImageScale(qreal zoom, qreal deviceScale) {
+    const qreal requested = std::max(0.01, zoom * deviceScale);
+    return std::clamp(std::round(requested / 0.1) * 0.1, 0.1, 8.0);
+}
+
+QImage NodeGraphCanvasItem::renderNodeImage(const Node& node) const {
+    const qreal deviceScale = window() ? window()->devicePixelRatio() : 1.0;
+    const qreal pixelScale = nodeImageScale(zoomValue, deviceScale);
+    constexpr qreal margin = 16.0;
+    const QRectF frame = nodegraphscene::outerFrameRect();
+    const QSize pixelSize(
+        std::max(1, static_cast<int>(std::ceil((frame.width() + margin * 2.0) * pixelScale))),
+        std::max(1, static_cast<int>(std::ceil((frame.height() + margin * 2.0) * pixelScale))));
+
+    QImage image(pixelSize, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::transparent);
+    QPainter painter(&image);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    painter.setRenderHint(QPainter::LosslessImageRendering, true);
+    painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+    painter.scale(pixelScale, pixelScale);
+    painter.translate(margin - frame.left(), margin - frame.top());
+    paintNodeContent(painter, node);
+    painter.end();
+    return image;
+}
+
+quint64 NodeGraphCanvasItem::nodePaintKey(const Node& node) const {
+    quint64 key = 1469598103934665603ull;
+    const auto mix = [&key](quint64 value) {
+        key ^= value;
+        key *= 1099511628211ull;
+    };
+
+    const qreal deviceScale = window() ? window()->devicePixelRatio() : 1.0;
+    mix(static_cast<quint64>(std::llround(nodeImageScale(zoomValue, deviceScale) * 100.0)));
+    mix(static_cast<quint64>(qHash(node.title)));
+    mix(static_cast<quint64>(qHash(node.typeId)));
+    mix(static_cast<quint64>(node.icon.cacheKey()));
+    mix(node.displayEnabled ? 1u : 0u);
+    mix(node.frozen ? 1u : 0u);
+    mix(node.selected ? 1u : 0u);
+    mix(node.id == hoveredNodeId ? static_cast<quint64>(hoveredCap + 1) : 0u);
+    if (node.id == hoveredSocketNodeId) {
+        mix(static_cast<quint64>(hoveredSocketId + 1));
+        mix(hoveredSocketOutput ? 1u : 0u);
+        mix(hoveredSocketCompatible ? 1u : 0u);
+    } else {
+        mix(0u);
+    }
+
+    for (const Socket& socket : node.inputs) {
+        mix(static_cast<quint64>(socket.id));
+        mix(static_cast<quint64>(socket.valueType));
+        mix(static_cast<quint64>(nodegraphscene::valueTypeColor(socket.valueType).rgba()));
+    }
+    for (const Socket& socket : node.outputs) {
+        mix(static_cast<quint64>(socket.id));
+        mix(static_cast<quint64>(socket.valueType));
+        mix(static_cast<quint64>(nodegraphscene::valueTypeColor(socket.valueType).rgba()));
+    }
+
+    mix(static_cast<quint64>(nodegraphscene::nodeShellColor().rgba()));
+    mix(static_cast<quint64>(nodegraphscene::nodeCenterFillColor().rgba()));
+    mix(static_cast<quint64>(nodegraphscene::nodeShellOutlineColor().rgba()));
+    mix(static_cast<quint64>(nodegraphscene::selectedBorderColor().rgba()));
+    mix(static_cast<quint64>(nodegraphscene::titleColor().rgba()));
+    mix(static_cast<quint64>(nodegraphscene::socketBorderColor().rgba()));
+    mix(static_cast<quint64>(nodegraphscene::frozenCapActiveColor().rgba()));
+    mix(static_cast<quint64>(nodegraphscene::frozenCapInactiveColor().rgba()));
+    mix(static_cast<quint64>(nodegraphscene::displayCapActiveColor().rgba()));
+    mix(static_cast<quint64>(nodegraphscene::displayCapInactiveColor().rgba()));
+    return key;
 }

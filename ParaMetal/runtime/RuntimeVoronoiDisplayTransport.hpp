@@ -27,7 +27,7 @@ public:
 
         std::unordered_set<uint64_t> nextSocketKeys;
         for (const auto& [socketKey, package] : registry.voronois()) {
-            if (!registry.isCurrent(socketKey)) continue;
+            if (!registry.isPackageCurrent(socketKey)) continue;
             if (visibleKeys.find(socketKey) == visibleKeys.end()) {
                 continue;
             }
@@ -58,6 +58,23 @@ public:
         controller->finalizeSync();
     }
 
+    void detach(uint64_t socketKey) {
+        if (!controller || socketKey == 0) {
+            return;
+        }
+        controller->remove(socketKey);
+        activeSocketKeys.erase(socketKey);
+    }
+
+    void detachAll() {
+        for (uint64_t socketKey : activeSocketKeys) {
+            if (controller) {
+                controller->remove(socketKey);
+            }
+        }
+        activeSocketKeys.clear();
+    }
+
 private:
     bool tryBuildConfig(
         uint64_t socketKey,
@@ -66,10 +83,13 @@ private:
         if (!controller || !products || socketKey == 0) {
             return false;
         }
-        if (!package.display.showVoronoi && !package.display.showPoints && !package.display.showContactManifold) {
+        if (!package.display.showVoronoi && !package.display.showPoints) {
             return false;
         }
 
+        if (!products->isCurrent<VoronoiProduct>(package.productHandle)) {
+            return false;
+        }
         const VoronoiProduct* computeProduct = products->resolve<VoronoiProduct>(package.productHandle);
         if (!computeProduct) {
             std::cerr << "[VoronoiDisplayTransport] no computeProduct for socketKey=" << socketKey << std::endl;
@@ -85,10 +105,6 @@ private:
             computeProduct->candidateNodeCount != 0 &&
             computeProduct->seedPositionBuffer != VK_NULL_HANDLE;
         outConfig.showPoints = package.display.showPoints;
-        outConfig.showContactManifold = package.display.showContactManifold;
-        outConfig.contactVertexBuffer = computeProduct->contactVertexBuffer;
-        outConfig.contactVertexBufferOffset = computeProduct->contactVertexBufferOffset;
-        outConfig.contactVertexCount = computeProduct->contactVertexCount;
         outConfig.candidateNodeCount = computeProduct->candidateNodeCount;
         outConfig.seedPositionBuffer = computeProduct->seedPositionBuffer;
         outConfig.seedPositionBufferOffset = computeProduct->seedPositionBufferOffset;
@@ -105,6 +121,10 @@ private:
                 return false;
             }
             for (size_t i = 0; i < package.globalRemeshProducts.size(); ++i) {
+                if (!products->isCurrent<RemeshProduct>(package.globalRemeshProducts[i]) ||
+                    !products->isCurrent<ModelProduct>(package.globalModelProducts[i])) {
+                    return false;
+                }
                 const RemeshProduct* remeshProduct = products->resolve<RemeshProduct>(package.globalRemeshProducts[i]);
                 const ModelProduct* modelProduct = products->resolve<ModelProduct>(package.globalModelProducts[i]);
                 if (!remeshProduct || !modelProduct) {
@@ -138,6 +158,7 @@ private:
             }
         }
         outConfig.displayHash = buildDisplayHash(outConfig, computeProduct->hashes.display);
+        HashBuilder::combine(outConfig.displayHash, package.productHandle.publicationId);
         return true;
     }
 

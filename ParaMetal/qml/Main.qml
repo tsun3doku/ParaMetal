@@ -16,6 +16,8 @@ Rectangle {
         spacing: 0
 
         MenuBar {
+            id: mainMenuBar
+            z: 100
             Layout.fillWidth: true
             Layout.preferredHeight: 25
             font.family: theme.fontFamily
@@ -24,10 +26,13 @@ Rectangle {
             palette.buttonText: theme.text
             palette.text: theme.text
             palette.highlight: theme.hover
-            palette.highlightedText: theme.text
-            background: Rectangle { color: theme.menuBarBackground }
+            palette.highlightedText: theme.headingText
+            background: Rectangle {
+                color: theme.menuBarBackground
+            }
             delegate: MenuBarItem {
                 id: menuBarItem
+                readonly property bool isOpen: menuBarItem.menu && menuBarItem.menu.visible
                 implicitWidth: contentItem.implicitWidth + 20
                 implicitHeight: 25
                 leftPadding: 10
@@ -35,9 +40,16 @@ Rectangle {
                 topPadding: 0
                 bottomPadding: 0
 
+                Binding {
+                    target: menuBarItem.menu
+                    property: "tabWidth"
+                    value: menuBarItem.isOpen ? menuBarItem.width : 0
+                    when: menuBarItem.menu !== null
+                }
+
                 contentItem: Text {
                     text: menuBarItem.text
-                    color: menuBarItem.highlighted ? theme.headingText : theme.text
+                    color: (menuBarItem.highlighted || menuBarItem.isOpen) ? theme.headingText : theme.text
                     font.family: theme.fontFamily
                     font.pixelSize: theme.regularFontSize
                     font.weight: Font.Light
@@ -46,11 +58,59 @@ Rectangle {
                 }
 
                 background: Rectangle {
-                    color: menuBarItem.highlighted ? theme.hover : "transparent"
+                    color: menuBarItem.isOpen ? theme.menuBarBackground
+                         : menuBarItem.highlighted ? theme.hover
+                         : "transparent"
+
+                    // Top border when open
+                    Rectangle {
+                        visible: menuBarItem.isOpen
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        height: 1
+                        color: theme.border
+                    }
+
+                    // Left border when open - reaches down to y=25 to seamlessly meet UiMenu
+                    Rectangle {
+                        visible: menuBarItem.isOpen
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        anchors.bottomMargin: -1
+                        anchors.left: parent.left
+                        width: 1
+                        color: theme.border
+                    }
+
+                    // Right border when open - reaches down to y=25 to seamlessly meet UiMenu
+                    Rectangle {
+                        visible: menuBarItem.isOpen
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        anchors.bottomMargin: -1
+                        anchors.right: parent.right
+                        width: 1
+                        color: theme.border
+                    }
+
+                    // Bottom bridge when open to eliminate any separating line
+                    Rectangle {
+                        visible: menuBarItem.isOpen
+                        anchors.left: parent.left
+                        anchors.leftMargin: 1
+                        anchors.right: parent.right
+                        anchors.rightMargin: 1
+                        anchors.bottom: parent.bottom
+                        anchors.bottomMargin: -1
+                        height: 2
+                        color: theme.menuBarBackground
+                    }
                 }
             }
 
             UiMenu {
+                y: mainMenuBar.height
                 theme: root.theme
                 title: qsTr("File")
                 Action { text: qsTr("New"); onTriggered: welcomeScreen.visible = true }
@@ -67,12 +127,14 @@ Rectangle {
                 Action { text: qsTr("Exit"); onTriggered: Qt.quit() }
             }
             UiMenu {
+                y: mainMenuBar.height
                 theme: root.theme
                 title: qsTr("View")
                 Action { text: qsTr("Console"); checkable: true; checked: consolePane.visible; onTriggered: consolePane.visible = checked }
                 Action { text: qsTr("Node Graph"); checkable: true; checked: nodeEditor.visible; onTriggered: nodeEditor.visible = checked }
             }
             UiMenu {
+                y: mainMenuBar.height
                 theme: root.theme
                 title: qsTr("Project")
                 Action { text: qsTr("Settings..."); onTriggered: projectSettings.open() }
@@ -128,9 +190,9 @@ Rectangle {
                     ViewportPane {
                         SplitView.fillWidth: true
                         SplitView.fillHeight: true
-                          theme: root.theme
-                          bridge: ui.viewport
-                          heatPalette: ui.heatPalette
+                        theme: root.theme
+                        bridge: ui.viewport
+                        heatPalette: ui.heatPalette
                     }
                 }
 
@@ -241,5 +303,11 @@ Rectangle {
                 }
             }
         }
+    }
+
+    Shortcut {
+        sequence: "Escape"
+        enabled: ui.nodeGraph.probePickingActive
+        onActivated: ui.nodeGraph.cancelProbePicking()
     }
 }

@@ -52,6 +52,11 @@ void NodeMerge::execute(NodeKernelEval& eval) const {
     NodeDataBlock& outputValue = eval.outputs[0];
     outputValue = {};
 
+    if (dataType == payloadtypes::None) {
+        populateMetadata(outputValue, nullptr, payloadRegistry);
+        return;
+    }
+
     if (dataType == payloadtypes::Points) {
         std::vector<const PointData*> pointInputs;
         std::vector<std::array<float, 16>> pointMatrices;
@@ -221,9 +226,33 @@ void NodeMerge::execute(NodeKernelEval& eval) const {
             return;
         }
 
+        bool carryRenderMesh = true;
+        std::size_t renderVertexCount = 0;
+        std::size_t renderIndexCount = 0;
+        for (const GeometryData* input : geometryInputs) {
+            const std::size_t cornerCount = input->renderPositions.size() / 3;
+            if (input->renderPositions.empty() ||
+                input->renderPositions.size() % 3 != 0 ||
+                input->renderNormals.size() != input->renderPositions.size() ||
+                input->renderTexcoords.size() != cornerCount * 2 ||
+                input->renderIndices.size() != input->triangleIndices.size()) {
+                carryRenderMesh = false;
+                break;
+            }
+            renderVertexCount += cornerCount;
+            renderIndexCount += input->renderIndices.size();
+        }
+
         GeometryData payload{};
         payload.localToWorld = geometryMatrices[0];
         payload.baseModelPath = geometryInputs[0]->baseModelPath;
+
+        if (carryRenderMesh) {
+            payload.renderPositions.reserve(renderVertexCount * 3);
+            payload.renderNormals.reserve(renderVertexCount * 3);
+            payload.renderTexcoords.reserve(renderVertexCount * 2);
+            payload.renderIndices.reserve(renderIndexCount);
+        }
 
         glm::mat4 referenceL2W = toMat4(payload.localToWorld);
         glm::mat4 invReferenceL2W = glm::inverse(referenceL2W);
@@ -251,6 +280,46 @@ void NodeMerge::execute(NodeKernelEval& eval) const {
             // Merge triangle indices
             for (uint32_t idx : input->triangleIndices) {
                 payload.triangleIndices.push_back(idx + vertexOffset);
+            }
+
+            if (carryRenderMesh) {
+                const uint32_t renderVertexOffset = static_cast<uint32_t>(payload.renderPositions.size() / 3);
+                const glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(inputToReference)));
+
+                for (std::size_t corner = 0; corner + 2 < input->renderPositions.size(); corner += 3) {
+                    const glm::vec4 localPos(
+                        input->renderPositions[corner],
+                        input->renderPositions[corner + 1],
+                        input->renderPositions[corner + 2],
+                        1.0f);
+                    const glm::vec4 refPos = inputToReference * localPos;
+                    payload.renderPositions.push_back(refPos.x);
+                    payload.renderPositions.push_back(refPos.y);
+                    payload.renderPositions.push_back(refPos.z);
+
+                    glm::vec3 normal = normalMatrix * glm::vec3(
+                        input->renderNormals[corner],
+                        input->renderNormals[corner + 1],
+                        input->renderNormals[corner + 2]);
+                    const float lengthSquared = glm::dot(normal, normal);
+                    if (std::isfinite(lengthSquared) && lengthSquared > 1e-12f) {
+                        normal *= 1.0f / std::sqrt(lengthSquared);
+                    } else {
+                        normal = glm::vec3(0.0f);
+                    }
+                    payload.renderNormals.push_back(normal.x);
+                    payload.renderNormals.push_back(normal.y);
+                    payload.renderNormals.push_back(normal.z);
+                }
+
+                payload.renderTexcoords.insert(
+                    payload.renderTexcoords.end(),
+                    input->renderTexcoords.begin(),
+                    input->renderTexcoords.end());
+
+                for (uint32_t renderIndex : input->renderIndices) {
+                    payload.renderIndices.push_back(renderIndex + renderVertexOffset);
+                }
             }
 
             // Merge groups

@@ -114,7 +114,7 @@ Item {
                 onClicked: root.bridge.setProjectionMode(0)
                 contentItem: Text {
                     text: perspectiveButton.text
-                    color: root.theme.text
+                    color: perspectiveButton.checked ? root.theme.onAccentText : root.theme.text
                     font: root.theme.regularFont
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
@@ -139,7 +139,7 @@ Item {
                 onClicked: root.bridge.setProjectionMode(1)
                 contentItem: Text {
                     text: orthographicButton.text
-                    color: root.theme.text
+                    color: orthographicButton.checked ? root.theme.onAccentText : root.theme.text
                     font: root.theme.regularFont
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter

@@ -9,6 +9,7 @@
 
 #include "vulkan/VulkanExternalBuffer.hpp"
 #include "cuda/CudaExternalBuffer.hpp"
+#include "voronoi/GlobalDomainTopology.hpp"
 
 class MemoryAllocator;
 class VulkanDevice;
@@ -29,7 +30,6 @@ class VoronoiSystemBuildStage {
 
     bool buildGlobalDomain(VoronoiRuntime &runtime);
     bool buildGlobalDisplayCandidates(VoronoiRuntime &runtime);
-    // Non-detaching copy of this generation's handles into a product record
     void copyGpu(VoronoiProduct &product) const;
 
     uint32_t getCandidateNodeCount() const { return candidateNodeCount; }
@@ -38,7 +38,8 @@ class VoronoiSystemBuildStage {
 
     const std::vector<uint32_t>& getGlobalFragmentInstanceIds() const { return globalFragmentInstanceIds; }
     const std::vector<uint32_t>& getGlobalFragmentSeedIds() const { return globalFragmentSeedIds; }
-    const std::vector<uint32_t>& getGlobalSeedToFragment() const { return globalSeedToFragment; }
+    const std::vector<uint32_t>& getGlobalCellFragmentOffsets() const { return globalCellFragmentOffsets; }
+    const std::vector<uint32_t>& getGlobalCellFragments() const { return globalCellFragments; }
     const std::vector<glm::dvec3>& getGlobalFragmentCentroids() const { return globalFragmentCentroids; }
     const std::vector<double>& getGlobalFragmentVolumes() const { return globalFragmentVolumes; }
     const std::vector<uint32_t>& getGlobalFaceFragmentA() const { return globalFaceFragmentA; }
@@ -52,7 +53,9 @@ class VoronoiSystemBuildStage {
     const std::vector<uint8_t>& getGlobalFaceTypes() const { return globalFaceTypes; }
     const std::vector<uint32_t>& getGlobalFaceDomainFaces() const { return globalFaceDomainFaces; }
     const std::vector<uint32_t>& getGlobalContactCouplingFaceA() const { return globalContactCouplingFaceA; }
+    const std::vector<uint32_t>& getGlobalContactCouplingFragmentA() const { return globalContactCouplingFragmentA; }
     const std::vector<uint32_t>& getGlobalContactCouplingFaceB() const { return globalContactCouplingFaceB; }
+    const std::vector<uint32_t>& getGlobalContactCouplingFragmentB() const { return globalContactCouplingFragmentB; }
     const std::vector<double>& getGlobalContactCouplingAreas() const { return globalContactCouplingAreas; }
     const std::vector<uint32_t>& getGlobalBoundaryFaceIndices() const { return globalBoundaryFaceIndices; }
     const std::vector<uint32_t>& getGlobalBoundaryFaceFragments() const { return globalBoundaryFaceFragments; }
@@ -65,7 +68,11 @@ class VoronoiSystemBuildStage {
     const std::vector<glm::vec4>& getGlobalSeedPositions() const { return globalSeedPositions; }
     const std::array<glm::vec3, 8>& getGlobalDomainCorners() const { return globalDomainCorners; }
 
-    const std::vector<uint32_t>& getGlobalDisplayRuntimeModelIds() const;
+    const std::vector<uint32_t>& getVemTraceRuntimeModelIds() const { return vemTraceRuntimeModelIds; }
+    const std::vector<VkBuffer>& getVemTraceVertexBuffers() const { return vemTraceVertexBuffers; }
+    const std::vector<VkDeviceSize>& getVemTraceVertexBufferOffsets() const { return vemTraceVertexBufferOffsets; }
+    const std::vector<uint32_t>& getVemTraceVertexCounts() const { return vemTraceVertexCounts; }
+
     const std::vector<uint32_t>& getGlobalDisplayFaceCounts() const;
     const std::vector<VkBuffer>& getGlobalDisplayVertexBuffers() const;
     const std::vector<VkDeviceSize>& getGlobalDisplayVertexBufferOffsets() const;
@@ -78,8 +85,6 @@ class VoronoiSystemBuildStage {
  
   private:
     bool uploadCandidateInputs(const std::vector<glm::vec4> &positions, const std::vector<uint32_t> &neighborIndices);
-    void extractMeshTriangles(const std::vector<glm::vec3> &positions, const std::vector<uint32_t> &indices,
-                              std::vector<std::array<glm::vec4, 3>> &outMeshTriangles) const;
 
     VulkanDevice &vulkanDevice;
     MemoryAllocator &memoryAllocator;
@@ -92,13 +97,17 @@ class VoronoiSystemBuildStage {
     VkDeviceSize seedPositionBufferOffset = 0;
     VkBuffer candidatePointVertexBuffer = VK_NULL_HANDLE;
     VkDeviceSize candidatePointVertexBufferOffset = 0;
-    VkBuffer contactVertexBuffer = VK_NULL_HANDLE;
-    VkDeviceSize contactVertexBufferOffset = 0;
-    uint32_t contactVertexCount = 0;
+
+    std::vector<uint32_t> vemTraceRuntimeModelIds;
+    std::vector<VkBuffer> vemTraceVertexBuffers;
+    std::vector<VkDeviceSize> vemTraceVertexBufferOffsets;
+    std::vector<uint32_t> vemTraceVertexCounts;
+    std::vector<topology::VemTraceSurfaceMesh> vemTraceMeshes;
 
     std::vector<uint32_t> globalFragmentInstanceIds;
     std::vector<uint32_t> globalFragmentSeedIds;
-    std::vector<uint32_t> globalSeedToFragment;
+    std::vector<uint32_t> globalCellFragmentOffsets;
+    std::vector<uint32_t> globalCellFragments;
     std::vector<glm::dvec3> globalFragmentCentroids;
     std::vector<double> globalFragmentVolumes;
     float globalNominalCellSize = 0.0f;
@@ -113,7 +122,9 @@ class VoronoiSystemBuildStage {
     std::vector<uint8_t> globalFaceTypes;
     std::vector<uint32_t> globalFaceDomainFaces;
     std::vector<uint32_t> globalContactCouplingFaceA;
+    std::vector<uint32_t> globalContactCouplingFragmentA;
     std::vector<uint32_t> globalContactCouplingFaceB;
+    std::vector<uint32_t> globalContactCouplingFragmentB;
     std::vector<double> globalContactCouplingAreas;
     std::vector<uint32_t> globalBoundaryFaceIndices;
     std::vector<uint32_t> globalBoundaryFaceFragments;

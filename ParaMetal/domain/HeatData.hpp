@@ -36,6 +36,7 @@ struct HeatData {
     float simulationDuration = 5.0f;
     uint32_t solverMaxIterations = 0;         // 0 = keep heat solver default
     float solverConvergenceTolerance = 0.0f;  // 0 = keep heat solver default
+    float isocontourSpacingC = 10.0f;
     bool hasFluid = false;
     bool active = false;
 

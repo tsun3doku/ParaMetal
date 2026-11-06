@@ -1,11 +1,14 @@
 #include "RuntimeInput.hpp"
 
 #include "app/RawMouseInput.hpp"
+#include "interaction/InteractionContext.hpp"
 #include "nodegraph/NodeGraphController.hpp"
 #include "nodegraph/NodeGraphRegistry.hpp"
+#include "nodegraph/NodeHeatProbeParams.hpp"
 #include "nodegraph/NodeTransform.hpp"
 #include "render/WindowRuntimeState.hpp"
 #include "scene/InputController.hpp"
+#include "scene/MarkerInteractionController.hpp"
 #include "scene/SceneController.hpp"
 #include "util/Units.hpp"
 #include "vulkan/ModelRegistry.hpp"
@@ -20,12 +23,14 @@
 RuntimeInput::RuntimeInput(
     WindowRuntimeState& windowRuntimeState,
     InputController& inputController,
+    InteractionContext& interaction,
     const NodeGraphController& graphController,
     const SceneController& sceneController,
     ModelRegistry& modelRegistry,
     RawMouseInput* rawMouseInput)
     : windowRuntimeState(windowRuntimeState),
       inputController(inputController),
+      interaction(interaction),
       graphController(graphController),
       sceneController(sceneController),
       modelRegistry(modelRegistry),
@@ -57,9 +62,9 @@ void RuntimeInput::tick() {
                 inputEvent.y);
             break;
         case WindowInputEventType::MouseMove:
-            inputController.handleMouseMove(inputEvent.x, inputEvent.y);
-            break;
-        default:
+            inputController.handleMouseMove(
+                inputEvent.x,
+                inputEvent.y);
             break;
         }
     }
@@ -92,19 +97,58 @@ void RuntimeInput::tick() {
         }
     }
 
-    if (std::optional<GizmoDragBegin> begin = inputController.takePendingGizmoDragBegin()) {
+    auto& gizmoController = interaction.gizmoController();
+    auto& markerInteractionController = interaction.markerInteractionController();
+
+    if (std::optional<GizmoDragBegin> begin = gizmoController.takePendingDragBegin()) {
         if (!beginGizmoDrag(*begin)) {
-            inputController.cancelGizmoDrag();
+            gizmoController.cancelDrag();
             resetGizmoDrag();
         }
     }
 
-    if (std::optional<GizmoDragUpdate> update = inputController.takePendingGizmoDragUpdate()) {
+    if (std::optional<GizmoDragUpdate> update = gizmoController.takePendingDragUpdate()) {
         updateGizmoDrag(*update);
     }
 
-    if (inputController.takePendingGizmoDragEnd()) {
+    if (gizmoController.takePendingDragEnd()) {
         endGizmoDrag();
+    }
+
+    // Sync active heat probe markers from node graph to MarkerInteractionController
+    const auto& nodes = graphController.graphState().nodes;
+    std::vector<MarkerItem> activeMarkers;
+    for (const auto& [nodeId, nodeData] : nodes) {
+        if (nodeData.typeId == nodegraphtypes::HeatProbe) {
+            HeatProbeNodeParams params = readHeatProbeNodeParams(nodeData);
+            if (!params.enabled) continue;
+            for (int i = 0; i < static_cast<int>(params.items.size()); ++i) {
+                const auto& item = params.items[i];
+                if (!item.enabled) continue;
+                activeMarkers.push_back(MarkerItem{ nodeId, i, item.id, item.worldPosition });
+            }
+        }
+    }
+    markerInteractionController.updateMarkers(activeMarkers);
+
+    // Commit any position updates from marker placement or viewport dragging
+    if (std::optional<MarkerCommit> hit = markerInteractionController.takePendingCommit()) {
+        auto nodeIt = nodes.find(hit->nodeId);
+        if (nodeIt != nodes.end()) {
+            HeatProbeNodeParams probeParams = readHeatProbeNodeParams(nodeIt->second);
+            if (hit->probeIndex >= 0 && hit->probeIndex < static_cast<int>(probeParams.items.size())) {
+                probeParams.items[hit->probeIndex].worldPosition = hit->position;
+            } else if (!probeParams.items.empty()) {
+                probeParams.items[0].worldPosition = hit->position;
+            }
+            const std::string probesJson = serializeHeatProbesJson(probeParams.items);
+            pendingNodeParameters.push_back({
+                NodeGraphNodeId{hit->nodeId},
+                {
+                    {nodegraphparams::heatprobe::ProbesJson, NodeGraphParamType::String, 0.0, 0, false, probesJson}
+                }
+            });
+        }
     }
 }
 

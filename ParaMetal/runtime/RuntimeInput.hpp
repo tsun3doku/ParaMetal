@@ -16,6 +16,7 @@ class NodeGraphController;
 class SceneController;
 class ModelRegistry;
 class RawMouseInput;
+class InteractionContext;
 struct GizmoDragBegin;
 struct GizmoDragUpdate;
 enum class ViewportCommand : uint8_t;
@@ -25,6 +26,7 @@ public:
     RuntimeInput(
         WindowRuntimeState& windowRuntimeState,
         InputController& inputController,
+        InteractionContext& interaction,
         const NodeGraphController& graphController,
         const SceneController& sceneController,
         ModelRegistry& modelRegistry,
@@ -47,6 +49,7 @@ private:
 
     WindowRuntimeState& windowRuntimeState;
     InputController& inputController;
+    InteractionContext& interaction;
     const NodeGraphController& graphController;
     const SceneController& sceneController;
     ModelRegistry& modelRegistry;

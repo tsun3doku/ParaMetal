@@ -1,9 +1,10 @@
-#include "HeatOverlayRenderer.hpp"
+﻿#include "HeatOverlayRenderer.hpp"
 
 #include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/UniformBufferManager.hpp"
 #include "vulkan/VulkanDevice.hpp"
 #include "domain/HeatModelData.hpp"
+#include "ui/UiPalette.hpp"
 
 #include <iostream>
 #include <algorithm>
@@ -20,8 +21,10 @@ HeatOverlayRenderer::HeatOverlayRenderer(
       commandPool(commandPool),
       memoryAllocator(allocator),
       surfaceRenderer(std::make_unique<HeatSurfaceRenderer>(device, allocator, uniformBufferManager, commandPool)),
+      vemTraceSurfaceRenderer(std::make_unique<VemTraceSurfaceRenderer>(device, allocator, uniformBufferManager, commandPool)),
       vectorArrowRenderer(std::make_unique<VectorArrowRenderer>(device, allocator, uniformBufferManager, commandPool)),
-      boxRenderer(std::make_unique<HeatBoxRenderer>(device, allocator, uniformBufferManager)) {
+      boxRenderer(std::make_unique<HeatBoxRenderer>(device, allocator, uniformBufferManager)),
+      probeRenderer(std::make_unique<ProbeMarkerRenderer>(device, allocator, uniformBufferManager, commandPool)) {
 }
 
 HeatOverlayRenderer::~HeatOverlayRenderer() {
@@ -35,12 +38,24 @@ void HeatOverlayRenderer::initializeSurface(VkRenderPass renderPass, uint32_t su
 
     maxFramesInFlight = updatedMaxFramesInFlight;
     surfaceRenderer->initialize(renderPass, surfaceSubpass, maxFramesInFlight);
+    if (vemTraceSurfaceRenderer) {
+        VemTraceSurfaceRenderer::PaletteAssets assets{};
+        assets.sampler = surfaceRenderer->getPaletteSampler();
+        assets.inferno = surfaceRenderer->getInfernoView();
+        assets.viridis = surfaceRenderer->getViridisView();
+        assets.inferno2 = surfaceRenderer->getInferno2View();
+        assets.parula = surfaceRenderer->getParulaView();
+        assets.isocontour = surfaceRenderer->getIsocontourTextureView();
+        assets.isocontourSampler = surfaceRenderer->getIsocontourTextureSampler();
+        vemTraceSurfaceRenderer->initialize(
+            renderPass, surfaceSubpass, maxFramesInFlight, assets);
+    }
     surfaceInitialized = true;
     rebuildBindings();
 }
 
 void HeatOverlayRenderer::initializeOverlay(VkRenderPass renderPass, uint32_t overlaySubpass, uint32_t updatedMaxFramesInFlight) {
-    if ((!vectorArrowRenderer && !boxRenderer) || overlayInitialized) {
+    if ((!vectorArrowRenderer && !boxRenderer && !probeRenderer) || overlayInitialized) {
         return;
     }
 
@@ -50,6 +65,9 @@ void HeatOverlayRenderer::initializeOverlay(VkRenderPass renderPass, uint32_t ov
     }
     if (boxRenderer) {
         boxRenderer->initialize(renderPass, overlaySubpass, maxFramesInFlight);
+    }
+    if (probeRenderer) {
+        probeRenderer->initialize(renderPass, overlaySubpass, maxFramesInFlight);
     }
     overlayInitialized = true;
     rebuildBindings();
@@ -82,10 +100,14 @@ void HeatOverlayRenderer::rebuildBindings() {
     }
 
     surfaceBindings.clear();
+    vemTraceBindings.clear();
     fluxVectorBindings.clear();
     boxBindings.clear();
+    probeBindings.clear();
 
     paletteVisible = false;
+    bool anyIsocontours = false;
+    float isocontourSpacingC = 0.0f;
 
     for (const auto& [socketKey, config] : configsBySocket) {
         if (!config.active) continue;
@@ -94,7 +116,48 @@ void HeatOverlayRenderer::rebuildBindings() {
             paletteVisible = true;
         }
 
-        if (config.showHeatOverlay) {
+        if (config.showIsocontours) {
+            anyIsocontours = true;
+            isocontourSpacingC = config.isocontourSpacingC;
+        }
+
+        const bool vemRequested =
+            config.showHeatOverlay &&
+            config.surfaceSource == HeatDisplayController::SurfaceSource::VemTraceDirect;
+        if (vemRequested &&
+            config.vemTraceValid &&
+            config.vemTraceTemperatureBuffer != VK_NULL_HANDLE) {
+            vemTraceBindings.reserve(
+                vemTraceBindings.size() + config.vemTraceRuntimeModelIds.size());
+            for (size_t i = 0; i < config.vemTraceRuntimeModelIds.size(); ++i) {
+                if (i >= config.vemTraceVertexBuffers.size() ||
+                    i >= config.vemTraceVertexBufferOffsets.size() ||
+                    i >= config.vemTraceVertexCounts.size()) {
+                    break;
+                }
+                if (config.vemTraceVertexBuffers[i] == VK_NULL_HANDLE ||
+                    config.vemTraceVertexCounts[i] == 0) {
+                    continue;
+                }
+
+                if (i >= config.vemTraceModelMatrices.size()) {
+                    continue;
+                }
+
+                const uint32_t runtimeModelId = config.vemTraceRuntimeModelIds[i];
+                VemTraceSurfaceRenderer::RenderBinding binding{};
+                binding.runtimeModelId = runtimeModelId;
+                binding.vertexBuffer = config.vemTraceVertexBuffers[i];
+                binding.vertexBufferOffset = config.vemTraceVertexBufferOffsets[i];
+                binding.vertexCount = config.vemTraceVertexCounts[i];
+                binding.modelMatrix = config.vemTraceModelMatrices[i];
+                binding.traceTemperatureBuffer = config.vemTraceTemperatureBuffer;
+                binding.traceCount = config.vemTraceCount;
+                vemTraceBindings.push_back(binding);
+            }
+        }
+
+        if (config.showHeatOverlay && !vemRequested) {
             surfaceBindings.reserve(surfaceBindings.size() + config.modelRuntimeIds.size());
             for (size_t index = 0; index < config.modelRuntimeIds.size(); ++index) {
                 if (config.modelRuntimeIds[index] == 0 ||
@@ -133,6 +196,7 @@ void HeatOverlayRenderer::rebuildBindings() {
                 binding.surfaceBuffer = config.modelSurfaceBuffers[index];
                 binding.surfaceBufferOffset = config.modelSurfaceBufferOffsets[index];
 
+
                 surfaceBindings.push_back(binding);
             }
         }
@@ -170,24 +234,71 @@ void HeatOverlayRenderer::rebuildBindings() {
 
             boxBindings.push_back(boxBinding);
         }
+
+        for (size_t i = 0; i < config.probePositions.size(); ++i) {
+            ProbeMarkerRenderer::RenderBinding probeBinding{};
+            probeBinding.worldPosition = config.probePositions[i];
+            probeBinding.scale = 1.0f;
+            probeBinding.probeId = (i < config.probeIds.size()) ? config.probeIds[i] : 0;
+            probeBinding.nodeId = (i < config.probeNodeIds.size()) ? config.probeNodeIds[i] : 0;
+            probeBinding.probeName = (i < config.probeNames.size()) ? config.probeNames[i] : ("Probe_" + std::to_string(i + 1));
+            probeBinding.showTemperature = (i < config.probeShowTemperatures.size()) ? config.probeShowTemperatures[i] : true;
+            probeBinding.showName = (i < config.probeShowNames.size()) ? config.probeShowNames[i] : true;
+
+            // Preserve current temperature if probe was already bound
+            float prevTemp = 20.0f;
+            for (const auto& prev : probeBindings) {
+                if (prev.nodeId == probeBinding.nodeId && prev.probeId == probeBinding.probeId) {
+                    prevTemp = prev.currentTemperatureC;
+                    break;
+                }
+            }
+            probeBinding.currentTemperatureC = prevTemp;
+
+            const bool isSelected = (selectedProbeId != 0 && probeBinding.probeId == selectedProbeId)
+                                 || (selectedProbeIndex >= 0 && static_cast<int>(i) == selectedProbeIndex);
+            probeBinding.isSelected = isSelected;
+            probeBinding.color = isSelected
+                ? ui::UiPalette::selectionHighlightSrgb()
+                : ui::UiPalette::probeMarkerRedSrgb();
+            probeBindings.push_back(probeBinding);
+        }
+    }
+
+    if (surfaceRenderer) {
+        const float spacing = anyIsocontours ? isocontourSpacingC : 0.0f;
+        surfaceRenderer->setIsocontourSpacing(spacing);
+        if (vemTraceSurfaceRenderer) {
+            vemTraceSurfaceRenderer->setPalette(surfaceRenderer->getPalette());
+            vemTraceSurfaceRenderer->setRange(
+                surfaceRenderer->getMinTemperature(),
+                surfaceRenderer->getMaxTemperature());
+            vemTraceSurfaceRenderer->setIsocontourSpacing(spacing);
+        }
     }
 }
 
-void HeatOverlayRenderer::renderSurface(VkCommandBuffer commandBuffer, uint32_t frameIndex) {
+void HeatOverlayRenderer::renderSurface(VkCommandBuffer commandBuffer, uint32_t frameIndex, VkExtent2D extent) {
+    (void)extent;
     if (!surfaceInitialized || !surfaceRenderer) {
         return;
     }
 
     surfaceRenderer->render(commandBuffer, frameIndex, surfaceBindings);
+    if (vemTraceSurfaceRenderer) {
+        vemTraceSurfaceRenderer->render(commandBuffer, frameIndex, vemTraceBindings);
+    }
 }
 
 void HeatOverlayRenderer::setPaletteRange(float minimum, float maximum) {
     if (std::isfinite(minimum) && std::isfinite(maximum) && maximum > minimum) {
         if (surfaceRenderer) surfaceRenderer->setRange(minimum, maximum);
+        if (vemTraceSurfaceRenderer) vemTraceSurfaceRenderer->setRange(minimum, maximum);
     }
 }
 void HeatOverlayRenderer::setPalette(int palette) {
     if (surfaceRenderer) surfaceRenderer->setPalette(palette);
+    if (vemTraceSurfaceRenderer) vemTraceSurfaceRenderer->setPalette(palette);
 }
 
 uint32_t HeatOverlayRenderer::getPalette() const {
@@ -202,13 +313,26 @@ float HeatOverlayRenderer::getMaxTemperature() const {
     return surfaceRenderer ? surfaceRenderer->getMaxTemperature() : 100.0f;
 }
 
-void HeatOverlayRenderer::renderOverlay(VkCommandBuffer commandBuffer, uint32_t frameIndex) {
+void HeatOverlayRenderer::setTextRenderer(ScreenTextRenderer* renderer) {
+    if (probeRenderer) {
+        probeRenderer->setTextRenderer(renderer);
+    }
+}
+
+void HeatOverlayRenderer::renderOverlay(
+    VkCommandBuffer commandBuffer,
+    uint32_t frameIndex,
+    VkExtent2D extent,
+    const glm::mat4& viewProj) {
     if (!overlayInitialized) {
         return;
     }
 
     if (vectorArrowRenderer) {
         vectorArrowRenderer->render(commandBuffer, frameIndex, fluxVectorBindings);
+    }
+    if (probeRenderer) {
+        probeRenderer->render(commandBuffer, frameIndex, extent, viewProj, probeBindings);
     }
     if (boxRenderer) {
         boxRenderer->render(commandBuffer, frameIndex, boxBindings);
@@ -218,11 +342,16 @@ void HeatOverlayRenderer::renderOverlay(VkCommandBuffer commandBuffer, uint32_t 
 void HeatOverlayRenderer::cleanup() {
     configsBySocket.clear();
     surfaceBindings.clear();
+    vemTraceBindings.clear();
     fluxVectorBindings.clear();
     boxBindings.clear();
+    probeBindings.clear();
     maxFramesInFlight = 0;
     surfaceInitialized = false;
     overlayInitialized = false;
+    if (vemTraceSurfaceRenderer) {
+        vemTraceSurfaceRenderer->cleanup();
+    }
     if (surfaceRenderer) {
         surfaceRenderer->cleanup();
     }
@@ -231,6 +360,43 @@ void HeatOverlayRenderer::cleanup() {
     }
     if (boxRenderer) {
         boxRenderer->cleanup();
+    }
+    if (probeRenderer) {
+        probeRenderer->cleanup();
+    }
+}
+
+void HeatOverlayRenderer::setSelectedProbe(uint32_t probeId, int probeIndex) {
+    if (selectedProbeId == probeId && selectedProbeIndex == probeIndex) {
+        return;
+    }
+    selectedProbeId = probeId;
+    selectedProbeIndex = probeIndex;
+    rebuildBindings();
+}
+
+void HeatOverlayRenderer::updateProbePosition(uint32_t probeId, int probeIndex, const glm::vec3& newPos) {
+    if (probeId != 0) {
+        for (auto& binding : probeBindings) {
+            if (binding.probeId == probeId) {
+                binding.worldPosition = newPos;
+                return;
+            }
+        }
+    }
+    if (probeIndex >= 0 && probeIndex < static_cast<int>(probeBindings.size())) {
+        probeBindings[probeIndex].worldPosition = newPos;
+    }
+}
+
+void HeatOverlayRenderer::updateProbeTemperatures(uint64_t nodeId, const std::vector<float>& temps) {
+    size_t tempIdx = 0;
+    for (auto& binding : probeBindings) {
+        if (binding.nodeId == nodeId || binding.nodeId == 0) {
+            if (tempIdx < temps.size()) {
+                binding.currentTemperatureC = temps[tempIdx++];
+            }
+        }
     }
 }
 

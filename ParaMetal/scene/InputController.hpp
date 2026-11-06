@@ -4,14 +4,11 @@
 #include <glm/glm.hpp>
 #include <Qt>
 #include <cstdint>
-#include <optional>
 #include <vector>
-
-#include "GizmoController.hpp"
 
 class Camera;
 class CameraController;
-class NavigationGizmoController;
+class InteractionContext;
 class ModelSelection;
 class ModelRegistry;
 struct WindowRuntimeState;
@@ -22,22 +19,11 @@ enum class ViewportCommand : uint8_t {
     ToggleGrid
 };
 
-struct GizmoDragBegin {
-    uint32_t runtimeModelId = 0;
-    GizmoMode mode = GizmoMode::Translate;
-    GizmoAxis axis = GizmoAxis::None;
-};
-
-struct GizmoDragUpdate {
-    glm::vec3 translationDeltaWorld{0.0f};
-    float rotationDeltaDegrees = 0.0f;
-};
-
 class InputController {
 public:
-    InputController(CameraController& cameraController,
-        GizmoController& gizmoController,
-        NavigationGizmoController& navigationGizmoController,
+    InputController(
+        CameraController& cameraController,
+        InteractionContext& interactionContext,
         ModelSelection& modelSelection,
         ModelRegistry& modelRegistry,
         const WindowRuntimeState& windowState);
@@ -50,30 +36,15 @@ public:
     void handleMouseButton(int button, float mouseX, float mouseY, bool shiftPressed);
 
     void processRawDrag(bool panActive, float dx, float dy);
-    void updateGizmo();
     std::vector<ViewportCommand> takePendingViewportCommands();
-    std::optional<GizmoDragBegin> takePendingGizmoDragBegin();
-    std::optional<GizmoDragUpdate> takePendingGizmoDragUpdate();
-    bool takePendingGizmoDragEnd();
-    void cancelGizmoDrag();
 
 private:
     CameraController& cameraController;
     Camera& camera;
-    GizmoController& gizmoController;
-    NavigationGizmoController& navigationGizmoController;
+    InteractionContext& interactionContext;
     ModelSelection& modelSelection;
     ModelRegistry& modelRegistry;
     const WindowRuntimeState& windowState;
+
     std::vector<ViewportCommand> pendingViewportCommands;
-    std::optional<GizmoDragBegin> pendingGizmoDragBegin;
-    std::optional<GizmoDragUpdate> pendingGizmoDragUpdate;
-    bool pendingGizmoDragEnd = false;
-    bool isDraggingGizmo = false;
-
-    glm::vec3 accumulatedTranslation{0.0f};
-    float accumulatedRotation = 0.0f;
-    glm::vec3 cachedGizmoPosition{0.0f};
 };
-
-

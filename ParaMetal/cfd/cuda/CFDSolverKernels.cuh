@@ -11,7 +11,6 @@ namespace cfd::fluidkernels {
 
 constexpr uint32_t BlockSize = 256;
 
-// Find the max per-cell outflow rate for CFL determination
 void launchCflArgmax(
     uint32_t cellCount,
     const float* d_outflowRates,
@@ -94,7 +93,6 @@ void launchCorrectVelocity(
     glm::vec3* d_pressureImpulse,
     cudaStream_t stream);
 
-// Scatter solver face fluxes into canonical global-face buffers
 void publishFineFaceFluxes(
     uint32_t faceCount,
     const uint32_t* d_faceGlobalIndex,
@@ -111,7 +109,6 @@ void publishFineBoundaryFluxes(
     const int* d_publishGate,
     cudaStream_t stream);
 
-// Copy authoritative velocity to external buffer
 void publishVelocity(
     uint32_t nodeCount,
     const glm::vec4* d_source,
@@ -119,7 +116,6 @@ void publishVelocity(
     const int* d_publishGate,
     cudaStream_t stream);
 
-// Append momentum outflow rate calculation to graph
 cudaError_t appendMomentumOutflowRate(
     cudaGraph_t graph,
     cudaGraphNode_t& prev,
@@ -135,7 +131,6 @@ cudaError_t appendMomentumOutflowRate(
     float* d_maxRate,
     uint32_t* d_invalid);
 
-// Append single momentum subcycle step to graph
 cudaError_t appendMomentumSubcycleBody(
     cudaGraph_t body,
     cudaGraphNode_t& prev,

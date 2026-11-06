@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Effects
 
 MenuItem {
     id: control
@@ -26,7 +27,10 @@ MenuItem {
         leftPadding: control.mirrored ? arrowPadding : indicatorPadding
         rightPadding: control.mirrored ? indicatorPadding : arrowPadding
         text: control.text
-        color: control.enabled ? control.theme.menuText : control.theme.menuDisabledText
+        color: control.enabled
+            ? ((control.highlighted || (control.subMenu && control.subMenu.visible))
+                ? control.theme.headingText : control.theme.menuText)
+            : control.theme.menuDisabledText
         font: control.font
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignLeft
@@ -57,24 +61,69 @@ MenuItem {
         }
     }
 
-    arrow: Text {
+    arrow: Item {
         x: control.mirrored ? control.leftPadding : control.width - width - control.rightPadding
-        y: control.topPadding + (control.availableHeight - height) / 2
-        width: 10
-        height: 14
-        visible: control.subMenu
-        text: control.mirrored ? "\u2039" : "\u203a"
-        color: control.enabled ? control.theme.menuText : control.theme.menuDisabledText
-        font.family: control.theme.fontFamily
-        font.pixelSize: 17
-        horizontalAlignment: Text.AlignHCenter
-        verticalAlignment: Text.AlignVCenter
+        y: Math.round(control.topPadding + (control.availableHeight - height) / 2)
+        width: 8
+        height: 8
+        visible: control.subMenu !== null
+
+        Image {
+            anchors.fill: parent
+            source: "../textures/icons/Playback/Next_frame/128w/Artboard 1.png"
+            sourceSize.width: 32
+            sourceSize.height: 32
+            fillMode: Image.PreserveAspectFit
+            mirror: control.mirrored
+            opacity: control.enabled ? 1.0 : 0.4
+            layer.enabled: true
+            layer.effect: MultiEffect {
+                colorization: 1.0
+                colorizationColor: control.enabled
+                    ? ((control.highlighted || (control.subMenu && control.subMenu.visible))
+                        ? control.theme.headingText : control.theme.menuText)
+                    : control.theme.menuDisabledText
+            }
+        }
+    }
+
+    Binding {
+        target: control.subMenu
+        property: "anchorItem"
+        value: (control.subMenu && control.subMenu.visible) ? control : null
+        when: control.subMenu !== null
     }
 
     background: Rectangle {
         implicitWidth: 110
-        implicitHeight: 26
+        implicitHeight: 24
+        radius: 0
         color: control.down ? control.theme.selected
-                            : control.highlighted ? control.theme.hover : "transparent"
+                            : (control.highlighted || (control.subMenu && control.subMenu.visible))
+                              ? control.theme.hover : "transparent"
+
+        // Top border when submenu is open
+        Rectangle {
+            visible: control.subMenu && control.subMenu.visible
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.rightMargin: -2
+            height: 1
+            color: control.theme.border
+            z: 3
+        }
+
+        // Bottom border when submenu is open
+        Rectangle {
+            visible: control.subMenu && control.subMenu.visible
+            anchors.bottom: parent.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.rightMargin: -2
+            height: 1
+            color: control.theme.border
+            z: 3
+        }
     }
 }

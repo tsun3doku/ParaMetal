@@ -3,13 +3,33 @@
 #include <cmath>
 
 void TimelineRuntime::reset() {
+    ++resetEpoch;
     currentFrame = 0;
     frameAccumulator = 0.0f;
     playing = false;
 }
 
+void TimelineRuntime::clearSimulationMetadata() {
+    frameCount = DefaultFrameCount;
+    currentFrame = 0;
+    fps = DefaultFps;
+    frameAccumulator = 0.0f;
+    playing = false;
+}
+
 void TimelineRuntime::tick(float deltaSeconds) {
+    tick(deltaSeconds, getMaxFrame());
+}
+
+void TimelineRuntime::tick(float deltaSeconds, uint32_t maxAdvanceFrame) {
     if (!playing || fps <= 0.0f || frameCount == 0) {
+        return;
+    }
+
+    const uint32_t limit = std::min(maxAdvanceFrame, getMaxFrame());
+    if (currentFrame > limit) {
+        currentFrame = limit;
+        frameAccumulator = 0.0f;
         return;
     }
 
@@ -20,15 +40,13 @@ void TimelineRuntime::tick(float deltaSeconds) {
     }
 
     frameAccumulator -= static_cast<float>(advanceFrames);
-    const uint32_t maxFrame = getMaxFrame();
-    if (currentFrame + advanceFrames >= maxFrame) {
-        currentFrame = maxFrame;
+    currentFrame = std::min(limit, currentFrame + advanceFrames);
+
+    if (currentFrame >= getMaxFrame()) {
+        currentFrame = getMaxFrame();
         playing = false;
         frameAccumulator = 0.0f;
-        return;
     }
-
-    currentFrame += advanceFrames;
 }
 
 void TimelineRuntime::setPlaying(bool playing_) {

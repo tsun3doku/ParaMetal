@@ -13,7 +13,6 @@
 class MemoryAllocator;
 class ModelRegistry;
 class UniformBufferManager;
-class iODT;
 class VulkanDevice;
 class CommandPool;
 class TimingRenderer;

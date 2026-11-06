@@ -76,7 +76,7 @@ std::pair<VkBuffer, VkDeviceSize> MemoryAllocator::allocate(VkDeviceSize size, V
     std::lock_guard<std::mutex> lock(allocationMutex);
 
     const VkDeviceSize requiredAlignment = computeBufferAlignment(vulkanDevice, usage);
-    VkDeviceSize effectiveAlignment = std::max(size, requiredAlignment);
+    VkDeviceSize effectiveAlignment = std::max(size, std::max(requiredAlignment, alignment));
     VkDeviceSize alignedSize = roundUpPowerOfTwo(effectiveAlignment);
     uint32_t order = ceilLog2(alignedSize);
 
@@ -138,39 +138,6 @@ VkDeviceMemory MemoryAllocator::allocateImageMemory(VkImage image, VkMemoryPrope
     return memory;
 }
 
-MemoryPool& MemoryAllocator::createNewPool(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags memProps) {
-    auto key = std::make_pair(usage, memProps);
-    VkDeviceSize poolSize = std::max(DEFAULT_POOL_SIZE, roundUpPowerOfTwo(size));
-    pools[key].push_back(std::make_unique<MemoryPool>(vulkanDevice, poolSize, usage, memProps));
-    return *pools[key].back();
-}
-
-AllocatorStats MemoryAllocator::getStats() {
-    AllocatorStats stats = {};
-    for (auto& pair : pools) {
-        auto& poolVector = pair.second;
-        for (auto& poolPtr : poolVector) {
-            MemoryPool& pool = *poolPtr;
-            stats.totalAllocated += pool.getPoolSize();
-
-            uint32_t maxOrder = pool.getMaxOrder();
-            const auto& freeLists = pool.getFreeLists();
-
-            // Count free space
-            VkDeviceSize freeSpace = 0;
-            for (uint32_t order = 0; order <= maxOrder; ++order) {
-                if (order < freeLists.size()) {
-                    freeSpace += freeLists[order].size() * (static_cast<VkDeviceSize>(1) << order);
-                }
-            }
-
-            stats.usedBytes += pool.getPoolSize() - freeSpace;
-        }
-    }
-    stats.allocationCount = static_cast<uint32_t>(activeAllocations.size());
-    return stats;
-}
-
 void* MemoryAllocator::getMappedPointer(VkBuffer buffer, VkDeviceSize offset) {
     for (auto& poolPair : pools) {
         for (auto& poolPtr : poolPair.second) {
@@ -222,4 +189,32 @@ void MemoryAllocator::freeImageMemory(VkDeviceMemory memory) {
 
     vkFreeMemory(vulkanDevice.getDevice(), memory, nullptr);
     imageMemories.erase(it);
+}
+
+void MemoryAllocator::trim() {
+    std::lock_guard<std::mutex> lock(allocationMutex);
+
+    for (auto itPair = pools.begin(); itPair != pools.end(); ) {
+        auto& poolVec = itPair->second;
+        for (auto it = poolVec.begin(); it != poolVec.end(); ) {
+            MemoryPool& pool = **it;
+            bool hasActive = false;
+            for (const auto& [key, info] : activeAllocations) {
+                if (info.buffer == pool.buffer) {
+                    hasActive = true;
+                    break;
+                }
+            }
+            if (!hasActive && pool.isCompletelyFree()) {
+                it = poolVec.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        if (poolVec.empty()) {
+            itPair = pools.erase(itPair);
+        } else {
+            ++itPair;
+        }
+    }
 }

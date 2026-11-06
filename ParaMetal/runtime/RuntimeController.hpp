@@ -8,18 +8,16 @@
 
 #include "RuntimeInput.hpp"
 #include "RuntimeRenderController.hpp"
-#include "framegraph/FrameController.hpp"
 #include "scene/InputController.hpp"
 
 class ComputeContext;
+class InteractionContext;
 class NodeGraphContext;
 class RawMouseInput;
 class RenderContext;
 class SceneContext;
-class SceneController;
 class VulkanCoreContext;
-class NodeGraphController;
-class CameraController;
+struct SimTickContext;
 struct WindowRuntimeState;
 
 class RuntimeController {
@@ -28,8 +26,8 @@ public:
     ~RuntimeController();
 
     bool initialize(RenderContext& render, ComputeContext& compute, NodeGraphContext& nodeGraph,
-                    SceneContext& scene, VulkanCoreContext& core, WindowRuntimeState& windowRuntimeState,
-                    RawMouseInput* rawMouseInput);
+                    SceneContext& scene, InteractionContext& interaction, VulkanCoreContext& core,
+                    WindowRuntimeState& windowRuntimeState, RawMouseInput* rawMouseInput);
     void shutdown();
     bool isInitialized() const;
     void tick(
@@ -37,23 +35,17 @@ public:
         uint32_t& frameCounter,
         VkCommandBuffer commandBuffer,
         uint32_t frameIndex,
-        const app::RenderSettings& renderSettings);
+        const app::RenderSettings& renderSettings,
+        const SimTickContext& simContext);
 
-    bool hasLastFrameSlot() const;
-    uint32_t lastFrameSlot() const;
     std::vector<ViewportCommand> takePendingViewportCommands();
     bool takePendingNodeParameters(
         NodeGraphNodeId& outNodeId,
         std::vector<NodeGraphParamValue>& outParameters);
 
-    SceneController* sceneController();
-    const SceneController* sceneController() const;
-
 private:
     bool initializeInputPipeline(WindowRuntimeState& windowRuntimeState);
-    void simulateFrame(bool allowSimulation, uint32_t frameIndex);
-    NodeGraphController* nodeGraphController();
-    CameraController* cameraController();
+    void simulateFrame(bool allowSimulation, const SimTickContext& simContext);
 
     std::unique_ptr<RuntimeInput> runtimeInput;
     std::unique_ptr<InputController> inputControllerState;
@@ -63,7 +55,6 @@ private:
     ComputeContext* compute = nullptr;
     NodeGraphContext* nodeGraph = nullptr;
     SceneContext* scene = nullptr;
-    bool hasFrameSlot = false;
-    uint32_t frameSlot = 0;
+    InteractionContext* interaction = nullptr;
     bool initialized = false;
 };

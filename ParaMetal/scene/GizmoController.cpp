@@ -1,9 +1,154 @@
 #include "GizmoController.hpp"
 
+#include "Camera.hpp"
+#include "CameraController.hpp"
 #include "ModelSelection.hpp"
+#include "render/WindowRuntimeState.hpp"
 #include "vulkan/ModelRegistry.hpp"
 
 #include <cmath>
+
+GizmoController::GizmoController(
+    const CameraController& cameraController,
+    const WindowRuntimeState& windowState)
+    : cameraController(cameraController),
+      camera(cameraController.getCamera()),
+      windowState(windowState) {
+}
+
+bool GizmoController::handlePointerPress(float mouseX, float mouseY, int button, bool shiftPressed) {
+    (void)mouseX;
+    (void)mouseY;
+    (void)button;
+    (void)shiftPressed;
+    return isDraggingGizmo;
+}
+
+bool GizmoController::handlePointerMove(float mouseX, float mouseY) {
+    if (!isDraggingGizmo) {
+        return false;
+    }
+
+    const uint32_t width = windowState.width.load(std::memory_order_acquire);
+    const uint32_t height = windowState.height.load(std::memory_order_acquire);
+    if (width == 0 || height == 0) {
+        return true;
+    }
+
+    const glm::vec3 rayOrigin = camera.screenToWorldRayOrigin(mouseX, mouseY, width, height);
+    const glm::vec3 rayDir = camera.screenToWorldRay(mouseX, mouseY, width, height);
+
+    if (getMode() == GizmoMode::Translate) {
+        accumulatedTranslation = calculateTranslationDelta(rayOrigin, rayDir, cachedGizmoPosition, getActiveAxis());
+    } else if (getMode() == GizmoMode::Rotate) {
+        accumulatedRotation = calculateRotationDelta(rayOrigin, rayDir, cachedGizmoPosition, getActiveAxis());
+    }
+
+    pendingGizmoDragUpdate = GizmoDragUpdate{
+        accumulatedTranslation,
+        accumulatedRotation
+    };
+    return true;
+}
+
+bool GizmoController::handlePointerRelease(float mouseX, float mouseY, int button) {
+    (void)mouseX;
+    (void)mouseY;
+    if (button != 1) {
+        return false;
+    }
+
+    if (isDraggingGizmo) {
+        pendingGizmoDragEnd = true;
+        isDraggingGizmo = false;
+        endDrag();
+        accumulatedTranslation = glm::vec3(0.0f);
+        accumulatedRotation = 0.0f;
+        return true;
+    }
+
+    return false;
+}
+
+void GizmoController::updateGizmo(const ModelSelection& modelSelection, ModelRegistry& modelRegistry) {
+    if (isDraggingGizmo) {
+        return;
+    }
+
+    const PickedResult lastPick = modelSelection.getLastPickedResult();
+    if (lastPick.isGizmo() && modelSelection.getSelected()) {
+        GizmoAxis hitAxis = GizmoAxis::None;
+        if (lastPick.gizmoAxis == PickedGizmoAxis::X) {
+            hitAxis = GizmoAxis::X;
+        } else if (lastPick.gizmoAxis == PickedGizmoAxis::Y) {
+            hitAxis = GizmoAxis::Y;
+        } else if (lastPick.gizmoAxis == PickedGizmoAxis::Z) {
+            hitAxis = GizmoAxis::Z;
+        }
+
+        if (hitAxis != GizmoAxis::None) {
+            const uint32_t runtimeModelId = modelSelection.getSelectedModelID();
+            if (runtimeModelId == 0) {
+                const_cast<ModelSelection&>(modelSelection).clearLastPickedResult();
+                return;
+            }
+
+            if (lastPick.gizmoMode == PickedGizmoMode::Translate) {
+                setMode(GizmoMode::Translate);
+            } else if (lastPick.gizmoMode == PickedGizmoMode::Rotate) {
+                setMode(GizmoMode::Rotate);
+            }
+
+            const PickingRequest pickReq = modelSelection.getLastPickRequest();
+            const glm::vec3 gizmoPosition = calculateGizmoPosition(modelRegistry, modelSelection);
+            const uint32_t width = windowState.width.load(std::memory_order_acquire);
+            const uint32_t height = windowState.height.load(std::memory_order_acquire);
+            const glm::vec3 rayOrigin = camera.screenToWorldRayOrigin(pickReq.mouseX, pickReq.mouseY, width, height);
+            const glm::vec3 rayDir = camera.screenToWorldRay(pickReq.mouseX, pickReq.mouseY, width, height);
+
+            isDraggingGizmo = true;
+            cachedGizmoPosition = gizmoPosition;
+            startDrag(hitAxis, rayOrigin, rayDir, cachedGizmoPosition);
+            accumulatedTranslation = glm::vec3(0.0f);
+            accumulatedRotation = 0.0f;
+            pendingGizmoDragBegin = GizmoDragBegin{
+                runtimeModelId,
+                getMode(),
+                hitAxis
+            };
+
+            const_cast<ModelSelection&>(modelSelection).clearLastPickedResult();
+        }
+    }
+}
+
+std::optional<GizmoDragBegin> GizmoController::takePendingDragBegin() {
+    auto pending = std::move(pendingGizmoDragBegin);
+    pendingGizmoDragBegin.reset();
+    return pending;
+}
+
+std::optional<GizmoDragUpdate> GizmoController::takePendingDragUpdate() {
+    auto pending = std::move(pendingGizmoDragUpdate);
+    pendingGizmoDragUpdate.reset();
+    return pending;
+}
+
+bool GizmoController::takePendingDragEnd() {
+    const bool pending = pendingGizmoDragEnd;
+    pendingGizmoDragEnd = false;
+    return pending;
+}
+
+void GizmoController::cancelDrag() {
+    isDraggingGizmo = false;
+    endDrag();
+    accumulatedTranslation = glm::vec3(0.0f);
+    accumulatedRotation = 0.0f;
+    pendingGizmoDragBegin.reset();
+    pendingGizmoDragUpdate.reset();
+    pendingGizmoDragEnd = false;
+}
 
 void GizmoController::startDrag(GizmoAxis axis, const glm::vec3& rayOrigin, const glm::vec3& rayDir, const glm::vec3& gizmoPosition) {
     activeAxis = axis;
@@ -162,4 +307,3 @@ glm::vec3 GizmoController::calculateGizmoPosition(ModelRegistry& modelRegistry, 
 
     return glm::vec3(0.0f);
 }
-

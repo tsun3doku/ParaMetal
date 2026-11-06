@@ -1,6 +1,6 @@
 #include "RVDRestriction.cuh"
 #include "ConvexCell.cuh"
-#include "TriangleWinding.cuh"
+#include "RVDModelGeometry.cuh"
 #include "RVDHostUtils.cuh"
 #include "../../cuda/CudaMath.cuh"
 
@@ -24,6 +24,7 @@ const char *restrictionFailureName(uint32_t code) {
 }
 
 using DeviceTriangle = cudaGeometry::DeviceTriangle;
+using rvdDevice::ClipVertexProvenance;
 using rvdDevice::ConvexCell;
 using rvdDevice::ConvexCellOverflowStorage;
 using rvdDevice::DiscoveryLimits;
@@ -32,6 +33,7 @@ using rvdDevice::NoPlaneNeighbor;
 using rvdDevice::PlaneClippedSegment;
 using rvdDevice::clipTriangleToCellSegments;
 using rvdDevice::determinant3Double;
+using rvdDevice::planeEvaluateFilteredExact;
 using cudaMath::finite3;
 using rvdDevice::integrateCell;
 using rvdDevice::integratePolygon;
@@ -46,7 +48,10 @@ using cudaMath::sub3;
 struct RestrictedDeviceInput {
   DeviceKnn knn;
   const DeviceTriangle *triangles;
+  const uint3 *triangleVertexIds;
   uint32_t triangleCount;
+  const uint8_t *occupancy;
+  uint32_t occupancyCount;
   const int32_t *triangleList;
   uint32_t triangleListCount;
   const int32_t *offsets;
@@ -72,8 +77,6 @@ struct RestrictedDeviceOutput {
   double3 *outRestrictedVertices = nullptr;
   const uint32_t *restrictedPlaneOffsets = nullptr;
   double *restrictedPlaneAreas = nullptr;
-  double *restrictedPlaneAbsSums = nullptr;
-  double3 *restrictedPlaneMoments = nullptr;
   uint32_t *faceSegmentCounts = nullptr;
   const uint32_t *faceSegmentOffsets = nullptr;
   FaceBoundarySegment *outFaceSegments = nullptr;
@@ -87,6 +90,7 @@ struct RestrictedCellStorage {
 };
 
 struct RestrictedCellWork {
+  uint32_t seedId = 0;
   ConvexCell cell;
   int basePlaneCount = 0;
   int baseVertexCount = 0;
@@ -101,7 +105,7 @@ struct RestrictedCellWork {
   int3 voxelMaximum{};
   float3 cellOrigin{};
   float3 seedMomentCenter{};
-  bool originInside = false;
+  bool referenceInside = false;
   bool surfaceOnly = false;
   int uniqueCount = 0;
 };
@@ -117,6 +121,29 @@ __device__ inline double3 toCanonical(float4 point, float3 origin, double scale)
       (double(point.y) - double(origin.y)) * scale,
       (double(point.z) - double(origin.z)) * scale);
 }
+
+__device__ inline void fillFaceCutKey(
+    FaceCutVertexKey &key, const ClipVertexProvenance &provenance,
+    uint32_t triangleId, uint32_t planeBase) {
+  key.triangleId = triangleId;
+  if (provenance.triangleVertexB != InvalidId) {
+    key.cadEdgeVertexA = provenance.triangleVertexA;
+    key.cadEdgeVertexB = provenance.triangleVertexB;
+  } else {
+    key.cadVertexId = provenance.triangleVertexA;
+  }
+  if (provenance.planeA != InvalidId) {
+    key.basePlaneA = planeBase + provenance.planeA;
+  }
+  if (provenance.planeB != InvalidId) {
+    key.basePlaneB = planeBase + provenance.planeB;
+  }
+  if (provenance.planeC != InvalidId) {
+    key.basePlaneC = planeBase + provenance.planeC;
+  }
+}
+
+
 
 __device__ bool cellBounds(const ConvexCell &cell, float3 &minimum, float3 &maximum) {
   minimum = make_float3(FLT_MAX, FLT_MAX, FLT_MAX);
@@ -142,7 +169,7 @@ __device__ void voxelBounds(
     int3 &voxelMinimum,
     int3 &voxelMaximum) {
   const cudaGeometry::DeviceVoxelGrid &vox = input.modelVoxelGrid;
-  const float invVoxelSize = 1.0f / vox.scale;
+  const float invVoxelSize = 1.0f / vox.voxelSize;
 
   const int minX = int(floorf((minimum.x - vox.gridMin.x) * invVoxelSize));
   const int minY = int(floorf((minimum.y - vox.gridMin.y) * invVoxelSize));
@@ -173,26 +200,75 @@ __device__ bool isOutsideModel(
          cellMinimum.z > input.modelBoundsMax.z;
 }
 
-__device__ bool computeOriginInside(
+__device__ bool findCellOrigin(
     const RestrictedDeviceInput &input,
-    float3 cellOrigin) {
-  const double3 originWorld = cudaGeometry::canonicalToWorld(
-      make_double3(cellOrigin.x, cellOrigin.y, cellOrigin.z),
-      input.domainMin,
-      input.invBaseScale);
-  const float3 originWorldF = make_float3(
-      float(originWorld.x), float(originWorld.y), float(originWorld.z));
+    int3 voxelMinimum,
+    int3 voxelMaximum,
+    float3 &origin,
+    bool &inside) {
+  const cudaGeometry::DeviceVoxelGrid &vox = input.modelVoxelGrid;
+  const int cStride = vox.gridDim.x + 1;
+  const float voxelSize = vox.voxelSize;
+  const int3 cornerMaximum = make_int3(
+      min(vox.gridDim.x, voxelMaximum.x + 1),
+      min(vox.gridDim.y, voxelMaximum.y + 1),
+      min(vox.gridDim.z, voxelMaximum.z + 1));
 
-  const double winding = cudaGeometry::computeWinding(
-      input.winding.triangles,
-      input.winding.nodes,
-      input.winding.parents,
-      input.winding.root,
-      input.winding.moments,
-      originWorld,
-      originWorldF);
+  bool foundOutside = false;
+  float3 outsideOrigin{};
 
-  return isfinite(winding) && fabs(winding) > 0.5;
+  for (int z = voxelMinimum.z; z <= cornerMaximum.z; ++z) {
+    for (int y = voxelMinimum.y; y <= cornerMaximum.y; ++y) {
+      for (int x = voxelMinimum.x; x <= cornerMaximum.x; ++x) {
+        const int index = z * cStride * cStride + y * cStride + x;
+        if (index < 0 || uint32_t(index) >= input.occupancyCount) continue;
+
+        const uint32_t value = input.occupancy[index];
+        const float3 point = make_float3(
+            vox.gridMin.x + float(x) * voxelSize,
+            vox.gridMin.y + float(y) * voxelSize,
+            vox.gridMin.z + float(z) * voxelSize);
+
+        if (value == 2u) {
+          origin = point;
+          inside = true;
+          return true;
+        }
+        if (value == 0u && !foundOutside) {
+          outsideOrigin = point;
+          foundOutside = true;
+        }
+      }
+    }
+  }
+
+  if (foundOutside) {
+    origin = outsideOrigin;
+    inside = false;
+    return true;
+  }
+
+  const int faceCoordinates[3] = {voxelMaximum.x + 1, voxelMaximum.y + 1, voxelMaximum.z + 1};
+  for (int axis = 2; axis >= 0; --axis) {
+    const int limit = axis == 0 ? vox.gridDim.x
+        : axis == 1 ? vox.gridDim.y
+                    : vox.gridDim.z;
+    if (faceCoordinates[axis] < limit) continue;
+
+    int x = voxelMinimum.x;
+    int y = voxelMinimum.y;
+    int z = voxelMinimum.z;
+    if (axis == 0) x = vox.gridDim.x;
+    if (axis == 1) y = vox.gridDim.y;
+    if (axis == 2) z = vox.gridDim.z;
+    origin = make_float3(
+        vox.gridMin.x + float(x) * voxelSize,
+        vox.gridMin.y + float(y) * voxelSize,
+        vox.gridMin.z + float(z) * voxelSize);
+    inside = false;
+    return true;
+  }
+  return false;
 }
 
 __device__ void resetRestrictedPlaneMeasures(
@@ -205,9 +281,6 @@ __device__ void resetRestrictedPlaneMeasures(
   for (int p = 0; p < basePlaneCount; ++p) {
     if (output.restrictedPlaneAreas != nullptr) {
       output.restrictedPlaneAreas[dst + p] = 0.0;
-    }
-    if (output.restrictedPlaneMoments != nullptr) {
-      output.restrictedPlaneMoments[dst + p] = make_double3(0.0, 0.0, 0.0);
     }
   }
 }
@@ -222,10 +295,13 @@ __device__ bool initializeOutput(
     return true;
   }
 
-  return output.planarPatchCounts != nullptr &&
-         output.planarPatchCounts[seedId] != 0u &&
-         output.statuses != nullptr &&
-         output.statuses[seedId] == RVDStatus::Success;
+  if (output.planarPatchCounts == nullptr ||
+      output.planarPatchCounts[seedId] == 0u ||
+      output.statuses == nullptr) {
+    return false;
+  }
+  const RVDStatus status = output.statuses[seedId];
+  return status == RVDStatus::Success;
 }
 
 __device__ bool prepareCell(
@@ -242,8 +318,7 @@ __device__ bool prepareCell(
   ConvexCell &cell = work.cell;
   cell.attachStorage(storage.cell, RVDOverflowPlaneCount, RVDOverflowVertexCount);
   if (!cell.loadStorage(resolveBaseCell(input.baseCells, seedId))) {
-    output.statuses[seedId] =
-        cell.status == RVDStatus::Success ? RVDStatus::InvalidIndex : cell.status;
+    output.statuses[seedId] = cell.status == RVDStatus::Success ? RVDStatus::InvalidIndex : cell.status;
     return false;
   }
 
@@ -277,18 +352,15 @@ __device__ bool prepareCell(
 
   voxelBounds(input, cellMinimum, cellMaximum, work.voxelMinimum, work.voxelMaximum);
 
-  const cudaGeometry::DeviceVoxelGrid &voxelGrid = input.modelVoxelGrid;
-  work.cellOrigin = make_float3(
-      voxelGrid.gridMin.x + float(work.voxelMinimum.x) * voxelGrid.scale,
-      voxelGrid.gridMin.y + float(work.voxelMinimum.y) * voxelGrid.scale,
-      voxelGrid.gridMin.z + float(work.voxelMinimum.z) * voxelGrid.scale);
-
   if (!work.surfaceOnly) {
-    work.originInside = computeOriginInside(input, work.cellOrigin);
+    if (!findCellOrigin(input, work.voxelMinimum, work.voxelMaximum, work.cellOrigin, work.referenceInside)) {
+      output.statuses[seedId] = RVDStatus::InconsistentBoundary;
+      return false;
+    }
   }
 
   const float4 seed = input.knn.seeds[seedId];
-  work.seedMomentCenter = canonicalFromWorld(
+  work.seedMomentCenter = cudaGeometry::canonicalFromWorld(
       input.baseGrid, make_float3(seed.x, seed.y, seed.z));
   return true;
 }
@@ -349,7 +421,7 @@ __device__ bool integrateWholeCell(
     return false;
   }
 
-  if (work.originInside) {
+  if (work.referenceInside) {
     work.moment = make_double4(
         work.fullCell.x / 6.0,
         work.fullCell.y / 6.0,
@@ -382,6 +454,13 @@ __device__ bool emitSurfacePatch(
     RestrictedDeviceOutput output,
     bool surfaceOnly,
     RestrictedCellWork &work) {
+  double3 triangleCross = make_double3(0.0, 0.0, 0.0);
+  double triangleNormalLength = 0.0;
+  if (surfaceOnly) {
+    triangleCross = cross3(sub3(v1D, v0D), sub3(v2D, v0D));
+    triangleNormalLength = sqrt(dot3(triangleCross, triangleCross));
+  }
+
   if (!surfaceOnly) {
     if (output.faceSegmentCounts != nullptr &&
         output.restrictedPlaneOffsets != nullptr) {
@@ -407,20 +486,42 @@ __device__ bool emitSurfacePatch(
           output.faceSegmentOffsets[slot] + work.planeSegmentCursor[plane]++;
 
       FaceBoundarySegment segment{};
-      segment.a = cudaGeometry::canonicalToWorld(
-          planeSegments[s].a, input.domainMin, invBaseScale);
-      segment.b = cudaGeometry::canonicalToWorld(
-          planeSegments[s].b, input.domainMin, invBaseScale);
+      segment.a = cudaGeometry::canonicalToWorld(planeSegments[s].a, input.domainMin, invBaseScale);
+      segment.b = cudaGeometry::canonicalToWorld(planeSegments[s].b, input.domainMin, invBaseScale);
+      segment.planeNormal = triangleNormalLength > 0.0
+          ? make_double3(
+                triangleCross.x / triangleNormalLength,
+                triangleCross.y / triangleNormalLength,
+                triangleCross.z / triangleNormalLength)
+          : make_double3(0.0, 0.0, 1.0);
+      const uint32_t triangleId = uint32_t(triangleIndex);
+      segment.triangleId = triangleId;
+      segment.runtimeModelId = input.winding.runtimeModelId;
+      const double4 basePlane = work.cell.planes[plane];
+      const bool coplanar =
+          planeEvaluateFilteredExact(basePlane, v0D).sign == 0 &&
+          planeEvaluateFilteredExact(basePlane, v1D).sign == 0 &&
+          planeEvaluateFilteredExact(basePlane, v2D).sign == 0;
+      if (coplanar) {
+        segment.segmentType = uint32_t(FaceCutSegmentType::Coplanar);
+      }
+      fillFaceCutKey(segment.keyA, planeSegments[s].provenanceA, triangleId, planeBase);
+      fillFaceCutKey(segment.keyB, planeSegments[s].provenanceB, triangleId, planeBase);
       output.outFaceSegments[dst] = segment;
     }
   }
 
   if (output.planarPatchOffsets != nullptr) {
-    const uint32_t patchDst =
-        output.planarPatchOffsets[seedId] + work.planarPatchCount;
+    const uint32_t patchDst = output.planarPatchOffsets[seedId] + work.planarPatchCount;
     const uint32_t vertexDst = output.planarVertexOffsets != nullptr
         ? output.planarVertexOffsets[seedId] + work.planarVertexCount
         : 0u;
+
+    if (!(triangleNormalLength > 0.0) || !isfinite(triangleNormalLength)) {
+      output.statuses[seedId] = RVDStatus::NonFiniteGeometry;
+      return false;
+    }
+    const double3 normal = mul3(triangleCross, 1.0 / triangleNormalLength);
 
     if (output.outSurfaces != nullptr) {
       RestrictedSurface surface{};
@@ -433,14 +534,6 @@ __device__ bool emitSurfacePatch(
 
     if (output.outSurfaceGeometry != nullptr) {
       const double3 centroid = mul3(patchMoment, 1.0 / area);
-      const double3 crossA = cross3(sub3(v1D, v0D), sub3(v2D, v0D));
-      const double length = sqrt(dot3(crossA, crossA));
-      if (!(length > 0.0) || !isfinite(length)) {
-        output.statuses[seedId] = RVDStatus::NonFiniteGeometry;
-        return false;
-      }
-
-      const double3 normal = mul3(crossA, 1.0 / length);
       RestrictedSurfaceGeometry geometry{};
       geometry.centroidArea = make_double4(centroid.x, centroid.y, centroid.z, area);
       geometry.normal = make_double3(normal.x, normal.y, normal.z);
@@ -538,10 +631,17 @@ __device__ bool processTriangle(
   double3 polygon[MaxClippedPolygonVertices];
   PlaneClippedSegment planeSegments[MaxTrianglePlaneSegments];
   int planeSegmentCount = 0;
+  ClipVertexProvenance inputProvenance[3];
+  if (input.triangleVertexIds != nullptr) {
+    const uint3 vertexIds = input.triangleVertexIds[triangleIndex];
+    inputProvenance[0].triangleVertexA = vertexIds.x;
+    inputProvenance[1].triangleVertexA = vertexIds.y;
+    inputProvenance[2].triangleVertexA = vertexIds.z;
+  }
   const int polygonCount = clipTriangleToCellSegments(
       v0D, v1D, v2D, work.cell, work.basePlaneCount, polygon,
       MaxClippedPolygonVertices, planeSegments, &planeSegmentCount,
-      MaxTrianglePlaneSegments);
+      MaxTrianglePlaneSegments, inputProvenance);
   if (polygonCount < 0) {
     output.statuses[seedId] = planeSegmentCount >= MaxTrianglePlaneSegments
         ? RVDStatus::SegmentOverflow
@@ -594,31 +694,10 @@ __device__ bool writeRestrictedPlaneMeasures(
   const uint32_t dst = output.restrictedPlaneOffsets[seedId];
   const double invBaseScale = 1.0 / double(input.baseGrid.scale);
   const double areaScale = invBaseScale * invBaseScale;
-  const double momentScale = areaScale * invBaseScale;
 
   for (int p = 0; p < work.basePlaneCount; ++p) {
     const double worldArea = work.cell.planeAreas[p] * areaScale;
     output.restrictedPlaneAreas[dst + p] = worldArea;
-
-    if (output.restrictedPlaneAbsSums != nullptr) {
-      output.restrictedPlaneAbsSums[dst + p] = work.cell.planeAreaAbsSums[p] * areaScale;
-    }
-
-    if (output.restrictedPlaneMoments == nullptr) continue;
-
-    if (work.cell.planeAreas[p] > 0.0 && work.cell.planeMoments != nullptr) {
-      const double mx = double(input.baseGrid.gridMin.x) * worldArea + work.cell.planeMoments[p].x * momentScale;
-      const double my = double(input.baseGrid.gridMin.y) * worldArea + work.cell.planeMoments[p].y * momentScale;
-      const double mz = double(input.baseGrid.gridMin.z) * worldArea + work.cell.planeMoments[p].z * momentScale;
-
-      if (!isfinite(mx) || !isfinite(my) || !isfinite(mz)) {
-        output.statuses[seedId] = RVDStatus::NonFiniteGeometry;
-        return false;
-      }
-      output.restrictedPlaneMoments[dst + p] = make_double3(mx, my, mz);
-    } else {
-      output.restrictedPlaneMoments[dst + p] = make_double3(0.0, 0.0, 0.0);
-    }
   }
   return true;
 }
@@ -648,6 +727,73 @@ __device__ bool writeIntegratedCell(
   return true;
 }
 
+__device__ inline double modelWinding(
+    const cudaGeometry::DeviceModelGeometryView &view,
+    double3 point) {
+  if (view.nodes == nullptr || view.triangles == nullptr ||
+      view.parents == nullptr || view.moments == nullptr ||
+      view.root == cudaGeometry::InvalidNodeId) {
+    return 0.0;
+  }
+  return cudaGeometry::computeWinding(
+      view.triangles, view.nodes, view.parents, view.root, view.moments,
+      point, make_float3(float(point.x), float(point.y), float(point.z)));
+}
+
+__device__ inline bool writeEmptyRestrictedCell(
+    uint32_t seedId,
+    RestrictedDeviceOutput output,
+    int basePlaneCount) {
+  if (output.restrictedPlaneOffsets != nullptr) {
+    const uint32_t dst = output.restrictedPlaneOffsets[seedId];
+    for (int p = 0; p < basePlaneCount; ++p) {
+      if (output.restrictedPlaneAreas != nullptr) {
+        output.restrictedPlaneAreas[dst + p] = 0.0;
+      }
+    }
+  }
+
+  if (output.moments != nullptr) {
+    output.moments[seedId] = make_double4(0.0, 0.0, 0.0, 0.0);
+  }
+  output.statuses[seedId] = RVDStatus::EmptyCell;
+  return false;
+}
+
+__device__ inline bool writeFullBaseCell(
+    uint32_t seedId,
+    const RestrictedDeviceInput &input,
+    RestrictedDeviceOutput output,
+    const RestrictedCellWork &work) {
+  const BaseCellArrays cellState = resolveBaseCell(input.baseCells, seedId);
+  const double invBaseScale = 1.0 / double(input.baseGrid.scale);
+  const double areaScale = invBaseScale * invBaseScale;
+
+  if (output.restrictedPlaneOffsets != nullptr) {
+    const uint32_t dst = output.restrictedPlaneOffsets[seedId];
+    for (int p = 0; p < work.basePlaneCount && p < int(cellState.planeCount); ++p) {
+      const double worldArea = (cellState.planeAreas != nullptr)
+          ? double(cellState.planeAreas[p]) * areaScale
+          : 0.0;
+      if (output.restrictedPlaneAreas != nullptr) {
+        output.restrictedPlaneAreas[dst + p] = worldArea;
+      }
+    }
+  }
+
+  const double4 fullMoment = make_double4(
+      work.fullCell.x / 6.0,
+      work.fullCell.y / 6.0,
+      work.fullCell.z / 6.0,
+      work.fullCell.w / 6.0);
+
+  if (output.moments != nullptr) {
+    output.moments[seedId] = fullMoment;
+  }
+  output.statuses[seedId] = RVDStatus::Success;
+  return true;
+}
+
 __device__ bool finalizeRestrictedCell(
     uint32_t seedId,
     const RestrictedDeviceInput &input,
@@ -658,27 +804,61 @@ __device__ bool finalizeRestrictedCell(
     return false;
   }
 
-  const double fullCellVolume = fabs(work.fullCell.w / 6.0);
-  const double volumeErrorBudget = fmax(256.0 * DBL_EPSILON * work.absoluteVolumeSum, 1e-12 * fullCellVolume);
-
-  if (!isfinite(work.moment.w)) {
-    output.statuses[seedId] = RVDStatus::NonFiniteGeometry;
-    return false;
-  }
-  if (work.moment.w < -volumeErrorBudget) {
-    output.statuses[seedId] = RVDStatus::NegativeVolume;
-    return false;
-  }
-  if (work.moment.w <= volumeErrorBudget) {
-    output.statuses[seedId] = RVDStatus::EmptyCell;
-    return false;
-  }
-
   if (output.planarPatchCounts != nullptr) {
     output.planarPatchCounts[seedId] = work.planarPatchCount;
   }
   if (output.planarVertexCounts != nullptr) {
     output.planarVertexCounts[seedId] = work.planarVertexCount;
+  }
+
+  if (work.planarPatchCount == 0) {
+    double3 samplePoint = make_double3(
+        double(input.knn.seeds[seedId].x),
+        double(input.knn.seeds[seedId].y),
+        double(input.knn.seeds[seedId].z));
+    if (work.fullCell.w > 0.0 && isfinite(work.fullCell.w)) {
+      const double invW = 1.0 / work.fullCell.w;
+      const double3 canCentroid = make_double3(
+          double(work.seedMomentCenter.x) + work.fullCell.x * invW,
+          double(work.seedMomentCenter.y) + work.fullCell.y * invW,
+          double(work.seedMomentCenter.z) + work.fullCell.z * invW);
+      if (isfinite(canCentroid.x) && isfinite(canCentroid.y) && isfinite(canCentroid.z)) {
+        samplePoint = cudaGeometry::canonicalToWorld(
+            canCentroid, input.domainMin, input.invBaseScale);
+      }
+    }
+
+    const double winding = modelWinding(input.winding, samplePoint);
+    if (!isfinite(winding) || fabs(fabs(winding) - 0.5) < 0.05) {
+      output.statuses[seedId] = RVDStatus::InconsistentBoundary;
+      return false;
+    }
+
+    const int inside = fabs(winding) > 0.5 ? 1 : 0;
+
+    if (!inside) {
+      return writeEmptyRestrictedCell(seedId, output, work.basePlaneCount);
+    }
+    return writeFullBaseCell(seedId, input, output, work);
+  }
+
+  const double volumeErrorBudget = 256.0 * DBL_EPSILON * work.absoluteVolumeSum;
+  const double fullCellVolume = fabs(work.fullCell.w / 6.0);
+  // filter negative cancellation residue below facet floor
+  const double negativeClosureErrorBudget = volumeErrorBudget + 256.0 * DBL_EPSILON * fullCellVolume;
+
+  if (!isfinite(work.moment.w)) {
+    output.statuses[seedId] = RVDStatus::NonFiniteGeometry;
+    return false;
+  }
+  if (work.moment.w < -negativeClosureErrorBudget) {
+    output.statuses[seedId] = RVDStatus::NegativeVolume;
+    return false;
+  }
+
+  if (work.moment.w <= 0.0) {
+    output.statuses[seedId] = RVDStatus::EmptyCell;
+    return false;
   }
 
   if (!writeRestrictedPlaneMeasures(seedId, input, output, work)) return false;
@@ -702,6 +882,7 @@ __device__ void processRestrictedCell(
   if (!initializeOutput(seedId, output, surfaceOnly)) return;
 
   RestrictedCellWork work;
+  work.seedId = seedId;
   work.surfaceOnly = surfaceOnly;
 
   if (!prepareCell(seedId, input, output, storage, work)) return;
@@ -711,9 +892,7 @@ __device__ void processRestrictedCell(
   }
 
   for (int u = 0; u < work.uniqueCount; ++u) {
-    if (!processTriangle(
-            seedId, storage.uniqueTriangles[u], input, output, surfaceOnly,
-            storage, work)) {
+    if (!processTriangle(seedId, storage.uniqueTriangles[u], input, output, surfaceOnly, storage, work)) {
       return;
     }
   }
@@ -732,8 +911,7 @@ __global__ void restrictedCellKernel(
   const uint32_t local = blockIdx.x * blockDim.x + threadIdx.x;
   if (local >= count) return;
 
-  processRestrictedCell(
-      begin + local, input, output, surfaceOnly, storageMemory[local]);
+  processRestrictedCell(begin + local, input, output, surfaceOnly, storageMemory[local]);
 }
 
 bool launchRestrictionPass(
@@ -759,19 +937,27 @@ bool launchRestrictionPass(
   return rvdHost::synchronize(stream, "synchronize restriction pass");
 }
 
+__device__ inline void reportPlaneAreaOutOfRange(
+    RvdPackedError *packedError,
+    uint32_t cell,
+    uint32_t plane,
+    const char *reason) {
+  if (rvdReportErrorOnce(
+          packedError, uint32_t(RVDRestrictionError::PlaneAreaOutOfRange), cell)) {
+    printf("[RVDRestriction] PlaneAreaOutOfRange cell=%u plane=%u reason=%s\n",
+           cell, plane, reason);
+  }
+}
+
 __global__ void normalizeRestrictedPlanesKernel(
     DeviceBaseCells baseCells,
     const uint32_t *cellPlaneOffsets,
     const RVDStatus *statuses,
     double4 *moments,
     double *restrictedPlaneAreas,
-    double3 *restrictedPlaneMoments,
-    const double *restrictedPlaneAbsSums,
     uint32_t count,
     float nominalCellSize,
     double invBaseAreaScale,
-    double invBaseScale,
-    float3 domainMin,
     RvdPackedError *packedError) {
   const uint32_t cell = blockIdx.x * blockDim.x + threadIdx.x;
   if (cell >= count) return;
@@ -798,40 +984,51 @@ __global__ void normalizeRestrictedPlanesKernel(
   const BaseCellArrays cellState = resolveBaseCell(baseCells, cell);
   const uint32_t planeOffset = cellPlaneOffsets[cell];
   const uint32_t planeCount = cellState.planeCount;
-  const double facetFloor =
-      64.0 * DBL_EPSILON * double(nominalCellSize * nominalCellSize);
-  const double momentScale = invBaseAreaScale * invBaseScale;
 
   for (uint32_t p = 0; p < planeCount; ++p) {
     const uint32_t slot = planeOffset + p;
     const double baseArea = double(cellState.planeAreas[p]) * invBaseAreaScale;
-    const double areaTolerance = fmax(facetFloor, fabs(baseArea) * 1e-6);
     const double rawArea = restrictedPlaneAreas[slot];
+    if (!isfinite(baseArea) || !isfinite(rawArea)) {
+      reportPlaneAreaOutOfRange(
+          packedError, cell, p, "nonFiniteArea");
+      return;
+    }
+    const double baseAbsSum = cellState.planeAreaAbsSums != nullptr
+        ? cellState.planeAreaAbsSums[p] * invBaseAreaScale
+        : fabs(baseArea);
+    if (!isfinite(baseAbsSum) || baseAbsSum < 0.0) {
+      reportPlaneAreaOutOfRange(
+          packedError, cell, p, "invalidAbsoluteSum");
+      return;
+    }
+    const double facetFloor = 64.0 * DBL_EPSILON * double(nominalCellSize * nominalCellSize);
+    const double areaTolerance = fmax(facetFloor, fabs(baseArea) * 1e-6);
 
-    if (baseArea <= areaTolerance) {
+    // reject non-positive plane area residuals
+    if (!(baseArea > areaTolerance)) {
+      if (rawArea > areaTolerance) {
+        reportPlaneAreaOutOfRange(
+            packedError, cell, p, "coverageOnDegenerateBaseFace");
+        return;
+      }
       restrictedPlaneAreas[slot] = 0.0;
-      restrictedPlaneMoments[slot] = make_double3(0.0, 0.0, 0.0);
       continue;
     }
 
-    if (rawArea < -areaTolerance) {
-      rvdReportError(
-          packedError, uint32_t(RVDRestrictionError::PlaneAreaOutOfRange), cell);
-      return;
+    if (rawArea < 0.0) {
+      if (rawArea < -areaTolerance) {
+        reportPlaneAreaOutOfRange(
+            packedError, cell, p, "negativeRestrictedArea");
+        return;
+      }
+      restrictedPlaneAreas[slot] = 0.0;
+      continue;
     }
     if (!isfinite(rawArea) || rawArea > baseArea + areaTolerance) {
-      rvdReportError(
-          packedError, uint32_t(RVDRestrictionError::PlaneAreaOutOfRange), cell);
+      reportPlaneAreaOutOfRange(
+          packedError, cell, p, "restrictedAreaExceedsBase");
       return;
-    }
-
-    if (baseArea - rawArea <= areaTolerance) {
-      restrictedPlaneAreas[slot] = baseArea;
-      const double3 moment = cellState.planeMoments[p];
-      restrictedPlaneMoments[slot] = make_double3(
-          double(domainMin.x) * baseArea + moment.x * momentScale,
-          double(domainMin.y) * baseArea + moment.y * momentScale,
-          double(domainMin.z) * baseArea + moment.z * momentScale);
     }
   }
 }
@@ -843,8 +1040,6 @@ struct RestrictionPassBuffers {
   cudaUtils::CudaBuffer<uint32_t> planarPatchOffsets;
   cudaUtils::CudaBuffer<uint32_t> planarVertexOffsets;
   cudaUtils::CudaBuffer<double> restrictedPlaneAreas;
-  cudaUtils::CudaBuffer<double> restrictedPlaneAbsSums;
-  cudaUtils::CudaBuffer<double3> restrictedPlaneMoments;
   cudaUtils::CudaBuffer<uint32_t> faceSegmentCounts;
   cudaUtils::CudaBuffer<uint32_t> faceSegmentOffsets;
   cudaUtils::CudaBuffer<RVDStatus> statuses;
@@ -878,8 +1073,6 @@ bool allocatePassBuffers(
 
   if (totalPlanes == 0) return true;
   return buffers.restrictedPlaneAreas.allocate(totalPlanes) &&
-         buffers.restrictedPlaneAbsSums.allocate(totalPlanes) &&
-         buffers.restrictedPlaneMoments.allocate(totalPlanes) &&
          buffers.faceSegmentCounts.allocate(size_t(totalPlanes) + 1) &&
          buffers.faceSegmentOffsets.allocate(size_t(totalPlanes) + 1);
 }
@@ -899,12 +1092,6 @@ bool clearPassBuffers(
              buffers.restrictedPlaneAreas.get(),
              totalPlanes * sizeof(double), stream, "clear restricted plane areas") &&
          rvdHost::zero(
-             buffers.restrictedPlaneAbsSums.get(),
-             totalPlanes * sizeof(double), stream, "clear restricted plane abs sums") &&
-         rvdHost::zero(
-             buffers.restrictedPlaneMoments.get(),
-             totalPlanes * sizeof(double3), stream, "clear restricted plane moments") &&
-         rvdHost::zero(
              buffers.faceSegmentCounts.get(),
              (size_t(totalPlanes) + 1) * sizeof(uint32_t), stream,
              "clear face segment counts");
@@ -918,6 +1105,7 @@ RestrictedDeviceInput makeDeviceInput(
   RestrictedDeviceInput deviceInput{};
   deviceInput.knn = input.seedSpatialIndex->deviceKnn();
   deviceInput.triangles = devGeom.triangles.get();
+  deviceInput.triangleVertexIds = devGeom.triangleVertexIds.get();
   deviceInput.triangleCount = uint32_t(devGeom.triangles.size());
   deviceInput.triangleList = devGeom.voxelTriangleIds.get();
   deviceInput.triangleListCount = uint32_t(devGeom.voxelTriangleIds.size());
@@ -931,8 +1119,8 @@ RestrictedDeviceInput makeDeviceInput(
       double(baseDomain.domainMin.y),
       double(baseDomain.domainMin.z));
   deviceInput.invBaseScale = baseDomain.invBaseScale;
-  deviceInput.modelBoundsMin = canonicalFromWorld(baseDomain.baseGrid, devGeom.boundsMin);
-  deviceInput.modelBoundsMax = canonicalFromWorld(baseDomain.baseGrid, devGeom.boundsMax);
+  deviceInput.modelBoundsMin = cudaGeometry::canonicalFromWorld(baseDomain.baseGrid, devGeom.boundsMin);
+  deviceInput.modelBoundsMax = cudaGeometry::canonicalFromWorld(baseDomain.baseGrid, devGeom.boundsMax);
   deviceInput.baseCells = baseDomain.deviceView();
   return deviceInput;
 }
@@ -946,11 +1134,89 @@ RestrictedDeviceOutput makeCountPassOutput(
   output.planarVertexCounts = buffers.planarVertexCounts.get();
   output.restrictedPlaneOffsets = baseDomain.devCellPlaneOffsets.get();
   output.restrictedPlaneAreas = buffers.restrictedPlaneAreas.get();
-  output.restrictedPlaneAbsSums = buffers.restrictedPlaneAbsSums.get();
-  output.restrictedPlaneMoments = buffers.restrictedPlaneMoments.get();
   output.faceSegmentCounts = buffers.faceSegmentCounts.get();
   output.statuses = buffers.statuses.get();
   return output;
+}
+
+__global__ void sanitizeRestrictionCountsKernel(
+    const uint32_t *cellPlaneOffsets,
+    const RVDStatus *statuses,
+    uint32_t *planarPatchCounts,
+    uint32_t *planarVertexCounts,
+    uint32_t *faceSegmentCounts,
+    uint32_t count,
+    RvdPackedError *packedError) {
+  const uint32_t cell = blockIdx.x * blockDim.x + threadIdx.x;
+  if (cell >= count) return;
+
+  const RVDStatus status = statuses[cell];
+  if (status == RVDStatus::Success) {
+    return;
+  }
+
+  if (status != RVDStatus::EmptyCell) {
+    rvdReportErrorOnce(packedError, uint32_t(status), cell);
+  }
+
+  if (planarPatchCounts != nullptr) {
+    planarPatchCounts[cell] = 0;
+  }
+  if (planarVertexCounts != nullptr) {
+    planarVertexCounts[cell] = 0;
+  }
+
+  if (cellPlaneOffsets != nullptr && faceSegmentCounts != nullptr) {
+    const uint32_t planeBase = cellPlaneOffsets[cell];
+    const uint32_t planeEnd = cellPlaneOffsets[cell + 1];
+    for (uint32_t p = planeBase; p < planeEnd; ++p) {
+      faceSegmentCounts[p] = 0;
+    }
+  }
+}
+
+bool sanitizeRestrictionCounts(
+    const BaseCellDomain &baseDomain,
+    RestrictionPassBuffers &buffers,
+    uint32_t modelId,
+    cudaStream_t stream) {
+  if (baseDomain.count == 0) return true;
+
+  cudaUtils::CudaBuffer<RvdPackedError> devPackedError;
+
+  if (!devPackedError.allocate(1) ||
+      !rvdHost::zero(devPackedError.get(), sizeof(RvdPackedError), stream, "clear sanitize error")) {
+    return false;
+  }
+
+  constexpr uint32_t BlockSize = 256;
+  sanitizeRestrictionCountsKernel<<<
+      rvdHost::blockCount(baseDomain.count, BlockSize), BlockSize, 0, stream>>>(
+      baseDomain.devCellPlaneOffsets.get(),
+      buffers.statuses.get(),
+      buffers.planarPatchCounts.get(),
+      buffers.planarVertexCounts.get(),
+      buffers.faceSegmentCounts.get(),
+      baseDomain.count,
+      devPackedError.get());
+
+  if (!rvdHost::checkLaunch("launch sanitizeRestrictionCountsKernel")) {
+    return false;
+  }
+
+  RvdPackedError hostError = 0;
+  if (!rvdHost::readPackedError(devPackedError, stream, hostError)) return false;
+  if (hostError != 0) {
+    const uint32_t code = rvdErrorCode(hostError);
+    const uint32_t cell = rvdErrorId(hostError);
+    std::cerr << "[RVD] restriction count pass status invalid cell=" << cell
+              << " modelId=" << modelId
+              << " code=" << code
+              << " (" << restrictionFailureName(code) << ")" << std::endl;
+    return false;
+  }
+
+  return true;
 }
 
 bool scanRestrictionCounts(
@@ -1045,8 +1311,6 @@ RestrictedDeviceOutput makeWritePassOutput(const BaseCellDomain &baseDomain, Res
   output.outFaceSegments = buffers.faceSegments.get();
   output.restrictedPlaneOffsets = baseDomain.devCellPlaneOffsets.get();
   output.restrictedPlaneAreas = buffers.restrictedPlaneAreas.get();
-  output.restrictedPlaneAbsSums = buffers.restrictedPlaneAbsSums.get();
-  output.restrictedPlaneMoments = buffers.restrictedPlaneMoments.get();
   output.statuses = buffers.statuses.get();
   return output;
 }
@@ -1074,16 +1338,9 @@ bool normalizeRestrictedPlanes(
         buffers.statuses.get(),
         buffers.moments.get(),
         buffers.restrictedPlaneAreas.get(),
-        buffers.restrictedPlaneMoments.get(),
-        buffers.restrictedPlaneAbsSums.get(),
         baseDomain.count,
         baseDomain.nominalCellSize,
         baseDomain.invBaseAreaScale,
-        baseDomain.invBaseScale,
-        make_float3(
-            baseDomain.domainMin.x,
-            baseDomain.domainMin.y,
-            baseDomain.domainMin.z),
         packedError.get());
 
     if (!rvdHost::checkLaunch("launch normalizeRestrictedPlanesKernel")) {
@@ -1107,8 +1364,6 @@ bool normalizeRestrictedPlanes(
 void moveRestrictionOutputs(RestrictionPassBuffers &buffers, const RestrictionTotals &totals, ModelRestriction &restriction) {
   restriction.devMoments = std::move(buffers.moments);
   restriction.devRestrictedPlaneAreas = std::move(buffers.restrictedPlaneAreas);
-  restriction.devRestrictedPlaneAbsSums = std::move(buffers.restrictedPlaneAbsSums);
-  restriction.devRestrictedPlaneMoments = std::move(buffers.restrictedPlaneMoments);
   restriction.devSurfaces = std::move(buffers.surfaces);
   restriction.devSurfaceGeometry = std::move(buffers.surfaceGeometry);
   restriction.devRestrictedVertices = std::move(buffers.restrictedVertices);
@@ -1131,11 +1386,11 @@ bool restrictModelGeometry(
   restriction.runtimeModelId = devGeom.runtimeModelId;
 
   const cudaGeometry::DeviceVoxelGrid &modelGrid = devGeom.voxelGrid;
-  const float modelVoxelSize = (cudaGeometry::CanonicalDomainSize / float(modelGrid.gridDim.x)) / modelGrid.scale;
+  const float modelVoxelSize = modelGrid.voxelSize / modelGrid.scale;
 
   cudaGeometry::DeviceVoxelGrid voxelLookup{};
-  voxelLookup.gridMin = canonicalFromWorld(baseDomain.baseGrid, modelGrid.gridMin);
-  voxelLookup.scale = modelVoxelSize * baseDomain.baseScale;
+  voxelLookup.gridMin = cudaGeometry::canonicalFromWorld(baseDomain.baseGrid, modelGrid.gridMin);
+  voxelLookup.voxelSize = modelVoxelSize * baseDomain.baseScale;
   voxelLookup.gridDim = modelGrid.gridDim;
 
   const uint32_t count = baseDomain.count;
@@ -1149,11 +1404,29 @@ bool restrictModelGeometry(
     return false;
   }
 
-  const RestrictedDeviceInput deviceInput = makeDeviceInput(input, devGeom, baseDomain, voxelLookup);
+  cudaUtils::CudaBuffer<uint8_t> occupancy;
+  if (!::cudaGeometry::buildVoxelOccupancy(
+          devGeom.triangles.get(), uint32_t(devGeom.triangles.size()),
+          devGeom.voxelGrid, devGeom.voxelOffsets.get(),
+          devGeom.voxelTriangleIds.get(),
+          uint32_t(devGeom.voxelTriangleIds.size()), occupancy, stream)) {
+    std::cerr << "[RVD] occupancy build failed modelId="
+              << restriction.runtimeModelId << std::endl;
+    return false;
+  }
+
+  RestrictedDeviceInput deviceInput =
+      makeDeviceInput(input, devGeom, baseDomain, voxelLookup);
+  deviceInput.occupancy = occupancy.get();
+  deviceInput.occupancyCount = uint32_t(occupancy.size());
   const RestrictedDeviceOutput countOutput = makeCountPassOutput(baseDomain, buffers);
 
   if (!launchRestrictionPass(deviceInput, countOutput, count, chunkSize, buffers.storage.get(), stream, false)) {
     std::cerr << "[RVD] restriction count pass failed modelId=" << restriction.runtimeModelId << std::endl;
+    return false;
+  }
+
+  if (!sanitizeRestrictionCounts(baseDomain, buffers, restriction.runtimeModelId, stream)) {
     return false;
   }
 

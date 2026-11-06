@@ -1,7 +1,5 @@
 #pragma once
 
-#pragma once
-
 #include "VulkanDevice.hpp"
 #include "CommandBufferManager.hpp"
 #include "MemoryAllocator.hpp"

@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -8,24 +10,15 @@ Item {
     property var parameter: null
     property string label: parameter ? parameter.name : ""
     property string editor: "number"
-    property real minimum: 0
-    property real maximum: 1
+    property var minimum: null
+    property var maximum: null
+    property real step: 0
     property int decimals: 3
     property var choices: []
     property bool compact: false
     signal valueEdited(var value)
 
-    function formattedValue() {
-        if (!root.parameter) return ""
-        if (root.editor === "text") return String(root.parameter.value)
-        const value = Number(root.parameter.value)
-        if (!isFinite(value)) return ""
-        if (root.decimals === 0) return String(Math.round(value))
-        let formatted = value.toFixed(root.decimals)
-        formatted = formatted.replace(/0+$/, "")
-        if (formatted.endsWith(".")) formatted += "0"
-        return formatted
-    }
+    readonly property bool hasRange: (root.editor === "slider") || (minimum !== null && maximum !== null)
 
     function selectedChoiceText() {
         if (!root.parameter) return ""
@@ -40,60 +33,42 @@ Item {
         return ""
     }
 
-    implicitHeight: editor === "slider" ? 29 : 28
+    implicitHeight: 28
     visible: parameter !== null && parameter !== undefined
 
     RowLayout {
         anchors.fill: parent
-        spacing: 8
+        spacing: root.theme.inspectorLabelSpacing
 
         Text {
-            Layout.preferredWidth: root.compact ? 14 : 145
+            visible: root.label.length > 0
+            Layout.preferredWidth: root.label.length === 0 ? 0 : (root.compact ? root.theme.inspectorCompactLabelWidth : root.theme.inspectorLabelWidth)
             text: root.label
             color: root.theme.text
             font: root.theme.regularFont
             elide: Text.ElideRight
         }
 
-        Slider {
-            id: slider
-            visible: root.editor === "slider"
-            Layout.fillWidth: visible
-            Layout.preferredWidth: visible ? 100 : 0
-            from: root.minimum
-            to: root.maximum
+        UiNumberBox {
+            id: numberBox
+            theme: root.theme
+            visible: root.editor === "number" || root.editor === "slider"
+            Layout.fillWidth: true
             value: root.parameter ? Number(root.parameter.value) : 0
-            onMoved: root.valueEdited(root.decimals === 0 ? Math.round(value) : value)
-            background: Rectangle {
-                x: slider.leftPadding
-                y: slider.topPadding + slider.availableHeight / 2 - 2
-                width: slider.availableWidth
-                height: 4
-                radius: 2
-                color: root.theme.sliderTrack
-                Rectangle {
-                    width: slider.visualPosition * parent.width
-                    height: parent.height
-                    radius: parent.radius
-                    color: root.theme.accent
-                }
-            }
-            handle: Rectangle {
-                x: slider.leftPadding + slider.visualPosition * (slider.availableWidth - width)
-                y: slider.topPadding + slider.availableHeight / 2 - height / 2
-                width: 16; height: 16; radius: 8
-                color: root.theme.sliderHandle
-                border.width: 2
-                border.color: root.theme.sliderHandleBorder
-            }
+            minimum: root.minimum
+            maximum: root.maximum
+            hasRange: root.hasRange
+            decimals: root.decimals
+            step: root.step
+            onValueEdited: val => root.valueEdited(val)
         }
 
         TextField {
-            id: numberField
-            visible: root.editor === "number" || root.editor === "slider" || root.editor === "text"
-            Layout.fillWidth: root.editor !== "slider"
-            Layout.preferredWidth: root.editor === "slider" ? 68 : -1
-            text: root.formattedValue()
+            id: textField
+            visible: root.editor === "text"
+            Layout.fillWidth: true
+            Layout.preferredHeight: 28
+            text: root.parameter ? String(root.parameter.value) : ""
             color: root.theme.text
             selectionColor: root.theme.accent
             selectedTextColor: root.theme.onAccentText
@@ -104,14 +79,10 @@ Item {
                 radius: 3
                 color: root.theme.inputBackground
                 border.width: 1
-                border.color: numberField.activeFocus ? root.theme.accent : root.theme.border
+                border.color: textField.activeFocus ? root.theme.accent : root.theme.border
             }
             onEditingFinished: {
-                if (root.editor === "text") root.valueEdited(text)
-                else {
-                    const parsed = Number(text)
-                    if (!isNaN(parsed)) root.valueEdited(root.decimals === 0 ? Math.round(parsed) : parsed)
-                }
+                if (root.parameter) root.valueEdited(text)
             }
         }
 

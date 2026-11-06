@@ -13,8 +13,10 @@
 #include "domain/RemeshData.hpp"
 #include "domain/VoronoiData.hpp"
 #include "domain/SerialTemperatureData.hpp"
+#include "domain/HeatProbeData.hpp"
 #include "heat/HeatSystemPresets.hpp"
 #include "hash/HashValues.hpp"
+#include "nodegraph/NodeGraphCoreTypes.hpp"
 #include "nodegraph/NodeGraphProductTypes.hpp"
 #include "util/Units.hpp"
 
@@ -77,10 +79,9 @@ struct VoronoiPackage {
     struct DisplaySettings {
         bool showVoronoi = false;
         bool showPoints = false;
-        bool showContactManifold = false;
 
         bool anyVisible() const {
-            return showVoronoi || showPoints || showContactManifold;
+            return showVoronoi || showPoints;
         }
     };
 
@@ -129,6 +130,7 @@ struct PointPackage {
 };
 
 struct HeatModelPackage {
+    uint64_t heatModelKey = 0;
     ProductHandle modelProduct{};
     ProductHandle remeshProduct{};
     std::array<float, 16> localToWorld{
@@ -156,15 +158,18 @@ struct HeatModelPackage {
 struct HeatPackage {
     struct DisplaySettings {
         bool showHeatOverlay = false;
+        bool useVemTraceSurface = false;
         bool showFluxVectors = false;
         bool showHeatPalette = false;
+        bool showIsocontours = false;
         bool showDomainBox = false;
         bool showFluidVolume = false;
         float fluidVolumeOpacity = 0.25f;
         float fluxVectorScale = 1.0f;
+        float isocontourSpacingC = 10.0f;
 
         bool anyVisible() const {
-            return showHeatOverlay || showFluxVectors || showHeatPalette || showDomainBox || showFluidVolume;
+            return showHeatOverlay || showFluxVectors || showHeatPalette || showIsocontours || showDomainBox || showFluidVolume;
         }
     };
 
@@ -187,6 +192,7 @@ struct HeatPackage {
     ProductHandle domainVoronoiProduct{};
     ProductHandle cfdProduct{};
     std::unordered_map<uint64_t, SerialTemperatureData> resolvedSerialSources;
+    std::unordered_map<uint64_t, HeatProbeData> resolvedHeatProbes;
 
     uint32_t domainBoundaryTypes[6] = {};
     float domainBoundaryTemperaturesC[6] = {
@@ -200,7 +206,7 @@ struct HeatPackage {
     float domainBoundaryHeatFluxes[6] = {};
     float domainBoundaryHeatTransferCoefficients[6] = {};
 
-    uint64_t computeHash() const { return hashes.full; }
+    uint64_t computeHash() const { return hashes.simulation; }
     uint64_t displayHash() const { return hashes.display; }
     bool hasValidProduct() const { return productHandle.isValid(); }
 };

@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cmath>
 
 namespace voronoi::rvdHost {
 
@@ -17,6 +18,27 @@ inline constexpr uint32_t BlockSize = 256;
 
 constexpr uint32_t blockCount(uint32_t count, uint32_t blockSize = BlockSize) {
   return (count + blockSize - 1) / blockSize;
+}
+
+// frame axis u = normalize(cross(reference, normal))
+template <typename Vec3>
+__host__ __device__ inline Vec3 makeBasisU(Vec3 normal) {
+  Vec3 reference{};
+  if (fabs(normal.x) < 0.9) {
+    reference.x = 1.0;
+  } else {
+    reference.y = 1.0;
+  }
+  Vec3 u{};
+  u.x = reference.y * normal.z - reference.z * normal.y;
+  u.y = reference.z * normal.x - reference.x * normal.z;
+  u.z = reference.x * normal.y - reference.y * normal.x;
+  const double length = sqrt(u.x * u.x + u.y * u.y + u.z * u.z);
+  const double inverseLength = 1.0 / length;
+  u.x *= inverseLength;
+  u.y *= inverseLength;
+  u.z *= inverseLength;
+  return u;
 }
 
 inline bool checkLaunch(const char *label) {
@@ -88,41 +110,6 @@ inline bool selectFlagged(
   if (!ensureCapacity(scratch, bytes)) return false;
   return cub::DeviceSelect::Flagged(
              scratch.get(), bytes, input, flags, output, selectedCount, count, stream) == cudaSuccess;
-}
-
-template <typename KeyT, typename ValueT>
-inline bool reduceByKeySum(
-    const KeyT *keysIn,
-    KeyT *keysOut,
-    const ValueT *valuesIn,
-    ValueT *valuesOut,
-    int *runCount,
-    int count,
-    cudaUtils::CudaBuffer<uint8_t> &scratch,
-    cudaStream_t stream) {
-  size_t bytes = 0;
-  if (cub::DeviceReduce::ReduceByKey(
-          nullptr, bytes, keysIn, keysOut, valuesIn, valuesOut,
-          runCount, cub::Sum(), count, stream) != cudaSuccess) {
-    return false;
-  }
-  if (!ensureCapacity(scratch, bytes)) return false;
-  return cub::DeviceReduce::ReduceByKey(
-             scratch.get(), bytes, keysIn, keysOut, valuesIn, valuesOut,
-             runCount, cub::Sum(), count, stream) == cudaSuccess;
-}
-
-template <typename T>
-inline bool copyDeviceToDeviceAsync(
-    T *destination,
-    const T *source,
-    size_t count,
-    cudaStream_t stream,
-    const char *label) {
-  if (count == 0) return true;
-  return cudaUtils::cudaCheck(
-      cudaMemcpyAsync(destination, source, count * sizeof(T), cudaMemcpyDeviceToDevice, stream),
-      label);
 }
 
 template <typename T>

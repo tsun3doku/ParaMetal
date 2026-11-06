@@ -2,6 +2,9 @@
 
 #include "ComputeContext.hpp"
 #include "VulkanCoreContext.hpp"
+#include "cuda/CudaVulkanDevice.hpp"
+
+#include <cuda_runtime.h>
 #include "nodegraph/NodeGraphController.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
 #include "runtime/RuntimeCFDComputeTransport.hpp"
@@ -63,15 +66,14 @@ bool NodeGraphContext::initialize(
     runtimeRemeshTransportState->setController(compute.remeshController());
     runtimeVoronoiComputeTransportState->setController(compute.voronoiSystemComputeController());
     runtimeHeatComputeTransportState->setController(compute.heatSystemComputeController());
-    runtimeHeatComputeTransportState->setSimGraph(compute.simGraphRuntime());
     runtimeCFDComputeTransportState->setController(compute.cfdSystemComputeController());
-    runtimeCFDComputeTransportState->setSimGraph(compute.simGraphRuntime());
 
     runtimeModelDisplayTransportState->setController(&displayControllers.model);
     runtimePointDisplayTransportState->setController(&displayControllers.point);
     runtimeRemeshDisplayTransportState->setController(&displayControllers.remesh);
     runtimeVoronoiDisplayTransportState->setController(&displayControllers.voronoi);
     runtimeHeatDisplayTransportState->setController(&displayControllers.heat);
+    runtimeHeatDisplayTransportState->setComputeController(compute.heatSystemComputeController());
 
     RuntimeConnections runtimeConnections{};
     runtimeConnections.modelComputeTransport = runtimeModelComputeTransportState.get();
@@ -85,6 +87,30 @@ bool NodeGraphContext::initialize(
     runtimeConnections.remeshDisplayTransport = runtimeRemeshDisplayTransportState.get();
     runtimeConnections.voronoiDisplayTransport = runtimeVoronoiDisplayTransportState.get();
     runtimeConnections.heatDisplayTransport = runtimeHeatDisplayTransportState.get();
+    runtimeConnections.modelComputeController = compute.modelComputeController();
+    runtimeConnections.pointComputeRuntime = compute.pointComputeRuntime();
+    runtimeConnections.remeshController = compute.remeshController();
+    runtimeConnections.voronoiController = compute.voronoiSystemComputeController();
+    runtimeConnections.heatController = compute.heatSystemComputeController();
+    runtimeConnections.cfdController = compute.cfdSystemComputeController();
+    runtimeConnections.simGraph = compute.simGraphRuntime();
+    runtimeConnections.quiesceGpu = [&core]() {
+        bool synchronized = true;
+        const VkDevice device = core.device().getDevice();
+        if (device != VK_NULL_HANDLE && vkDeviceWaitIdle(device) != VK_SUCCESS) {
+            synchronized = false;
+        }
+        const int cudaDevice = cudaVulkan::findDevice(core.device().getPhysicalDevice());
+        if (cudaDevice >= 0) {
+            const cudaError_t setDeviceResult = cudaSetDevice(cudaDevice);
+            if (setDeviceResult != cudaSuccess || cudaDeviceSynchronize() != cudaSuccess) {
+                synchronized = false;
+            }
+        } else if (cudaVulkan::deviceWasFound()) {
+            synchronized = false;
+        }
+        return synchronized;
+    };
     nodeGraphControllerState = std::make_unique<NodeGraphController>(
         *payloadRegistryState, runtimeConnections);
 

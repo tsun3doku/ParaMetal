@@ -1,7 +1,9 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
+#include <vector>
 
 class FrameSync;
 class HeatSystemComputeController;
@@ -29,22 +31,24 @@ public:
         FrameSync& frameSync,
         std::atomic<bool>& runtimeBusy);
     void shutdown();
+        void quiescedClear();
     bool isInitialized() const;
+    void tickDomainServices();
 
-    SimGraphRuntime* simGraphRuntime();
-    const SimGraphRuntime* simGraphRuntime() const;
-    ModelComputeController* modelComputeController();
-    const ModelComputeController* modelComputeController() const;
-    PointComputeRuntime* pointComputeRuntime();
-    const PointComputeRuntime* pointComputeRuntime() const;
-    RemeshController* remeshController();
-    const RemeshController* remeshController() const;
-    VoronoiSystemComputeController* voronoiSystemComputeController();
-    const VoronoiSystemComputeController* voronoiSystemComputeController() const;
-    HeatSystemComputeController* heatSystemComputeController();
-    const HeatSystemComputeController* heatSystemComputeController() const;
-    cfd::CFDSystemComputeController* cfdSystemComputeController();
-    const cfd::CFDSystemComputeController* cfdSystemComputeController() const;
+    SimGraphRuntime* simGraphRuntime() { return simGraphRuntimeState.get(); }
+    const SimGraphRuntime* simGraphRuntime() const { return simGraphRuntimeState.get(); }
+    ModelComputeController* modelComputeController() { return modelComputeControllerState.get(); }
+    const ModelComputeController* modelComputeController() const { return modelComputeControllerState.get(); }
+    PointComputeRuntime* pointComputeRuntime() { return pointComputeRuntimeState.get(); }
+    const PointComputeRuntime* pointComputeRuntime() const { return pointComputeRuntimeState.get(); }
+    RemeshController* remeshController() { return remeshControllerState.get(); }
+    const RemeshController* remeshController() const { return remeshControllerState.get(); }
+    VoronoiSystemComputeController* voronoiSystemComputeController() { return voronoiSystemComputeControllerState.get(); }
+    const VoronoiSystemComputeController* voronoiSystemComputeController() const { return voronoiSystemComputeControllerState.get(); }
+    HeatSystemComputeController* heatSystemComputeController() { return heatSystemComputeControllerState.get(); }
+    const HeatSystemComputeController* heatSystemComputeController() const { return heatSystemComputeControllerState.get(); }
+    cfd::CFDSystemComputeController* cfdSystemComputeController() { return cfdSystemComputeControllerState.get(); }
+    const cfd::CFDSystemComputeController* cfdSystemComputeController() const { return cfdSystemComputeControllerState.get(); }
 
 private:
     std::unique_ptr<SimGraphRuntime> simGraphRuntimeState;

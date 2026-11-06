@@ -30,17 +30,15 @@ public:
         const std::vector<std::vector<uint32_t>>& triangleIndices,
         const std::vector<std::vector<glm::vec3>>& surfacePositions,
         const std::vector<std::vector<uint32_t>>& surfaceTriangleIndices,
+        const std::vector<std::array<float, 16>>& worldToModel,
         float volumePadding);
     void clearGeometry();
     void setParams(float cellSize, int voxelResolution);
+    void setLloydParams(int iterations, float volumeThreshold, float damping);
     void setContactRange(float range);
     bool ensureConfigured();
 
-    uint32_t getCandidateNodeCount() const { return voronoiSystemBuildStage->getCandidateNodeCount(); }
     VoronoiSystemBuildStage& getBuildStage() { return *voronoiSystemBuildStage; }
-    const VoronoiSystemBuildStage& getBuildStage() const { return *voronoiSystemBuildStage; }
-    VoronoiRuntime& runtimeRef() { return runtime; }
-    const VoronoiRuntime& runtimeRef() const { return runtime; }
 
 private:
     bool rebuildVoronoiRuntime();

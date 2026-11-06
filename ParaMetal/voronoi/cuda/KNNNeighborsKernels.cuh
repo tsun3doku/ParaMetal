@@ -90,15 +90,15 @@ __host__ __device__ inline void traverseKnnCells(const DeviceKnn& knn, float3 qu
 
 __device__ inline uint32_t nearestSeed(float3 point, const DeviceKnn& knn) {
     uint32_t bestSeed = InvalidNeighborId;
-    double bestDistSq = 1e30;
+    double bestDistanceSq = 1e30;
 
     struct NearestVisitor {
         float3 query;
         uint32_t& bestSeed;
-        double& bestDistSq;
+        double& bestDistanceSq;
 
         __device__ bool shouldContinue(double cellLowerBoundDistSq) const {
-            return bestDistSq > cellLowerBoundDistSq;
+            return bestDistanceSq > cellLowerBoundDistSq;
         }
 
         __device__ void visit(const BucketEntry& entry) {
@@ -106,13 +106,13 @@ __device__ inline uint32_t nearestSeed(float3 point, const DeviceKnn& knn) {
             const double dx = double(query.x) - double(entry.position.x);
             const double dy = double(query.y) - double(entry.position.y);
             const double dz = double(query.z) - double(entry.position.z);
-            const double d2 = dx * dx + dy * dy + dz * dz;
-            if (d2 < bestDistSq) {
-                bestDistSq = d2;
+            const double distanceSq = dx * dx + dy * dy + dz * dz;
+            if (distanceSq < bestDistanceSq) {
+                bestDistanceSq = distanceSq;
                 bestSeed = entry.id;
             }
         }
-    } visitor{point, bestSeed, bestDistSq};
+    } visitor{point, bestSeed, bestDistanceSq};
 
     traverseKnnCells(knn, point, visitor);
     return bestSeed;

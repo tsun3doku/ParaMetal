@@ -1,4 +1,5 @@
 #include "NodeGraphSceneStyle.hpp"
+#include "ui/UiPalette.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -48,11 +49,11 @@ QColor nodeCenterFillColor() {
 }
 
 QColor selectedBorderColor() {
-    return QColor(72, 183, 255);
+    return ui::UiPalette::nodeSelectionHighlight();
 }
 
 QColor titleColor() {
-    return QColor(220, 220, 225);
+    return QColor(200, 200, 204);
 }
 
 QColor frozenCapActiveColor() {

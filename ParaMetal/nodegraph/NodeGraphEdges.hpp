@@ -35,6 +35,7 @@ public:
 
     void upsert(const NodeGraphEdge& edge);
     bool remove(NodeGraphEdgeId edgeId);
+    void removeIncident(NodeGraphNodeId nodeId);
     void clear();
     void assign(const Store& edges);
     void assign(Store&& edges);

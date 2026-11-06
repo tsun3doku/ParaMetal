@@ -410,6 +410,157 @@ struct ConvexCell {
     }
 };
 
+__device__ inline bool tripletContainsPlane(uint3 triplet, uint32_t plane) {
+    return triplet.x == plane || triplet.y == plane || triplet.z == plane;
+}
+
+__device__ inline uint32_t otherFacePlane(
+    uint3 triplet, uint32_t facePlane, uint32_t sharedPlane) {
+    const uint32_t ids[3] = {triplet.x, triplet.y, triplet.z};
+    uint32_t result = InvalidId;
+    for (int i = 0; i < 3; ++i) {
+        if (ids[i] != facePlane && ids[i] != sharedPlane) {
+            if (result != InvalidId) return InvalidId;
+            result = ids[i];
+        }
+    }
+    return result;
+}
+
+__device__ inline int findFaceEdgeNeighbor(
+    const ConvexCell &cell,
+    uint32_t facePlane,
+    uint32_t edgePlane,
+    int currentVertex) {
+    int match = -1;
+    for (int vertex = 0; vertex < cell.vertexCount; ++vertex) {
+        if (vertex == currentVertex) continue;
+        const uint3 triplet = cell.vertices[vertex];
+        if (!tripletContainsPlane(triplet, facePlane) ||
+            !tripletContainsPlane(triplet, edgePlane)) {
+            continue;
+        }
+        if (match >= 0) return -2;
+        match = vertex;
+    }
+    return match;
+}
+
+// measure active face from cyclic vertex boundary
+__device__ inline bool accumulatePlaneMeasures(
+    ConvexCell &cell, int basePlaneCount, double sign) {
+    const int planeLimit = basePlaneCount < 0
+        ? cell.planeCount
+        : (basePlaneCount < cell.planeCount ? basePlaneCount : cell.planeCount);
+
+    for (int plane = 0; plane < planeLimit; ++plane) {
+        const int tag = cell.planeNeighborIds[plane];
+        if (tag < 0 && domainFaceFromTag(tag) < 0) continue;
+
+        int faceVertexCount = 0;
+        int startVertex = -1;
+        for (int vertex = 0; vertex < cell.vertexCount; ++vertex) {
+            if (!tripletContainsPlane(cell.vertices[vertex], uint32_t(plane)))
+                continue;
+            if (startVertex < 0) startVertex = vertex;
+            ++faceVertexCount;
+        }
+        if (faceVertexCount < 3) continue;
+
+        const double4 equation = cell.planes[plane];
+        const double3 normal = make_double3(equation.x, equation.y, equation.z);
+        const double normalLength = sqrt(lengthSquared3(normal));
+        if (!(normalLength > 0.0) || !isfinite(normalLength)) {
+            cell.fail(RVDStatus::NonFiniteGeometry);
+            return false;
+        }
+        const double3 unitNormal = mul3(normal, 1.0 / normalLength);
+
+        const uint3 startTriplet = cell.vertices[startVertex];
+        const uint32_t startEdge = startTriplet.x != uint32_t(plane)
+            ? startTriplet.x
+            : (startTriplet.y != uint32_t(plane)
+                   ? startTriplet.y
+                   : startTriplet.z);
+        if (startEdge == InvalidId) {
+            cell.fail(RVDStatus::InconsistentBoundary);
+            return false;
+        }
+
+        const double3 anchor = cell.vertexPosition(startTriplet);
+        int currentVertex =
+            findFaceEdgeNeighbor(cell, uint32_t(plane), startEdge, startVertex);
+        if (currentVertex < 0) {
+            cell.fail(RVDStatus::InconsistentBoundary);
+            return false;
+        }
+
+        uint32_t incomingEdge = startEdge;
+        int visitedVertices = 2;
+        double signedArea = 0.0;
+        double3 relativeMoment = make_double3(0.0, 0.0, 0.0);
+        while (currentVertex != startVertex &&
+               visitedVertices <= faceVertexCount) {
+            const uint3 currentTriplet = cell.vertices[currentVertex];
+            const uint32_t outgoingEdge =
+                otherFacePlane(currentTriplet, uint32_t(plane), incomingEdge);
+            if (outgoingEdge == InvalidId) {
+                cell.fail(RVDStatus::InconsistentBoundary);
+                return false;
+            }
+            const int nextVertex = findFaceEdgeNeighbor(
+                cell, uint32_t(plane), outgoingEdge, currentVertex);
+            if (nextVertex < 0) {
+                cell.fail(RVDStatus::InconsistentBoundary);
+                return false;
+            }
+
+            if (nextVertex != startVertex) {
+                const double3 currentPosition =
+                    cell.vertexPosition(currentTriplet);
+                const double3 nextPosition =
+                    cell.vertexPosition(cell.vertices[nextVertex]);
+                const double3 currentOffset = sub3(currentPosition, anchor);
+                const double3 nextOffset = sub3(nextPosition, anchor);
+                const double triangleArea = 0.5 * dot3(
+                    cross3(currentOffset, nextOffset), unitNormal);
+                signedArea += triangleArea;
+                relativeMoment = add3(
+                    relativeMoment,
+                    mul3(add3(currentOffset, nextOffset), triangleArea / 3.0));
+            }
+
+            if (nextVertex != startVertex) ++visitedVertices;
+            incomingEdge = outgoingEdge;
+            currentVertex = nextVertex;
+        }
+        if (currentVertex != startVertex ||
+            visitedVertices != faceVertexCount) {
+            cell.fail(RVDStatus::InconsistentBoundary);
+            return false;
+        }
+
+        const double orientation = signedArea < 0.0 ? -1.0 : 1.0;
+        const double faceArea = fabs(signedArea);
+        if (!(faceArea > 0.0)) continue;
+        const double3 faceMoment = add3(
+            mul3(anchor, faceArea), mul3(relativeMoment, orientation));
+        if (!isfinite(faceArea) || !isfinite(faceMoment.x) ||
+            !isfinite(faceMoment.y) || !isfinite(faceMoment.z)) {
+            cell.fail(RVDStatus::NonFiniteGeometry);
+            return false;
+        }
+
+        cell.planeAreas[plane] += sign * faceArea;
+        cell.planeAreaAbsSums[plane] += faceArea;
+        if (cell.planeMoments != nullptr) {
+            cell.planeMoments[plane] = add3(
+                cell.planeMoments[plane], mul3(faceMoment, sign));
+        }
+    }
+    return true;
+}
+
 __device__ inline double determinant3Double(double3 a, double3 b, double3 c) {
     return a.x * (b.y * c.z - b.z * c.y) -
            b.x * (a.y * c.z - a.z * c.y) +
@@ -470,72 +621,18 @@ __device__ inline double4 integrateCell(
                 const int j = (i + 3 - step) % 3;
                 const double orientation = step ? 1.0 : -1.0;
 
-                const double weight =
-                    sign * orientation * determinant3Double(ac, projected[i], lines[j]);
+                const double weight = sign * orientation * determinant3Double(ac, projected[i], lines[j]);
 
                 bary.w += weight;
 
-                const double rx =
-                    0.25 * (
-                        ac.x +
-                        projected[i].x +
-                        lines[j].x) -
-                    ac.x;
-
-                const double ry =
-                    0.25 * (
-                        ac.y +
-                        projected[i].y +
-                        lines[j].y) -
-                    ac.y;
-
-                const double rz =
-                    0.25 * (
-                        ac.z +
-                        projected[i].z +
-                        lines[j].z) -
-                    ac.z;
+                const double rx = 0.25 * (ac.x + projected[i].x + lines[j].x) - ac.x;
+                const double ry = 0.25 * (ac.y + projected[i].y + lines[j].y) - ac.y;
+                const double rz = 0.25 * (ac.z + projected[i].z + lines[j].z) - ac.z;
 
                 bary.x += weight * rx;
                 bary.y += weight * ry;
                 bary.z += weight * rz;
 
-                const int tag = cell.planeNeighborIds[ids[i]];
-
-                if (ids[i] < uint32_t(basePlaneCount) &&
-                    (tag >= 0 || domainFaceFromTag(tag) >= 0)) {
-
-                    const double4 plane = cell.planes[ids[i]];
-                    const double3 normal = make_double3(plane.x, plane.y, plane.z);
-                    const double normalLength = sqrt(lengthSquared3(normal));
-
-                    if (!(normalLength > 0.0) || !isfinite(normalLength)) {
-                        cell.fail(RVDStatus::NonFiniteGeometry);
-                        return bary;
-                    }
-
-                    const double dArea =
-                        0.5 *
-                        sign *
-                        orientation *
-                        determinant3Double(
-                            projected[i],
-                            lines[j],
-                            normal) /
-                        normalLength;
-
-                    cell.planeAreas[ids[i]] += dArea;
-                    cell.planeAreaAbsSums[ids[i]] += fabs(dArea);
-
-                    if (cell.planeMoments != nullptr) {
-                        const double triX = a.x + (projected[i].x + lines[j].x) / 3.0;
-                        const double triY = a.y + (projected[i].y + lines[j].y) / 3.0;
-                        const double triZ = a.z + (projected[i].z + lines[j].z) / 3.0;
-                        cell.planeMoments[ids[i]].x += dArea * triX;
-                        cell.planeMoments[ids[i]].y += dArea * triY;
-                        cell.planeMoments[ids[i]].z += dArea * triZ;
-                    }
-                }
             }
         }
     }
@@ -547,15 +644,107 @@ __device__ inline double4 integrateCell(
         cell.fail(RVDStatus::NonFiniteGeometry);
     }
 
+    if (cell.status == RVDStatus::Success &&
+        !accumulatePlaneMeasures(cell, basePlaneCount, sign)) {
+        return bary;
+    }
+
     return bary;
 }
 
 static constexpr int MaxClippedPolygonVertices = OverflowLimits::P + 3;
 
+struct ClipVertexProvenance {
+    uint32_t triangleVertexA = InvalidId;
+    uint32_t triangleVertexB = InvalidId;
+    uint32_t planeA = InvalidId;
+    uint32_t planeB = InvalidId;
+    uint32_t planeC = InvalidId;
+};
+
+__device__ inline bool clipProvenanceHasPlane(
+    const ClipVertexProvenance& provenance, uint32_t plane) {
+    return provenance.planeA == plane || provenance.planeB == plane ||
+           provenance.planeC == plane;
+}
+
+__device__ inline void clipProvenanceAddPlane(
+    ClipVertexProvenance& provenance, uint32_t plane) {
+    if (plane == InvalidId || clipProvenanceHasPlane(provenance, plane)) return;
+    if (provenance.planeA == InvalidId) {
+        provenance.planeA = plane;
+    } else if (provenance.planeB == InvalidId) {
+        provenance.planeB = plane;
+    } else if (provenance.planeC == InvalidId) {
+        provenance.planeC = plane;
+    }
+}
+
+__device__ inline uint32_t clipProvenanceSharedPlane(
+    const ClipVertexProvenance& a, const ClipVertexProvenance& b) {
+    if (a.planeA != InvalidId &&
+        (a.planeA == b.planeA || a.planeA == b.planeB || a.planeA == b.planeC)) {
+        return a.planeA;
+    }
+    if (a.planeB != InvalidId &&
+        (a.planeB == b.planeA || a.planeB == b.planeB || a.planeB == b.planeC)) {
+        return a.planeB;
+    }
+    if (a.planeC != InvalidId &&
+        (a.planeC == b.planeA || a.planeC == b.planeB || a.planeC == b.planeC)) {
+        return a.planeC;
+    }
+    return InvalidId;
+}
+
+__device__ inline ClipVertexProvenance clipProvenanceIntersect(
+    const ClipVertexProvenance& a, const ClipVertexProvenance& b,
+    uint32_t plane, bool inputIsTriangle) {
+    ClipVertexProvenance result{};
+    uint32_t edgeA = InvalidId;
+    uint32_t edgeB = InvalidId;
+    if (a.triangleVertexB != InvalidId && b.triangleVertexB != InvalidId) {
+        if ((a.triangleVertexA == b.triangleVertexA &&
+             a.triangleVertexB == b.triangleVertexB) ||
+            (a.triangleVertexA == b.triangleVertexB &&
+             a.triangleVertexB == b.triangleVertexA)) {
+            edgeA = a.triangleVertexA;
+            edgeB = a.triangleVertexB;
+        }
+    } else if (inputIsTriangle && a.triangleVertexB == InvalidId &&
+               b.triangleVertexB == InvalidId) {
+        edgeA = a.triangleVertexA;
+        edgeB = b.triangleVertexA;
+    } else if (a.triangleVertexB != InvalidId &&
+               b.triangleVertexB == InvalidId) {
+        if (b.triangleVertexA == a.triangleVertexA ||
+            b.triangleVertexA == a.triangleVertexB) {
+            edgeA = a.triangleVertexA;
+            edgeB = a.triangleVertexB;
+        }
+    } else if (b.triangleVertexB != InvalidId &&
+               a.triangleVertexB == InvalidId) {
+        if (a.triangleVertexA == b.triangleVertexA ||
+            a.triangleVertexA == b.triangleVertexB) {
+            edgeA = b.triangleVertexA;
+            edgeB = b.triangleVertexB;
+        }
+    }
+    if (edgeA != InvalidId) {
+        result.triangleVertexA = edgeA;
+        result.triangleVertexB = edgeB;
+    }
+    clipProvenanceAddPlane(result, clipProvenanceSharedPlane(a, b));
+    clipProvenanceAddPlane(result, plane);
+    return result;
+}
+
 struct PlaneClippedSegment {
     double3 a;
     double3 b;
     int planeIndex;
+    ClipVertexProvenance provenanceA;
+    ClipVertexProvenance provenanceB;
 };
 
 __device__ inline int clipPolygonByPlanes(
@@ -567,14 +756,21 @@ __device__ inline int clipPolygonByPlanes(
     int capacity,
     PlaneClippedSegment* segments = nullptr,
     int* segmentCount = nullptr,
-    int segmentCapacity = 0) {
+    int segmentCapacity = 0,
+    const ClipVertexProvenance* inputProvenance = nullptr,
+    bool inputIsTriangle = false) {
     if (inputCount < 3 || planeCount <= 0 || capacity < 3) return 0;
     double3 polygon[MaxClippedPolygonVertices];
     double3 clipped[MaxClippedPolygonVertices];
+    ClipVertexProvenance polygonProvenance[MaxClippedPolygonVertices];
+    ClipVertexProvenance clippedProvenance[MaxClippedPolygonVertices];
     bool clippedOnPlane[MaxClippedPolygonVertices];
     const int initialCount = (inputCount < MaxClippedPolygonVertices) ? inputCount : MaxClippedPolygonVertices;
     for (int i = 0; i < initialCount; ++i) {
         polygon[i] = input[i];
+        polygonProvenance[i] = inputProvenance != nullptr
+            ? inputProvenance[i]
+            : ClipVertexProvenance{};
     }
     int polygonCount = initialCount;
     if (segmentCount != nullptr) *segmentCount = 0;
@@ -589,7 +785,8 @@ __device__ inline int clipPolygonByPlanes(
         const double planeEpsilon = 1e-10 * normalLength;
 
         int clippedCount = 0;
-        double3 previous = polygon[polygonCount - 1];
+        int previousIndex = polygonCount - 1;
+        double3 previous = polygon[previousIndex];
         double prevDist = plane.x * previous.x + plane.y * previous.y + plane.z * previous.z + plane.w;
         if (fabs(prevDist) <= planeEpsilon) prevDist = 0.0;
         bool previousInside = prevDist >= 0.0;
@@ -602,7 +799,7 @@ __device__ inline int clipPolygonByPlanes(
 
             if (currentInside != previousInside) {
                 if ((prevDist > 0.0 && currDist < 0.0) || (prevDist < 0.0 && currDist > 0.0)) {
-                    if (clippedCount >= MaxClippedPolygonVertices) return -1; // Hard geometry capacity error
+                    if (clippedCount >= MaxClippedPolygonVertices) return -1;
                     const double denominator = prevDist - currDist;
                     if (fabs(denominator) <= 1e-15 * normalLength) {
                         return -1;
@@ -612,16 +809,25 @@ __device__ inline int clipPolygonByPlanes(
                         return -1;
                     }
                     clipped[clippedCount] = add3(previous, mul3(sub3(current, previous), t));
+                    clippedProvenance[clippedCount] = clipProvenanceIntersect(
+                        polygonProvenance[previousIndex], polygonProvenance[vertex],
+                        uint32_t(planeIndex), inputIsTriangle);
                     clippedOnPlane[clippedCount] = true;
                     ++clippedCount;
                 }
             }
             if (currentInside) {
-                if (clippedCount >= MaxClippedPolygonVertices) return -1; // Hard geometry capacity error
+                if (clippedCount >= MaxClippedPolygonVertices) return -1;
                 clipped[clippedCount] = current;
+                clippedProvenance[clippedCount] = polygonProvenance[vertex];
                 clippedOnPlane[clippedCount] = (currDist == 0.0);
+                if (currDist == 0.0) {
+                    clipProvenanceAddPlane(
+                        clippedProvenance[clippedCount], uint32_t(planeIndex));
+                }
                 ++clippedCount;
             }
+            previousIndex = vertex;
             previous = current;
             prevDist = currDist;
             previousInside = currentInside;
@@ -633,13 +839,18 @@ __device__ inline int clipPolygonByPlanes(
                 if (!clippedOnPlane[i] || !clippedOnPlane[j]) continue;
                 if (lengthSquared3(sub3(clipped[i], clipped[j])) <= 0.0) continue;
                 if (*segmentCount >= segmentCapacity) return -1;
-                segments[*segmentCount] = {clipped[i], clipped[j], planeIndex};
+                segments[*segmentCount] = {
+                    clipped[i], clipped[j], planeIndex,
+                    clippedProvenance[i], clippedProvenance[j]};
                 ++(*segmentCount);
             }
         }
 
         polygonCount = clippedCount;
-        for (int i = 0; i < polygonCount; ++i) polygon[i] = clipped[i];
+        for (int i = 0; i < polygonCount; ++i) {
+            polygon[i] = clipped[i];
+            polygonProvenance[i] = clippedProvenance[i];
+        }
     }
     if (polygonCount < 3) return 0;
     if (polygonCount > capacity) return -1;
@@ -661,10 +872,12 @@ __device__ inline int clipTriangleToCellSegments(
     int capacity,
     PlaneClippedSegment* segments,
     int* segmentCount,
-    int segmentCapacity) {
+    int segmentCapacity,
+    const ClipVertexProvenance* inputProvenance = nullptr) {
     const double3 tri[3] = { a, b, c };
     return clipPolygonByPlanes(tri, 3, cell.planes, planeCount, output, capacity,
-                               segments, segmentCount, segmentCapacity);
+                               segments, segmentCount, segmentCapacity,
+                               inputProvenance, true);
 }
 
 __device__ inline bool integratePolygon(
@@ -675,8 +888,7 @@ __device__ inline bool integratePolygon(
     area = 0.0;
     moment = make_double3(0.0, 0.0, 0.0);
 
-    if (count < 3)
-        return true;
+    if (count < 3) return true;
 
     const double3 a = vertices[0];
 
@@ -685,16 +897,13 @@ __device__ inline bool integratePolygon(
         const double3 c = vertices[i + 1];
 
         const double3 cross = cross3(sub3(b, a), sub3(c, a));
-        const double triangleArea =
-            0.5 * sqrt(dot3(cross, cross));
+        const double triangleArea = 0.5 * sqrt(dot3(cross, cross));
 
         area += triangleArea;
 
         const double weight = triangleArea / 3.0;
 
-        moment = add3(
-            moment,
-            mul3(add3(add3(a, b), c), weight));
+        moment = add3(moment, mul3(add3(add3(a, b), c), weight));
     }
 
     return isfinite(area) &&

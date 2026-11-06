@@ -45,8 +45,9 @@ public:
 
     void setPressureSolverParameters(int maxIterations, float tolerance);
 
-    void update() override;
-    bool hasDispatchableComputeWork() const override;
+    void update(const SimTickContext& context) override;
+    bool isSubmissionReady() const override;
+    bool hasPendingSubmission() const override { return pendingSubmission; }
     float computeGpuMs() const override { return solver.getLastStepGpuMs(); }
     uint64_t completedStepCount() const override { return completedSteps; }
     const std::vector<VkCommandBuffer>& getComputeCommandBuffers() const override { return computeCommandBuffers; }
@@ -56,7 +57,6 @@ public:
     const CFDRuntime& getRuntime() const { return runtime; }
     CFDRuntime& getRuntime() { return runtime; }
 
-    // SimNode timeline publication interface
     VkSemaphore publicationReadySemaphore() const override { return cfdReadyVkSemaphore; }
     uint64_t publicationReadyValue() const override { return pendingCfdReadyValue; }
     VkSemaphore publicationReleaseSemaphore() const override { return cfdVulkanReleaseVkSemaphore; }
@@ -65,17 +65,14 @@ public:
     void setPublicationReleaseWait(uint64_t value) override { cfdReleaseWaitValue = value; }
 
     bool isInitialized() const { return initialized; }
-    void setActive(bool active) { isActive = active; }
-
-    void setPaused(bool paused) { isPaused = paused; }
     void resetSimulationState();
 
     void cleanup();
 
-    // Host-signals pending release wait when queue cannot deliver to prevent deadlock
     void releaseWaits();
 
 private:
+    void onEnteredInactive() override { pendingCfdReadyValue = 0; }
     bool rebuildTopology(const topology::GlobalDomain& domain);
     bool createSyncObjects();
     bool createComputeCommandBuffers(uint32_t maxFramesInFlight);
@@ -102,7 +99,6 @@ private:
     std::vector<VkCommandBuffer> computeCommandBuffers;
     uint64_t completedSteps = 0;
 
-    // Timeline synchronization
     VkSemaphore cfdReadyVkSemaphore = VK_NULL_HANDLE;
     cudaExternalSemaphore_t cfdReadyCudaSemaphore = nullptr;
     uint64_t cfdReadyCounter = 0;
@@ -114,8 +110,8 @@ private:
     uint64_t cfdReleaseWaitValue = 0;
 
     bool initialized = false;
-    bool isActive = true;
-    bool isPaused = true;
+    bool pendingSubmission = false;
+    uint32_t processedResetEpoch = 0;
 };
 
 } // namespace cfd

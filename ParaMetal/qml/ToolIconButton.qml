@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Effects
 
 Button {
     id: control
@@ -39,6 +40,11 @@ Button {
             fillMode: Image.PreserveAspectFit
             opacity: control.enabled ? 1.0 : 0.45
             mirror: control.mirrorHorizontal
+            layer.enabled: true
+            layer.effect: MultiEffect {
+                colorization: 1.0
+                colorizationColor: control.checked ? "#ffffff" : UiTheme.toolIconColor
+            }
         }
     }
 }

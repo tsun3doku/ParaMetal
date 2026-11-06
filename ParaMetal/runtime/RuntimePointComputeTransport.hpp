@@ -2,10 +2,10 @@
 
 #include <cstdint>
 
-#include "runtime/package/RuntimePackages.hpp"
-#include "runtime/RuntimeProductManager.hpp"
-#include "runtime/RuntimeProducts.hpp"
+#include "runtime/ComputeTransportResult.hpp"
 #include "runtime/PointComputeRuntime.hpp"
+#include "runtime/RuntimeProducts.hpp"
+#include "runtime/package/RuntimePackages.hpp"
 
 class RuntimePointComputeTransport {
 public:
@@ -13,14 +13,11 @@ public:
         runtime = updatedRuntime;
     }
 
-    void setProducts(RuntimeProductManager* updatedProducts) {
-        products = updatedProducts;
-    }
-
-    ProductHandle apply(uint64_t socketKey, const PointPackage& package);
+    ComputeApplyResult apply(uint64_t socketKey, const PointPackage& package, PointProduct& outProduct);
+    void commitPending(uint64_t socketKey);
+    void cancelPending(uint64_t socketKey);
     void remove(uint64_t socketKey);
 
 private:
     PointComputeRuntime* runtime = nullptr;
-    RuntimeProductManager* products = nullptr;
 };

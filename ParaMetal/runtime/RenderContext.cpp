@@ -46,7 +46,6 @@ bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, Fra
         viewportTarget,
         *commandPool,
         frameSync,
-        scene.cameraController(),
         runtimeBusy,
         isShuttingDown);
 

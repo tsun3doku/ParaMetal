@@ -12,7 +12,7 @@ class VulkanDevice;
 
 class HeatSystemSurfaceStage {
 public:
-    explicit HeatSystemSurfaceStage(VulkanDevice& device);
+    HeatSystemSurfaceStage(VulkanDevice& device, uint32_t maxFramesInFlight);
     ~HeatSystemSurfaceStage();
 
     bool createDescriptorPool(uint32_t numModels);
@@ -48,6 +48,7 @@ private:
         uint32_t currentFrame) const;
 
     VulkanDevice& vulkanDevice;
+    uint32_t maxFramesInFlight = 0;
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
     VkDescriptorSetLayout gradientDescriptorSetLayout = VK_NULL_HANDLE;

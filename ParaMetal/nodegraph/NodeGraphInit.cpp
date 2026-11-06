@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <initializer_list>
+#include <utility>
 
 namespace payloadtypes {
     uint8_t None = 0;
@@ -21,6 +22,7 @@ namespace payloadtypes {
     uint8_t Points = 0;
     uint8_t SerialTemperature = 0;
     uint8_t CFD = 0;
+    uint8_t HeatProbe = 0;
 }
 
 static NodeSocketSignature makeInputSocket(
@@ -199,6 +201,25 @@ static NodeTypeDefinition buildSerialTemperatureNode() {
     };
 }
 
+static NodeTypeDefinition buildHeatProbeNode() {
+    return {
+        nodegraphtypes::HeatProbe,
+        "Heat Probe",
+        NodeGraphNodeCategory::System,
+        {
+            makeInputSocket("Heat", NodeGraphValueType::Simulation, false, true),
+            makeOutputSocket("Heat", NodeGraphValueType::Simulation, payloadtypes::Heat),
+        },
+        {
+            {nodegraphparams::heatprobe::Enabled, "Enabled", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
+            {nodegraphparams::heatprobe::OpcPort, "Port", NodeGraphParamType::Int, 0.0, 4840, false, "", false},
+            {nodegraphparams::heatprobe::ProbesJson, "Probes", NodeGraphParamType::String, 0.0, 0, false, R"([{"id":1,"name":"Probe_1","x":0.0,"y":0.0,"z":0.0,"enabled":true}])", false},
+            {nodegraphparams::heatprobe::ShowTemperature, "Show Temperature", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
+            {nodegraphparams::heatprobe::ShowName, "Show Name", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
+        },
+    };
+}
+
 
 
 static NodeTypeDefinition buildVoronoiNode() {
@@ -215,10 +236,12 @@ static NodeTypeDefinition buildVoronoiNode() {
             {nodegraphparams::voronoi::CellSize, "Cell Size", NodeGraphParamType::Float, 0.005, 0, false, "", false},
             {nodegraphparams::voronoi::VoxelResolution, "Voxel Resolution", NodeGraphParamType::Int, 0.0, 128, false, "", false},
             {nodegraphparams::voronoi::VolumePadding, "Volume Grid Padding", NodeGraphParamType::Float, 0.01, 0, false, "", false},
-            {nodegraphparams::voronoi::ContactRange, "Contact Range", NodeGraphParamType::Float, voronoi::DefaultContactRange, 0, false, "", false},
+            {nodegraphparams::voronoi::ContactRange, "Maximum Contact Gap", NodeGraphParamType::Float, voronoi::DefaultContactRange, 0, false, "", false},
+            {nodegraphparams::voronoi::LloydIterations, "Lloyd Iterations", NodeGraphParamType::Int, 0.0, int(voronoi::DefaultLloydIterations), false, "", false},
+            {nodegraphparams::voronoi::LloydVolumeThreshold, "Lloyd Volume Threshold", NodeGraphParamType::Float, voronoi::DefaultLloydVolumeThresholdFraction, 0, false, "", false},
+            {nodegraphparams::voronoi::LloydDamping, "Lloyd Damping", NodeGraphParamType::Float, voronoi::DefaultLloydDamping, 0, false, "", false},
             {nodegraphparams::voronoi::ShowVoronoi, "Show Voronoi", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::voronoi::ShowPoints, "Show Points", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
-            {nodegraphparams::voronoi::ShowContactManifold, "Show Contact Manifold", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
         },
     };
 }
@@ -258,8 +281,11 @@ static NodeTypeDefinition buildHeatSolveNode() {
             {nodegraphparams::heatsolve::Paused, "Paused", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::ResetRequested, "Reset Requested", NodeGraphParamType::Int, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::ShowHeatOverlay, "Show Heat Overlay", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
+            {nodegraphparams::heatsolve::UseVemTraceSurface, "VEM Trace Surface", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::ShowFluxVectors, "Show Flux Vectors", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::ShowHeatPalette, "Show Heat Palette", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
+            {nodegraphparams::heatsolve::ShowIsocontours, "Show Isocontours", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
+            {nodegraphparams::heatsolve::IsocontourSpacingC, "Isocontour Spacing (C)", NodeGraphParamType::Float, 10.0, 0, false, "", false},
             {nodegraphparams::heatsolve::FluxVectorScale, "Flux Vector Scale", NodeGraphParamType::Float, 1.0, 0, false, "", false},
             {nodegraphparams::heatsolve::RewindFrame, "Rewind Frame", NodeGraphParamType::Int, 0.0, static_cast<int64_t>(heat::NoRewindFrame), false, "", false},
             {nodegraphparams::heatsolve::SimulationDuration, "Simulation Duration", NodeGraphParamType::Float, 10.0, 0, false, "", false},
@@ -438,6 +464,42 @@ static NodeTypeDefinition buildMergeNode() {
     };
 }
 
+static NodeTypeDefinition buildWriteNode() {
+    NodeGraphParamDefinition producerNode{};
+    producerNode.id = 1;
+    producerNode.name = "producerNodeId";
+    producerNode.type = NodeGraphParamType::Int;
+    NodeGraphParamDefinition outputSocket{};
+    outputSocket.id = 2;
+    outputSocket.name = "outputSocketId";
+    outputSocket.type = NodeGraphParamType::Int;
+    NodeGraphParamDefinition productId{};
+    productId.id = 3;
+    productId.name = "productId";
+    productId.type = NodeGraphParamType::String;
+    NodeGraphParamDefinition productFormat = makeEnumParamDefinition(
+        4, "format", "OBJ", {"OBJ", "PLY", "STL", "XYZ", "CSV"});
+    NodeGraphParamDefinition productStruct = makeStructParamDefinition(
+        nodegraphparams::write::Product, "Product", {
+            {"producerNodeId", std::make_shared<NodeGraphParamDefinition>(producerNode)},
+            {"outputSocketId", std::make_shared<NodeGraphParamDefinition>(outputSocket)},
+            {"productId", std::make_shared<NodeGraphParamDefinition>(productId)},
+            {"format", std::make_shared<NodeGraphParamDefinition>(productFormat)},
+        });
+    return {
+        nodegraphtypes::Write,
+        "Write",
+        NodeGraphNodeCategory::Misc,
+        {
+            makePolymorphicInputSocket("Data", {NodeGraphValueType::Mesh, NodeGraphValueType::Remesh, NodeGraphValueType::Points, NodeGraphValueType::Simulation}, false),
+        },
+        {
+            {nodegraphparams::write::FilePath, "File", NodeGraphParamType::String, 0.0, 0, false, "", false},
+            std::move(productStruct),
+        },
+    };
+}
+
 void initNodeGraph(NodeGraphRegistry& registry) {
     payloadtypes::Geometry   = registry.registerPayloadType("geometry", NodeGraphValueType::Mesh);
     payloadtypes::Remesh     = registry.registerPayloadType("remesh",   NodeGraphValueType::Remesh);
@@ -448,6 +510,7 @@ void initNodeGraph(NodeGraphRegistry& registry) {
     payloadtypes::Points     = registry.registerPayloadType("points",    NodeGraphValueType::Points);
     payloadtypes::SerialTemperature = registry.registerPayloadType("serial_temperature", NodeGraphValueType::ScalarFloat);
     payloadtypes::CFD        = registry.registerPayloadType("cfd",       NodeGraphValueType::Simulation);
+    payloadtypes::HeatProbe  = registry.registerPayloadType("heat_probe", NodeGraphValueType::ScalarFloat);
 
     registry.registerNodeType(buildModelNode());
     registry.registerNodeType(buildTransformNode());
@@ -462,4 +525,6 @@ void initNodeGraph(NodeGraphRegistry& registry) {
     registry.registerNodeType(buildMeshPointsNode());
     registry.registerNodeType(buildMergeNode());
     registry.registerNodeType(buildSerialTemperatureNode());
+    registry.registerNodeType(buildHeatProbeNode());
+    registry.registerNodeType(buildWriteNode());
 }

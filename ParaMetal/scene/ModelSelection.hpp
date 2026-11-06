@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "PickId.hpp"
+#include "ui/UiPalette.hpp"
 
 class Camera;
 class Model;
@@ -122,7 +123,7 @@ private:
     PickingRequest lastPickRequest;
     
     float outlineThickness = 1.0f;
-    glm::vec3 outlineColor = glm::vec3(pow(0.964705f, 2.2), pow(0.647058f, 2.2), pow(0.235294f, 2.2));
+    glm::vec3 outlineColor = ui::UiPalette::selectionHighlightLinear();
     bool initialized = false;
 };
 

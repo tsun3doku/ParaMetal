@@ -7,17 +7,17 @@
 #include "VulkanCoreContext.hpp"
 #include "heat/HeatSystemComputeController.hpp"
 #include "nodegraph/NodeGraphController.hpp"
+#include "nodegraph/NodeGraphRegistry.hpp"
 #include "simgraph/SimGraphRuntime.hpp"
 #include "render/WindowRuntimeState.hpp"
 #include "render/RenderRuntime.hpp"
+#include "render/SceneRenderer.hpp"
+#include "render/HeatOverlayRenderer.hpp"
 #include "scene/CameraController.hpp"
-#include "scene/InputController.hpp"
+#include "interaction/InteractionContext.hpp"
+#include "scene/MarkerInteractionController.hpp"
 #include "scene/SceneController.hpp"
-#include "scene/MaterialSystem.hpp"
-#include "scene/LightingSystem.hpp"
 #include "vulkan/ModelRegistry.hpp"
-#include "vulkan/UniformBufferManager.hpp"
-#include "vulkan/MemoryAllocator.hpp"
 
 RuntimeController::RuntimeController() = default;
 
@@ -30,6 +30,7 @@ bool RuntimeController::initialize(
     ComputeContext& compute,
     NodeGraphContext& nodeGraph,
     SceneContext& scene,
+    InteractionContext& interaction,
     VulkanCoreContext& core,
     WindowRuntimeState& windowRuntimeState,
     RawMouseInput* rawMouseInput) {
@@ -47,6 +48,7 @@ bool RuntimeController::initialize(
     this->compute = &compute;
     this->nodeGraph = &nodeGraph;
     this->scene = &scene;
+    this->interaction = &interaction;
 
     sceneControllerState = std::make_unique<SceneController>(
         *scene.modelRegistry(),
@@ -62,6 +64,7 @@ bool RuntimeController::initialize(
     runtimeInput = std::make_unique<RuntimeInput>(
         windowRuntimeState,
         *inputControllerState,
+        interaction,
         *nodeGraph.nodeGraphController(),
         *sceneControllerState,
         *scene.modelRegistry(),
@@ -74,38 +77,24 @@ bool RuntimeController::initialize(
 }
 
 bool RuntimeController::initializeInputPipeline(WindowRuntimeState& windowRuntimeState) {
-    if (!render || !scene || !render->runtime()) {
+    if (!render || !scene || !interaction || !render->runtime()) {
         return false;
     }
 
     RenderRuntime* renderRuntime = render->runtime();
     auto* modelRegistry = scene->modelRegistry();
-    auto* uniformBufferManager = scene->uniformBufferManager();
-    auto* lightingSystem = scene->lightingSystem();
-    auto* materialSystem = scene->materialSystem();
-    if (!modelRegistry || !uniformBufferManager || !lightingSystem || !materialSystem) {
+    if (!modelRegistry) {
         return false;
     }
 
     inputControllerState = std::make_unique<InputController>(
         scene->cameraController(),
-        renderRuntime->getGizmoController(),
-        renderRuntime->getNavigationGizmoController(),
+        *interaction,
         renderRuntime->getModelSelection(),
         *modelRegistry,
         windowRuntimeState);
 
-    FrameControllerServices frameControllerServices{
-        *modelRegistry,
-        *uniformBufferManager,
-        renderRuntime->getModelSelection(),
-        renderRuntime->getGizmoController(),
-        renderRuntime->getNavigationGizmoController(),
-        renderRuntime->getWireframeRenderer(),
-        *inputControllerState,
-        *lightingSystem,
-        *materialSystem};
-    if (!renderRuntime->initializeFrameController(frameControllerServices)) {
+    if (!renderRuntime->initializeFrameController(*scene, *interaction)) {
         inputControllerState.reset();
         return false;
     }
@@ -122,6 +111,7 @@ void RuntimeController::shutdown() {
     compute = nullptr;
     nodeGraph = nullptr;
     scene = nullptr;
+    interaction = nullptr;
     initialized = false;
 }
 
@@ -129,31 +119,16 @@ bool RuntimeController::isInitialized() const {
     return initialized;
 }
 
-NodeGraphController* RuntimeController::nodeGraphController() {
-    return nodeGraph ? nodeGraph->nodeGraphController() : nullptr;
-}
-
-CameraController* RuntimeController::cameraController() {
-    return scene ? &scene->cameraController() : nullptr;
-}
-
-void RuntimeController::simulateFrame(bool allowSimulation, uint32_t frameIndex) {
-    if (render == nullptr || compute == nullptr) {
-        return;
-    }
-
+void RuntimeController::simulateFrame(bool allowSimulation, const SimTickContext& simContext) {
     SimGraphRuntime* simGraph = compute->simGraphRuntime();
     if (simGraph == nullptr) {
         return;
     }
 
     HeatSystemComputeController* heat = compute->heatSystemComputeController();
-    if (heat != nullptr) {
-        heat->updateSerialInputs();
-    }
 
     simGraph->setEnabled(allowSimulation);
-    const SimTickResult simResult = simGraph->tick(frameIndex);
+    const SimTickResult simResult = simGraph->tick(simContext);
     render->runtime()->getFrameStats().setComputeGpuMs(simResult.computeGpuMs);
     render->runtime()->getFrameStats().setSimStepTotal(simResult.completedStepCount);
 
@@ -169,37 +144,54 @@ void RuntimeController::tick(
     uint32_t& frameCounter,
     VkCommandBuffer commandBuffer,
     uint32_t frameIndex,
-    const app::RenderSettings& renderSettings) {
+    const app::RenderSettings& renderSettings,
+    const SimTickContext& simContext) {
     if (!runtimeRenderController || !runtimeInput || !render || !compute || !nodeGraph || !scene) {
         return;
     }
 
-    hasFrameSlot = false;
-
     runtimeInput->tick();
+
+    if (render->runtime() && interaction) {
+        const auto& markerCtrl = interaction->markerInteractionController();
+        if (auto* overlay = render->runtime()->getSceneRenderer().getHeatOverlayRenderer()) {
+            overlay->setSelectedProbe(markerCtrl.getSelectedProbeId(), markerCtrl.getSelectedProbeIndex());
+            if (markerCtrl.hasPointerCapture()) {
+                overlay->updateProbePosition(
+                    markerCtrl.getSelectedProbeId(),
+                    markerCtrl.getSelectedProbeIndex(),
+                    markerCtrl.getLiveDragPosition());
+            }
+        }
+    }
 
     NodeGraphController* graphController = nodeGraph->nodeGraphController();
     graphController->tick();
 
+    if (render->runtime()) {
+        if (auto* overlay = render->runtime()->getSceneRenderer().getHeatOverlayRenderer()) {
+            if (auto* heatCtrl = compute->heatSystemComputeController()) {
+                for (const auto& [nodeIdVal, node] : graphController->graphState().nodes) {
+                    if (node.typeId == nodegraphtypes::HeatProbe) {
+                        std::vector<float> temps;
+                        if (heatCtrl->getHeatProbeTemperatures(node.id.value, temps)) {
+                            overlay->updateProbeTemperatures(node.id.value, temps);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     scene->cameraController().tick(deltaTime);
     simulateFrame(
         graphController->compiledState().isValid && !graphController->runtimeCompilationPending(),
-        frameIndex);
-    const RuntimeRenderFrameResult renderResult = runtimeRenderController->renderFrame(
+        simContext);
+    runtimeRenderController->renderFrame(
         frameCounter,
         commandBuffer,
         frameIndex,
         renderSettings);
-    hasFrameSlot = renderResult.submitted;
-    frameSlot = renderResult.frameSlot;
-}
-
-bool RuntimeController::hasLastFrameSlot() const {
-    return hasFrameSlot;
-}
-
-uint32_t RuntimeController::lastFrameSlot() const {
-    return frameSlot;
 }
 
 std::vector<ViewportCommand> RuntimeController::takePendingViewportCommands() {
@@ -214,12 +206,4 @@ bool RuntimeController::takePendingNodeParameters(
     std::vector<NodeGraphParamValue>& outParameters) {
     return runtimeInput &&
         runtimeInput->takePendingNodeParameters(outNodeId, outParameters);
-}
-
-SceneController* RuntimeController::sceneController() {
-    return sceneControllerState.get();
-}
-
-const SceneController* RuntimeController::sceneController() const {
-    return sceneControllerState.get();
 }

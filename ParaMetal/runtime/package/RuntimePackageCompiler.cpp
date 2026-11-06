@@ -10,6 +10,8 @@
 #include "nodegraph/NodeGraphState.hpp"
 #include "nodegraph/NodeGraphUtils.hpp"
 #include "nodegraph/NodeHeatSolveParams.hpp"
+#include "nodegraph/NodeHeatProbeParams.hpp"
+#include "domain/HeatProbeData.hpp"
 #include "nodegraph/NodeMergeParams.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
 #include "nodegraph/NodeRemeshParams.hpp"
@@ -72,8 +74,9 @@ bool RuntimePackageCompiler::compileNode(
         }
 
         const NodeDataBlock& output = evaluated->data;
+        // A frozen output keeps no package: its generation may reference an upstream
+        // publication retired by the packages this pass still commits.
         if (output.isFrozen && frozenPackages == FrozenPackages::Preserve) {
-            packages.retain(outputSocketKey);
             continue;
         }
 
@@ -83,7 +86,7 @@ bool RuntimePackageCompiler::compileNode(
         else if (typeId == nodegraphtypes::Voronoi)
             compiled = compileVoronoiPackage(node, outputSocketKey, output, payloads, worldUnit, packages, errors);
         else if (typeId == nodegraphtypes::HeatSolve)
-            compiled = compileHeatPackage(node, outputSocketKey, output, payloads, worldUnit, packages, errors);
+            compiled = compileHeatPackage(graph, node, outputSocketKey, output, payloads, worldUnit, packages, errors);
         else if (typeId == nodegraphtypes::CFD)
             compiled = compileCFDPackage(node, outputSocketKey, output, payloads, worldUnit, packages, errors);
         else if (output.dataType == payloadtypes::Points)
@@ -199,7 +202,6 @@ bool RuntimePackageCompiler::compileVoronoiPackage(
     const VoronoiNodeParams params = readVoronoiNodeParams(node);
     package.display.showVoronoi = params.preview.showVoronoi;
     package.display.showPoints = params.preview.showPoints;
-    package.display.showContactManifold = params.preview.showContactManifold;
 
     if (voronoi->modelMeshHandles.empty()) {
         errors.push_back("Voronoi domain requires at least one unique Remeshes input.");
@@ -305,6 +307,7 @@ bool RuntimePackageCompiler::compileVoronoiPackage(
 }
 
 bool RuntimePackageCompiler::compileHeatPackage(
+    const NodeGraphState& graph,
     const NodeGraphNode& node,
     uint64_t outputSocketKey,
     const NodeDataBlock& output,
@@ -321,14 +324,44 @@ bool RuntimePackageCompiler::compileHeatPackage(
     package.authored = *heat;
     package.heatHandle = output.payloadHandle;
     package.domainVoronoiHandle = heat->domainVoronoiHandle;
+
+    std::vector<NodeGraphNodeId> scanQueue = { node.id };
+    std::unordered_set<uint32_t> visited = { node.id.value };
+
+    while (!scanQueue.empty()) {
+        const NodeGraphNodeId currentId = scanQueue.back();
+        scanQueue.pop_back();
+
+        for (const auto& [edgeId, edge] : graph.edges) {
+            if (edge.fromNode == currentId) {
+                const NodeGraphNode* downstreamNode = graph.node(edge.toNode);
+                if (downstreamNode && getNodeTypeId(downstreamNode->typeId) == nodegraphtypes::HeatProbe) {
+                    if (visited.insert(downstreamNode->id.value).second) {
+                        const auto probeParams = readHeatProbeNodeParams(*downstreamNode);
+                        HeatProbeData probeData{};
+                        probeData.enabled = probeParams.enabled;
+                        probeData.opcPort = probeParams.opcPort;
+                        probeData.showTemperature = probeParams.showTemperature;
+                        probeData.showName = probeParams.showName;
+                        probeData.items = probeParams.items;
+                        package.resolvedHeatProbes[downstreamNode->id.value] = probeData;
+                        scanQueue.push_back(downstreamNode->id);
+                    }
+                }
+            }
+        }
+    }
     const HeatSolveNodeParams params = readHeatSolveNodeParams(node);
     package.display.showHeatOverlay = params.preview.showHeatOverlay;
+    package.display.useVemTraceSurface = params.preview.useVemTraceSurface;
     package.display.showFluxVectors = params.preview.showFluxVectors;
     package.display.showHeatPalette = params.preview.showHeatPalette;
+    package.display.showIsocontours = params.preview.showIsocontours;
     package.display.showDomainBox = params.preview.showDomainBox;
     package.display.showFluidVolume = params.preview.showFluidVolume;
     package.display.fluidVolumeOpacity = static_cast<float>(params.preview.fluidVolumeOpacity);
     package.display.fluxVectorScale = static_cast<float>(params.preview.fluxVectorScale);
+    package.display.isocontourSpacingC = params.isocontourSpacingC;
 
     for (uint32_t face = 0; face < 6; ++face) {
         package.domainBoundaryTypes[face] = static_cast<uint32_t>(heat->boundaries[face].type);
@@ -337,11 +370,15 @@ bool RuntimePackageCompiler::compileHeatPackage(
         package.domainBoundaryHeatTransferCoefficients[face] = heat->boundaries[face].htc;
     }
 
-    std::unordered_map<uint64_t, const HeatModelData*> modelsByRemesh;
+    struct AuthoredHeatModel {
+        const HeatModelData* data = nullptr;
+        uint64_t handleKey = 0;
+    };
+    std::unordered_map<uint64_t, AuthoredHeatModel> modelsByRemesh;
     for (const NodeDataHandle& handle : heat->heatModelHandles) {
         const HeatModelData* model = payloads.get<HeatModelData>(handle);
         if (model && model->meshHandle.key != 0) {
-            modelsByRemesh.emplace(model->meshHandle.key, model);
+            modelsByRemesh.emplace(model->meshHandle.key, AuthoredHeatModel{model, handle.key});
         }
     }
 
@@ -388,8 +425,9 @@ bool RuntimePackageCompiler::compileHeatPackage(
         }
     }
 
-    for (const auto& [remeshKey, model] : modelsByRemesh) {
+    for (const auto& [remeshKey, authoredModel] : modelsByRemesh) {
         (void)remeshKey;
+        const HeatModelData* model = authoredModel.data;
         const RemeshPackage* remeshPackage = packages.findAny<RemeshPackage>(model->meshHandle.key);
         const ModelPackage* modelPackage = remeshPackage
             ? packages.findAny<ModelPackage>(remeshPackage->sourceMeshHandle.key)
@@ -406,7 +444,7 @@ bool RuntimePackageCompiler::compileHeatPackage(
         if (heat->active) {
             bool inDomain = false;
             for (const ProductHandle& handle : domainPackage->globalRemeshProducts) {
-                inDomain = inDomain || handle == remeshPackage->productHandle;
+                inDomain = inDomain || isSamePublication(handle, remeshPackage->productHandle);
             }
             if (!inDomain) {
                 errors.push_back("Heat package contains a heat model outside the global Voronoi domain.");
@@ -415,6 +453,7 @@ bool RuntimePackageCompiler::compileHeatPackage(
         }
 
         HeatModelPackage compiledModel{};
+        compiledModel.heatModelKey = authoredModel.handleKey;
         compiledModel.modelProduct = modelPackage->productHandle;
         compiledModel.remeshProduct = remeshPackage->productHandle;
         compiledModel.localToWorld = modelPackage->localToWorld;
@@ -453,7 +492,7 @@ bool RuntimePackageCompiler::compileHeatPackage(
     if (heat->cfdHandle.key != 0) {
         const CFDPackage* cfdPackage = packages.findAny<CFDPackage>(heat->cfdHandle.key);
         if (cfdPackage && cfdPackage->productHandle.isValid()) {
-            if (domainPackage && cfdPackage->domainVoronoiProduct == domainPackage->productHandle) {
+            if (domainPackage && isSamePublication(cfdPackage->domainVoronoiProduct, domainPackage->productHandle)) {
                 package.cfdProduct = cfdPackage->productHandle;
             } else if (domainPackage) {
                 errors.push_back("Heat package CFD input does not share the same Voronoi domain as Heat.");

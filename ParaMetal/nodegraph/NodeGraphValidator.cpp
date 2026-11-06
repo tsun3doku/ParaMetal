@@ -1,12 +1,53 @@
 #include "NodeGraphValidator.hpp"
+#include "NodeGraph.hpp"
 #include "NodeGraphTypes.hpp"
 #include "NodeGraphUtils.hpp"
 
-#include <queue>
 #include <algorithm>
+#include <queue>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+
+bool NodeGraphValidator::socketTypesAccept(
+    NodeGraphValueType srcResolved,
+    const std::vector<NodeGraphValueType>& srcAccepted,
+    NodeGraphValueType dstResolved,
+    const std::vector<NodeGraphValueType>& dstAccepted) {
+
+    if (srcResolved != NodeGraphValueType::None && dstResolved != NodeGraphValueType::None) {
+        return srcResolved == dstResolved;
+    }
+
+    if (!srcAccepted.empty()) {
+        if (dstResolved != NodeGraphValueType::None) {
+            return std::find(srcAccepted.begin(), srcAccepted.end(), dstResolved) != srcAccepted.end();
+        }
+        if (!dstAccepted.empty()) {
+            return std::any_of(srcAccepted.begin(), srcAccepted.end(), [&](NodeGraphValueType vt) {
+                return std::find(dstAccepted.begin(), dstAccepted.end(), vt) != dstAccepted.end();
+            });
+        }
+    }
+
+    if (!dstAccepted.empty() && srcResolved != NodeGraphValueType::None) {
+        return std::find(dstAccepted.begin(), dstAccepted.end(), srcResolved) != dstAccepted.end();
+    }
+
+    return srcResolved == dstResolved;
+}
+
+bool NodeGraphValidator::socketAccepts(
+    const NodeSocketSignature& srcSocket,
+    NodeGraphValueType srcResolved,
+    const NodeSocketSignature& dstSocket,
+    NodeGraphValueType dstResolved) {
+    return socketTypesAccept(
+        srcResolved,
+        srcSocket.acceptedValueTypes,
+        dstResolved,
+        dstSocket.acceptedValueTypes);
+}
 
 bool NodeGraphValidator::canCreateConnection(
     const NodeGraph& document,
@@ -45,28 +86,7 @@ bool NodeGraphValidator::canCreateConnection(
     const NodeGraphValueType srcType = socketType(document, fromNode, fromSocket);
     const NodeGraphValueType dstType = socketType(document, toNode, toSocket);
 
-    auto isAccepted = [&]() -> bool {
-        if (srcType != NodeGraphValueType::None && dstType != NodeGraphValueType::None) {
-            return srcType == dstType;
-        }
-        if (!srcSocket->acceptedValueTypes.empty()) {
-            if (dstType != NodeGraphValueType::None) {
-                return std::find(srcSocket->acceptedValueTypes.begin(), srcSocket->acceptedValueTypes.end(), dstType) != srcSocket->acceptedValueTypes.end();
-            }
-            if (!dstSocket->acceptedValueTypes.empty()) {
-                return std::any_of(srcSocket->acceptedValueTypes.begin(), srcSocket->acceptedValueTypes.end(),
-                    [dstSocket](NodeGraphValueType vt) {
-                        return std::find(dstSocket->acceptedValueTypes.begin(), dstSocket->acceptedValueTypes.end(), vt) != dstSocket->acceptedValueTypes.end();
-                    });
-            }
-        }
-        if (!dstSocket->acceptedValueTypes.empty() && srcType != NodeGraphValueType::None) {
-            return std::find(dstSocket->acceptedValueTypes.begin(), dstSocket->acceptedValueTypes.end(), srcType) != dstSocket->acceptedValueTypes.end();
-        }
-        return srcSocket->valueType == dstSocket->valueType;
-    }();
-
-    if (!isAccepted) {
+    if (!socketAccepts(*srcSocket, srcType, *dstSocket, dstType)) {
         errorMessage = "Type mismatch: output '" + srcSocket->name +
             "' is '" + valueTypeToString(srcType) +
             "' but input '" + dstSocket->name + "' expects '" +

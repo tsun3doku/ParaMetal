@@ -2,19 +2,19 @@
 
 #include "runtime/PointComputeRuntime.hpp"
 #include "util/GeometryUtils.hpp"
-#include <glm/gtc/matrix_transform.hpp>
 
-ProductHandle RuntimePointComputeTransport::apply(uint64_t socketKey, const PointPackage& package) {
-    if (!runtime || !products || socketKey == 0) {
-        return {};
-    }
-
-    if (package.pointCount == 0 || package.positions.empty()) {
-        runtime->disable(socketKey);
-        return {};
+ComputeApplyResult RuntimePointComputeTransport::apply(
+    uint64_t socketKey,
+    const PointPackage& package,
+    PointProduct& outProduct) {
+    if (!runtime || socketKey == 0) {
+        return ComputeApplyResult::Failed;
     }
 
     const uint64_t inputHash = package.hashes.geometry;
+    if (runtime->currentHashMatches(socketKey, inputHash)) {
+        return ComputeApplyResult::Unchanged;
+    }
 
     PointComputeRuntime::Config config{};
     config.socketKey = socketKey;
@@ -22,15 +22,31 @@ ProductHandle RuntimePointComputeTransport::apply(uint64_t socketKey, const Poin
     config.modelMatrix = toMat4(package.localToWorld);
     config.computeHash = inputHash;
 
-    PointProduct product{};
-    if (!runtime->buildProduct(config, product)) {
-        return {};
+    if (!runtime->prepareCandidate(config)) {
+        return ComputeApplyResult::Failed;
     }
 
-    ProductHandle handle = products->publish<PointProduct>(socketKey, product);
-    return handle;
+    outProduct = {};
+    if (!runtime->buildProduct(socketKey, outProduct)) {
+        runtime->cancelCandidate(socketKey);
+        return ComputeApplyResult::Failed;
+    }
+    return ComputeApplyResult::Prepared;
 }
 
+void RuntimePointComputeTransport::commitPending(uint64_t socketKey) {
+    if (!runtime || socketKey == 0) {
+        return;
+    }
+    runtime->commitPending(socketKey);
+}
+
+void RuntimePointComputeTransport::cancelPending(uint64_t socketKey) {
+    if (!runtime || socketKey == 0) {
+        return;
+    }
+    runtime->cancelCandidate(socketKey);
+}
 
 void RuntimePointComputeTransport::remove(uint64_t socketKey) {
     if (!runtime || socketKey == 0) {

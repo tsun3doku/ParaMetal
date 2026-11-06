@@ -1,6 +1,7 @@
 #include "CFDSystemComputeController.hpp"
 #include "runtime/RuntimeProducts.hpp"
 #include <glm/glm.hpp>
+#include <cassert>
 #include <iostream>
 
 namespace cfd {
@@ -33,42 +34,7 @@ CFDSystemComputeController::CFDSystemComputeController(
 }
 
 CFDSystemComputeController::~CFDSystemComputeController() {
-    systemsBySocket.clear();
-    retainedSystems.clear();
-}
-
-void CFDSystemComputeController::applyRuntimeState(CFDSystem& system, const Config& config) {
-    system.setActive(config.active);
-    system.setPaused(!timelinePlaying);
-}
-
-void CFDSystemComputeController::setTimelinePlaying(bool playing) {
-    timelinePlaying = playing;
-    for (auto& [key, system] : systemsBySocket) {
-        if (system) {
-            system->setPaused(!playing);
-        }
-    }
-}
-
-void CFDSystemComputeController::resetTimeline() {
-    timelinePlaying = false;
-    for (auto& [key, system] : systemsBySocket) {
-        if (system) {
-            system->setPaused(true);
-            system->resetSimulationState();
-        }
-    }
-}
-
-void CFDSystemComputeController::scrubTimeline(uint32_t frame) {
-    (void)frame;
-    timelinePlaying = false;
-    for (auto& [key, system] : systemsBySocket) {
-        if (system) {
-            system->setPaused(true);
-        }
-    }
+    generationSlots.clear();
 }
 
 bool CFDSystemComputeController::apply(uint64_t socketKey, const Config& config) {
@@ -76,19 +42,11 @@ bool CFDSystemComputeController::apply(uint64_t socketKey, const Config& config)
         return false;
     }
 
-    if (!config.active) {
-        remove(socketKey);
-        return true;
-    }
-
     const auto configIt = configuredConfigs.find(socketKey);
 
-    // Tier 1: computeHash matches -> simulation state and inputs unchanged
-    if (configIt != configuredConfigs.end() && configIt->second.computeHash == config.computeHash) {
-        const auto it = systemsBySocket.find(socketKey);
-        if (it != systemsBySocket.end() && it->second) {
-            applyRuntimeState(*it->second, config);
-        }
+    if (configIt != configuredConfigs.end() &&
+        configIt->second.computeHash == config.computeHash) {
+        cancelCandidate(socketKey);
         return true;
     }
 
@@ -98,32 +56,24 @@ bool CFDSystemComputeController::apply(uint64_t socketKey, const Config& config)
     }
     failedComputeHashes.erase(socketKey);
 
-    auto it = systemsBySocket.find(socketKey);
-    const bool hasSystem = it != systemsBySocket.end() && it->second;
+    auto it = generationSlots.find(socketKey);
+    const bool hasSystem = it != generationSlots.end() && it->second.current;
 
-    // Tier 2 in-place updates require unchanging boundary types, velocities, and Courant
     if (hasSystem && configIt != configuredConfigs.end() &&
         canUpdateInPlace(configIt->second, config) &&
-        it->second->isInitialized()) {
-        it->second->updateParameters(
-            config.kinematicViscosity,
-            config.initialVelocity,
-            config.domainBoundaryTypes,
-            config.domainBoundaryVelocities,
-            config.fixedTimeStep,
-            config.targetCourant);
-        it->second->setPressureSolverParameters(config.pressureIterations, config.pressureTolerance);
-
-        configuredConfigs[socketKey] = config;
-        configuredConfigs[socketKey].domain = nullptr;
-
-        applyRuntimeState(*it->second, config);
+        it->second.current->isInitialized()) {
+            pendingConfigs[socketKey] = config;
+        pendingConfigs[socketKey].domain = nullptr;
         return true;
     }
 
-    // Tier 3 replacement builds candidate off to side while active system remains live
     if (!config.domain) {
         failedComputeHashes[socketKey] = config.computeHash;
+        return false;
+    }
+
+    if (it != generationSlots.end() &&
+        (it->second.retiring || it->second.candidate)) {
         return false;
     }
 
@@ -141,77 +91,156 @@ bool CFDSystemComputeController::apply(uint64_t socketKey, const Config& config)
             config.targetCourant,
             config.pressureIterations,
             config.pressureTolerance)) {
-        // Retain failed candidate to avoid destroying resources with in-flight CUDA work
-        retainedSystems.push_back(std::move(candidate));
+        generationSlots[socketKey].retiring = std::move(candidate);
         failedComputeHashes[socketKey] = config.computeHash;
         std::cerr << "[CFDSystemComputeController] Failed to configure CFDSystem for socket "
                   << socketKey << std::endl;
         return false;
     }
 
-    if (it != systemsBySocket.end()) {
-        if (it->second) {
-            retainedSystems.push_back(std::move(it->second));
-        }
-        it->second = std::move(candidate);
-    } else {
-        systemsBySocket.emplace(socketKey, std::move(candidate));
-    }
-
-    configuredConfigs[socketKey] = config;
-    configuredConfigs[socketKey].domain = nullptr;
-
-    applyRuntimeState(*systemsBySocket[socketKey], config);
+    GenerationSlot& slot = generationSlots[socketKey];
+    configuredConfigs.try_emplace(socketKey);
+    pendingConfigs[socketKey] = config;
+    pendingConfigs[socketKey].domain = nullptr;
+    slot.candidate = std::move(candidate);
     return true;
 }
 
 void CFDSystemComputeController::remove(uint64_t socketKey) {
-    configuredConfigs.erase(socketKey);
     failedComputeHashes.erase(socketKey);
-    auto it = systemsBySocket.find(socketKey);
-    if (it != systemsBySocket.end()) {
-        if (it->second) {
-            it->second->setPaused(true);
-            it->second->setActive(false);
-            retainedSystems.push_back(std::move(it->second));
+    retireCurrent(socketKey);
+}
+
+bool CFDSystemComputeController::hasAnyRetiring() const {
+    for (const auto& [socketKey, slot] : generationSlots) {
+        (void)socketKey;
+        if (slot.retiring) return true;
+    }
+    return false;
+}
+
+void CFDSystemComputeController::clearAllRetiring() {
+    for (auto it = generationSlots.begin(); it != generationSlots.end();) {
+        GenerationSlot& slot = it->second;
+        slot.retiring.reset();
+        if (configuredConfigs.find(it->first) == configuredConfigs.end()) {
+            slot.current.reset();
+            slot.candidate.reset();
         }
-        systemsBySocket.erase(it);
+        if (!slot.current && !slot.candidate && !slot.retiring) {
+            it = generationSlots.erase(it);
+        } else {
+            ++it;
+        }
     }
 }
 
-void CFDSystemComputeController::disableAll() {
-    for (auto& [key, sys] : systemsBySocket) {
-        (void)key;
-        if (sys) {
-            sys->setActive(false);
-            sys->setPaused(true);
-            retainedSystems.push_back(std::move(sys));
+void CFDSystemComputeController::commitPending(uint64_t socketKey) {
+    const auto it = generationSlots.find(socketKey);
+    if (it == generationSlots.end()) {
+        return;
+    }
+    GenerationSlot& slot = it->second;
+    assert(slot.retiring == nullptr);
+    if (slot.retiring != nullptr) {
+        return;
+    }
+    const bool replaced = slot.candidate != nullptr;
+    if (replaced) {
+        slot.retiring = std::move(slot.current);
+        slot.current = std::move(slot.candidate);
+    }
+
+    const auto pending = pendingConfigs.find(socketKey);
+    if (pending != pendingConfigs.end()) {
+        if (!replaced && slot.current) {
+                    slot.current->updateParameters(
+                pending->second.kinematicViscosity,
+                pending->second.initialVelocity,
+                pending->second.domainBoundaryTypes,
+                pending->second.domainBoundaryVelocities,
+                pending->second.fixedTimeStep,
+                pending->second.targetCourant);
+            slot.current->setPressureSolverParameters(
+                pending->second.pressureIterations,
+                pending->second.pressureTolerance);
+        }
+        const auto committed = configuredConfigs.find(socketKey);
+        if (committed != configuredConfigs.end()) {
+            committed->second = std::move(pending->second);
+        }
+        pendingConfigs.erase(pending);
+    }
+    failedComputeHashes.erase(socketKey);
+}
+
+void CFDSystemComputeController::cancelCandidate(uint64_t socketKey) {
+    const auto it = generationSlots.find(socketKey);
+    if (it != generationSlots.end() && it->second.candidate) {
+        assert(it->second.retiring == nullptr);
+        if (!it->second.retiring) {
+            it->second.retiring = std::move(it->second.candidate);
         }
     }
-    systemsBySocket.clear();
+    const bool hasCurrent = it != generationSlots.end() && it->second.current;
+    const auto pending = pendingConfigs.find(socketKey);
+    if (pending != pendingConfigs.end()) {
+        pendingConfigs.erase(pending);
+        const auto committed = configuredConfigs.find(socketKey);
+        if (committed != configuredConfigs.end() &&
+            committed->second.computeHash == 0 &&
+            !hasCurrent) {
+            configuredConfigs.erase(committed);
+        }
+    }
+}
+
+void CFDSystemComputeController::retireCurrent(uint64_t socketKey) {
+    configuredConfigs.erase(socketKey);
+    pendingConfigs.erase(socketKey);
+
+    const auto it = generationSlots.find(socketKey);
+    if (it == generationSlots.end()) {
+        return;
+    }
+    GenerationSlot& slot = it->second;
+    if (slot.candidate && !slot.retiring) {
+        slot.retiring = std::move(slot.candidate);
+    }
+    if (slot.current && !slot.retiring) {
+        slot.retiring = std::move(slot.current);
+    }
+}
+
+void CFDSystemComputeController::quiescedClear() noexcept {
+    generationSlots.clear();
+    configuredConfigs.clear();
+    pendingConfigs.clear();
+    failedComputeHashes.clear();
 }
 
 void CFDSystemComputeController::releaseWaits() {
-    for (auto& [key, sys] : systemsBySocket) {
+    for (auto& [key, slot] : generationSlots) {
         (void)key;
-        if (sys) {
-            sys->releaseWaits();
-        }
-    }
-    for (auto& sys : retainedSystems) {
-        if (sys) {
-            sys->releaseWaits();
-        }
+        if (slot.current) slot.current->releaseWaits();
+        if (slot.retiring) slot.retiring->releaseWaits();
+        if (slot.candidate) slot.candidate->releaseWaits();
     }
 }
 
 bool CFDSystemComputeController::buildProduct(uint64_t socketKey, CFDProduct& outProduct) {
-    auto it = systemsBySocket.find(socketKey);
-    if (it == systemsBySocket.end() || !it->second || !it->second->isInitialized()) {
+    const auto it = generationSlots.find(socketKey);
+    if (it == generationSlots.end()) {
+        return false;
+    }
+    CFDSystem* systemPtr = it->second.candidate
+        ? it->second.candidate.get()
+        : it->second.current.get();
+    if (!systemPtr || !systemPtr->isInitialized()) {
         return false;
     }
 
-    const auto& runtime = it->second->getRuntime();
+    const auto& runtime = systemPtr->getRuntime();
     outProduct.fluidNodeCount = runtime.getFluidNodeCount();
 
     outProduct.velocityBuffer = runtime.velocityBuffer();
@@ -228,29 +257,44 @@ bool CFDSystemComputeController::buildProduct(uint64_t socketKey, CFDProduct& ou
     outProduct.boundaryFluxBufferOffset = 0;
     outProduct.boundaryFluxCount = runtime.getGlobalBoundaryFaceCount();
 
-    const auto cfgIt = configuredConfigs.find(socketKey);
-    if (cfgIt != configuredConfigs.end()) {
-        outProduct.hashes.simulation = cfgIt->second.computeHash;
-        outProduct.hashes.geometry = cfgIt->second.geometryHash;
-        outProduct.hashes.full = cfgIt->second.computeHash;
+    const Config* config = getBuildConfig(socketKey);
+    if (config) {
+        outProduct.hashes.simulation = config->computeHash;
+        outProduct.hashes.geometry = config->geometryHash;
+        outProduct.hashes.full = config->computeHash;
     }
 
     return outProduct.isValid();
 }
 
 const CFDSystem* CFDSystemComputeController::getSystem(uint64_t socketKey) const {
-    auto it = systemsBySocket.find(socketKey);
-    return it != systemsBySocket.end() ? it->second.get() : nullptr;
+    if (configuredConfigs.find(socketKey) == configuredConfigs.end()) {
+        return nullptr;
+    }
+    const auto it = generationSlots.find(socketKey);
+    return it != generationSlots.end() ? it->second.current.get() : nullptr;
 }
 
 CFDSystem* CFDSystemComputeController::getSystem(uint64_t socketKey) {
-    auto it = systemsBySocket.find(socketKey);
-    return it != systemsBySocket.end() ? it->second.get() : nullptr;
+    if (configuredConfigs.find(socketKey) == configuredConfigs.end()) {
+        return nullptr;
+    }
+    const auto it = generationSlots.find(socketKey);
+    return it != generationSlots.end() ? it->second.current.get() : nullptr;
 }
 
 const CFDSystemComputeController::Config* CFDSystemComputeController::getConfig(uint64_t socketKey) const {
-    auto it = configuredConfigs.find(socketKey);
+    const auto it = configuredConfigs.find(socketKey);
     return it != configuredConfigs.end() ? &it->second : nullptr;
+}
+
+const CFDSystemComputeController::Config* CFDSystemComputeController::getBuildConfig(uint64_t socketKey) const {
+    const auto pendingIt = pendingConfigs.find(socketKey);
+    if (pendingIt != pendingConfigs.end()) {
+        return &pendingIt->second;
+    }
+    const auto configIt = configuredConfigs.find(socketKey);
+    return configIt != configuredConfigs.end() ? &configIt->second : nullptr;
 }
 
 } // namespace cfd

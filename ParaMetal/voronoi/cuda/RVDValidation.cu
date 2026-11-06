@@ -162,7 +162,10 @@ bool validateFragmentClosure(
       if (reportedCount++ < MaxReportedFragments) {
         std::cerr << "[RVDFragments] fragment " << i
                   << " has fewer than four incident faces ("
-                  << audit.incidentFaceCount << ")" << std::endl;
+                  << audit.incidentFaceCount << ")"
+                  << " owner=" << fragment.ownerModelId
+                  << " cell=" << fragment.cellId
+                  << " volume=" << volume << std::endl;
       }
       valid = false;
       continue;
@@ -202,10 +205,6 @@ bool validateFragmentClosure(
                 << " volume=" << volume
                 << " closureErr=" << closureError
                 << " (tol " << toleranceClosure << ")"
-                << " baseArea=" << audit.baseAreaSum
-                << " baseClosure=" << baseClosure
-                << " surfaceArea=" << audit.surfaceAreaSum
-                << " surfaceClosure=" << surfaceClosure
                 << " gaussErr=" << gaussError
                 << " (tol " << toleranceGauss << ", bound " << errorBound << ")"
                 << std::endl;
@@ -216,6 +215,137 @@ bool validateFragmentClosure(
 }
 
 } // namespace
+bool validateContactCouplings(
+    const RVDResult &result,
+    double relativeTolerance) {
+  const std::vector<FragmentFace> &faces = result.fragmentFaces;
+  std::vector<double> coverage(faces.size() * 2, 0.0);
+  std::vector<double> maxSingleCoupling(faces.size() * 2, 0.0);
+  std::vector<uint32_t> couplingCounts(faces.size() * 2, 0);
+
+  bool valid = true;
+  for (const ContactCoupling &coupling : result.contactCouplings) {
+    const uint32_t sideIndexA = coupling.faceA < faces.size()
+        ? (faces[coupling.faceA].fragmentA == coupling.fragmentA
+               ? coupling.faceA * 2
+               : (faces[coupling.faceA].fragmentB == coupling.fragmentA
+                      ? coupling.faceA * 2 + 1
+                      : InvalidId))
+        : InvalidId;
+    const uint32_t sideIndexB = coupling.faceB < faces.size()
+        ? (faces[coupling.faceB].fragmentA == coupling.fragmentB
+               ? coupling.faceB * 2
+               : (faces[coupling.faceB].fragmentB == coupling.fragmentB
+                      ? coupling.faceB * 2 + 1
+                      : InvalidId))
+        : InvalidId;
+    if (sideIndexA == InvalidId || sideIndexB == InvalidId ||
+        coupling.faceA == coupling.faceB) {
+      std::cerr << "[RVD-ContactValidation] invalid fragment-side pair "
+                << coupling.faceA << ':' << coupling.fragmentA << " -> "
+                << coupling.faceB << ':' << coupling.fragmentB << std::endl;
+      valid = false;
+      continue;
+    }
+    if (!(coupling.couplingArea > 0.0) ||
+        !std::isfinite(coupling.couplingArea)) {
+      std::cerr << "[RVD-ContactValidation] invalid coupling area "
+                << coupling.couplingArea << " for "
+                << coupling.faceA << " -> " << coupling.faceB << std::endl;
+      valid = false;
+      continue;
+    }
+    const FragmentFace &faceA = faces[coupling.faceA];
+    const FragmentFace &faceB = faces[coupling.faceB];
+    const uint32_t ownerA = result.fragments[coupling.fragmentA].ownerModelId;
+    const uint32_t ownerB = result.fragments[coupling.fragmentB].ownerModelId;
+    if (faceA.type == FaceType::DomainBoundary ||
+        faceB.type == FaceType::DomainBoundary ||
+        ownerA == InvalidModelId || ownerB == InvalidModelId ||
+        ownerA == ownerB) {
+      std::cerr << "[RVD-ContactValidation] coupling must join distinct "
+                   "solid-side incidences "
+                << coupling.faceA << ':' << coupling.fragmentA << " -> "
+                << coupling.faceB << ':' << coupling.fragmentB << std::endl;
+      valid = false;
+      continue;
+    }
+    coverage[sideIndexA] += coupling.couplingArea;
+    coverage[sideIndexB] += coupling.couplingArea;
+    if (coupling.couplingArea > maxSingleCoupling[sideIndexA]) {
+      maxSingleCoupling[sideIndexA] = coupling.couplingArea;
+    }
+    if (coupling.couplingArea > maxSingleCoupling[sideIndexB]) {
+      maxSingleCoupling[sideIndexB] = coupling.couplingArea;
+    }
+    ++couplingCounts[sideIndexA];
+    ++couplingCounts[sideIndexB];
+  }
+
+  uint32_t overcoveredCount = 0;
+  uint32_t singleExceedsCount = 0;
+  uint32_t multiExceedsCount = 0;
+  double worstOvercoverageRatio = 1.0;
+  uint32_t worstFaceIndex = InvalidId;
+  uint32_t worstSide = 0;
+  double worstArea = 0.0;
+  double worstCoverage = 0.0;
+  double worstMaxSingle = 0.0;
+  uint32_t worstCouplingCount = 0;
+
+  for (uint32_t faceIndex = 0; faceIndex < faces.size(); ++faceIndex) {
+    for (uint32_t side = 0; side < 2; ++side) {
+      const uint32_t incidence = faceIndex * 2 + side;
+      if (coverage[incidence] <= 0.0) continue;
+      const double area = side == 0 ? faces[faceIndex].areaA
+                                    : faces[faceIndex].areaB;
+      if (!(area > 0.0)) {
+        std::cerr << "[RVD-ContactValidation] face-side " << faceIndex
+                  << ':' << side << " has contact coverage but no area"
+                  << std::endl;
+        valid = false;
+        continue;
+      }
+      const double allowed = area * (1.0 + relativeTolerance);
+      if (coverage[incidence] > allowed) {
+        valid = false;
+        ++overcoveredCount;
+        const double ratio = coverage[incidence] / area;
+        const bool singleExceeds = maxSingleCoupling[incidence] > allowed;
+        if (singleExceeds) {
+          ++singleExceedsCount;
+        } else {
+          ++multiExceedsCount;
+        }
+        if (ratio > worstOvercoverageRatio) {
+          worstOvercoverageRatio = ratio;
+          worstFaceIndex = faceIndex;
+          worstSide = side;
+          worstArea = area;
+          worstCoverage = coverage[incidence];
+          worstMaxSingle = maxSingleCoupling[incidence];
+          worstCouplingCount = couplingCounts[incidence];
+        }
+      }
+    }
+  }
+
+  if (overcoveredCount > 0) {
+    std::cerr << "[RVD-ContactValidation] Summary: " << overcoveredCount
+              << " overcovered face-sides ("
+              << singleExceedsCount << " where single coupling > face area, "
+              << multiExceedsCount << " where multiple valid couplings sum > face area).\n"
+              << "[RVD-ContactValidation] Worst case face-side " << worstFaceIndex
+              << ':' << worstSide << " area=" << worstArea
+              << " coverage=" << worstCoverage
+              << " (" << worstOvercoverageRatio << "x)"
+              << " couplings=" << worstCouplingCount
+              << " maxSingle=" << worstMaxSingle
+              << " (" << (worstMaxSingle / worstArea) << "x)"
+              << std::endl;
+  }
+  return valid;
+}
 
 bool validateFragmentTopology(
     const RVDResult &result,
@@ -223,6 +353,33 @@ bool validateFragmentTopology(
     double toleranceClosure,
     double toleranceGauss) {
   if (result.fragments.empty()) return true;
+
+  for (uint32_t faceIndex = 0;
+       faceIndex < result.fragmentFaces.size(); ++faceIndex) {
+    const FragmentFace &face = result.fragmentFaces[faceIndex];
+    const bool hasA = face.fragmentA < result.fragments.size();
+    const bool hasB = face.fragmentB < result.fragments.size();
+    if (face.type == FaceType::Shared && (!hasA || !hasB)) {
+      std::cerr << "[RVDFaces] Shared face " << faceIndex
+                << " base=" << (faceIndex < totalBaseFragmentFaces)
+                << " has invalid incidence A=" << face.fragmentA
+                << " B=" << face.fragmentB;
+      if (hasA) {
+        const Fragment &fragment = result.fragments[face.fragmentA];
+        std::cerr << " Acell=" << fragment.cellId
+                  << " Aowner=" << fragment.ownerModelId
+                  << " Avol=" << fragment.volume;
+      }
+      if (hasB) {
+        const Fragment &fragment = result.fragments[face.fragmentB];
+        std::cerr << " Bcell=" << fragment.cellId
+                  << " Bowner=" << fragment.ownerModelId
+                  << " Bvol=" << fragment.volume;
+      }
+      std::cerr << std::endl;
+      return false;
+    }
+  }
 
   if (!validateSharedFaceReciprocity(result.fragmentFaces)) return false;
   if (!validateFragmentClosure(

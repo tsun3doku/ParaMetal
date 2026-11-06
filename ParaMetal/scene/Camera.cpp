@@ -189,12 +189,51 @@ glm::mat4 Camera::getViewMatrix() const {
 }
 
 glm::mat4 Camera::getProjectionMatrix(float aspectRatio) const {
+    glm::mat4 proj;
     if (projectionMode == CameraProjectionMode::Orthographic) {
         const float halfHeight = orthographicHeight * 0.5f;
         const float halfWidth = halfHeight * aspectRatio;
-        return glm::orthoRH_ZO(-halfWidth,halfWidth,-halfHeight, halfHeight, nearPlane, farPlane);
+        proj = glm::orthoRH_ZO(-halfWidth, halfWidth, -halfHeight, halfHeight, nearPlane, farPlane);
+    } else {
+        proj = glm::perspectiveRH_ZO(glm::radians(currentFov), aspectRatio, nearPlane, farPlane);
     }
-    return glm::perspectiveRH_ZO(glm::radians(currentFov), aspectRatio, nearPlane, farPlane);
+    // flip y for vulkan ndc
+    proj[1][1] *= -1.0f;
+    return proj;
+}
+
+std::optional<glm::vec2> Camera::worldToScreen(
+    const glm::vec3& worldPos,
+    uint32_t screenWidth,
+    uint32_t screenHeight,
+    float* outDepth) const {
+    if (screenWidth == 0 || screenHeight == 0) {
+        return std::nullopt;
+    }
+
+    const float aspect = static_cast<float>(screenWidth) / static_cast<float>(screenHeight);
+    const glm::mat4 view = getViewMatrix();
+    const glm::mat4 proj = getProjectionMatrix(aspect);
+
+    const glm::vec4 clip = proj * view * glm::vec4(worldPos, 1.0f);
+    if (clip.w <= 0.001f) {
+        return std::nullopt; // Behind near plane
+    }
+
+    const glm::vec3 ndc = glm::vec3(clip) / clip.w;
+    if (ndc.z < 0.0f || ndc.z > 1.0f) {
+        return std::nullopt; // Outside depth bounds
+    }
+
+    if (outDepth) {
+        *outDepth = clip.z;
+    }
+
+    // map vulkan ndc to screen
+    return glm::vec2(
+        (ndc.x * 0.5f + 0.5f) * static_cast<float>(screenWidth),
+        (ndc.y * 0.5f + 0.5f) * static_cast<float>(screenHeight)
+    );
 }
 
 glm::vec3 Camera::screenToWorldRay(double mouseX, double mouseY, int screenWidth, int screenHeight) const {
@@ -202,11 +241,11 @@ glm::vec3 Camera::screenToWorldRay(double mouseX, double mouseY, int screenWidth
         return glm::normalize(orientation * glm::vec3(0.0f, 0.0f, -1.0f));
     }
 
-    float x = static_cast<float>((2.0 * mouseX) / screenWidth - 1.0);
-    float y = static_cast<float>(1.0 - (2.0 * mouseY) / screenHeight);
+    const float x = static_cast<float>((2.0 * mouseX) / screenWidth - 1.0);
+    const float y = static_cast<float>((2.0 * mouseY) / screenHeight - 1.0);
 
     glm::vec4 rayClip = glm::vec4(x, y, 0.0f, 1.0f);
-    glm::vec4 rayView = glm::inverse(getProjectionMatrix(screenWidth / (float)screenHeight)) * rayClip;
+    glm::vec4 rayView = glm::inverse(getProjectionMatrix(static_cast<float>(screenWidth) / static_cast<float>(screenHeight))) * rayClip;
     rayView = glm::vec4(rayView.x, rayView.y, -1.0f, 0.0f);
 
     glm::vec3 rayWorld = glm::vec3(glm::inverse(getViewMatrix()) * rayView);

@@ -144,7 +144,11 @@ bool NavigationGizmoController::handlePointerMove(float x, float y) {
     return hoveredRegion != 0;
 }
 
-bool NavigationGizmoController::handlePointerPress(float x, float y) {
+bool NavigationGizmoController::handlePointerPress(float x, float y, int button, bool shiftPressed) {
+    (void)shiftPressed;
+    if (button != 1) {
+        return false;
+    }
     const uint8_t hit = hitTest(x, y);
     if (hit == 0) {
         return false;
@@ -157,8 +161,11 @@ bool NavigationGizmoController::handlePointerPress(float x, float y) {
     return true;
 }
 
-bool NavigationGizmoController::handlePointerRelease(float x, float y) {
+bool NavigationGizmoController::handlePointerRelease(float x, float y, int button) {
     if (pressedRegion == 0) {
+        return false;
+    }
+    if (button != 1) {
         return false;
     }
     const uint8_t releasedRegion = pressedRegion;

@@ -19,7 +19,6 @@ public:
     struct Config {
         bool showVoronoi = false;
         bool showPoints = false;
-        bool showContactManifold = false;
         uint32_t candidateNodeCount = 0;
         VkBuffer seedPositionBuffer = VK_NULL_HANDLE;
         VkDeviceSize seedPositionBufferOffset = 0;
@@ -27,9 +26,6 @@ public:
         VkDeviceSize pointVertexBufferOffset = 0;
         VkBuffer candidateNeighborIndicesBuffer = VK_NULL_HANDLE;
         VkDeviceSize candidateNeighborIndicesBufferOffset = 0;
-        VkBuffer contactVertexBuffer = VK_NULL_HANDLE;
-        VkDeviceSize contactVertexBufferOffset = 0;
-        uint32_t contactVertexCount = 0;
 
         std::vector<uint32_t> modelRuntimeIds;
         std::vector<VkBuffer> candidateBuffers;
@@ -47,7 +43,7 @@ public:
         uint64_t displayHash = 0;
 
         bool anyVisible() const {
-            return showVoronoi || showPoints || showContactManifold;
+            return showVoronoi || showPoints;
         }
 
         bool isValid() const {
@@ -81,12 +77,6 @@ public:
                     modelCount != modelCanonicalToWorldScales.size()) {
                     return false;
                 }
-            }
-
-            if (showContactManifold &&
-                (contactVertexBuffer == VK_NULL_HANDLE ||
-                 contactVertexCount == 0)) {
-                return false;
             }
 
             return true;

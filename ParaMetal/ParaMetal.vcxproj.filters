@@ -97,6 +97,7 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="runtime\package\RuntimePackageController.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="runtime\package\RuntimePackageManager.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="runtime\package\passes\ValidationPass.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="runtime\package\passes\CoordinatePass.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="runtime\ModelComputeController.cpp">
@@ -288,6 +289,12 @@
     <ClCompile Include="scene\NavigationGizmoController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="scene\MarkerInteractionController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="interaction\InteractionContext.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="renderers\GizmoRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -312,19 +319,10 @@
     <ClCompile Include="vulkan\VulkanExternalBuffer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="spatial\HashGrid.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="voronoi\VoronoiSystemBuildStage.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="heat\HeatSystemPresets.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="renderers\SurfelRenderer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="renderers\HashGridRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="renderers\WireframeRenderer.cpp">
@@ -340,9 +338,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="spatial\TriangleHashGrid.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="spatial\VoxelGrid.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="renderers\VoronoiRenderer.cpp">
@@ -395,16 +390,31 @@
     <CudaCompile Include="cuda\CudaPcg.cu">
       <Filter>Source Files</Filter>
     </CudaCompile>
+    <CudaCompile Include="cuda\VoxelGrid.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
     <CudaCompile Include="voronoi\cuda\RVD.cu">
       <Filter>Source Files</Filter>
     </CudaCompile>
-    <CudaCompile Include="voronoi\cuda\RVDGeometry.cu">
+    <CudaCompile Include="voronoi\cuda\RVDFaceCut.cu">
       <Filter>Source Files</Filter>
     </CudaCompile>
-    <CudaCompile Include="voronoi\cuda\RVDDiagnostics.cu">
+    <CudaCompile Include="voronoi\cuda\RVDModelGeometry.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
+    <CudaCompile Include="voronoi\cuda\RVDLloyd.cu">
       <Filter>Source Files</Filter>
     </CudaCompile>
     <CudaCompile Include="voronoi\cuda\RVDValidation.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
+    <CudaCompile Include="voronoi\cuda\RVDFragments.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
+    <CudaCompile Include="voronoi\cuda\RVDAgglomeration.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
+    <CudaCompile Include="voronoi\cuda\RVDSurfacePartition.cu">
       <Filter>Source Files</Filter>
     </CudaCompile>
     <CudaCompile Include="voronoi\cuda\KNNNeighbors.cu">
@@ -440,13 +450,19 @@
     <ClCompile Include="renderers\HeatSurfaceRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="renderers\VemTraceSurfaceRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="mesh\IsocontourBuilder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="renderers\VectorArrowRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="renderers\VoronoiContactRenderer.cpp">
+    <ClCompile Include="renderers\HeatBoxRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="renderers\HeatBoxRenderer.cpp">
+    <ClCompile Include="renderers\ProbeMarkerRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="util\GlyphText.cpp">
@@ -512,6 +528,27 @@
     <ClCompile Include="nodegraph\NodeMerge.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="nodegraph\NodeWriteParams.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime\export\MeshWriter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime\export\LineWriter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime\export\PointWriter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime\export\ExportService.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime\export\PayloadExporters.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime\export\RuntimeExport.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="nodegraph\NodeHeatModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -575,6 +612,12 @@
     <ClCompile Include="ui\UiTypographyQml.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ui\UiPalette.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ui\UiPaletteQml.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="nodegraph\ui\scene\NodeGraphSceneStyle.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -615,6 +658,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="heat\HeatModelRuntime.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="heat\HeatProbeRuntime.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="heat\HeatFluidRuntime.cpp">
@@ -823,15 +869,6 @@
     <None Include="shaders\intrinsic_normals.vert">
       <Filter>Shaders</Filter>
     </None>
-    <None Include="shaders\hash_grid_build.comp">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="shaders\hash_grid_vis.frag">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="shaders\hash_grid_vis.vert">
-      <Filter>Shaders</Filter>
-    </None>
     <None Include="shaders\intrinsic_vertex_normals.frag">
       <Filter>Shaders</Filter>
     </None>
@@ -839,12 +876,6 @@
       <Filter>Shaders</Filter>
     </None>
     <None Include="shaders\intrinsic_vertex_normals.vert">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="shaders\surfel_debug.frag">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="shaders\surfel_debug.vert">
       <Filter>Shaders</Filter>
     </None>
     <None Include="shaders\timing_overlay.frag">
@@ -899,6 +930,12 @@
       <Filter>Source Files</Filter>
     </None>
     <None Include="qml\UiCheckBox.qml">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="qml\UiComboBox.qml">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="qml\UiNumberBox.qml">
       <Filter>Source Files</Filter>
     </None>
     <None Include="qml\WelcomeScreen.qml">
@@ -981,6 +1018,12 @@
     <QtMoc Include="ui\UiTypographyQml.hpp">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <ClInclude Include="ui\UiPalette.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="ui\UiPaletteQml.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <ClInclude Include="vulkan\VulkanDevice.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1034,9 +1077,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="runtime\TimelineController.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="runtime\TimelinePlaybackTarget.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="runtime\TimelineRuntime.hpp">
@@ -1139,9 +1179,6 @@
     <ClInclude Include="heat\HeatSystemPlayback.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="heat\TimelineSimulation.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="voronoi\VoronoiSystem.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1220,6 +1257,15 @@
     <ClInclude Include="scene\NavigationGizmoController.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="scene\MarkerInteractionController.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="interaction\IViewportInteraction.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="interaction\InteractionContext.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="renderers\GizmoRenderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1233,9 +1279,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="mesh\\remesher\\SupportingHalfedge.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="spatial\HashGrid.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="voronoi\VoronoiStageContext.hpp">
@@ -1254,12 +1297,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="heat\HeatSystemPresets.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="renderers\SurfelRenderer.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="renderers\HashGridRenderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="renderers\WireframeRenderer.hpp">
@@ -1298,19 +1335,19 @@
     <ClInclude Include="voronoi\cuda\VoronoiCellField.cuh">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="voronoi\cuda\RVDGeometry.cuh">
+    <ClInclude Include="voronoi\cuda\RVDModelGeometry.cuh">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="voronoi\cuda\RVDFacePartition.hpp">
+    <ClInclude Include="voronoi\cuda\RVDBaseFaceTopology.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="voronoi\cuda\RVDFaceGeometry.cuh">
+    <ClInclude Include="voronoi\cuda\RVDBaseFacePartition.cuh">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="voronoi\cuda\RVDFaceCoverage.cuh">
+    <ClInclude Include="voronoi\cuda\RVDFaceCut.cuh">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="voronoi\cuda\RVDFaceOverlay.cuh">
+    <ClInclude Include="voronoi\cuda\RVDLloyd.cuh">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="voronoi\cuda\RVDStatus.cuh">
@@ -1319,10 +1356,19 @@
     <ClInclude Include="voronoi\cuda\RVDHostUtils.cuh">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="voronoi\cuda\RVDDiagnostics.hpp">
+    <ClInclude Include="voronoi\cuda\RVDValidation.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="voronoi\cuda\RVDValidation.hpp">
+    <ClInclude Include="voronoi\cuda\RVDSurfacePartition.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="voronoi\cuda\RVDTraceSurface.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="voronoi\cuda\RVDFragments.cuh">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="voronoi\cuda\RVDAgglomeration.cuh">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="cuda\CudaBuffer.cuh">
@@ -1334,7 +1380,10 @@
     <ClInclude Include="cuda\CudaEvent.cuh">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="spatial\VoxelGrid.hpp">
+    <ClInclude Include="cuda\Triangle.cuh">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="cuda\VoxelGrid.cuh">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="renderers\VoronoiRenderer.hpp">
@@ -1379,13 +1428,19 @@
     <ClInclude Include="renderers\HeatSurfaceRenderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="renderers\VemTraceSurfaceRenderer.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="mesh\IsocontourBuilder.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="renderers\VectorArrowRenderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="renderers\VoronoiContactRenderer.hpp">
+    <ClInclude Include="renderers\HeatBoxRenderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="renderers\HeatBoxRenderer.hpp">
+    <ClInclude Include="renderers\ProbeMarkerRenderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="util\GlyphText.hpp">
@@ -1452,6 +1507,36 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\NodeMerge.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nodegraph\NodeWriteParams.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\export\ExportTypes.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="heat\HeatIsocontourLevels.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\export\MeshWriter.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\export\LineWriter.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\export\PointWriter.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\export\ExportService.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\export\PayloadExporter.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\export\ExporterRegistry.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\export\RuntimeExport.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\NodeHeatModel.hpp">
@@ -1647,6 +1732,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="heat\HeatModelRuntime.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="heat\HeatProbeRuntime.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="heat\HeatFluidRuntime.hpp">
@@ -1904,16 +1992,6 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="app\ViewportMailbox.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="vem\VEMAgglomerator.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="vem\VEMAgglomerator.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

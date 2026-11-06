@@ -7,7 +7,6 @@
 #include <vector>
 
 #include "framegraph/FrameGraphPasses.hpp"
-#include "util/file_utils.h"
 #include "GeometryPass.hpp"
 #include "HeatOverlayRenderer.hpp"
 #include "PointOverlayRenderer.hpp"
@@ -19,6 +18,7 @@
 #include "scene/NavigationGizmoController.hpp"
 #include "spatial/Grid.hpp"
 #include "scene/ModelSelection.hpp"
+#include "scene/SceneView.hpp"
 #include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/ModelRegistry.hpp"
 #include "util/Structs.hpp"
@@ -29,7 +29,6 @@
 #include "renderers/TimingRenderer.hpp"
 #include "renderers/IntrinsicRenderer.hpp"
 #include "renderers/OutlineRenderer.hpp"
-#include "mesh/remesher/iODT.hpp"
 
 namespace render {
 
@@ -190,9 +189,8 @@ void OverlayPass::record(const FrameContext& context, const SceneView& view, con
     const uint32_t currentFrame = context.currentFrame;
     screenTextRenderer.beginFrame(currentFrame);
     const VkExtent2D extent = context.extent;
-    heatOverlayRenderer.renderOverlay(commandBuffer, currentFrame);
+    heatOverlayRenderer.renderOverlay(commandBuffer, currentFrame, extent, view.proj * view.view);
     voronoiOverlayRenderer.renderPoints(commandBuffer, currentFrame, extent);
-    voronoiOverlayRenderer.renderContacts(commandBuffer, currentFrame);
     if (pointOverlayRenderer) {
         pointOverlayRenderer->render(commandBuffer, currentFrame, extent);
     }

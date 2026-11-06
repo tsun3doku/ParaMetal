@@ -92,6 +92,7 @@ void NodeHeatSolve::execute(NodeKernelEval& eval) const {
     heatData.simulationDuration = static_cast<float>(params.simulationDuration);
     heatData.solverMaxIterations = params.solverMaxIterations;
     heatData.solverConvergenceTolerance = params.solverConvergenceTolerance;
+    heatData.isocontourSpacingC = params.isocontourSpacingC;
     heatData.hasFluid = hasFluid;
     heatData.active = hasValidInputs && active;
 
@@ -141,8 +142,11 @@ HashValues NodeHeatSolve::computeOutputHashes(const NodeKernelHash& hash) const 
     const bool active = activeNodeId.isValid() && activeNodeId == hash.node.id;
     HashBuilder::combine(simulationHash, static_cast<uint64_t>(active ? 1u : 0u));
 
+    uint64_t fullHash = simulationHash;
+    HashBuilder::combineFloat(fullHash, params.isocontourSpacingC);
+
     HashValues values{};
-    values.full = simulationHash;
+    values.full = fullHash;
     values.simulation = simulationHash;
     return values;
 }

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "heat/TimelineSimulation.hpp"
 #include "framegraph/ComputePass.hpp"
 #include "simgraph/SimNode.hpp"
 #include "util/Structs.hpp"
@@ -8,11 +7,13 @@
 #include "HeatPlaybackRuntime.hpp"
 #include "HeatDomainRuntime.hpp"
 #include "HeatFluidRuntime.hpp"
+#include "HeatProbeRuntime.hpp"
+#include "domain/HeatProbeData.hpp"
 #include "heat/HeatFluidVolumeStage.hpp"
 #include "voronoi/GlobalDomainTopology.hpp"
 
-#include <chrono>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -30,16 +31,13 @@ public:
         uint32_t maxFramesInFlight, CommandPool& renderCommandPool, CommandPool& transferCommandPool);
     ~HeatSystem() override;
 
-    void update() override;
+    void update(const SimTickContext& context) override;
     bool ensureConfigured();
     bool setupDescriptors(const std::vector<VkBuffer>& surfaceBuffers, const std::vector<VkDeviceSize>& surfaceOffsets, const std::vector<VkBuffer>& gradientBuffers, const std::vector<VkDeviceSize>& gradientOffsets);
     void recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t currentFrame) override;
     bool createComputeCommandBuffers(uint32_t maxFramesInFlight);
     void cleanup();
 
-    void setActive(bool active);
-    void setRewindFrame(uint32_t frame);
-    void setPlaybackState(bool paused, uint32_t resetCounter);
     void setParams(float simulationDuration);
     void setHeatModels(
         const std::vector<std::vector<glm::vec3>>& modelSurfacePositions,
@@ -73,7 +71,6 @@ public:
         uint32_t boundaryFaceCount);
     void clearAdvectionInput();
 
-    // SimNode consumer side for cross-simulation publication
     void bindConsumedInput(uint64_t connectionId, VkSemaphore producerReady, uint64_t producerReadyValue) override {
         (void)producerReady;
         (void)producerReadyValue;
@@ -110,21 +107,33 @@ public:
     bool setRuntimeVolumetricPowerDensity(uint32_t runtimeModelId, float powerDensity);
     bool setRuntimePrescribedTemperature(uint32_t runtimeModelId, float tempC);
 
-    bool getIsActive() const { return isActive; }
-    bool getIsPaused() const { return timeline.isPaused(); }
     bool isInitialized() const { return initialized; }
-    bool hasDispatchableComputeWork() const override;
+    bool isSubmissionReady() const override;
+    bool hasPendingSubmission() const override { return computeWorkPendingThisFrame; }
     float computeGpuMs() const override { return domainRuntime.getLastSolveMs(); }
     uint64_t completedStepCount() const override { return completedSteps; }
     bool advectionStagingCopyScheduled() const { return domainRuntime.advectionStagingCopyScheduled(); }
     bool voronoiReady() const;
+    // show latest trace only on latest frame, fallback to GMLS when scrubbing
+    bool isVemTraceDisplayAvailable() const;
+    VkBuffer getVemTraceTemperatureBuffer() const {
+        return isVemTraceDisplayAvailable()
+            ? domainRuntime.getCurrentTraceVisualBuffer()
+            : VK_NULL_HANDLE;
+    }
+    uint32_t getVemTraceCount() const {
+        return domainRuntime.getTraceVisualCount();
+    }
+    uint64_t getVemTraceDisplayRevision() const {
+        return domainRuntime.getTraceVisualRevision();
+    }
 
-    uint32_t getResetCounter() const { return timeline.getResetCounter(); }
-    float getSimulationTimeSeconds() const { return timeline.getCurrentPosition(); }
-    uint32_t getRecordedTimelineFrames() const;
-    uint32_t getTimelineFrameCount() const;
-    float getSimulationDurationSeconds() const { return timeline.getDuration(); }
-    uint32_t getRewindFrame() const;
+    bool hasTimelineMetadata() const override;
+    float getSimulationTimeSeconds() const override { return simulatedTime; }
+    uint32_t getRecordedTimelineFrames() const override;
+    uint32_t getTimelineFrameCount() const override;
+    float getSimulationDurationSeconds() const override { return simulationDuration; }
+    uint32_t getPlaybackAvailableFrame() const override;
 
     const std::vector<VkCommandBuffer>& getComputeCommandBuffers() const override { return computeCommandBuffers; }
     ComputePass::Synchronization getSynchronization() const override;
@@ -133,11 +142,24 @@ public:
     HeatFluidRuntime* getFluidRuntime() { return fluidRuntime.get(); }
     const HeatFluidRuntime* getFluidRuntime() const { return fluidRuntime.get(); }
     VkImageView getFluidTemperatureVolumeView() const {
-        return fluidVolumeStage ? fluidVolumeStage->getTemperatureVolumeView() : VK_NULL_HANDLE;
+        return (fluidRuntime && fluidRuntime->getNodeCount() > 0 &&
+                fluidVolumeStage && fluidVolumeStage->isValid())
+            ? fluidVolumeStage->getTemperatureVolumeView()
+            : VK_NULL_HANDLE;
     }
     VkSampler getFluidTemperatureVolumeSampler() const {
-        return fluidVolumeStage ? fluidVolumeStage->getTemperatureVolumeSampler() : VK_NULL_HANDLE;
+        return (fluidRuntime && fluidRuntime->getNodeCount() > 0 &&
+                fluidVolumeStage && fluidVolumeStage->isValid())
+            ? fluidVolumeStage->getTemperatureVolumeSampler()
+            : VK_NULL_HANDLE;
     }
+
+    void syncHeatProbes(const std::unordered_map<uint64_t, HeatProbeData>& probes);
+    bool getHeatProbeTemperatures(uint64_t sourceKey, std::vector<float>& outTemperaturesC) const;
+    bool readCurrentSurfaceTemperatures(
+        std::vector<std::vector<float>>& temperaturesByModel,
+        std::string& outError);
+    void updateHeatProbes();
 
 private:
     static constexpr float TimelineFPS = 60.0f;
@@ -151,9 +173,12 @@ private:
     void configureModelProperties(HeatModelRuntime& model, uint32_t runtimeModelId) const;
     bool rebuildDomainRuntime();
     void resetVoronoiTemperatures();
+    // upload surface/gradient buffers and wire descriptors
+    bool prepareSurfaceData();
 
-    void processResetTrigger();
-    void forwardSim(float deltaTime);
+    void forwardSim(const SimTickContext& context);
+    void updateDisplayFrameState(const SimTickContext& context);
+    void onEnteredInactive() override { computeWorkPendingThisFrame = false; surfaceDataDirty = true; }
     void releaseGmlsBuffers();
     void configureGMLSSurfaceWeights(bool heatVoronoiReady);
     bool recreateDescriptorPools();
@@ -171,6 +196,7 @@ private:
     HeatDomainRuntime domainRuntime;
     HeatPlaybackRuntime playbackRuntime;
     std::unique_ptr<HeatFluidRuntime> fluidRuntime;
+    std::unordered_map<uint64_t, std::unique_ptr<HeatProbeRuntime>> probeRuntimes;
 
     std::vector<std::vector<glm::vec3>> modelSurfacePositions;
     std::vector<std::vector<glm::vec3>> modelSurfaceNormals;
@@ -185,25 +211,27 @@ private:
     std::unordered_map<uint32_t, float> modelConductivity;
     units::LengthUnit worldUnit = units::defaultLengthUnit();
 
-    TimelineSimulation timeline;
+    float simulationDuration = 5.0f;
     float simulatedTime = 0.0f;
     bool shouldStepPhysics = false;
     bool physicsStepCompletedThisFrame = false;
-    // Terminal solve failure: heat physics halts until the next reset
+    // terminal solve failure flag
     bool physicsFailed = false;
     uint64_t completedSteps = 0;
     bool needsInitialCapture = false;
     float physicsAccumulator = 0.0f;
     bool temperatureBufferAIsCurrent = true;
-    std::chrono::steady_clock::time_point lastUpdateTime = std::chrono::steady_clock::now();
 
-    bool isActive = false;
     bool initialized = false;
     bool domainDirty = true;
     bool voronoiConfigDirty = true;
     bool heatParamsDirty = true;
-    uint32_t processedResetCounter = 0;
+    uint32_t processedResetEpoch = 0;
     uint64_t boundInputConnectionId = 0;
+
+    bool computeWorkPendingThisFrame = false;
+    uint32_t currentDisplayFrame = 0;
+    bool currentReplayFromHistory = false;
 
     heat::DomainBoundaryConditions domainBoundaries = heat::createDefaultDomainBoundaries(HeatSimDefaults::ambientTemperatureC);
 
@@ -223,8 +251,6 @@ private:
     bool lastFluidReplayFromHistory = false;
     uint32_t lastFluidDisplayFrame = 0;
 
-    // Surface dispatches only run when displayed data changes, not every frame
     bool surfaceDataDirty = true;
-    // Monotonic rendered frame counter for cadence decisions
     uint64_t renderedFrameCounter = 0;
 };

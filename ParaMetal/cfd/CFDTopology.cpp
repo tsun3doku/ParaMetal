@@ -15,13 +15,7 @@ namespace {
 
 glm::vec3 getDomainBoxNormal(uint32_t domainFace) {
     switch (domainFace) {
-        case 0: return {-1.0f,  0.0f,  0.0f}; // -X
-        case 1: return { 1.0f,  0.0f,  0.0f}; // +X
-        case 2: return { 0.0f, -1.0f,  0.0f}; // -Y
-        case 3: return { 0.0f,  1.0f,  0.0f}; // +Y
-        case 4: return { 0.0f,  0.0f, -1.0f}; // -Z
-        case 5: return { 0.0f,  0.0f,  1.0f}; // +Z
-        default: return {0.0f,  0.0f,  0.0f};
+        case 0: return {-1.0f,  0.0f,  0.0f};         case 1: return { 1.0f,  0.0f,  0.0f};         case 2: return { 0.0f, -1.0f,  0.0f};         case 3: return { 0.0f,  1.0f,  0.0f};         case 4: return { 0.0f,  0.0f, -1.0f};         case 5: return { 0.0f,  0.0f,  1.0f};         default: return {0.0f,  0.0f,  0.0f};
     }
 }
 
@@ -45,8 +39,7 @@ struct RawFineBoundaryFace {
     float weight = 0.0f;
 };
 
-} // anonymous namespace
-
+} 
 bool buildCFDTopology(
     const std::vector<topology::Fragment>& fragments,
     const std::vector<topology::Face>& faces,
@@ -67,7 +60,7 @@ bool buildCFDTopology(
         return true;
     }
 
-    // 1. Recover fine fragment volumes and parent base-cell volumes
+    // recover fine fragment and base-cell volumes
     std::vector<float> fineVolumes(fineNodeCount, 0.0f);
     std::unordered_map<uint32_t, float> seedVolume;
     for (const auto& frag : fragments) {
@@ -89,11 +82,10 @@ bool buildCFDTopology(
         refVolume[i] = (it != seedVolume.end() && it->second > 0.0f) ? it->second : fineVolumes[i];
     }
 
-    // 2. Classify raw fine fluid-fluid faces
+    // classify raw fine fluid-fluid faces
     std::vector<RawFineFace> fineFluidFaces;
     std::vector<RawFineBoundaryFace> fineBoundaryFaces;
 
-    // Geometry-floor census for raw centroid distance clamping
     uint64_t internalFloorFaces = 0;
     uint64_t internalFaceTotal = 0;
     uint64_t wallFloorFaces = 0;
@@ -168,7 +160,7 @@ bool buildCFDTopology(
             rff.distB = dB;
             fineFluidFaces.push_back(rff);
         } else if (nodeA != UINT32_MAX && nodeB == UINT32_MAX) {
-            // Embedded solid wall: fluid nodeA -> solid
+            // embedded solid wall: fluid nodeA -> solid
             const float minDA = 0.25f * std::cbrt(std::max(refVolume[nodeA], 1e-12f));
             const float effDA = std::max(rawDA, minDA);
             ++wallFaceTotal;
@@ -189,7 +181,7 @@ bool buildCFDTopology(
             wall.weight = static_cast<float>(area) / effDA;
             fineBoundaryFaces.push_back(wall);
         } else if (nodeA == UINT32_MAX && nodeB != UINT32_MAX) {
-            // Embedded solid wall: solid -> fluid nodeB
+            // embedded solid wall: solid -> fluid nodeB
             const float minDB = 0.25f * std::cbrt(std::max(refVolume[nodeB], 1e-12f));
             const float effDB = std::max(rawDB, minDB);
             ++wallFaceTotal;
@@ -212,7 +204,7 @@ bool buildCFDTopology(
         }
     }
 
-    // Domain boundary faces (domainFace < 6)
+    // domain boundary faces (domainFace < 6)
     for (uint32_t bfIdx = 0; bfIdx < boundaryFaces.size(); ++bfIdx) {
         const auto& bf = boundaryFaces[bfIdx];
         if (bf.fragment >= fragments.size()) continue;
@@ -252,7 +244,6 @@ bool buildCFDTopology(
         }
     }
 
-    // Build execution topology and map global face indices
     std::vector<CFDFaceGpu> fineFaceGpu;
     std::vector<uint32_t> fineFaceGlobalIndex;
     fineFaceGpu.reserve(fineFluidFaces.size());
@@ -261,7 +252,7 @@ bool buildCFDTopology(
         CFDFaceGpu gpu{};
         gpu.cellA = raw.fineA;
         gpu.cellB = raw.fineB;
-        // Distance-weighted interpolation: phi* = dot(uA, fvA) + dot(uB, fvB)
+        // interpolation: phi* = dot(uA, fvA) + dot(uB, fvB)
         const float dist = raw.distA + raw.distB;
         const float weightA = (dist > 0.0f) ? (raw.distB / dist) : 0.5f;
         const float weightB = (dist > 0.0f) ? (raw.distA / dist) : 0.5f;
@@ -286,7 +277,7 @@ bool buildCFDTopology(
         fineBoundaryGlobalIndex.push_back(raw.globalBoundaryFaceIndex);
     }
 
-    // Fine pressure components (disjoint fluid regions)
+    // fine pressure components
     std::vector<uint32_t> fineComponent(fineNodeCount, UINT32_MAX);
     uint32_t fineComponentCount = 0;
     {

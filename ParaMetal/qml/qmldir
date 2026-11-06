@@ -3,6 +3,8 @@ UiMenu 1.0 UiMenu.qml
 UiMenuItem 1.0 UiMenuItem.qml
 UiMenuSeparator 1.0 UiMenuSeparator.qml
 UiCheckBox 1.0 UiCheckBox.qml
+UiComboBox 1.0 UiComboBox.qml
+UiNumberBox 1.0 UiNumberBox.qml
 WelcomeScreen 1.0 WelcomeScreen.qml
 ConsolePane 1.0 ConsolePane.qml
 InspectorField 1.0 InspectorField.qml

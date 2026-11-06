@@ -1,18 +1,17 @@
 #include "FrameGraphicsStage.hpp"
 
 #include "FramePass.hpp"
+#include "interaction/InteractionContext.hpp"
 #include "render/SceneRenderer.hpp"
 
 FrameGraphicsStage::FrameGraphicsStage(
     SceneRenderer& sceneRenderer,
     ModelSelection& modelSelection,
-    GizmoController& gizmoController,
-    NavigationGizmoController& navigationGizmoController,
+    InteractionContext& interaction,
     WireframeRenderer& wireframeRenderer)
     : sceneRenderer(sceneRenderer),
       modelSelection(modelSelection),
-      gizmoController(gizmoController),
-      navigationGizmoController(navigationGizmoController),
+      interaction(interaction),
       wireframeRenderer(wireframeRenderer) {
 }
 
@@ -33,8 +32,8 @@ bool FrameGraphicsStage::collectExternal(
 
     render::RenderServices services{};
     services.modelSelection = &modelSelection;
-    services.gizmoController = &gizmoController;
-    services.navigationGizmoController = &navigationGizmoController;
+    services.gizmoController = &interaction.gizmoController();
+    services.navigationGizmoController = &interaction.navigationGizmoController();
     services.wireframeRenderer = &wireframeRenderer;
 
     return sceneRenderer.recordExternalCommandBuffer(

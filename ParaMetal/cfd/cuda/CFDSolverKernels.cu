@@ -286,7 +286,7 @@ __global__ void accumulateFacePressureImpulseKernel(
     if (idx >= faceCount) return;
 
     const CFDFaceGpu face = faces[idx];
-    // Difference-based pressure gradient
+    // difference-based pressure gradient
     const float dp = psi[face.cellB] - psi[face.cellA];
     const glm::vec3 impulseA = dp * face.fluxVectorB;
     const glm::vec3 impulseB = dp * face.fluxVectorA;
@@ -311,7 +311,7 @@ __global__ void accumulateBoundaryPressureImpulseKernel(
 
     const CFDBoundaryFaceGpu bf = boundaryFaces[idx];
     const BoundaryConditionGpu bc = boundaryConditions[bf.boundaryCondition];
-    // Dirichlet pressure outlet reference contribution (psi = 0)
+    // Dirichlet outlet reference contribution (psi = 0)
     if (bc.type != 2 /* PressureOutlet */) return;
 
     const float psiVal = psi[bf.cell];
@@ -339,8 +339,7 @@ __global__ void applyVelocityCorrectionKernel(
 }
 
 
-} // anonymous namespace
-
+} 
 void launchBuildPressureRhs(
     uint32_t cellCount,
     uint32_t faceCount,
@@ -566,7 +565,7 @@ __global__ void publishFineBoundaryFluxKernel(
     const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= faceCount) return;
     const uint32_t dst = globalIndex[i];
-    if (dst == 0xFFFFFFFFu) return; // embedded solid wall: not in the published boundary space
+    if (dst == 0xFFFFFFFFu) return; // embedded solid wall not in published boundary space
     outFlux[dst] = sourceFlux[i];
 }
 

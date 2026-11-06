@@ -17,7 +17,7 @@
 #include "voronoi/VoronoiGpuStructs.hpp"
 #include "voronoi/GlobalDomainTopology.hpp"
 #include "serial/SerialTemperatureRuntime.hpp"
-#include "runtime/TimelinePlaybackTarget.hpp"
+#include "domain/HeatProbeData.hpp"
 
 class VulkanDevice;
 class MemoryAllocator;
@@ -25,10 +25,9 @@ class CommandPool;
 class HeatModelRuntime;
 struct HeatProduct;
 
-class HeatSystemComputeController : public TimelinePlaybackTarget {
+class HeatSystemComputeController {
 public:
     struct Config {
-        bool active = false;
         float simulationDuration = 5.0f;
         bool hasFluid = false;
         float fluidDensity = 0.0f;
@@ -53,11 +52,12 @@ public:
         };
         float domainBoundaryHeatFluxes[6] = {};
         float domainBoundaryHeatTransferCoefficients[6] = {};
-        uint32_t solverMaxIterations = 0;         // 0 = keep heat solver default
-        float solverConvergenceTolerance = 0.0f;  // 0 = keep heat solver default
+        uint32_t solverMaxIterations = 0;
+        float solverConvergenceTolerance = 0.0f;
         std::vector<std::vector<glm::vec3>> modelSurfacePositions;
         std::vector<std::vector<glm::vec3>> modelSurfaceNormals;
         std::vector<std::vector<uint32_t>> modelSurfaceTriangleIndices;
+        std::vector<uint64_t> heatModelKeys;
         std::vector<uint32_t> modelRuntimeModelIds;
         std::unordered_map<uint32_t, float> modelInitialTemperaturesCByRuntimeId;
         std::unordered_map<uint32_t, float> modelVolumetricPowerDensitiesByRuntimeId;
@@ -68,12 +68,12 @@ public:
         std::unordered_map<uint64_t, bool> serialEnabledBySourceKey;
         std::unordered_map<uint64_t, std::string> serialPortNamesBySourceKey;
         std::unordered_map<uint64_t, uint32_t> serialBaudRatesBySourceKey;
+        std::unordered_map<uint64_t, HeatProbeData> heatProbesBySourceKey;
         topology::GlobalDomain domainVoronoiProduct;
         std::unordered_map<uint32_t, std::array<float, 16>> modelLocalToWorldByModelId;
         std::unordered_map<uint32_t, bool> modelPrescribedTemperatureEnabledByRuntimeId;
         std::unordered_map<uint32_t, float> modelPrescribedTemperaturesCByRuntimeId;
         uint64_t computeHash = 0;
-        uint64_t structuralHash = 0;
     };
 
     HeatSystemComputeController(
@@ -83,35 +83,44 @@ public:
         CommandPool& transferCommandPool,
         uint32_t maxFramesInFlight);
 
-    // Returns false on failure, previous generation stays active and caller skips publish
     bool apply(uint64_t socketKey, const Config& config);
     void remove(uint64_t socketKey);
-    void disableAll();
     void syncSerialInputs();
     void updateSerialInputs();
     bool getSerialTemperatureStatus(uint64_t sourceKey, SerialTemperatureRuntime::Status& outStatus) const;
-    bool isAnyHeatSystemActive() const;
-    bool isAnyHeatSystemPaused() const;
+    bool getHeatProbeTemperatures(uint64_t sourceKey, std::vector<float>& outTemperaturesC) const;
+    bool getVemTraceState(uint64_t socketKey, VkBuffer& outBuffer, uint32_t& outTraceCount, bool& outValid) const;
+    uint64_t getDisplayRevision() const;
 
-    void setTimelinePlaying(bool playing) override;
-    void resetTimeline() override;
-    void scrubTimeline(uint32_t frame) override;
-
-    std::vector<HeatSystem*> getActiveSystems() const;
-
-    // Blocks until in-flight solves finish for current and retained systems
     void waitIdle();
-    // Host-signals pending solve release waits for current and retained systems
     void releaseWaits();
     bool buildProduct(uint64_t socketKey, HeatProduct& outProduct);
     const HeatSystem* getSystem(uint64_t socketKey) const;
     HeatSystem* getSystem(uint64_t socketKey);
     const Config* getConfig(uint64_t socketKey) const;
+    uint64_t getCurrentComputeHash(uint64_t socketKey) const {
+        const auto it = configuredConfigs.find(socketKey);
+        return it != configuredConfigs.end() ? it->second.computeHash : 0;
+    }
+
+    bool hasAnyRetiring() const;
+    void clearAllRetiring();
+    void commitPending(uint64_t socketKey) noexcept;
+    void cancelCandidate(uint64_t socketKey);
+    void quiescedClear() noexcept;
 
 private:
+    void retireCurrent(uint64_t socketKey);
+
+    struct GenerationSlot {
+        std::unique_ptr<HeatSystem> current;
+        std::unique_ptr<HeatSystem> retiring;
+        std::unique_ptr<HeatSystem> candidate;
+    };
+
     void configureHeatSystem(HeatSystem& system, const Config& config);
-    void applyRuntimeState(HeatSystem& system, const Config& config);
     std::unique_ptr<HeatSystem> buildHeatSystem();
+    const Config* getBuildConfig(uint64_t socketKey) const;
 
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
@@ -119,14 +128,10 @@ private:
     CommandPool& transferCommandPool;
     uint32_t maxFramesInFlight;
 
-    bool timelinePlaying = false;
-    uint32_t timelineResetCounter = 0;
-    uint32_t timelineScrubFrame = std::numeric_limits<uint32_t>::max();
-
-    std::unordered_map<uint64_t, std::unique_ptr<HeatSystem>> systemsBySocket;
+    std::unordered_map<uint64_t, GenerationSlot> generationSlots;
     std::unordered_map<uint64_t, Config> configuredConfigs;
+    std::unordered_map<uint64_t, Config> pendingConfigs;
     std::unordered_map<uint64_t, uint64_t> failedComputeHashes;
-    std::vector<std::unique_ptr<HeatSystem>> retainedSystems;
     std::unordered_map<uint64_t, std::unique_ptr<SerialTemperatureRuntime>> serialRuntimes;
     std::unordered_map<uint64_t, uint64_t> lastSerialRevisions;
 };

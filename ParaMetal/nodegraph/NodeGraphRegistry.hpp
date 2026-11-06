@@ -14,15 +14,15 @@ inline constexpr const char* Group = "group";
 inline constexpr const char* Remesh = "remesh";
 inline constexpr const char* HeatModel = "heat_model";
 inline constexpr const char* Fluid = "fluid";
-inline constexpr const char* HeatFluid = "fluid";
 inline constexpr const char* Voronoi = "voronoi";
 inline constexpr const char* HeatSolve = "heat_solve";
 inline constexpr const char* Points = "points";
-inline constexpr const char* HeatPoints = "heat_points";
 inline constexpr const char* MeshPoints = "mesh_points";
 inline constexpr const char* Merge = "merge";
 inline constexpr const char* SerialTemperature = "serial_temperature";
 inline constexpr const char* CFD = "cfd";
+inline constexpr const char* HeatProbe = "heat_probe";
+inline constexpr const char* Write = "write";
 }
 
 namespace nodegraphparams {
@@ -51,9 +51,6 @@ constexpr uint32_t SourceType = 4;
 
 namespace sourcetype {
 constexpr int64_t Vertex = 0;
-constexpr int64_t Object = 1;
-constexpr int64_t Material = 2;
-constexpr int64_t Smooth = 3;
 }
 }
 
@@ -84,6 +81,9 @@ constexpr uint32_t ShowFluidVolume = 15;
 constexpr uint32_t FluidVolumeOpacity = 16;
 constexpr uint32_t SolverMaxIterations = 30;
 constexpr uint32_t SolverConvergenceTolerance = 31;
+constexpr uint32_t ShowIsocontours = 32;
+constexpr uint32_t UseVemTraceSurface = 33;
+constexpr uint32_t IsocontourSpacingC = 34;
 
 // Domain Boundary Conditions (6 faces: 0=-X, 1=+X, 2=-Y, 3=+Y, 4=-Z, 5=+Z)
 inline constexpr uint32_t domainBoundaryTypeParam(uint32_t face) { return 100 + face * 4; }
@@ -99,11 +99,9 @@ constexpr uint32_t ShowVoronoi = 3;
 constexpr uint32_t ShowPoints = 4;
 constexpr uint32_t VolumePadding = 5;
 constexpr uint32_t ContactRange = 6;
-constexpr uint32_t ShowContactManifold = 8;
-}
-
-namespace heatsource {
-constexpr uint32_t Temperature = 1;
+constexpr uint32_t LloydIterations = 7;
+constexpr uint32_t LloydVolumeThreshold = 9;
+constexpr uint32_t LloydDamping = 10;
 }
 
 namespace heatmodel {
@@ -123,6 +121,14 @@ constexpr uint32_t Port = 2;
 constexpr uint32_t BaudRate = 3;
 }
 
+namespace heatprobe {
+constexpr uint32_t Enabled = 1;
+constexpr uint32_t OpcPort = 2;
+constexpr uint32_t ProbesJson = 3;
+constexpr uint32_t ShowTemperature = 4;
+constexpr uint32_t ShowName = 5;
+}
+
 namespace points {
 constexpr uint32_t PointCount = 1;
 constexpr uint32_t DimX = 2;
@@ -130,10 +136,6 @@ constexpr uint32_t DimY = 3;
 constexpr uint32_t DimZ = 4;
 constexpr uint32_t Distribution = 5;
 constexpr uint32_t Seed = 6;
-}
-
-namespace heatpoints {
-constexpr uint32_t InitialTemperature = 1;
 }
 
 namespace heatfluid {
@@ -148,7 +150,6 @@ constexpr uint32_t InletTemperatureC = 8;
 constexpr uint32_t KinematicViscosity = 9;
 }
 namespace fluid = heatfluid;
-
 
 namespace merge {
 constexpr uint32_t MergeDistance = 1;
@@ -169,6 +170,11 @@ inline constexpr uint32_t domainBoundaryTypeParam(uint32_t face) { return 100 + 
 inline constexpr uint32_t domainBoundaryVelocityXParam(uint32_t face) { return 101 + face * 4; }
 inline constexpr uint32_t domainBoundaryVelocityYParam(uint32_t face) { return 102 + face * 4; }
 inline constexpr uint32_t domainBoundaryVelocityZParam(uint32_t face) { return 103 + face * 4; }
+}
+
+namespace write {
+constexpr uint32_t FilePath = 1;
+constexpr uint32_t Product = 5;
 }
 }
 

@@ -135,6 +135,17 @@ bool NodeGraphEdges::remove(NodeGraphEdgeId edgeId) {
     return true;
 }
 
+void NodeGraphEdges::removeIncident(NodeGraphNodeId nodeId) {
+    bool changed = false;
+    for (auto it = edgeById.begin(); it != edgeById.end();) {
+        if (it->second.fromNode == nodeId || it->second.toNode == nodeId) {
+            it = edgeById.erase(it);
+            changed = true;
+        } else ++it;
+    }
+    if (changed) markDirty();
+}
+
 void NodeGraphEdges::clear() {
     edgeById.clear();
     markDirty();

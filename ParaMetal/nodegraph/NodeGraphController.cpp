@@ -1,16 +1,24 @@
 #include "NodeGraphController.hpp"
 
+#include "NodeGraphCompiler.hpp"
 #include "NodeGraphDebugCache.hpp"
+#include "cfd/CFDSystemComputeController.hpp"
+#include "heat/HeatSystemComputeController.hpp"
+#include "runtime/ModelComputeController.hpp"
+#include "runtime/PointComputeRuntime.hpp"
+#include "runtime/RemeshController.hpp"
+#include "voronoi/VoronoiSystemComputeController.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
 #include "NodePayloadRegistry.hpp"
+#include "runtime/RuntimeHeatComputeTransport.hpp"
 #include "runtime/RuntimeHeatDisplayTransport.hpp"
 #include "runtime/RuntimeModelDisplayTransport.hpp"
 #include "runtime/RuntimePointDisplayTransport.hpp"
 #include "runtime/RuntimeProductManager.hpp"
 #include "runtime/RuntimeRemeshDisplayTransport.hpp"
 #include "runtime/RuntimeVoronoiDisplayTransport.hpp"
-#include "runtime/RuntimeProducts.hpp"
+#include "simgraph/SimGraphRuntime.hpp"
 
 #include <iostream>
 #include <unordered_set>
@@ -45,15 +53,118 @@ void NodeGraphController::rebuildForDelta(const NodeGraphDelta& delta) {
 void NodeGraphController::tick() {
     if (plan.isValid && packageCompilationPending) {
         if (compileRuntimePackages()) packageCompilationPending = false;
+        // sync simulation nodes before sim graph run
+        syncSimulationNodes();
     }
-    updateDisplayTransports();
+
+    const RuntimeProductManager* products = packageController.products();
+    const uint64_t stateRevision = runtime.state().revision;
+    const uint64_t productRevision = products != nullptr ? products->getRevision() : 0;
+    const uint64_t heatTraceRevision = runtimeConnections.heatComputeTransport
+        ? runtimeConnections.heatComputeTransport->getDisplayRevision()
+        : 0;
+    const bool fullDisplaySync =
+        stateRevision != lastDisplaySyncStateRevision ||
+        productRevision != lastDisplaySyncProductRevision ||
+        packageCompileRevision != lastDisplaySyncPackageRevision;
+    if (fullDisplaySync) {
+        updateDisplayTransports();
+        lastDisplaySyncStateRevision = stateRevision;
+        lastDisplaySyncProductRevision = productRevision;
+        lastDisplaySyncPackageRevision = packageCompileRevision;
+    } else if (heatTraceRevision != lastDisplaySyncHeatTraceRevision) {
+        // update heat display transport only
+        updateHeatDisplayTransport();
+    }
+    lastDisplaySyncHeatTraceRevision = heatTraceRevision;
+}
+
+void NodeGraphController::detachRuntimeBindings() {
+    packageController.detachAllDisplayBindings();
+    // unblock interop waits before quiescing gpu
+    if (runtimeConnections.heatController) {
+        runtimeConnections.heatController->releaseWaits();
+    }
+    if (runtimeConnections.cfdController) {
+        runtimeConnections.cfdController->releaseWaits();
+    }
+}
+
+void NodeGraphController::quiescedClear() {
+    packageController.quiescedClear();
+    plan = {};
+    plan.isValid = false;
+    simulationSockets.clear();
+    lastDisplaySyncStateRevision = UINT64_MAX;
+    lastDisplaySyncProductRevision = UINT64_MAX;
+    lastDisplaySyncPackageRevision = UINT64_MAX;
+    lastDisplaySyncHeatTraceRevision = UINT64_MAX;
+    lastPackageErrors_.clear();
+}
+
+// sync committed simulation systems into sim graph
+void NodeGraphController::syncSimulationNodes() {
+    SimGraphRuntime* simGraph = runtimeConnections.simGraph;
+    if (simGraph == nullptr) return;
+
+    const RuntimePackageManager& packages = packageController.packages();
+    std::unordered_set<uint64_t> desired;
+    desired.reserve(packages.cfdSystems().size() + packages.heatSystems().size());
+
+    if (runtimeConnections.cfdController) {
+        for (const auto& [socketKey, package] : packages.cfdSystems()) {
+            (void)package;
+            cfd::CFDSystem* system = runtimeConnections.cfdController->getSystem(socketKey);
+            if (system == nullptr) continue;
+            simGraph->registerNode(socketKey, system);
+            desired.insert(socketKey);
+        }
+    }
+
+    if (runtimeConnections.heatController) {
+        for (const auto& [socketKey, package] : packages.heatSystems()) {
+            HeatSystem* system = runtimeConnections.heatController->getSystem(socketKey);
+            if (system == nullptr) continue;
+            simGraph->registerNode(socketKey, system);
+            desired.insert(socketKey);
+
+            const HeatSystemComputeController::Config* heatConfig =
+                runtimeConnections.heatController->getConfig(socketKey);
+            const uint64_t producerSocket =
+                heatConfig && heatConfig->hasAdvection && package.cfdProduct.isValid()
+                    ? package.cfdProduct.outputSocketKey
+                    : 0;
+            if (producerSocket == 0 ||
+                runtimeConnections.cfdController == nullptr ||
+                runtimeConnections.cfdController->getSystem(producerSocket) == nullptr) {
+                simGraph->disconnect(socketKey);
+                continue;
+            }
+            SimConnection connection{};
+            connection.connectionId = socketKey;
+            connection.producerSocket = producerSocket;
+            connection.consumerSocket = socketKey;
+            connection.mode = SimConnectionMode::Staged;
+            simGraph->connect(connection);
+        }
+    }
+
+    for (uint64_t socketKey : simulationSockets) {
+        if (desired.find(socketKey) == desired.end()) {
+            simGraph->unregisterNode(socketKey);
+        }
+    }
+    simulationSockets = std::move(desired);
 }
 
 void NodeGraphController::resetGraph(const NodeGraphState& state) {
     NodeGraphDelta delta{};
     delta.fromRevision = runtime.state().revision;
     delta.toRevision = state.revision;
-    delta.changes.push_back(NodeGraphChange{});
+    NodeGraphChange resetChange{};
+    resetChange.type = NodeGraphChangeType::Reset;
+    resetChange.reason = NodeGraphChangeReason::Topology;
+    delta.changes.push_back(resetChange);
     for (const auto& entry : state.nodes) {
         NodeGraphChange change{};
         change.type = NodeGraphChangeType::NodeUpsert;
@@ -90,7 +201,53 @@ bool NodeGraphController::resolveGizmoTransformNode(
             runtime.state(), outputSocketKey, nodegraphtypes::Transform, outNodeId);
 }
 
+void NodeGraphController::reclaimRetiringGenerations() {
+    RuntimeProductManager* products = packageController.products();
+    bool anyRetiring = products != nullptr && products->hasAnyRetiring();
+    if (runtimeConnections.modelComputeController &&
+        runtimeConnections.modelComputeController->hasAnyRetiring()) {
+        anyRetiring = true;
+    }
+    if (runtimeConnections.pointComputeRuntime &&
+        runtimeConnections.pointComputeRuntime->hasAnyRetiring()) {
+        anyRetiring = true;
+    }
+    if (runtimeConnections.remeshController &&
+        runtimeConnections.remeshController->hasAnyRetiring()) {
+        anyRetiring = true;
+    }
+    if (runtimeConnections.voronoiController &&
+        runtimeConnections.voronoiController->hasAnyRetiring()) {
+        anyRetiring = true;
+    }
+    if (runtimeConnections.heatController &&
+        runtimeConnections.heatController->hasAnyRetiring()) {
+        anyRetiring = true;
+    }
+    if (runtimeConnections.cfdController &&
+        runtimeConnections.cfdController->hasAnyRetiring()) {
+        anyRetiring = true;
+    }
+    if (!anyRetiring) {
+        return;
+    }
+
+    if (!runtimeConnections.quiesceGpu || !runtimeConnections.quiesceGpu()) {
+        std::cerr << "[NodeGraphController] GPU quiesce failed; retiring generations retained"
+                  << std::endl;
+        return;
+    }
+    if (products) products->clearAllRetiring();
+    if (runtimeConnections.modelComputeController) runtimeConnections.modelComputeController->clearAllRetiring();
+    if (runtimeConnections.pointComputeRuntime) runtimeConnections.pointComputeRuntime->clearAllRetiring();
+    if (runtimeConnections.remeshController) runtimeConnections.remeshController->clearAllRetiring();
+    if (runtimeConnections.voronoiController) runtimeConnections.voronoiController->clearAllRetiring();
+    if (runtimeConnections.heatController) runtimeConnections.heatController->clearAllRetiring();
+    if (runtimeConnections.cfdController) runtimeConnections.cfdController->clearAllRetiring();
+}
+
 bool NodeGraphController::compileRuntimePackages() {
+    reclaimRetiringGenerations();
     runtime.execute(plan);
     const NodeGraphEvaluation& evaluation = runtime.evaluation();
     const RuntimePackageCompiler::FrozenPackages frozenPackages =
@@ -118,7 +275,16 @@ bool NodeGraphController::compileRuntimePackages() {
     packageController.beginCompilation();
     for (NodeGraphNodeId nodeId : plan.executionOrder) {
         const NodeGraphNode* node = runtime.state().node(nodeId);
-        if (!node || !packageCompiler.compileNode(
+        if (!node) {
+            errors.push_back("Package schedule references a missing node.");
+            lastPackageErrors_.clear();
+            lastPackageErrors_ = errors.back();
+            std::cerr << "Runtime package compilation failed: " << errors.back() << '\n';
+            packageController.finishCompilation(/*success=*/false);
+            return false;
+        }
+
+        if (!packageCompiler.compileNode(
                 runtime.state(),
                 *node,
                 evaluation,
@@ -127,8 +293,21 @@ bool NodeGraphController::compileRuntimePackages() {
                 activeWorldUnit,
                 frozenPackages,
                 packageController.packages(),
-                errors) ||
-            !packageController.applyNode(*node)) {
+                errors)) {
+            packageController.invalidateOutputsForNode(*node);
+            lastPackageErrors_.clear();
+            for (const std::string& error : errors) {
+                if (!lastPackageErrors_.empty()) lastPackageErrors_ += "; ";
+                lastPackageErrors_ += error;
+                std::cerr << "Runtime package compilation failed: " << error << '\n';
+            }
+            packageController.finishCompilation(/*success=*/false);
+            return false;
+        }
+
+        if (!packageController.applyNode(*node)) {
+            packageController.invalidateOutputsForNode(*node);
+            errors.push_back("update failed; node invalidated");
             lastPackageErrors_.clear();
             for (const std::string& error : errors) {
                 if (!lastPackageErrors_.empty()) lastPackageErrors_ += "; ";
@@ -154,6 +333,22 @@ void NodeGraphController::setWorldUnit(units::LengthUnit unit) {
     activeWorldUnit = unit;
     packageCompilationPending = true;
     frozenPackageRebuildPending = true;
+    ++packageCompileRevision;
+}
+
+void NodeGraphController::updateHeatDisplayTransport() {
+    if (!runtimeConnections.heatDisplayTransport) return;
+
+    RuntimePackageManager& packages = packageController.packages();
+    const std::unordered_set<uint64_t> visibleKeys =
+        nodeGraphDisplay.computeDisplayKeys(
+            runtime.state(),
+            runtime.evaluation(),
+            packages,
+            &payloadRegistry);
+
+    runtimeConnections.heatDisplayTransport->sync(packages, visibleKeys);
+    runtimeConnections.heatDisplayTransport->finalizeSync();
 }
 
 void NodeGraphController::updateDisplayTransports() {

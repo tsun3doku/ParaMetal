@@ -12,20 +12,19 @@ struct CFDFaceGpu {
     uint32_t cellB = 0;
     glm::vec3 fluxVectorA{0.0f};
     glm::vec3 fluxVectorB{0.0f};
-    float projectionWeight = 0.0f; // sum of constituent fine projectionWeights
+    float projectionWeight = 0.0f; // sum of constituent projection weights
 };
 
 struct CFDBoundaryFaceGpu {
     uint32_t cell = 0;
     uint32_t boundaryCondition = UINT32_MAX; // 0..5 domain boundary, 6 embedded solid wall
     glm::vec3 areaVector{0.0f};
-    float projectionWeight = 0.0f; // sum of constituent fine (area / distance)
+    float projectionWeight = 0.0f; // sum of constituent (area / distance)
 };
 
 struct CFDTopology {
     uint32_t fluidNodeCount = 0;
 
-    // Fluid fragment cells and fluid-fluid faces
     std::vector<CFDFaceGpu> faces;
     std::vector<uint32_t> faceGlobalIndex;
     std::vector<CFDBoundaryFaceGpu> boundaryFaces;

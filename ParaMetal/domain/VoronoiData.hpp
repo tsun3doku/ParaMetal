@@ -16,11 +16,14 @@ struct VoronoiData {
     float cellSize = 0.005f;
     int voxelResolution = 128;
     float volumePadding = 0.01f;
+    int lloydIterations = int(voronoi::DefaultLloydIterations);
+    float lloydVolumeThreshold = voronoi::DefaultLloydVolumeThresholdFraction;
+    float lloydDamping = voronoi::DefaultLloydDamping;
+    float contactRange = voronoi::DefaultContactRange;
 
     NodeDataHandle pointsPayloadHandle;
 
     std::vector<NodeDataHandle> modelMeshHandles;
 
     bool active = false;
-    float contactRange = voronoi::DefaultContactRange;
 };

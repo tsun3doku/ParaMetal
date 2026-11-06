@@ -62,7 +62,7 @@ void SurfacePass::record(const FrameContext& context, const SceneView& view, con
     VkCommandBuffer commandBuffer = context.commandBuffer;
     const uint32_t frameIndex = context.currentFrame;
 
-    heatOverlayRenderer.renderSurface(commandBuffer, frameIndex);
+    heatOverlayRenderer.renderSurface(commandBuffer, frameIndex, context.extent);
     voronoiOverlayRenderer.renderSurface(commandBuffer, frameIndex);
     intrinsicRenderer.renderSurface(commandBuffer, frameIndex);
 }

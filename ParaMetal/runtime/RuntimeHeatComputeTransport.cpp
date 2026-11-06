@@ -1,68 +1,93 @@
 #include "RuntimeHeatComputeTransport.hpp"
-#include "runtime/RuntimeProducts.hpp"
-#include "hash/HashBuilder.hpp"
+#include "runtime/RuntimeProductManager.hpp"
 
-#include <iostream>
-
-ProductHandle RuntimeHeatComputeTransport::apply(uint64_t socketKey, const HeatPackage& package) {
+ComputeApplyResult RuntimeHeatComputeTransport::apply(
+    uint64_t socketKey,
+    const HeatPackage& package,
+    HeatProduct& outProduct) {
     if (!controller || !products || socketKey == 0) {
-        return {};
+        return ComputeApplyResult::Failed;
+    }
+    if (package.models.empty()) {
+        return ComputeApplyResult::Failed;
     }
 
-    if (!package.authored.active) {
-        remove(socketKey);
-        return {};
+    const uint64_t computeHash = package.hashes.simulation;
+
+    if (controller->getCurrentComputeHash(socketKey) == computeHash) {
+        HeatSystemComputeController::Config hostConfig{};
+        hostConfig.computeHash = computeHash;
+        hostConfig.heatProbesBySourceKey = package.resolvedHeatProbes;
+        for (const auto& [sourceKey, data] : package.resolvedSerialSources) {
+            hostConfig.serialEnabledBySourceKey[sourceKey] = data.enabled;
+            hostConfig.serialPortNamesBySourceKey[sourceKey] = data.portName;
+            hostConfig.serialBaudRatesBySourceKey[sourceKey] = data.baudRate;
+        }
+        if (!controller->apply(socketKey, hostConfig)) {
+            return ComputeApplyResult::Failed;
+        }
+        return ComputeApplyResult::Unchanged;
     }
 
     HeatSystemComputeController::Config config{};
     if (!tryBuildConfig(socketKey, package, config)) {
-        remove(socketKey);
-        return {};
+        return ComputeApplyResult::Failed;
     }
-
-    const uint64_t computeHash = package.hashes.simulation;
     config.computeHash = computeHash;
 
     if (!controller->apply(socketKey, config)) {
-        return {};
+        return ComputeApplyResult::Failed;
     }
 
-    if (simGraph) {
-        HeatSystem* system = controller->getSystem(socketKey);
-        if (system == nullptr) {
-            simGraph->unregisterNode(socketKey);
-        } else {
-            simGraph->registerNode(socketKey, system);
-            const uint64_t producerSocket = config.hasAdvection ? package.cfdProduct.outputSocketKey : 0;
-            if (producerSocket != 0) {
-                SimConnection connection{};
-                connection.connectionId = socketKey;
-                connection.producerSocket = producerSocket;
-                connection.consumerSocket = socketKey;
-                connection.mode = SimConnectionMode::Staged;
-                simGraph->connect(connection);
-            } else {
-                simGraph->disconnect(socketKey);
-            }
-        }
+    outProduct = {};
+    if (!controller->buildProduct(socketKey, outProduct)) {
+        controller->cancelCandidate(socketKey);
+        return ComputeApplyResult::Failed;
     }
+    return ComputeApplyResult::Prepared;
+}
 
-    HeatProduct heatProduct{};
-    if (!controller->buildProduct(socketKey, heatProduct)) {
-        return {};
+uint64_t RuntimeHeatComputeTransport::advectionUpstreamSocket(const HeatPackage& package) const {
+    if (!products || !package.cfdProduct.isValid()) {
+        return 0;
     }
+    if (!products->isCurrent<CFDProduct>(package.cfdProduct)) {
+        return 0;
+    }
+    const CFDProduct* cfdProduct = products->resolve<CFDProduct>(package.cfdProduct);
+    if (!cfdProduct || !cfdProduct->isValid() || cfdProduct->faceFluxCount == 0) {
+        return 0;
+    }
+    if (!products->isCurrent<VoronoiProduct>(package.domainVoronoiProduct)) {
+        return 0;
+    }
+    const VoronoiProduct* domainProduct = products->resolve<VoronoiProduct>(package.domainVoronoiProduct);
+    if (!domainProduct || !domainProduct->isValid()) {
+        return 0;
+    }
+    if (cfdProduct->hashes.geometry != domainProduct->hashes.geometry) {
+        return 0;
+    }
+    return package.cfdProduct.outputSocketKey;
+}
 
-    ProductHandle handle = products->publish<HeatProduct>(socketKey, heatProduct);
-    return handle;
+void RuntimeHeatComputeTransport::commitPending(uint64_t socketKey) {
+    if (!controller || socketKey == 0) {
+        return;
+    }
+    controller->commitPending(socketKey);
+}
+
+void RuntimeHeatComputeTransport::cancelPending(uint64_t socketKey) {
+    if (!controller || socketKey == 0) {
+        return;
+    }
+    controller->cancelCandidate(socketKey);
 }
 
 void RuntimeHeatComputeTransport::remove(uint64_t socketKey) {
     if (!controller || socketKey == 0) {
         return;
-    }
-    // Deregister before the controller destroys the system the graph points at.
-    if (simGraph) {
-        simGraph->unregisterNode(socketKey);
     }
     controller->remove(socketKey);
 }
@@ -73,7 +98,6 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(uint64_t socketKey, const HeatP
     }
 
     outConfig = {};
-    outConfig.active = package.authored.active;
     outConfig.worldUnit = package.worldUnit;
     outConfig.simulationDuration = package.authored.simulationDuration;
     outConfig.solverMaxIterations = package.authored.solverMaxIterations;
@@ -88,7 +112,13 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(uint64_t socketKey, const HeatP
         outConfig.serialPortNamesBySourceKey[sourceKey] = data.portName;
         outConfig.serialBaudRatesBySourceKey[sourceKey] = data.baudRate;
     }
+    for (const auto& [sourceKey, data] : package.resolvedHeatProbes) {
+        outConfig.heatProbesBySourceKey[sourceKey] = data;
+    }
 
+    if (!products->isCurrent<VoronoiProduct>(package.domainVoronoiProduct)) {
+        return false;
+    }
     const VoronoiProduct* domainProduct = products->resolve<VoronoiProduct>(package.domainVoronoiProduct);
     if (!domainProduct) {
         return false;
@@ -126,7 +156,9 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(uint64_t socketKey, const HeatP
     for (uint32_t cId = 0; cId < domainProduct->globalContactCouplingCount; ++cId) {
         topology::ContactCoupling coupling{};
         coupling.faceA = domainProduct->contactCouplingFaceA[cId];
+        coupling.fragmentA = domainProduct->contactCouplingFragmentA[cId];
         coupling.faceB = domainProduct->contactCouplingFaceB[cId];
+        coupling.fragmentB = domainProduct->contactCouplingFragmentB[cId];
         coupling.couplingArea = domainProduct->contactCouplingAreas[cId];
         globalDomain.contactCouplings.push_back(coupling);
     }
@@ -143,7 +175,8 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(uint64_t socketKey, const HeatP
     for (const glm::vec4& position : domainProduct->globalSeedPositions) {
         globalDomain.seedPositions.push_back(glm::vec3(position));
     }
-    globalDomain.seedToFragment = domainProduct->seedToFragment;
+    globalDomain.cellFragmentOffsets = domainProduct->cellFragmentOffsets;
+    globalDomain.cellFragments = domainProduct->cellFragments;
     globalDomain.volumeGridMin = domainProduct->globalVolumeGridMin;
     globalDomain.volumeGridDim = domainProduct->globalVolumeGridDim;
     globalDomain.volumeGridCellSize = domainProduct->globalVolumeGridCellSize;
@@ -155,12 +188,17 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(uint64_t socketKey, const HeatP
     outConfig.modelSurfacePositions.reserve(modelCount);
     outConfig.modelSurfaceNormals.reserve(modelCount);
     outConfig.modelSurfaceTriangleIndices.reserve(modelCount);
+    outConfig.heatModelKeys.reserve(modelCount);
     outConfig.modelRuntimeModelIds.reserve(modelCount);
     outConfig.modelInitialTemperaturesCByRuntimeId.reserve(modelCount);
     outConfig.modelVolumetricPowerDensitiesByRuntimeId.reserve(modelCount);
 
     for (size_t i = 0; i < modelCount; ++i) {
         const HeatModelPackage& model = package.models[i];
+        if (!products->isCurrent<ModelProduct>(model.modelProduct) ||
+            !products->isCurrent<RemeshProduct>(model.remeshProduct)) {
+            return false;
+        }
         const RemeshProduct* remeshProduct = products->resolve<RemeshProduct>(
             model.remeshProduct);
         if (!remeshProduct ||
@@ -172,6 +210,7 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(uint64_t socketKey, const HeatP
         outConfig.modelSurfacePositions.push_back(remeshProduct->surfacePositions);
         outConfig.modelSurfaceNormals.push_back(remeshProduct->surfaceNormals);
         outConfig.modelSurfaceTriangleIndices.push_back(remeshProduct->surfaceTriangleIndices);
+        outConfig.heatModelKeys.push_back(model.heatModelKey);
         outConfig.modelRuntimeModelIds.push_back(runtimeModelId);
         outConfig.modelInitialTemperaturesCByRuntimeId[runtimeModelId] = model.initialTemperatureC;
         outConfig.modelVolumetricPowerDensitiesByRuntimeId[runtimeModelId] = model.volumetricPowerDensity;
@@ -183,51 +222,23 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(uint64_t socketKey, const HeatP
         outConfig.modelLocalToWorldByModelId[runtimeModelId] = model.remeshLocalToWorld;
     }
 
-    if (package.cfdProduct.isValid()) {
+    if (advectionUpstreamSocket(package) != 0) {
         const CFDProduct* cfdProduct = products->resolve<CFDProduct>(package.cfdProduct);
-        if (cfdProduct && cfdProduct->isValid()) {
-            if (cfdProduct->hashes.geometry == domainProduct->hashes.geometry &&
-                cfdProduct->faceFluxCount > 0) {
-                outConfig.hasAdvection = true;
-                outConfig.advectionFaceFluxBuffer = cfdProduct->faceFluxBuffer;
-                outConfig.advectionFaceFluxBufferSize = cfdProduct->faceFluxBufferSize;
-                outConfig.advectionBoundaryFluxBuffer = cfdProduct->boundaryFluxBuffer;
-                outConfig.advectionBoundaryFluxBufferSize = cfdProduct->boundaryFluxBufferSize;
-                outConfig.advectionFaceCount = cfdProduct->faceFluxCount;
-                outConfig.advectionBoundaryFaceCount = cfdProduct->boundaryFluxCount;
-            }
-        }
+        outConfig.hasAdvection = true;
+        outConfig.advectionFaceFluxBuffer = cfdProduct->faceFluxBuffer;
+        outConfig.advectionFaceFluxBufferSize = cfdProduct->faceFluxBufferSize;
+        outConfig.advectionBoundaryFluxBuffer = cfdProduct->boundaryFluxBuffer;
+        outConfig.advectionBoundaryFluxBufferSize = cfdProduct->boundaryFluxBufferSize;
+        outConfig.advectionFaceCount = cfdProduct->faceFluxCount;
+        outConfig.advectionBoundaryFaceCount = cfdProduct->boundaryFluxCount;
     }
-
-    uint64_t structuralHash = HashBuilder::start();
-    HashBuilder::combine(structuralHash, static_cast<uint64_t>(package.models.size()));
-    for (const HeatModelPackage& model : package.models) {
-        HashBuilder::combine(structuralHash, model.remeshProduct.hashes.geometry);
-        HashBuilder::combine(structuralHash, model.modelProduct.hashes.geometry);
-        HashBuilder::combineFloat(structuralHash, model.density);
-        HashBuilder::combineFloat(structuralHash, model.specificHeat);
-        HashBuilder::combineFloat(structuralHash, model.conductivity);
-        HashBuilder::combine(structuralHash, model.prescribedTemperatureEnabled ? 1u : 0u);
-    }
-    HashBuilder::combine(structuralHash, domainProduct->hashes.geometry);
-    HashBuilder::combine(structuralHash, static_cast<uint64_t>(package.hasFluid ? 1u : 0u));
-    if (package.hasFluid) {
-        HashBuilder::combineFloat(structuralHash, package.fluidDensity);
-        HashBuilder::combineFloat(structuralHash, package.fluidSpecificHeat);
-        HashBuilder::combineFloat(structuralHash, package.fluidConductivity);
-    }
-    HashBuilder::combine(structuralHash, static_cast<uint64_t>(outConfig.hasAdvection ? 1u : 0u));
 
     for (uint32_t face = 0; face < 6; ++face) {
         outConfig.domainBoundaryTypes[face] = package.domainBoundaryTypes[face];
         outConfig.domainBoundaryTemperaturesC[face] = package.domainBoundaryTemperaturesC[face];
         outConfig.domainBoundaryHeatFluxes[face] = package.domainBoundaryHeatFluxes[face];
         outConfig.domainBoundaryHeatTransferCoefficients[face] = package.domainBoundaryHeatTransferCoefficients[face];
-
-        HashBuilder::combine(structuralHash, static_cast<uint64_t>(package.domainBoundaryTypes[face]));
     }
-
-    outConfig.structuralHash = structuralHash;
 
     return true;
 }

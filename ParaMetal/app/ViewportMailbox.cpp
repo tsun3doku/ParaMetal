@@ -95,6 +95,12 @@ void ViewportMailbox::requestSelection(int nodeId) {
     selectionDirty = true;
 }
 
+void ViewportMailbox::requestProbePicking(int nodeId, int probeIndex) {
+    requestedProbePickingNode = nodeId;
+    requestedProbePickingIndex = probeIndex;
+    probePickingDirty = true;
+}
+
 void ViewportMailbox::requestHeatPaletteRange(float minimum, float maximum) {
     requestedHeatPaletteMin = minimum;
     requestedHeatPaletteMax = maximum;
@@ -238,6 +244,14 @@ bool ViewportMailbox::takeSelection(int& nodeId, bool force) {
     return true;
 }
 
+bool ViewportMailbox::takeProbePicking(int& outNodeId, int& outProbeIndex) {
+    if (!probePickingDirty) return false;
+    outNodeId = requestedProbePickingNode;
+    outProbeIndex = requestedProbePickingIndex;
+    probePickingDirty = false;
+    return true;
+}
+
 bool ViewportMailbox::takeHeatPaletteRange(float& minimum, float& maximum, bool force) {
     if (!heatPaletteRangeDirty && !force) return false;
     minimum = requestedHeatPaletteMin; maximum = requestedHeatPaletteMax; heatPaletteRangeDirty = false; return true;
@@ -274,4 +288,29 @@ const NodeGraphState* ViewportMailbox::graphReplacement(bool force) const {
 void ViewportMailbox::graphReplacementApplied() {
     graphStateDirty = false;
     pendingGraphDeltas.clear();
+}
+
+void ViewportMailbox::requestExport(int nodeId) {
+    std::lock_guard<std::mutex> lock(exportMutex);
+    pendingExportNodes.push_back(nodeId);
+}
+
+std::vector<int> ViewportMailbox::takePendingExports() {
+    std::lock_guard<std::mutex> lock(exportMutex);
+    std::vector<int> result;
+    result.swap(pendingExportNodes);
+    return result;
+}
+
+void ViewportMailbox::requestExportProducts(int nodeId, uint64_t requestId, uint64_t graphRevision) {
+    if (nodeId <= 0 || requestId == 0) return;
+    std::lock_guard<std::mutex> lock(exportMutex);
+    pendingExportProductRequests.push_back({nodeId, requestId, graphRevision});
+}
+
+std::vector<ExportProductsRequest> ViewportMailbox::takePendingExportProducts() {
+    std::lock_guard<std::mutex> lock(exportMutex);
+    std::vector<ExportProductsRequest> result;
+    result.swap(pendingExportProductRequests);
+    return result;
 }

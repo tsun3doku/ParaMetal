@@ -146,6 +146,8 @@ bool SceneRenderer::initializePasses() {
         return false;
     }
 
+    heatOverlayRenderer->setTextRenderer(screenTextRenderer.get());
+
     auto surface = std::make_unique<render::SurfacePass>(
         frameGraphRuntime,
         *heatOverlayRenderer,

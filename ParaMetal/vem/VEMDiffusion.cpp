@@ -9,6 +9,21 @@
 
 namespace vem {
 
+namespace {
+
+uint32_t findTraceRoot(std::vector<uint32_t>& parent, uint32_t trace) {
+    uint32_t root = trace;
+    while (parent[root] != root) root = parent[root];
+    while (parent[trace] != trace) {
+        const uint32_t next = parent[trace];
+        parent[trace] = root;
+        trace = next;
+    }
+    return root;
+}
+
+} // namespace
+
 bool VEMDiffusion::invert3x3(const double A[3][3], double invA[3][3]) {
     double scale = 0.0;
     for (int row = 0; row < 3; ++row) {
@@ -121,10 +136,7 @@ bool VEMDiffusion::computeElementFluxOperator(
     const std::vector<FaceGeometry>& faceIncidences,
     const CellGeometry& cell,
     double conductivity,
-    std::vector<double>& W_E,
-    CellValidation& outValidation) {
-    outValidation = CellValidation{};
-    outValidation.volume = static_cast<float>(cell.volume);
+    std::vector<double>& W_E) {
     const size_t nF = cell.faceCount;
     if (nF < 4 || !std::isfinite(cell.volume) || cell.volume <= 0.0 ||
         !std::isfinite(conductivity) || conductivity <= 0.0) {
@@ -180,8 +192,6 @@ bool VEMDiffusion::computeElementFluxOperator(
         }
     }
 
-    outValidation.surfaceArea = static_cast<float>(totalArea);
-
     double errFrob2 = 0.0;
     for (int a = 0; a < 3; ++a) {
         for (int b = 0; b < 3; ++b) {
@@ -190,22 +200,14 @@ bool VEMDiffusion::computeElementFluxOperator(
             errFrob2 += diff * diff;
         }
     }
-    outValidation.gaussConsistencyError = static_cast<float>(std::sqrt(errFrob2));
-
-    const double detB = B_hat[0][0] * (B_hat[1][1] * B_hat[2][2] - B_hat[1][2] * B_hat[2][1]) -
-                        B_hat[0][1] * (B_hat[1][0] * B_hat[2][2] - B_hat[1][2] * B_hat[2][0]) +
-                        B_hat[0][2] * (B_hat[1][0] * B_hat[2][1] - B_hat[1][1] * B_hat[2][0]);
-    outValidation.detNNT = static_cast<float>(detB);
+    const double gaussConsistencyError = std::sqrt(errFrob2);
 
     const double trB = B_hat[0][0] + B_hat[1][1] + B_hat[2][2];
     const double q = trB / 3.0;
     const double p = ( (B_hat[0][0]-q)*(B_hat[0][0]-q) + (B_hat[1][1]-q)*(B_hat[1][1]-q) + (B_hat[2][2]-q)*(B_hat[2][2]-q) +
                        2.0 * (B_hat[0][1]*B_hat[0][1] + B_hat[0][2]*B_hat[0][2] + B_hat[1][2]*B_hat[1][2]) ) / 6.0;
-    if (p < 1e-14) {
-        outValidation.conditionNNT = 1.0f;
-        outValidation.minEigenNNT = static_cast<float>(q);
-        outValidation.maxEigenNNT = static_cast<float>(q);
-    } else {
+    double conditionNNT = 1.0;
+    if (p >= 1e-14) {
         const double sqrtP = std::sqrt(p);
         double Bnorm[3][3];
         for (int r = 0; r < 3; ++r) {
@@ -226,14 +228,12 @@ bool VEMDiffusion::computeElementFluxOperator(
         const double lamMin = std::min(lam0, std::min(lam1, lam2));
         const double lamMax = std::max(lam0, std::max(lam1, lam2));
 
-        outValidation.minEigenNNT = static_cast<float>(lamMin);
-        outValidation.maxEigenNNT = static_cast<float>(lamMax);
-        outValidation.conditionNNT = (lamMin > 1e-12) ? static_cast<float>(lamMax / lamMin) : 1e9f;
+        conditionNNT = (lamMin > 1e-12) ? (lamMax / lamMin) : 1e9;
     }
 
-    outValidation.closureError = (totalArea > 0.0 && std::isfinite(totalArea))
-        ? static_cast<float>(glm::length(normalSum) / totalArea)
-        : 0.0f;
+    const double closureError = (totalArea > 0.0 && std::isfinite(totalArea))
+        ? glm::length(normalSum) / totalArea
+        : 0.0;
 
     double invB[3][3];
     if (!invert3x3(B_hat, invB)) {
@@ -274,11 +274,7 @@ bool VEMDiffusion::computeElementFluxOperator(
     }
 
     W_E.resize(nF * nF);
-    int failedPivot = -1;
-    double failedPivotValue = 0.0;
-    if (!choleskyInvert(M_tilde, nF, W_E, &failedPivot, &failedPivotValue)) {
-        outValidation.failedPivot = failedPivot;
-        outValidation.failedPivotValue = failedPivotValue;
+    if (!choleskyInvert(M_tilde, nF, W_E, nullptr, nullptr)) {
         return false;
     }
 
@@ -287,22 +283,18 @@ bool VEMDiffusion::computeElementFluxOperator(
         W_E[i] *= invAlpha;
     }
 
-    outValidation.choleskySucceeded = true;
-    outValidation.passed = (outValidation.gaussConsistencyError < 0.02f) &&
-                           (outValidation.closureError < 0.005f) &&
-                           (outValidation.conditionNNT < 1e5f);
-    return true;
+    return gaussConsistencyError < 0.02 &&
+           closureError < 0.005 &&
+           conditionNNT < 1e5;
 }
 
 bool VEMDiffusion::validateElementGeometry(
     const std::vector<FaceGeometry>& faceIncidences,
     const CellGeometry& cell,
-    double conductivity,
-    CellValidation& outValidation) {
+    double conductivity) {
     std::vector<double> fluxOperator;
-    const bool operatorValid = computeElementFluxOperator(
-        faceIncidences, cell, conductivity, fluxOperator, outValidation);
-    return operatorValid && outValidation.passed;
+    return computeElementFluxOperator(
+        faceIncidences, cell, conductivity, fluxOperator);
 }
 
 bool VEMDiffusion::rowTermLess(const RowTerm& a, const RowTerm& b) {
@@ -376,11 +368,62 @@ bool VEMDiffusion::assembleTraceSystem(
     const std::vector<float>& cellDiffusionCoefficient,
     const std::vector<float>& cellStorageOverDt,
     uint32_t totalTraceCount,
+    const std::vector<uint64_t>& perfectContinuityPairs,
     const BoundaryCondition* boundaries,
     uint32_t boundaryCount,
     const std::vector<TraceCoupling>& traceCouplings,
     const std::vector<DirichletTrace>& dirichletTraces,
     VEMTraceSystem& outSystem) {
+    if (!perfectContinuityPairs.empty()) {
+        std::vector<uint32_t> parent(totalTraceCount);
+        for (uint32_t trace = 0; trace < totalTraceCount; ++trace) {
+            parent[trace] = trace;
+        }
+        for (uint64_t pair : perfectContinuityPairs) {
+            const uint32_t a = uint32_t(pair >> 32);
+            const uint32_t b = uint32_t(pair);
+            if (a >= totalTraceCount || b >= totalTraceCount || a == b) {
+                return false;
+            }
+            const uint32_t rootA = findTraceRoot(parent, a);
+            const uint32_t rootB = findTraceRoot(parent, b);
+            if (rootA != rootB) parent[rootB] = rootA;
+        }
+
+        std::vector<uint32_t> denseByRoot(totalTraceCount, UINT32_MAX);
+        std::vector<uint32_t> traceMap(totalTraceCount, UINT32_MAX);
+        uint32_t canonicalTraceCount = 0;
+        for (uint32_t trace = 0; trace < totalTraceCount; ++trace) {
+            const uint32_t representative = findTraceRoot(parent, trace);
+            if (denseByRoot[representative] == UINT32_MAX) {
+                denseByRoot[representative] = canonicalTraceCount++;
+            }
+            traceMap[trace] = denseByRoot[representative];
+        }
+
+        std::vector<FaceGeometry> mappedFaces = faceIncidences;
+        for (FaceGeometry& face : mappedFaces) {
+            if (face.traceIndex >= totalTraceCount) return false;
+            face.traceIndex = traceMap[face.traceIndex];
+        }
+        std::vector<TraceCoupling> mappedCouplings = traceCouplings;
+        for (TraceCoupling& coupling : mappedCouplings) {
+            if (coupling.traceA >= totalTraceCount ||
+                coupling.traceB >= totalTraceCount) return false;
+            coupling.traceA = traceMap[coupling.traceA];
+            coupling.traceB = traceMap[coupling.traceB];
+        }
+        std::vector<DirichletTrace> mappedDirichlet = dirichletTraces;
+        for (DirichletTrace& trace : mappedDirichlet) {
+            if (trace.traceIndex >= totalTraceCount) return false;
+            trace.traceIndex = traceMap[trace.traceIndex];
+        }
+        return assembleTraceSystem(
+            mappedFaces, cells, cellDiffusionCoefficient, cellStorageOverDt,
+            canonicalTraceCount, {}, boundaries, boundaryCount,
+            mappedCouplings, mappedDirichlet, outSystem);
+    }
+
     if (totalTraceCount == 0 || cells.empty()) {
         return false;
     }
@@ -490,105 +533,15 @@ bool VEMDiffusion::assembleTraceSystem(
         const double k_E = (c < cellDiffusionCoefficient.size()) ? static_cast<double>(cellDiffusionCoefficient[c]) : 1.0;
         const double capOverDt = (c < cellStorageOverDt.size()) ? static_cast<double>(cellStorageOverDt[c]) : 0.0;
 
-        CellValidation validation{};
         std::vector<double> W_E;
-        const bool ok = computeElementFluxOperator(faceIncidences, cell, k_E, W_E, validation);
-
-        if (!ok || !validation.passed) {
+        if (!computeElementFluxOperator(faceIncidences, cell, k_E, W_E)) {
             errorOccurred.store(true, std::memory_order_relaxed);
             const int failIdx = failedCellCount.fetch_add(1, std::memory_order_relaxed);
             if (failIdx < 10) {
                 #pragma omp critical
                 {
-                    std::cerr << "[VEMDiffusion] Cell " << c << " FAILED validation: faces=" << nF
-                              << ", vol=" << cell.volume << ", k=" << k_E
-                              << ", closureErr=" << validation.closureError
-                              << ", GaussErr=" << validation.gaussConsistencyError
-                              << ", det(NN^T)=" << validation.detNNT
-                              << ", eigMin(NN^T)=" << validation.minEigenNNT
-                              << ", eigMax(NN^T)=" << validation.maxEigenNNT
-                              << ", cond(NN^T)=" << validation.conditionNNT
-                              << ", Cholesky=" << (ok ? "OK" : "FAILED")
-                              << " (failedPivot=" << validation.failedPivot << ", pivotVal=" << validation.failedPivotValue << ")\n";
-                    std::cerr << "  ownerModelId=" << cell.ownerModelId
-                              << " seedId=" << cell.seedId
-                              << " centroid=(" << cell.centroid.x << ", "
-                              << cell.centroid.y << ", " << cell.centroid.z << ")\n";
-                    for (size_t f = 0; f < nF; ++f) {
-                        const FaceGeometry& face = faceIncidences[cell.faceOffset + f];
-                        const glm::dvec3 faceCentroid = face.area > 0.0
-                            ? face.moment / face.area
-                            : glm::dvec3(0.0);
-                        const glm::dvec3 faceNormal = face.area > 0.0
-                            ? face.areaVector / face.area
-                            : glm::dvec3(0.0);
-                        const glm::dvec3 faceOffset = faceCentroid - cell.centroid;
-                        std::cerr << "  face[" << f << "] trace=" << face.traceIndex
-                                  << " neighbor=" << face.neighborCellId
-                                  << " neighborOwner=" << face.neighborOwnerModelId
-                                  << " neighborSeed=" << face.neighborSeedId
-                                  << " area=" << face.area
-                                  << " areaVector=(" << face.areaVector.x << ", "
-                                  << face.areaVector.y << ", " << face.areaVector.z << ")"
-                                  << " |areaVector|=" << glm::length(face.areaVector)
-                                  << " normalOffset=" << glm::dot(faceOffset, faceNormal)
-                                  << " centroid=(" << faceCentroid.x << ", "
-                                  << faceCentroid.y << ", " << faceCentroid.z << ")\n";
-                    }
-
-                    std::vector<uint32_t> sameOwnerNeighbors;
-                    for (size_t f = 0; f < nF; ++f) {
-                        const uint32_t neighbor = faceIncidences[cell.faceOffset + f].neighborCellId;
-                        if (neighbor >= numCells || neighbor == c ||
-                            cells[neighbor].ownerModelId != cell.ownerModelId ||
-                            std::find(sameOwnerNeighbors.begin(), sameOwnerNeighbors.end(), neighbor) != sameOwnerNeighbors.end()) {
-                            continue;
-                        }
-                        sameOwnerNeighbors.push_back(neighbor);
-                    }
-                    for (const uint32_t neighbor : sameOwnerNeighbors) {
-                        const CellGeometry& other = cells[neighbor];
-                        std::vector<FaceGeometry> mergedFaces;
-                        mergedFaces.reserve(size_t(cell.faceCount) + other.faceCount);
-                        double sharedArea = 0.0;
-                        for (size_t f = 0; f < cell.faceCount; ++f) {
-                            const FaceGeometry& face = faceIncidences[cell.faceOffset + f];
-                            if (face.neighborCellId == neighbor) {
-                                sharedArea += face.area;
-                            } else {
-                                mergedFaces.push_back(face);
-                            }
-                        }
-                        for (size_t f = 0; f < other.faceCount; ++f) {
-                            const FaceGeometry& face = faceIncidences[other.faceOffset + f];
-                            if (face.neighborCellId != c) mergedFaces.push_back(face);
-                        }
-
-                        CellGeometry merged{};
-                        merged.faceOffset = 0;
-                        merged.faceCount = static_cast<uint32_t>(mergedFaces.size());
-                        merged.ownerModelId = cell.ownerModelId;
-                        merged.volume = cell.volume + other.volume;
-                        merged.centroid = (cell.centroid * cell.volume + other.centroid * other.volume) / merged.volume;
-
-                        CellValidation mergedValidation{};
-                        std::vector<double> mergedOperator;
-                        const bool mergedOk = computeElementFluxOperator(
-                            mergedFaces, merged, k_E, mergedOperator, mergedValidation);
-                        std::cerr << "  sameOwnerMerge neighbor=" << neighbor
-                                  << " neighborSeed=" << other.seedId
-                                  << " sharedArea=" << sharedArea
-                                  << " faces=" << merged.faceCount
-                                  << " vol=" << merged.volume
-                                  << " closureErr=" << mergedValidation.closureError
-                                  << " GaussErr=" << mergedValidation.gaussConsistencyError
-                                  << " eigMin(NN^T)=" << mergedValidation.minEigenNNT
-                                  << " eigMax(NN^T)=" << mergedValidation.maxEigenNNT
-                                  << " cond(NN^T)=" << mergedValidation.conditionNNT
-                                  << " Cholesky=" << (mergedOk ? "OK" : "FAILED")
-                                  << " qualityPass=" << (mergedOk && mergedValidation.passed ? "yes" : "no")
-                                  << '\n';
-                    }
+                    std::cerr << "[VEMDiffusion] element validation failed cell=" << c
+                              << " volume=" << cell.volume << std::endl;
                 }
             }
             continue;
@@ -740,131 +693,6 @@ bool VEMDiffusion::assembleTraceSystem(
             }
         }
         outSystem.traceBoundaryRhs[t] = prescribed;
-    }
-
-    uint32_t zeroIncidence = 0;
-    uint32_t oneIncidence = 0;
-    for (uint32_t t = 0; t < totalTraceCount; ++t) {
-        const uint32_t incidence = traceIncOffsets[t + 1] - traceIncOffsets[t];
-        if (incidence == 0) ++zeroIncidence;
-        else if (incidence == 1) ++oneIncidence;
-    }
-
-    uint32_t zeroDiagonal = 0;
-    uint32_t negativeDiagonal = 0;
-    double diagonalMin = std::numeric_limits<double>::max();
-    double diagonalMax = 0.0;
-    uint32_t minDiagonalTrace = UINT32_MAX;
-    for (uint32_t t = 0; t < totalTraceCount; ++t) {
-        const int start = outSystem.rowOffsets[t];
-        const int end = outSystem.rowOffsets[t + 1];
-        double diagonal = 0.0;
-        bool found = false;
-        for (int k = start; k < end; ++k) {
-            if (outSystem.columnIndices[k] == static_cast<int>(t)) {
-                diagonal = outSystem.values[k];
-                found = true;
-                break;
-            }
-        }
-        if (!found || !(std::abs(diagonal) > 0.0) || !std::isfinite(diagonal)) {
-            ++zeroDiagonal;
-            continue;
-        }
-        if (diagonal < 0.0) ++negativeDiagonal;
-        const double magnitude = std::fabs(diagonal);
-        if (magnitude < diagonalMin) {
-            diagonalMin = magnitude;
-            minDiagonalTrace = t;
-        }
-        diagonalMax = std::max(diagonalMax, magnitude);
-    }
-
-    uint32_t asymmetricEntries = 0;
-    double maxSymmetryError = 0.0;
-    const bool suspiciousConditioning =
-        zeroDiagonal > 0 || negativeDiagonal > 0 ||
-        diagonalMin <= 1e-9 * diagonalMax;
-    if (suspiciousConditioning) {
-        for (uint32_t t = 0; t < totalTraceCount; ++t) {
-            const int start = outSystem.rowOffsets[t];
-            const int end = outSystem.rowOffsets[t + 1];
-            for (int k = start; k < end; ++k) {
-                const int column = outSystem.columnIndices[k];
-                if (column == static_cast<int>(t)) continue;
-                const int otherStart = outSystem.rowOffsets[column];
-                const int otherEnd = outSystem.rowOffsets[column + 1];
-                int lo = otherStart;
-                int hi = otherEnd;
-                while (lo < hi) {
-                    const int mid = (lo + hi) / 2;
-                    if (outSystem.columnIndices[mid] < static_cast<int>(t)) lo = mid + 1;
-                    else hi = mid;
-                }
-                const double value = outSystem.values[k];
-                if (lo >= otherEnd || outSystem.columnIndices[lo] != static_cast<int>(t)) {
-                    ++asymmetricEntries;
-                    continue;
-                }
-                const double other = outSystem.values[lo];
-                const double scale = std::max(std::max(std::fabs(value), std::fabs(other)), 1e-30);
-                maxSymmetryError = std::max(maxSymmetryError, std::fabs(value - other) / scale);
-            }
-        }
-    }
-
-    double minVolume = std::numeric_limits<double>::max();
-    double maxVolume = 0.0;
-    double minFaceArea = std::numeric_limits<double>::max();
-    double maxFaceArea = 0.0;
-    for (uint32_t c = 0; c < numCells; ++c) {
-        const CellGeometry& cell = cells[c];
-        minVolume = std::min(minVolume, cell.volume);
-        maxVolume = std::max(maxVolume, cell.volume);
-        for (size_t f = 0; f < cell.faceCount; ++f) {
-            const double area = faceIncidences[cell.faceOffset + f].area;
-            if (!(area > 0.0)) continue;
-            minFaceArea = std::min(minFaceArea, area);
-            maxFaceArea = std::max(maxFaceArea, area);
-        }
-    }
-
-    const bool reportDiagnostics =
-        zeroIncidence > 0 || zeroDiagonal > 0 || negativeDiagonal > 0 ||
-        asymmetricEntries > 0 || (diagonalMax > 0.0 && diagonalMin <= 1e-9 * diagonalMax);
-    if (reportDiagnostics) {
-        std::cerr << "[VEMDiffusion] traces=" << totalTraceCount
-                  << " cells=" << numCells
-                  << " zeroIncidence=" << zeroIncidence
-                  << " oneIncidence=" << oneIncidence
-                  << " zeroDiagonal=" << zeroDiagonal
-                  << " negativeDiagonal=" << negativeDiagonal
-                  << " asymmetricEntries=" << asymmetricEntries
-                  << " maxSymmetryError=" << maxSymmetryError
-                  << " diagonalMin=" << diagonalMin
-                  << " diagonalMax=" << diagonalMax
-                  << " minVolume=" << minVolume
-                  << " maxVolume=" << maxVolume
-                  << " minFaceArea=" << minFaceArea
-                  << " maxFaceArea=" << maxFaceArea
-                  << std::endl;
-
-        if (minDiagonalTrace < totalTraceCount) {
-            const uint32_t incStart = traceIncOffsets[minDiagonalTrace];
-            const uint32_t incEnd = traceIncOffsets[minDiagonalTrace + 1];
-            for (uint32_t inc = incStart; inc < incEnd; ++inc) {
-                const CellFaceRef& incidence = allInc[inc];
-                const CellGeometry& cell = cells[incidence.cellIndex];
-                const FaceGeometry& face = faceIncidences[cell.faceOffset + incidence.localFaceIndex];
-                std::cerr << "  minDiagonalTrace=" << minDiagonalTrace
-                          << " cell=" << incidence.cellIndex
-                          << " localFace=" << incidence.localFaceIndex
-                          << " faceArea=" << face.area
-                          << " cellVolume=" << cell.volume
-                          << " cellFaceCount=" << cell.faceCount
-                          << std::endl;
-            }
-        }
     }
 
     return true;

@@ -83,41 +83,6 @@ bool findFirstUpstreamNodeByType(const NodeGraphState& state, uint64_t outputSoc
     return findFirstUpstreamNodeByType(state, producerNodeId, targetTypeId, outNodeId);
 }
 
-bool validateNodeGraphParamValue(const NodeGraphParamDefinition& definition, const NodeGraphParamValue& value);
-
-static bool validateFieldValues(
-    const std::vector<NodeGraphParamField>& fields,
-    const std::vector<NodeGraphParamFieldValue>& fieldValues) {
-    if (fields.size() != fieldValues.size()) {
-        return false;
-    }
-
-    std::unordered_set<std::string> seenFieldNames;
-    for (const NodeGraphParamField& field : fields) {
-        if (!field.definition || field.name.empty()) {
-            return false;
-        }
-
-        const auto fieldValueIt = std::find_if(
-            fieldValues.begin(),
-            fieldValues.end(),
-            [&field](const NodeGraphParamFieldValue& fieldValue) {
-                return fieldValue.name == field.name;
-            });
-        if (fieldValueIt == fieldValues.end() || !fieldValueIt->value) {
-            return false;
-        }
-        if (!seenFieldNames.insert(field.name).second) {
-            return false;
-        }
-        if (!validateNodeGraphParamValue(*field.definition, *fieldValueIt->value)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 std::size_t inputIndexOf(const NodeGraphNode& node, NodeGraphSocketId inputSocketId) {
     for (std::size_t i = 0; i < node.inputs.size(); ++i) {
         if (node.inputs[i].id == inputSocketId) {
@@ -286,14 +251,6 @@ NodeGraphParamValue makeNodeGraphParamValue(const NodeGraphParamDefinition& defi
         value.enumValue = definition.enumOptions.front();
     }
     normalizeNodeGraphParamValue(definition, value);
-    if (value.type == NodeGraphParamType::Struct) {
-        for (const NodeGraphParamField& field : definition.fields) {
-            if (!field.definition) {
-                continue;
-            }
-            value.fieldValues.push_back(makeParamFieldValue(field.name.c_str(), makeNodeGraphParamValue(*field.definition)));
-        }
-    }
     return value;
 }
 
@@ -319,33 +276,43 @@ bool normalizeNodeGraphParamValue(const NodeGraphParamDefinition& definition, No
     if (definition.type != value.type) {
         return false;
     }
-
-    if (definition.type != NodeGraphParamType::Enum) {
-        return true;
-    }
-
-    if (definition.enumOptions.empty()) {
-        return false;
-    }
-
-    if (!value.enumValue.empty()) {
-        const auto optionIt = std::find(
-            definition.enumOptions.begin(),
-            definition.enumOptions.end(),
-            value.enumValue);
-        if (optionIt == definition.enumOptions.end()) {
-            return false;
+    if (definition.type == NodeGraphParamType::Enum) {
+        if (definition.enumOptions.empty()) return false;
+        if (!value.enumValue.empty()) {
+            const auto it = std::find(definition.enumOptions.begin(), definition.enumOptions.end(), value.enumValue);
+            if (it == definition.enumOptions.end()) return false;
+            value.intValue = std::distance(definition.enumOptions.begin(), it);
+            return true;
         }
-
-        value.intValue = std::distance(definition.enumOptions.begin(), optionIt);
+        if (value.intValue < 0 || value.intValue >= static_cast<int64_t>(definition.enumOptions.size())) return false;
+        value.enumValue = definition.enumOptions[static_cast<std::size_t>(value.intValue)];
         return true;
     }
-
-    if (value.intValue < 0 || value.intValue >= static_cast<int64_t>(definition.enumOptions.size())) {
-        return false;
+    if (definition.type == NodeGraphParamType::Struct) {
+        if (value.fieldValues.empty()) {
+            for (const NodeGraphParamField& field : definition.fields) {
+                if (!field.definition) return false;
+                NodeGraphParamValue child = makeNodeGraphParamValue(*field.definition);
+                value.fieldValues.push_back({field.name, std::make_shared<NodeGraphParamValue>(std::move(child))});
+            }
+        }
+        if (value.fieldValues.size() != definition.fields.size()) return false;
+        std::unordered_set<std::string> seen;
+        for (NodeGraphParamFieldValue& fieldValue : value.fieldValues) {
+            if (!fieldValue.value || !seen.insert(fieldValue.name).second) return false;
+            const auto field = std::find_if(definition.fields.begin(), definition.fields.end(),
+                [&](const NodeGraphParamField& item) { return item.name == fieldValue.name; });
+            if (field == definition.fields.end() || !field->definition ||
+                !normalizeNodeGraphParamValue(*field->definition, *fieldValue.value)) return false;
+        }
+        return true;
     }
-
-    value.enumValue = definition.enumOptions[static_cast<std::size_t>(value.intValue)];
+    if (definition.type == NodeGraphParamType::Array) {
+        if (!definition.elementDefinition) return false;
+        for (NodeGraphParamValue& item : value.arrayValues) {
+            if (!normalizeNodeGraphParamValue(*definition.elementDefinition, item)) return false;
+        }
+    }
     return true;
 }
 
@@ -365,17 +332,23 @@ bool validateNodeGraphParamValue(const NodeGraphParamDefinition& definition, con
             && std::find(definition.enumOptions.begin(), definition.enumOptions.end(), value.enumValue)
                 != definition.enumOptions.end();
     case NodeGraphParamType::Struct:
-        return validateFieldValues(definition.fields, value.fieldValues);
-    case NodeGraphParamType::Array:
-        if (!definition.elementDefinition) {
-            return false;
+        if (value.fieldValues.size() != definition.fields.size()) return false;
+        for (const NodeGraphParamField& field : definition.fields) {
+            if (!field.definition) return false;
+            const auto fieldValue = std::find_if(value.fieldValues.begin(), value.fieldValues.end(),
+                [&](const NodeGraphParamFieldValue& item) { return item.name == field.name; });
+            if (fieldValue == value.fieldValues.end() || !fieldValue->value ||
+                !validateNodeGraphParamValue(*field.definition, *fieldValue->value)) return false;
         }
-        return std::all_of(
-            value.arrayValues.begin(),
-            value.arrayValues.end(),
-            [&definition](const NodeGraphParamValue& elementValue) {
-                return validateNodeGraphParamValue(*definition.elementDefinition, elementValue);
+        return true;
+    case NodeGraphParamType::Array:
+        if (!definition.elementDefinition) return false;
+        return std::all_of(value.arrayValues.begin(), value.arrayValues.end(),
+            [&](const NodeGraphParamValue& item) {
+                return validateNodeGraphParamValue(*definition.elementDefinition, item);
             });
+    default:
+        return false;
     }
 
     return false;

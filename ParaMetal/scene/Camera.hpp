@@ -12,6 +12,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <cstdint>
+#include <optional>
 #include "util/Units.hpp"
 
 enum class CameraProjectionMode : uint8_t {
@@ -57,6 +58,11 @@ public:
 
     glm::mat4 getViewMatrix() const;  
     glm::mat4 getProjectionMatrix(float aspectRatio) const; 
+    std::optional<glm::vec2> worldToScreen(
+        const glm::vec3& worldPos,
+        uint32_t screenWidth,
+        uint32_t screenHeight,
+        float* outDepth = nullptr) const;
     glm::vec3 getPosition() const {
         return position;  
     }

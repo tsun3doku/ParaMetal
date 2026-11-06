@@ -1,7 +1,8 @@
 #include "FrameController.hpp"
 
 #include "scene/CameraController.hpp"
-#include "scene/NavigationGizmoController.hpp"
+#include "interaction/InteractionContext.hpp"
+#include "runtime/SceneContext.hpp"
 #include "FrameStats.hpp"
 #include "FrameSync.hpp"
 #include "render/SceneRenderer.hpp"
@@ -25,8 +26,10 @@ FrameController::FrameController(
     SceneRenderer& sceneRenderer,
     FrameSync& frameSync,
     FrameStats& frameStats,
-    CameraController& cameraController,
-    FrameControllerServices services,
+    SceneContext& scene,
+    InteractionContext& interaction,
+    ModelSelection& modelSelection,
+    WireframeRenderer& wireframeRenderer,
     std::atomic<bool>& isOperating,
     std::atomic<bool>& isShuttingDown)
     : windowState(windowState),
@@ -34,26 +37,25 @@ FrameController::FrameController(
       sceneRenderer(sceneRenderer),
       frameSync(frameSync),
       frameStats(frameStats),
-      cameraController(cameraController),
-      navigationGizmoController(services.navigationGizmoController),
+      cameraController(scene.cameraController()),
+      interaction(interaction),
       isOperating(isOperating),
       isShuttingDown(isShuttingDown),
       vulkanDevice(vulkanDevice),
       frameGraphRuntime(frameGraphBackend.getRuntime()),
       frameUpdateStage(
-          services.inputController,
-          services.uniformBufferManager,
-          services.modelRegistry,
-          services.lightingSystem,
-          services.materialSystem,
+          interaction,
+          *scene.uniformBufferManager(),
+          *scene.modelRegistry(),
+          *scene.lightingSystem(),
+          *scene.materialSystem(),
           sceneRenderer,
-          services.modelSelection),
+          modelSelection),
       frameGraphicsStage(
           sceneRenderer,
-          services.modelSelection,
-          services.gizmoController,
-          services.navigationGizmoController,
-          services.wireframeRenderer) {
+          modelSelection,
+          interaction,
+          wireframeRenderer) {
 }
 
 bool FrameController::drawFrame(VkCommandBuffer commandBuffer, uint32_t frameIndex, const render::RenderFlags& flags) {
@@ -72,7 +74,7 @@ bool FrameController::drawFrame(VkCommandBuffer commandBuffer, uint32_t frameInd
     frameUpdateStage.processPicking(frameState.frameIndex);
 
     frameState.extent = extent;
-    navigationGizmoController.setViewport(frameState.extent, windowState.devicePixelRatio.load(std::memory_order_acquire));
+    interaction.setViewport(frameState.extent, windowState.devicePixelRatio.load(std::memory_order_acquire));
     frameState.sceneView = cameraController.buildSceneView(frameState.extent);
     frameState.flags = flags;
     frameUpdateStage.updateFrameState(frameState.frameIndex, frameState.sceneView);

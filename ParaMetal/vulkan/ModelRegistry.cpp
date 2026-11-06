@@ -8,7 +8,6 @@
 
 #include "MemoryAllocator.hpp"
 #include "runtime/RuntimeProducts.hpp"
-#include "hash/HashProduct.hpp"
 #include "scene/Model.hpp"
 #include "ModelRegistry.hpp"
 
@@ -27,12 +26,13 @@ void ModelRegistry::clearModels() {
         }
     }
     models.clear();
-    for (auto& model : retainedModels) {
+    for (auto& [modelId, model] : retiringModels) {
+        (void)modelId;
         if (model) {
             model->cleanup();
         }
     }
-    retainedModels.clear();
+    retiringModels.clear();
     visibleModelIds.clear();
     recycledModelIds.clear();
     nextModelId = 1;
@@ -44,6 +44,9 @@ uint32_t ModelRegistry::addModel(std::unique_ptr<Model> model, uint32_t preferre
     }
 
     const uint32_t modelId = acquireModelId(preferredModelId);
+    if (modelId == 0) {
+        return 0;
+    }
     model->setRuntimeModelId(modelId);
     models.emplace(modelId, std::move(model));
     visibleModelIds.insert(modelId);
@@ -59,19 +62,35 @@ bool ModelRegistry::removeModelByID(uint32_t modelID) {
     if (it == models.end()) {
         return false;
     }
+    if (retiringModels.find(modelID) != retiringModels.end()) {
+        std::cerr << "[ModelRegistry] Error: retiring slot occupied during removal for model "
+                  << modelID << std::endl;
+        return false;
+    }
 
     unregisterModel(modelID);
 
-    retainedModels.push_back(std::move(it->second));
+    // Ownership moves to the retiring slot; the ID is recycled only after GPU completion.
+    retiringModels.emplace(modelID, std::move(it->second));
     models.erase(it);
     return true;
+}
+
+void ModelRegistry::clearAllRetiring() {
+    for (auto& [modelId, model] : retiringModels) {
+        if (model) {
+            model->cleanup();
+        }
+        recycleModelId(modelId);
+    }
+    retiringModels.clear();
 }
 
 std::vector<uint32_t> ModelRegistry::getRenderableModelIds() const {
     std::vector<uint32_t> modelIds;
     modelIds.reserve(visibleModelIds.size());
     for (uint32_t modelId : visibleModelIds) {
-        if (models.find(modelId) == models.end()) {
+        if (findModel(modelId) == nullptr) {
             continue;
         }
         modelIds.push_back(modelId);
@@ -122,7 +141,6 @@ bool ModelRegistry::exportProduct(uint32_t modelID, ModelProduct& outProduct) co
     outProduct.renderIndexBuffer = model->getRenderIndexBuffer();
     outProduct.renderIndexBufferOffset = model->getRenderIndexBufferOffset();
     outProduct.renderIndexCount = static_cast<uint32_t>(model->getRenderIndices().size());
-    HashProduct::seal(outProduct);
     return outProduct.isValid();
 }
 
@@ -203,19 +221,19 @@ const Model* ModelRegistry::findModel(uint32_t modelID) const {
     return it->second.get();
 }
 
-void ModelRegistry::cleanup() {
-    clearModels();
-}
-
 bool ModelRegistry::isReservedModelId(uint32_t modelId) {
     return modelId == 0;
 }
 
 uint32_t ModelRegistry::acquireModelId(uint32_t preferredModelId) {
+    const auto isInUse = [this](uint32_t modelId) {
+        return models.find(modelId) != models.end() ||
+               retiringModels.find(modelId) != retiringModels.end();
+    };
     if (preferredModelId != 0 &&
         preferredModelId <= MaxStencilModelId &&
         !isReservedModelId(preferredModelId) &&
-        models.find(preferredModelId) == models.end()) {
+        !isInUse(preferredModelId)) {
         return preferredModelId;
     }
 
@@ -225,14 +243,13 @@ uint32_t ModelRegistry::acquireModelId(uint32_t preferredModelId) {
         if (candidate == 0 || candidate > MaxStencilModelId || isReservedModelId(candidate)) {
             continue;
         }
-        if (models.find(candidate) == models.end()) {
+        if (!isInUse(candidate)) {
             return candidate;
         }
     }
 
     while (nextModelId <= MaxStencilModelId &&
-           (isReservedModelId(nextModelId) ||
-            models.find(nextModelId) != models.end())) {
+           (isReservedModelId(nextModelId) || isInUse(nextModelId))) {
         ++nextModelId;
     }
 
@@ -258,8 +275,7 @@ void ModelRegistry::recycleModelId(uint32_t modelId) {
 void ModelRegistry::unregisterModel(uint32_t modelId) {
     if (modelId != 0) {
         visibleModelIds.erase(modelId);
-        recycleModelId(modelId);
-        
+
         auto it = models.find(modelId);
         if (it != models.end() && it->second) {
             it->second->setRuntimeModelId(0);

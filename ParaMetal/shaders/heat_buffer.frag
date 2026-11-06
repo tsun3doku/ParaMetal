@@ -15,7 +15,9 @@ layout(push_constant) uniform PushConstants {
     uint palette;
     float minTemperature;
     float maxTemperature;
+    float isocontourSpacing;
 } push;
+
 
 // GBuffer outputs
 layout(location = 0) out vec4 gAlbedo;
@@ -52,6 +54,7 @@ layout(set = 0, binding = 12) uniform sampler2D infernoLut;
 layout(set = 0, binding = 13) uniform sampler2D viridisLut;
 layout(set = 0, binding = 14) uniform sampler2D inferno2Lut;
 layout(set = 0, binding = 15) uniform sampler2D parulaLut;
+layout(set = 0, binding = 16) uniform sampler2D isocontourTexture;
 
 const float PI = 3.14159265359;
 const float WALK_RELATIVE_AREA_EPSILON = 1e-8;
@@ -69,7 +72,6 @@ const vec3 topologyErrorColor = vec3(1.0, 0.5, 0.0);
 const float HEAT_ROUGHNESS = 0.05;
 const float HEAT_METALNESS = 0.0;
 const float HEAT_LIGHTING_MIX = 0.1;
-const float HEAT_CONTOUR_SPACING = 20.0;
 
 vec4 heatMaterial() {
     return vec4(HEAT_ROUGHNESS, HEAT_METALNESS, HEAT_LIGHTING_MIX, 0.0);
@@ -124,22 +126,13 @@ vec3 heatColorFromTemperature(float temperature) {
     return samplePaletteLut(infernoLut, paletteCoordinate);
 }
 
-float heatContourMask(float temperature, float temperatureGradient) {
-    float contourPhase = temperature / HEAT_CONTOUR_SPACING;
-    float distanceToContour = abs(fract(contourPhase + 0.5) - 0.5) * HEAT_CONTOUR_SPACING;
-    
-    // Smoothly fade out contour lines in flat plateaus to avoid divide-by-zero shadow
-    float gradientFactor = smoothstep(0.02, 0.10, temperatureGradient);
-    float contourHalfWidth = 1.6 * max(temperatureGradient, 1e-4);
-    float lineIntensity = (1.0 - smoothstep(0.0, contourHalfWidth, distanceToContour)) * gradientFactor;
-    
-    return 1.0 - lineIntensity;
-}
-
-vec3 heatAlbedo(float temperature, float temperatureGradient) {
-    vec3 heatColor = heatColorFromTemperature(temperature);
-    float contourMask = heatContourMask(temperature, temperatureGradient);
-    return mix(vec3(0.0), heatColor, contourMask);
+vec3 applyIsocontour(vec3 heatColor, float temperature) {
+    if (push.isocontourSpacing <= 0.0) return heatColor;
+    float u = temperature / push.isocontourSpacing;
+    vec2 grad = vec2(dFdx(u), dFdy(u));
+    if (length(grad) < 1e-5) return heatColor;
+    vec4 lineTex = textureGrad(isocontourTexture, vec2(u, 0.5), vec2(grad.x, 0.0), vec2(grad.y, 0.0));
+    return mix(heatColor, vec3(0.0), lineTex.a);
 }
 
 struct WalkResult {
@@ -147,8 +140,6 @@ struct WalkResult {
     int status;
     int steps;
     vec3 bary;
-    vec3 baryDx;
-    vec3 baryDy;
 };
 
 WalkResult makeWalkResult(int status) {
@@ -157,8 +148,6 @@ WalkResult makeWalkResult(int status) {
     result.status = status;
     result.steps = 0;
     result.bary = vec3(1.0, 0.0, 0.0);
-    result.baryDx = result.bary;
-    result.baryDy = result.bary;
     return result;
 }
 
@@ -267,7 +256,7 @@ bool remapBarycentric(int href, int h0, int h1, int h2, vec3 localBary, out vec3
     return true;
 }
 
-WalkResult walkFromSeed(vec2 p, vec2 px, vec2 py, int inputHe, vec2 seedOrigin, float seedPhi, bool calculateDerivatives) {
+WalkResult walkFromSeed(vec2 p, int inputHe, vec2 seedOrigin, float seedPhi) {
     WalkResult result = makeWalkResult(WALK_INVALID_TOPOLOGY);
     int supportCount = textureSize(S);
     int angleCount = textureSize(A);
@@ -375,26 +364,6 @@ WalkResult walkFromSeed(vec2 p, vec2 px, vec2 py, int inputHe, vec2 seedOrigin, 
         int href = texelFetch(T, t).r;
         if (!remapBarycentric(href, h0, h1, h2, localBary, result.bary)) return result;
 
-        if (calculateDerivatives) {
-            vec3 localBaryX = vec3(
-                area(v1, v2, px) / triangleArea,
-                area(v2, v0, px) / triangleArea,
-                0.0);
-            localBaryX.z = 1.0 - localBaryX.x - localBaryX.y;
-
-            vec3 localBaryY = vec3(
-                area(v1, v2, py) / triangleArea,
-                area(v2, v0, py) / triangleArea,
-                0.0);
-            localBaryY.z = 1.0 - localBaryY.x - localBaryY.y;
-
-            if (!remapBarycentric(href, h0, h1, h2, localBaryX, result.baryDx) ||
-                !remapBarycentric(href, h0, h1, h2, localBaryY, result.baryDy)) return result;
-        } else {
-            result.baryDx = result.bary;
-            result.baryDy = result.bary;
-        }
-
         result.triangle = t;
         result.status = WALK_SUCCESS;
         return result;
@@ -404,19 +373,20 @@ WalkResult walkFromSeed(vec2 p, vec2 px, vec2 py, int inputHe, vec2 seedOrigin, 
     return result;
 }
 
-WalkResult locateIntrinsicTriangle(ivec3 faceHEs, vec2 triCoords[3], vec2 p, vec2 px, vec2 py, bool calculateDerivatives) {
+WalkResult locateIntrinsicTriangle(ivec3 faceHEs, vec2 triCoords[3], vec2 p) {
     int inputHe = faceHEs[0];
     if (!validIndex(inputHe, textureSize(S)) || texelFetch(S, inputHe).r < 0) {
         return makeWalkResult(WALK_NO_SEED);
     }
 
     vec2 edgeDir = triCoords[1] - triCoords[0];
-    return walkFromSeed(p, px, py, inputHe, triCoords[0], atan(edgeDir.y, edgeDir.x), calculateDerivatives);
+    return walkFromSeed(p, inputHe, triCoords[0], atan(edgeDir.y, edgeDir.x));
 }
 
 void main() {
     if (push.sourceParams.y > 0.5) {
-        writeHeatSurface(heatColorFromTemperature(push.sourceParams.x));
+        vec3 heatColor = heatColorFromTemperature(push.sourceParams.x);
+        writeHeatSurface(applyIsocontour(heatColor, push.sourceParams.x));
         return;
     }
 
@@ -429,9 +399,7 @@ void main() {
     }
 
     vec2 p = inputChartPoint(triCoords, fragBaryCoord);
-    vec2 px = p + dFdx(p);
-    vec2 py = p + dFdy(p);
-    WalkResult walk = locateIntrinsicTriangle(faceHEs, triCoords, p, px, py, true);
+    WalkResult walk = locateIntrinsicTriangle(faceHEs, triCoords, p);
     if (walk.status != WALK_SUCCESS) {
         writeHeatSurface(walkStatusColor(walk.status));
         return;
@@ -470,12 +438,6 @@ void main() {
 
     float interpolatedTemp = dot(walk.bary, triTemps);
 
-    vec3 dBaryDx = walk.baryDx - walk.bary;
-    vec3 dBaryDy = walk.baryDy - walk.bary;
-
-    float dTdx = dot(dBaryDx, triTemps);
-    float dTdy = dot(dBaryDy, triTemps);
-    float temperatureGradient = length(vec2(dTdx, dTdy));
-
-    writeHeatSurface(heatAlbedo(interpolatedTemp, temperatureGradient));
+    vec3 heatColor = heatColorFromTemperature(interpolatedTemp);
+    writeHeatSurface(applyIsocontour(heatColor, interpolatedTemp));
 }

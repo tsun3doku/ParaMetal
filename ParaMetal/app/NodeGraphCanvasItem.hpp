@@ -1,6 +1,7 @@
 #pragma once
 
 #include "NodeGraphUiModel.hpp"
+#include "nodegraph/NodeGraphTypes.hpp"
 
 #include <QtCore/QElapsedTimer>
 #include <QtCore/QHash>
@@ -47,8 +48,8 @@ protected:
 private:
     struct Socket {
         int id = 0;
-        int valueType = 0;
-        std::vector<int> acceptedValueTypes;
+        NodeGraphValueType valueType = NodeGraphValueType::None;
+        std::vector<NodeGraphValueType> acceptedValueTypes;
     };
 
     struct Node {
@@ -74,6 +75,11 @@ private:
         int valueType = 0;
     };
 
+    struct CachedNodeSprite {
+        quint64 key = 0;
+        QImage image;
+    };
+
     enum class Interaction : uint8_t {
         None,
         Pan,
@@ -95,6 +101,9 @@ private:
     void updateHover(const QPointF& graphPosition);
     static bool isSimulationNode(const Node& node);
     void paintSimulationHighlight(QPainter& painter, const Node& node) const;
+    void paintNodeContent(QPainter& painter, const Node& node) const;
+    QImage renderNodeImage(const Node& node) const;
+    quint64 nodePaintKey(const Node& node) const;
     const QImage& simulationRingImage(const QColor& ringColor) const;
     qreal simulationRingImageScale() const;
     void updateSimulationRingAnimation();
@@ -137,4 +146,6 @@ private:
     bool simulationRingSnapping = false;
     bool simulationRingFrameHooked = false;
     mutable QHash<quint64, QImage> simulationRingImageCache;
+    QHash<int, CachedNodeSprite> nodeSpriteCache;
+    QHash<int, int> nodeIndexById;
 };

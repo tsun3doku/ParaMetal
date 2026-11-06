@@ -48,22 +48,6 @@ struct MaterialUniformBufferObject {
     alignas(16) glm::vec4 materialParams;     // x=metalness [0=dielectric, 1=metal], yzw=reserved
 };  // 32 bytes
 
-struct SSAOKernelBufferObject {
-    alignas(16) glm::vec4 SSAOKernel[16]; // 16 byte aligned
-};  // 256 bytes
-
-struct Suballocation {
-    VkDeviceSize offset;
-    VkDeviceSize size;
-    bool isFree;
-};
-
-struct AllocatorStats {
-    VkDeviceSize totalAllocated = 0;
-    VkDeviceSize usedBytes = 0;
-    uint32_t allocationCount = 0;
-};
-
 struct IntrinsicTriangleData {
     glm::vec3 center;              // Triangle centroid
     float area;                    // Triangle area

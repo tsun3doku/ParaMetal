@@ -1,6 +1,6 @@
 #include "FrameUpdateStage.hpp"
 
-#include "scene/InputController.hpp"
+#include "interaction/InteractionContext.hpp"
 #include "scene/LightingSystem.hpp"
 #include "scene/MaterialSystem.hpp"
 #include "scene/ModelSelection.hpp"
@@ -10,14 +10,14 @@
 #include "vulkan/UniformBufferManager.hpp"
 
 FrameUpdateStage::FrameUpdateStage(
-    InputController& inputController,
+    InteractionContext& interaction,
     UniformBufferManager& uniformBufferManager,
     ModelRegistry& modelRegistry,
     LightingSystem& lightingSystem,
     MaterialSystem& materialSystem,
     SceneRenderer& sceneRenderer,
     ModelSelection& modelSelection)
-    : inputController(inputController),
+    : interaction(interaction),
       uniformBufferManager(uniformBufferManager),
       modelRegistry(modelRegistry),
       lightingSystem(lightingSystem),
@@ -31,7 +31,7 @@ void FrameUpdateStage::processPicking(uint32_t frameIndex) {
 }
 
 void FrameUpdateStage::updateFrameState(uint32_t frameIndex, const render::SceneView& sceneView) {
-    inputController.updateGizmo();
+    interaction.resolvePick(modelSelection, modelRegistry);
 
     UniformBufferObject ubo{};
     uniformBufferManager.updateUniformBuffer(frameIndex, sceneView, ubo);
@@ -41,4 +41,3 @@ void FrameUpdateStage::updateFrameState(uint32_t frameIndex, const render::Scene
     lightingSystem.update(frameIndex);
     materialSystem.update(frameIndex);
 }
-

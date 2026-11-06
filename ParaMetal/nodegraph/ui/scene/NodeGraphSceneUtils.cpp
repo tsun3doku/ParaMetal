@@ -1,4 +1,5 @@
 #include "NodeGraphSceneUtils.hpp"
+#include "nodegraph/NodeGraphValidator.hpp"
 
 #include <algorithm>
 
@@ -25,12 +26,7 @@ std::vector<NodeGraphSocketId> matchingInputSocketsByType(
     NodeGraphValueType valueType) {
     std::vector<NodeGraphSocketId> sockets;
     for (const NodeGraphSocket& socket : node.inputs) {
-        if (socket.valueType == valueType) {
-            sockets.push_back(socket.id);
-            continue;
-        }
-        if (!socket.acceptedValueTypes.empty() &&
-            std::find(socket.acceptedValueTypes.begin(), socket.acceptedValueTypes.end(), valueType) != socket.acceptedValueTypes.end()) {
+        if (NodeGraphValidator::socketTypesAccept(valueType, {}, socket.valueType, socket.acceptedValueTypes)) {
             sockets.push_back(socket.id);
         }
     }

@@ -72,9 +72,6 @@ void NodeGraphDisplay::addDisplayKeys(
         for (const ProductHandle& handle : voronoiPkg->globalModelProducts) {
             selectedKeys.insert(handle.outputSocketKey);
         }
-        if (voronoiPkg->pointsPayloadHandle.key != 0) {
-            selectedKeys.insert(voronoiPkg->pointsPayloadHandle.key);
-        }
         return;
     }
 

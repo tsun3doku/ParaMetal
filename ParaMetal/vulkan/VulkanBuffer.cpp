@@ -282,6 +282,9 @@ VkResult downloadDeviceBuffer(
     VkDeviceSize stagingOffset = 0;
     void* stagingData = nullptr;
     if (createDownloadStagingBuffer(allocator, size, stagingBuffer, stagingOffset, &stagingData) != VK_SUCCESS || !stagingData) {
+        if (stagingBuffer != VK_NULL_HANDLE) {
+            allocator.free(stagingBuffer, stagingOffset);
+        }
         return VK_ERROR_MEMORY_MAP_FAILED;
     }
 
@@ -295,7 +298,43 @@ VkResult downloadDeviceBuffer(
     region.srcOffset = srcOffset;
     region.dstOffset = stagingOffset;
     region.size = size;
+
+    VkBufferMemoryBarrier readBarrier{};
+    readBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    readBarrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+    readBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    readBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    readBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    readBarrier.buffer = srcBuffer;
+    readBarrier.offset = srcOffset;
+    readBarrier.size = size;
+    vkCmdPipelineBarrier(
+        cmd,
+        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0,
+        0, nullptr,
+        1, &readBarrier,
+        0, nullptr);
     vkCmdCopyBuffer(cmd, srcBuffer, stagingBuffer, 1, &region);
+
+    VkBufferMemoryBarrier hostReadBarrier{};
+    hostReadBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    hostReadBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    hostReadBarrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+    hostReadBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    hostReadBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    hostReadBarrier.buffer = stagingBuffer;
+    hostReadBarrier.offset = stagingOffset;
+    hostReadBarrier.size = size;
+    vkCmdPipelineBarrier(
+        cmd,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_HOST_BIT,
+        0,
+        0, nullptr,
+        1, &hostReadBarrier,
+        0, nullptr);
     if (!commandPool.endCommands(cmd)) {
         std::cerr << "[DOWNLOAD] copy failed"
                   << " srcBuffer=" << srcBuffer

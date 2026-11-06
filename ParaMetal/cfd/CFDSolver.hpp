@@ -35,11 +35,9 @@ public:
         float* canonicalBoundaryFlux,
         uint32_t canonicalBoundaryFaceCount);
 
-    bool bindCompletionSemaphore(
-        cudaExternalSemaphore_t semaphore);
+    bool bindCompletionSemaphore(cudaExternalSemaphore_t semaphore);
 
-    bool bindReleaseSemaphore(
-        cudaExternalSemaphore_t semaphore);
+    bool bindReleaseSemaphore(cudaExternalSemaphore_t semaphore);
 
     bool initializeVelocity(const glm::vec3& initialVelocity);
     bool setBoundaryConditions(const DomainBoundaryConditions& conditions);
@@ -57,7 +55,6 @@ public:
         uint64_t completionValue = 0,
         uint64_t releaseWaitValue = 0);
 
-    // Drain flowStream before releasing semaphores and buffers
     void waitForIdle();
 
     void setPressureSolverParameters(int maxIterations, float tolerance);
@@ -78,7 +75,7 @@ private:
     int cudaDevice = -1;
     void* flowStreamHandle = nullptr; 
     bool initialized = false;
-    // Terminal failure: a failed step halts the solver until reinitialization
+    // terminal failure flag
     bool failed = false;
 
     CFDProjectionSolver projectionSolver;
@@ -94,7 +91,7 @@ private:
     uint32_t boundaryFaceCount = 0;
 
     cudaUtils::CudaBuffer<float> d_cellVolumes;
-    cudaUtils::CudaBuffer<glm::vec4> d_velocity; // size fluidNodeCount (authoritative state!)
+    cudaUtils::CudaBuffer<glm::vec4> d_velocity; // fluid node count
 
     cudaUtils::CudaBuffer<float> d_faceFlux;
     cudaUtils::CudaBuffer<float> d_boundaryFlux;
@@ -102,14 +99,13 @@ private:
     cudaUtils::CudaBuffer<CFDFaceGpu> d_faces;
     cudaUtils::CudaBuffer<CFDBoundaryFaceGpu> d_boundaryFaces;
 
-    // Local face to canonical global face index mapping
+    // local face to global face index mapping
     cudaUtils::CudaBuffer<uint32_t> d_faceGlobalIndex;
     cudaUtils::CudaBuffer<uint32_t> d_boundaryGlobalIndex;
 
     cudaUtils::CudaBuffer<float> d_outflowRates;
     cudaUtils::CudaBuffer<unsigned long long> d_cflPacked;
 
-    // Device-controlled momentum subcycle graph: planner, gate, conditional loop
     cudaGraphExec_t momentumExec = nullptr;
     float builtTargetCourant = 0.0f;
     cudaUtils::CudaBuffer<float> d_maxOutflowRate;
@@ -120,7 +116,6 @@ private:
     cudaUtils::CudaBuffer<float> d_kinematicViscosity;
     cudaSubcycle::SubcycleTimestep* pinnedSubcycleTimestep = nullptr;
 
-    // Authoritative velocity pointer & flux scatter outputs
     glm::vec4* externalVelocity = nullptr;
     float* externalCanonicalFaceFlux = nullptr;
     uint32_t externalCanonicalFaceCount = 0;

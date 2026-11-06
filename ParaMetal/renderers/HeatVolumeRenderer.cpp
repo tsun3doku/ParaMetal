@@ -1,5 +1,6 @@
 #include "HeatVolumeRenderer.hpp"
 
+#include <algorithm>
 #include <iostream>
 #include <vector>
 #include <array>
@@ -80,10 +81,12 @@ void HeatVolumeRenderer::cleanup() {
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
         pipelineLayout = VK_NULL_HANDLE;
     }
-    if (descriptorPool != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-        descriptorPool = VK_NULL_HANDLE;
+    for (VkDescriptorPool pool : descriptorPools) {
+        if (pool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(device, pool, nullptr);
+        }
     }
+    descriptorPools.clear();
     if (descriptorSetLayout != VK_NULL_HANDLE) {
         vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
         descriptorSetLayout = VK_NULL_HANDLE;
@@ -168,131 +171,169 @@ bool HeatVolumeRenderer::createDescriptorSetLayout() {
 }
 
 bool HeatVolumeRenderer::createDescriptorPool(uint32_t count) {
+    const uint32_t setCount = std::max(count, 256u);
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = count;
+    poolSizes[0].descriptorCount = setCount;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = count * 5;
+    poolSizes[1].descriptorCount = setCount * 5;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = count;
+    poolInfo.maxSets = setCount;
 
-    return vkCreateDescriptorPool(vulkanDevice.getDevice(), &poolInfo, nullptr, &descriptorPool) == VK_SUCCESS;
+    VkDescriptorPool pool = VK_NULL_HANDLE;
+    if (vkCreateDescriptorPool(vulkanDevice.getDevice(), &poolInfo, nullptr, &pool) != VK_SUCCESS) {
+        return false;
+    }
+    descriptorPools.push_back(pool);
+    return true;
+}
+
+VkDescriptorSet HeatVolumeRenderer::allocateDescriptorSet() {
+    if (descriptorPools.empty() && !createDescriptorPool(256)) {
+        return VK_NULL_HANDLE;
+    }
+
+    VkDescriptorSetLayout layouts[] = { descriptorSetLayout };
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descriptorPools.back();
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = layouts;
+
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    if (vkAllocateDescriptorSets(vulkanDevice.getDevice(), &allocInfo, &set) != VK_SUCCESS) {
+        if (!createDescriptorPool(256)) {
+            return VK_NULL_HANDLE;
+        }
+        allocInfo.descriptorPool = descriptorPools.back();
+        if (vkAllocateDescriptorSets(vulkanDevice.getDevice(), &allocInfo, &set) != VK_SUCCESS) {
+            return VK_NULL_HANDLE;
+        }
+    }
+    return set;
 }
 
 bool HeatVolumeRenderer::createDescriptorSets(uint32_t count) {
-    std::vector<VkDescriptorSetLayout> layouts(count, descriptorSetLayout);
-
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = descriptorPool;
-    allocInfo.descriptorSetCount = count;
-    allocInfo.pSetLayouts = layouts.data();
-
-    descriptorSets.resize(count);
-    if (vkAllocateDescriptorSets(vulkanDevice.getDevice(), &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
+    if (descriptorPools.empty() && !createDescriptorPool(count)) {
         return false;
+    }
+
+    descriptorSets.assign(count, VK_NULL_HANDLE);
+    for (uint32_t i = 0; i < count; ++i) {
+        descriptorSets[i] = allocateDescriptorSet();
+        if (descriptorSets[i] == VK_NULL_HANDLE) {
+            return false;
+        }
     }
 
     updateStaticDescriptorSets();
     return true;
 }
 
-void HeatVolumeRenderer::updateStaticDescriptorSets() {
-    if (descriptorSets.empty() || descriptorSetLayout == VK_NULL_HANDLE) {
+void HeatVolumeRenderer::writeDescriptorSet(
+    VkDescriptorSet set,
+    uint32_t frameIndex,
+    bool includeVolume) {
+    if (set == VK_NULL_HANDLE || descriptorSetLayout == VK_NULL_HANDLE) {
         return;
     }
 
-    for (size_t i = 0; i < descriptorSets.size(); ++i) {
-        std::array<VkWriteDescriptorSet, 5> writes{};
+    std::array<VkWriteDescriptorSet, 6> writes{};
+    uint32_t writeCount = 0;
 
-        // 0: Camera UBO
-        VkDescriptorBufferInfo uboInfo{};
-        uboInfo.buffer = uniformBufferManager.getUniformBuffers()[i];
-        uboInfo.offset = uniformBufferManager.getUniformBufferOffsets()[i];
-        uboInfo.range = sizeof(UniformBufferObject);
+    // 0: Camera UBO
+    VkDescriptorBufferInfo uboInfo{};
+    uboInfo.buffer = uniformBufferManager.getUniformBuffers()[frameIndex];
+    uboInfo.offset = uniformBufferManager.getUniformBufferOffsets()[frameIndex];
+    uboInfo.range = sizeof(UniformBufferObject);
 
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = descriptorSets[i];
-        writes[0].dstBinding = 0;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[0].descriptorCount = 1;
-        writes[0].pBufferInfo = &uboInfo;
+    writes[writeCount].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[writeCount].dstSet = set;
+    writes[writeCount].dstBinding = 0;
+    writes[writeCount].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[writeCount].descriptorCount = 1;
+    writes[writeCount].pBufferInfo = &uboInfo;
+    ++writeCount;
 
-        // 2: Inferno
-        VkDescriptorImageInfo infernoInfo{};
-        infernoInfo.sampler = paletteSampler;
-        infernoInfo.imageView = infernoView;
-        infernoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = descriptorSets[i];
-        writes[1].dstBinding = 2;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[1].descriptorCount = 1;
-        writes[1].pImageInfo = &infernoInfo;
-
-        // 3: Viridis
-        VkDescriptorImageInfo viridisInfo = infernoInfo;
-        viridisInfo.imageView = viridisView;
-
-        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[2].dstSet = descriptorSets[i];
-        writes[2].dstBinding = 3;
-        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[2].descriptorCount = 1;
-        writes[2].pImageInfo = &viridisInfo;
-
-        // 4: Inferno2
-        VkDescriptorImageInfo inferno2Info = infernoInfo;
-        inferno2Info.imageView = inferno2View;
-
-        writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[3].dstSet = descriptorSets[i];
-        writes[3].dstBinding = 4;
-        writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[3].descriptorCount = 1;
-        writes[3].pImageInfo = &inferno2Info;
-
-        // 5: Parula
-        VkDescriptorImageInfo parulaInfo = infernoInfo;
-        parulaInfo.imageView = parulaView;
-
-        writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[4].dstSet = descriptorSets[i];
-        writes[4].dstBinding = 5;
-        writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[4].descriptorCount = 1;
-        writes[4].pImageInfo = &parulaInfo;
-
-        vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-    }
-}
-
-void HeatVolumeRenderer::updateVolumeDescriptorSets() {
-    if (descriptorSets.empty() || descriptorSetLayout == VK_NULL_HANDLE ||
-        volumeImageView == VK_NULL_HANDLE || volumeSampler == VK_NULL_HANDLE) {
-        return;
-    }
-
-    for (size_t i = 0; i < descriptorSets.size(); ++i) {
-        VkDescriptorImageInfo volInfo{};
+    // 1: 3D fluid temperature volume
+    VkDescriptorImageInfo volInfo{};
+    if (includeVolume && volumeImageView != VK_NULL_HANDLE && volumeSampler != VK_NULL_HANDLE) {
         volInfo.sampler = volumeSampler;
         volInfo.imageView = volumeImageView;
         volInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = descriptorSets[i];
-        write.dstBinding = 1;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.descriptorCount = 1;
-        write.pImageInfo = &volInfo;
+        writes[writeCount].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[writeCount].dstSet = set;
+        writes[writeCount].dstBinding = 1;
+        writes[writeCount].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[writeCount].descriptorCount = 1;
+        writes[writeCount].pImageInfo = &volInfo;
+        ++writeCount;
+    }
 
-        vkUpdateDescriptorSets(vulkanDevice.getDevice(), 1, &write, 0, nullptr);
+    // 2-5: Palettes
+    VkDescriptorImageInfo infernoInfo{};
+    infernoInfo.sampler = paletteSampler;
+    infernoInfo.imageView = infernoView;
+    infernoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkDescriptorImageInfo viridisInfo = infernoInfo;
+    viridisInfo.imageView = viridisView;
+    VkDescriptorImageInfo inferno2Info = infernoInfo;
+    inferno2Info.imageView = inferno2View;
+    VkDescriptorImageInfo parulaInfo = infernoInfo;
+    parulaInfo.imageView = parulaView;
+    const VkDescriptorImageInfo* paletteInfos[4] = {
+        &infernoInfo, &viridisInfo, &inferno2Info, &parulaInfo};
+    for (uint32_t i = 0; i < 4; ++i) {
+        writes[writeCount].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[writeCount].dstSet = set;
+        writes[writeCount].dstBinding = 2 + i;
+        writes[writeCount].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[writeCount].descriptorCount = 1;
+        writes[writeCount].pImageInfo = paletteInfos[i];
+        ++writeCount;
+    }
+
+    vkUpdateDescriptorSets(
+        vulkanDevice.getDevice(), writeCount, writes.data(), 0, nullptr);
+}
+
+void HeatVolumeRenderer::updateStaticDescriptorSets() {
+    if (descriptorSets.empty() || descriptorSetLayout == VK_NULL_HANDLE) {
+        return;
+    }
+    for (size_t i = 0; i < descriptorSets.size(); ++i) {
+        writeDescriptorSet(descriptorSets[i], static_cast<uint32_t>(i), false);
+    }
+}
+
+void HeatVolumeRenderer::updateVolumeDescriptorSets() {
+    if (descriptorSetLayout == VK_NULL_HANDLE ||
+        volumeImageView == VK_NULL_HANDLE || volumeSampler == VK_NULL_HANDLE) {
+        return;
+    }
+
+    const size_t frameCount = descriptorSets.empty()
+        ? static_cast<size_t>(maxFramesInFlight)
+        : descriptorSets.size();
+    if (frameCount == 0) {
+        return;
+    }
+
+    // Allocate fresh sets instead of mutating sets that may still be referenced
+    // by pending command buffers.
+    descriptorSets.resize(frameCount, VK_NULL_HANDLE);
+    for (size_t i = 0; i < frameCount; ++i) {
+        VkDescriptorSet set = allocateDescriptorSet();
+        if (set == VK_NULL_HANDLE) {
+            continue;
+        }
+        writeDescriptorSet(set, static_cast<uint32_t>(i), true);
+        descriptorSets[i] = set;
     }
 }
 
@@ -303,13 +344,17 @@ void HeatVolumeRenderer::setVolumeTexture(
     const glm::ivec3& gridDim,
     float cellSize)
 {
+    const bool textureChanged =
+        view != volumeImageView || sampler != volumeSampler;
     volumeImageView = view;
     volumeSampler = sampler;
     volumeGridMin = gridMin;
     volumeGridDim = gridDim;
     volumeCellSize = cellSize;
 
-    updateVolumeDescriptorSets();
+    if (textureChanged) {
+        updateVolumeDescriptorSets();
+    }
 }
 
 bool HeatVolumeRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpass) {

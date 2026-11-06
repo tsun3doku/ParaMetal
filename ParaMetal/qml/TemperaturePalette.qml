@@ -104,60 +104,35 @@ Rectangle {
             }
         }
 
-        Item {
-            Layout.fillWidth: true; Layout.fillHeight: true
-            Row {
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                height: parent.height
-                spacing: 7
-                Image {
-                    width: 42; height: parent.height
-                    source: root.paletteSource()
-                    fillMode: Image.Stretch
-                    smooth: false
+        RowLayout {
+            Layout.fillWidth: true; Layout.fillHeight: true; spacing: 6
+
+            Image {
+                Layout.preferredWidth: 48; Layout.fillHeight: true
+                source: root.paletteSource(); fillMode: Image.Stretch; smooth: false
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true; Layout.fillHeight: true; spacing: 0
+
+                TextField {
+                    id: maxField; Layout.fillWidth: true; Layout.preferredHeight: 28
+                    text: root.toDisplay(root.heatPalette.maximumC).toFixed(1)
+                    color: root.theme.text; font: root.theme.regularFont; padding: 6
+                    verticalAlignment: TextInput.AlignVCenter; validator: DoubleValidator {}
+                    background: Rectangle { radius: 3; color: root.theme.cardBackground; border.width: 1; border.color: maxField.activeFocus ? root.theme.accent : root.theme.border }
+                    onEditingFinished: { const v = Number(text); if (isFinite(v)) root.heatPalette.setRange(root.heatPalette.minimumC, root.toCelsius(v)) }
                 }
-                Column {
-                    width: 85; height: parent.height
-                    Row {
-                        width: parent.width; height: 28; spacing: 4
-                        TextField {
-                            id: maxField; width: 68; height: 28
-                            text: root.toDisplay(heatPalette.maximumC).toFixed(1)
-                            color: theme.text; font: theme.regularFont; padding: 4
-                            validator: DoubleValidator {}
-                            background: Rectangle { radius: 3; color: theme.cardBackground; border.color: maxField.activeFocus ? theme.accent : theme.border }
-                            onEditingFinished: { const v = Number(text); if (isFinite(v)) heatPalette.setRange(heatPalette.minimumC, root.toCelsius(v)) }
-                        }
-                        Text {
-                            width: parent.width - maxField.width - 4
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: root.suffix()
-                            color: theme.text
-                            font: theme.regularFont
-                            horizontalAlignment: Text.AlignRight
-                        }
-                    }
-                    Item { width: 1; height: Math.max(1, parent.height - 56) }
-                    Row {
-                        width: parent.width; height: 28; spacing: 4
-                        TextField {
-                            id: minField; width: 68; height: 28
-                            text: root.toDisplay(heatPalette.minimumC).toFixed(1)
-                            color: theme.text; font: theme.regularFont; padding: 4
-                            validator: DoubleValidator {}
-                            background: Rectangle { radius: 3; color: theme.cardBackground; border.color: minField.activeFocus ? theme.accent : theme.border }
-                            onEditingFinished: { const v = Number(text); if (isFinite(v)) heatPalette.setRange(root.toCelsius(v), heatPalette.maximumC) }
-                        }
-                        Text {
-                            width: parent.width - minField.width - 4
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: root.suffix()
-                            color: theme.text
-                            font: theme.regularFont
-                            horizontalAlignment: Text.AlignRight
-                        }
-                    }
+
+                Item { Layout.fillWidth: true; Layout.fillHeight: true }
+
+                TextField {
+                    id: minField; Layout.fillWidth: true; Layout.preferredHeight: 28
+                    text: root.toDisplay(root.heatPalette.minimumC).toFixed(1)
+                    color: root.theme.text; font: root.theme.regularFont; padding: 6
+                    verticalAlignment: TextInput.AlignVCenter; validator: DoubleValidator {}
+                    background: Rectangle { radius: 3; color: root.theme.cardBackground; border.width: 1; border.color: minField.activeFocus ? root.theme.accent : root.theme.border }
+                    onEditingFinished: { const v = Number(text); if (isFinite(v)) root.heatPalette.setRange(root.toCelsius(v), root.heatPalette.maximumC) }
                 }
             }
         }

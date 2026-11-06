@@ -34,7 +34,7 @@ __global__ void scatterTemperaturesKernel(
     uint32_t scatterCount,
     float* __restrict__ destination);
 
-// Accumulates per-cell advective outflow rate sum(|phi|)/V and flags non-finite fluxes
+// cell advective outflow rate sum(|phi|)/V
 __global__ void accumulateFineAdvectionOutflowKernel(
     uint32_t faceCount,
     const heat::AdvectionFace* __restrict__ faces,

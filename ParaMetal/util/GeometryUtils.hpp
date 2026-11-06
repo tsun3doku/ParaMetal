@@ -85,59 +85,6 @@ inline bool intersectRayTriangle(
 	return true;
 }
 
-inline glm::vec3 closestPointOnTriangle(const glm::vec3& p, const glm::vec3& a, const glm::vec3& b, const glm::vec3& c) {
-	glm::vec3 ab = b - a;
-	glm::vec3 ac = c - a;
-	glm::vec3 ap = p - a;
-
-	float d1 = glm::dot(ab, ap);
-	float d2 = glm::dot(ac, ap);
-
-	if (d1 <= 0.0f && d2 <= 0.0f) {
-		return a;
-	}
-
-	glm::vec3 bp = p - b;
-	float d3 = glm::dot(ab, bp);
-	float d4 = glm::dot(ac, bp);
-
-	if (d3 >= 0.0f && d4 <= d3) {
-		return b;
-	}
-
-	float vc = d1 * d4 - d3 * d2;
-
-	if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
-		float v = d1 / (d1 - d3);
-		return a + v * ab;
-	}
-
-	glm::vec3 cp = p - c;
-	float d5 = glm::dot(ab, cp);
-	float d6 = glm::dot(ac, cp);
-
-	if (d6 >= 0.0f && d5 <= d6) {
-		return c;
-	}
-
-	float vb = d5 * d2 - d1 * d6;
-	if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
-		float w = d2 / (d2 - d6);
-		return a + w * ac;
-	}
-
-	float va = d3 * d6 - d5 * d4;
-	if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f) {
-		float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
-		return b + w * (c - b);
-	}
-
-	float denom = 1.0f / (va + vb + vc);
-	float v = vb * denom;
-	float w = vc * denom;
-	return a + ab * v + ac * w;
-}
-
 inline std::vector<float> computeVertexAreas(const std::vector<glm::vec3>& positions, const std::vector<uint32_t>& indices) {
 	std::vector<float> vertexAreas(positions.size(), 0.0f);
 	const size_t triangleCount = indices.size() / 3;
@@ -201,8 +148,4 @@ inline bool intersectRayAabb(const glm::vec3& origin, const glm::vec3& direction
 	}
 
 	return true;
-}
-
-inline glm::vec3 barycentricToPosition(const glm::vec3& p0, const glm::vec3& p1, const glm::vec3& p2, const glm::vec3& bary) {
-	return (p0 * bary.x) + (p1 * bary.y) + (p2 * bary.z);
 }

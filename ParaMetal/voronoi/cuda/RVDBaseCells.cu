@@ -1,6 +1,5 @@
 #include "RVDBaseCells.cuh"
-#include "RVDGeometry.cuh"
-#include "RVDDiagnostics.hpp"
+#include "RVDModelGeometry.cuh"
 #include "RVDHostUtils.cuh"
 
 #include <algorithm>
@@ -70,8 +69,7 @@ __device__ inline double4 canonicalBisectorPlane(
   const double my = ((double(seedU.y) + double(seedV.y)) * 0.5 - double(grid.gridMin.y)) * scale;
   const double mz = ((double(seedU.z) + double(seedV.z)) * 0.5 - double(grid.gridMin.z)) * scale;
 
-  const double weightOffset = 0.5 * (double(seedV.w) - double(seedU.w)) * scale * scale / directionLength;
-  const double offset = -(mx * nx + my * ny + mz * nz) + weightOffset;
+  const double offset = -(mx * nx + my * ny + mz * nz);
 
   if (cellA < cellB) {
     return make_double4(nx, ny, nz, offset);
@@ -95,9 +93,9 @@ __device__ bool addNeighborPlanes(
 
   for (uint32_t offsetIndex = 0; offsetIndex < input.knn.cellOffsetCount; ++offsetIndex) {
     const double distSq = input.knn.cellOffsetDistances[offsetIndex];
-    if (distSq > 0.0) {
-      const double minDist = 0.5 * sqrt(distSq * canonicalScaleSq);
-      if (minDist * minDist > maxVertexDistSq) break;
+    if (distSq > 0.0 &&
+        0.25 * distSq * canonicalScaleSq > maxVertexDistSq) {
+      break;
     }
 
     const int3 offset = input.knn.cellOffsets[offsetIndex];
@@ -179,7 +177,7 @@ __device__ void processBaseCell(
   output.statuses[cellId] = RVDStatus::Success;
 
   const float4 seed = input.knn.seeds[cellId];
-  const float3 seedCanonical = canonicalFromWorld(
+  const float3 seedCanonical = cudaGeometry::canonicalFromWorld(
       input.grid, make_float3(seed.x, seed.y, seed.z));
 
   if (!buildUnrestrictedCell(input, cellId, seedCanonical, cell)) {
@@ -311,8 +309,8 @@ void buildDomainPlanes(
     const cudaGeometry::DeviceVoxelGrid &grid,
     double4 canonicalPlanes[6],
     std::array<glm::dvec4, 6> &outwardPlanes) {
-  const float3 minCorner = canonicalFromWorld(grid, make_float3(domainMin.x, domainMin.y, domainMin.z));
-  const float3 maxCorner = canonicalFromWorld(grid, make_float3(domainMax.x, domainMax.y, domainMax.z));
+  const float3 minCorner = cudaGeometry::canonicalFromWorld(grid, make_float3(domainMin.x, domainMin.y, domainMin.z));
+  const float3 maxCorner = cudaGeometry::canonicalFromWorld(grid, make_float3(domainMax.x, domainMax.y, domainMax.z));
 
   canonicalPlanes[0] = make_double4(1.0, 0.0, 0.0, -double(minCorner.x));
   canonicalPlanes[1] = make_double4(-1.0, 0.0, 0.0, double(maxCorner.x));
@@ -494,7 +492,6 @@ bool detectBaseFailures(
   return true;
 }
 bool reportBaseFailures(
-    const RVDInput &input,
     const std::vector<RVDStatus> &statuses) {
   bool success = true;
   for (uint32_t cell = 0; cell < statuses.size(); ++cell) {
@@ -504,10 +501,6 @@ bool reportBaseFailures(
     std::cerr << "[RVD] base pass failed cell=" << cell
               << " status=" << rvdStatusName(status) << std::endl;
     success = false;
-  }
-
-  if (!success) {
-    reportBaseCellFailures(input, statuses);
   }
   return success;
 }
@@ -623,7 +616,7 @@ bool buildBaseCells(
     std::vector<RVDStatus> hostStatuses(baseDomain.count);
     if (!downloadStatuses(
             deviceStatuses, hostStatuses, stream, "download base statuses") ||
-        !reportBaseFailures(input, hostStatuses)) {
+        !reportBaseFailures(hostStatuses)) {
       return false;
     }
   }

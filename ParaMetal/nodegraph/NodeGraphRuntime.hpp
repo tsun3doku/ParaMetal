@@ -9,7 +9,6 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 class NodeGraphRuntime {
@@ -44,8 +43,6 @@ private:
             return status == EvaluatedSocketStatus::Value;
         }
     };
-
-    void applyChange(const NodeGraphChange& change);
 
     EvaluatedNodeInputs evaluateNodeInputs(
         const NodeGraphNode& node,

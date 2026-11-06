@@ -7,8 +7,8 @@
 #include "cuda/CudaExternalBuffer.hpp"
 #include "heat/HeatSystemPresets.hpp"
 
-#include <array>
 #include <cstdint>
+#include <array>
 #include <vector>
 
 #include <vulkan/vulkan.h>
@@ -73,7 +73,7 @@ public:
         VkDeviceSize playbackBufferOffset,
         bool forceReallocate = false);
 
-    // Retains the publication's surface buffer pair; owned until cleanup().
+    // publication surface buffer pair
     void retainSurfaceBuffers(
         VkBuffer surfaceBuffer,
         VkDeviceSize surfaceBufferOffset,
@@ -106,6 +106,11 @@ public:
     CudaExternalBuffer& getCudaTempBufferA() { return cudaTempBufferA; }
     CudaExternalBuffer& getCudaTempBufferB() { return cudaTempBufferB; }
     uint32_t getSimNodeCount() const { return simNodeCount; }
+
+    VkBuffer getSurfaceBuffer() const { return surfaceBuffer; }
+    VkDeviceSize getSurfaceBufferOffset() const { return surfaceBufferOffset; }
+    VkBuffer getSurfaceGradientBuffer() const { return surfaceGradientBuffer; }
+    VkDeviceSize getSurfaceGradientBufferOffset() const { return surfaceGradientBufferOffset; }
 
     bool setVolumetricPowerDensity(float powerDensity);
     void updateHistoryDescriptorOffset(uint32_t displayFrame, VkDeviceSize frameStride, uint32_t currentFrame);

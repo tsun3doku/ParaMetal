@@ -1,6 +1,5 @@
 #include "RenderRuntime.hpp"
 
-#include "scene/CameraController.hpp"
 #include "vulkan/CommandBufferManager.hpp"
 #include "framegraph/FrameController.hpp"
 #include "framegraph/FrameGraph.hpp"
@@ -8,10 +7,7 @@
 #include "framegraph/FrameGraphResources.hpp"
 #include "framegraph/FrameGraphVkTypes.hpp"
 #include "framegraph/FrameSync.hpp"
-#include "scene/GizmoController.hpp"
-#include "scene/NavigationGizmoController.hpp"
 #include "scene/IBLSystem.hpp"
-#include "scene/InputController.hpp"
 #include "scene/LightingSystem.hpp"
 #include "MainRenderGraph.hpp"
 #include "vulkan/MemoryAllocator.hpp"
@@ -34,7 +30,6 @@ RenderRuntime::RenderRuntime(
     ViewportTarget& viewportTarget,
     CommandPool& renderCommandPool,
     FrameSync& frameSync,
-    CameraController& cameraController,
     std::atomic<bool>& isOperating,
     std::atomic<bool>& isShuttingDown)
     : windowState(windowState),
@@ -42,7 +37,6 @@ RenderRuntime::RenderRuntime(
       viewportTarget(viewportTarget),
       renderCommandPool(renderCommandPool),
       frameSync(frameSync),
-      cameraController(cameraController),
       isOperating(isOperating),
       isShuttingDown(isShuttingDown) {
 }
@@ -101,14 +95,6 @@ bool RenderRuntime::initializeBase(VkFormat swapChainFormat, VkExtent2D extent, 
     if (!modelSelection->isInitialized()) {
         return false;
     }
-    gizmoController = std::make_unique<GizmoController>();
-    if (!gizmoController) {
-        return false;
-    }
-    navigationGizmoController = std::make_unique<NavigationGizmoController>(cameraController);
-    if (!navigationGizmoController) {
-        return false;
-    }
 
     wireframeRenderer = std::make_unique<WireframeRenderer>(
         vulkanDevice,
@@ -122,8 +108,8 @@ bool RenderRuntime::initializeBase(VkFormat swapChainFormat, VkExtent2D extent, 
     return true;
 }
 
-bool RenderRuntime::initializeFrameController(const FrameControllerServices& services) {
-    if (!modelSelection || !gizmoController || !navigationGizmoController || !wireframeRenderer || !frameGraph || !frameGraphBackend || !sceneRenderer) {
+bool RenderRuntime::initializeFrameController(SceneContext& scene, InteractionContext& interaction) {
+    if (!modelSelection || !wireframeRenderer || !frameGraph || !frameGraphBackend || !sceneRenderer) {
         return false;
     }
 
@@ -135,8 +121,10 @@ bool RenderRuntime::initializeFrameController(const FrameControllerServices& ser
         *sceneRenderer,
         frameSync,
         frameStats,
-        cameraController,
-        services,
+        scene,
+        interaction,
+        *modelSelection,
+        *wireframeRenderer,
         isOperating,
         isShuttingDown);
 
@@ -212,8 +200,6 @@ void RenderRuntime::cleanup() {
 
     frameController.reset();
     wireframeRenderer.reset();
-    gizmoController.reset();
-    navigationGizmoController.reset();
     modelSelection.reset();
     sceneRenderer.reset();
     frameGraphBackend.reset();
@@ -250,22 +236,6 @@ ModelSelection& RenderRuntime::getModelSelection() {
 
 const ModelSelection& RenderRuntime::getModelSelection() const {
     return *modelSelection;
-}
-
-GizmoController& RenderRuntime::getGizmoController() {
-    return *gizmoController;
-}
-
-const GizmoController& RenderRuntime::getGizmoController() const {
-    return *gizmoController;
-}
-
-NavigationGizmoController& RenderRuntime::getNavigationGizmoController() {
-    return *navigationGizmoController;
-}
-
-const NavigationGizmoController& RenderRuntime::getNavigationGizmoController() const {
-    return *navigationGizmoController;
 }
 
 WireframeRenderer& RenderRuntime::getWireframeRenderer() {

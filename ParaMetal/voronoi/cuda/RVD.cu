@@ -1,12 +1,18 @@
 #include "RVD.hpp"
 #include "RVDBaseCells.cuh"
-#include "RVDTopology.hpp"
+#include "RVDBaseFaceTopology.hpp"
 #include "RVDRestriction.cuh"
-#include "VoxelOccupancy.cuh"
-#include "RVDFragments.hpp"
-#include "RVDFacePartition.hpp"
+#include "RVDFaceCut.cuh"
+
+#include "RVDFragments.cuh"
+#include "RVDBaseFacePartition.cuh"
+#include "RVDTraceSurface.hpp"
+#include "RVDModelGeometry.cuh"
+#include "RVDSurfacePartition.hpp"
 #include "RVDContact.cuh"
 #include "RVDValidation.hpp"
+#include "RVDLloyd.cuh"
+#include "RVDAgglomeration.cuh"
 #include "KNNNeighbors.hpp"
 #include "../../cuda/CudaBuffer.cuh"
 
@@ -15,13 +21,16 @@
 
 #include <cuda_runtime.h>
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <limits>
 #include <string>
+
 #include <vector>
 
 namespace voronoi {
+
 
 class RVD::Implementation {
 public:
@@ -69,19 +78,87 @@ public:
       std::cerr << "[RVD] input validation failed: " << validationReason << std::endl;
       return false;
     }
+    if (!(config.contactRange > 0.0f) ||
+        !std::isfinite(config.contactRange)) {
+      std::cerr << "[RVD] invalid contactRange=" << config.contactRange
+                << std::endl;
+      return false;
+    }
+
+
+    std::vector<cudaGeometry::DeviceModelGeometry> geometries;
+    if (!cudaGeometry::uploadGeometries(input, geometries, stream)) {
+      return false;
+    }
+
+
+    std::vector<glm::vec4> relaxedSeeds = *input.seeds;
+    RVDInput effectiveInput = input;
+    effectiveInput.seeds = &relaxedSeeds;
+
+    const double lloydConvergenceTolerance =
+        double(effectiveInput.nominalCellSize) * 1e-4;
+    for (uint32_t iteration = 0; iteration < config.lloydIterations; ++iteration) {
+      if (iteration > 0 &&
+          !effectiveInput.seedSpatialIndex->buildSpatialIndex(relaxedSeeds)) {
+        std::cerr << "[RVD] Lloyd spatial index rebuild failed" << std::endl;
+        return false;
+      }
+
+      BaseCellDomain lloydDomain;
+      if (!prepareBaseDomain(effectiveInput, lloydDomain) ||
+          !buildBaseCells(effectiveInput, config, lloydDomain, stream)) {
+        std::cerr << "[RVD] Lloyd base cell build failed" << std::endl;
+        return false;
+      }
+      if (lloydDomain.count != relaxedSeeds.size()) {
+        std::cerr << "[RVD] Lloyd base cell count mismatch" << std::endl;
+        return false;
+      }
+
+      uint32_t movedCount = 0;
+      double maxDisplacement = 0.0;
+      if (!updateLloydSeeds(
+              effectiveInput,
+              config,
+              lloydDomain,
+              relaxedSeeds,
+              movedCount,
+              maxDisplacement,
+              stream)) {
+        std::cerr << "[RVD] Lloyd seed update failed" << std::endl;
+        return false;
+      }
+      if (maxDisplacement <= lloydConvergenceTolerance) {
+        break;
+      }
+    }
+
+    if (config.lloydIterations > 0 &&
+        !effectiveInput.seedSpatialIndex->buildSpatialIndex(relaxedSeeds)) {
+      std::cerr << "[RVD] Lloyd final spatial index rebuild failed" << std::endl;
+      return false;
+    }
 
     BaseCellDomain baseDomain;
-    if (!prepareBaseDomain(input, baseDomain)) return false;
-    if (!buildBaseCells(input, config, baseDomain, stream)) return false;
+    if (!prepareBaseDomain(effectiveInput, baseDomain)) return false;
+    if (!buildBaseCells(effectiveInput, config, baseDomain, stream)) return false;
 
     BaseFaceTopology faceTopology;
     if (!buildBaseFaces(baseDomain, faceTopology, stream)) return false;
 
-    std::vector<cudaGeometry::DeviceModelGeometry> geometries;
-    if (!uploadGeometries(input, geometries)) return false;
-
     std::vector<ModelRestriction> models;
-    if (!restrictModels(input, config, geometries, baseDomain, models)) {
+    if (!restrictModels(effectiveInput, config, geometries, baseDomain, models)) {
+      return false;
+    }
+
+    if (!canonicalizeFaceCutVertices(models, stream)) {
+      std::cerr << "[RVD] face cut canonicalization failed" << std::endl;
+      return false;
+    }
+    if (!validateFaceCutCanonicalization(models, stream)) {
+      std::cerr << "[RVD] face cut canonicalization validation failed"
+                << std::endl;
       return false;
     }
 
@@ -97,57 +174,66 @@ public:
       return false;
     }
 
-    if (!(config.contactRange > 0.0f) || !std::isfinite(config.contactRange)) {
-      std::cerr << "[RVD] invalid contactRange=" << config.contactRange << std::endl;
-      return false;
-    }
-    const double contactRange = double(config.contactRange);
-
-    cudaUtils::CudaBuffer<MortarOverlap> mortarOverlaps;
-    cudaUtils::CudaBuffer<double4> surfaceExposure;
-    uint32_t overlapCount = 0;
-    if (!buildMortarOverlaps(
+    std::vector<SurfaceRegion> surfaceRegions;
+    if (!buildSurfacePartition(
             models,
             geometryViews,
             baseDomain,
-            contactRange,
-            mortarOverlaps,
-            overlapCount,
-            surfaceExposure,
+            surfaceRegions,
             stream)) {
-      std::cerr << "[RVD] mortar overlap construction failed" << std::endl;
+      std::cerr << "[RVD] surface adjacency construction failed" << std::endl;
       return false;
     }
 
-    cudaUtils::CudaBuffer<uint32_t> contactFaceBySurface;
     uint32_t totalBaseFragmentFaces = 0;
     if (!buildFragmentsAndFaces(
-            input,
+            effectiveInput,
             baseDomain,
             faceTopology,
             models,
-            surfaceExposure,
-            contactFaceBySurface,
+            surfaceRegions,
+            totalBaseFragmentFaces,
+            result)) {
+      std::cerr << "[RVD] cell/material fragment assembly failed" << std::endl;
+      return false;
+    }
+
+    if (!agglomerateFragments(
+            baseDomain,
+            surfaceRegions,
             totalBaseFragmentFaces,
             result,
             stream)) {
+      std::cerr << "[RVD] fragment agglomeration failed" << std::endl;
       return false;
     }
+    buildVemTraceSurfaceMeshes(
+        effectiveInput.geometries,
+        surfaceRegions,
+        result.vemTraceSurfaceMeshes);
 
     if (!validateFragmentTopology(result, totalBaseFragmentFaces, 0.005, 0.01)) {
       std::cerr << "[RVD] geometric topology validation failed" << std::endl;
       return false;
     }
 
-    if (!finalizeContactCouplings(
-            mortarOverlaps,
-            overlapCount,
-            contactFaceBySurface,
+    if (!buildContactCouplings(
+            surfaceRegions,
             result,
+            baseDomain,
+            double(config.contactRange),
+            result.contactCouplings,
             stream)) {
-      std::cerr << "[RVD] contact coupling finalization failed" << std::endl;
+      std::cerr << "[RVD] contact coupling construction failed" << std::endl;
       return false;
     }
+
+    if (!validateContactCouplings(result)) {
+      std::cerr << "[RVD] contact coverage validation failed" << std::endl;
+      return false;
+    }
+
+    result.seedPositions = relaxedSeeds;
     return true;
   }
 
@@ -186,58 +272,6 @@ private:
     return true;
   }
 
-  bool uploadGeometries(
-      const RVDInput &input,
-      std::vector<cudaGeometry::DeviceModelGeometry> &geometries) {
-    geometries.resize(input.geometries->size());
-
-    for (size_t g = 0; g < input.geometries->size(); ++g) {
-      const ModelGeometry &model = (*input.geometries)[g];
-      if (!model.triangles || !model.voxelGrid) {
-        std::cerr << "[RVD] missing triangles or voxelGrid for modelId="
-                  << model.runtimeModelId << std::endl;
-        return false;
-      }
-      if (!cudaGeometry::uploadGeometry(
-              *model.triangles,
-              *model.voxelGrid,
-              geometries[g],
-              stream,
-              model.runtimeModelId)) {
-        std::cerr << "[RVD] failed to upload geometry modelId="
-                  << model.runtimeModelId << std::endl;
-        return false;
-      }
-    }
-
-    if (input.outDevSolidMask == nullptr) return true;
-
-    std::vector<cudaGeometry::DeviceModelGeometryView> maskViews;
-    maskViews.reserve(geometries.size());
-    for (const cudaGeometry::DeviceModelGeometry &geometry : geometries) {
-      maskViews.push_back(geometry.view());
-    }
-
-    if (!cudaGeometry::buildWindingSolidMask(
-            maskViews.data(),
-            uint32_t(maskViews.size()),
-            make_float3(
-                input.solidMaskGridMin.x,
-                input.solidMaskGridMin.y,
-                input.solidMaskGridMin.z),
-            make_int3(
-                input.solidMaskGridDim.x,
-                input.solidMaskGridDim.y,
-                input.solidMaskGridDim.z),
-            input.solidMaskCellSize,
-            input.outDevSolidMask,
-            stream)) {
-      std::cerr << "[RVD] winding solid mask failed" << std::endl;
-      return false;
-    }
-    return true;
-  }
-
   bool restrictModels(
       const RVDInput &input,
       const RVDConfig &config,
@@ -246,14 +280,11 @@ private:
       std::vector<ModelRestriction> &models) {
     models.resize(geometries.size());
 
-    uint32_t totalSurfacePatches = 0;
     for (size_t g = 0; g < models.size(); ++g) {
       if (!restrictModelGeometry(
               input, config, geometries[g], baseDomain, models[g], stream)) {
         return false;
       }
-      models[g].surfaceBase = totalSurfacePatches;
-      totalSurfacePatches += models[g].totalPatches;
     }
     return true;
   }

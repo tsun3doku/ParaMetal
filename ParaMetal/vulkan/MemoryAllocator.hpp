@@ -21,17 +21,17 @@ public:
 
     void free(VkBuffer buffer, VkDeviceSize offset);
     void freeImageMemory(VkDeviceMemory memory);
+    void trim();
 
-    AllocatorStats getStats();
     void* getMappedPointer(VkBuffer buffer, VkDeviceSize offset);
 
     static VkDeviceSize computeBufferAlignment(const VulkanDevice& vulkanDevice, VkBufferUsageFlags usage);
-    static uint32_t bitWidth(VkDeviceSize value);
-    static bool isPowerOfTwo(VkDeviceSize value);
     static VkDeviceSize roundUpPowerOfTwo(VkDeviceSize value);
     static uint32_t ceilLog2(VkDeviceSize value);
 
 private:
+    static uint32_t bitWidth(VkDeviceSize value);
+    static bool isPowerOfTwo(VkDeviceSize value);
     struct AllocationInfo {
         VkBuffer buffer;
         VkDeviceSize offset;
@@ -46,7 +46,6 @@ private:
     const VkDeviceSize DEFAULT_POOL_SIZE = 256 * 1024 * 1024;
     std::mutex allocationMutex;
 
-    MemoryPool& createNewPool(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags memProps);
 
     static uint64_t makeAllocationKey(VkBuffer buffer, VkDeviceSize offset);
 };

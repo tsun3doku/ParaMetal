@@ -8,9 +8,9 @@
 #include <vector>
 
 #include "SimConnection.hpp"
+#include "SimNode.hpp"
 
 class FrameSync;
-class SimNode;
 class VulkanDevice;
 
 enum class SimStatus {
@@ -56,7 +56,17 @@ public:
 
     void setEnabled(bool enabledValue) { enabled = enabledValue; }
 
-    SimTickResult tick(uint32_t frameIndex);
+    SimTickResult tick(const SimTickContext& context);
+
+    size_t registeredNodeCount() const { return nodes.size(); }
+    bool hasNodeInState(SimNodeState state) const;
+    SimNodeState getAggregateSimulationState() const;
+    bool hasSimulationTimelineMetadata() const;
+    float getSimulationTotalTime() const;
+    float getSimulationDuration() const;
+    uint32_t getSimulationTimelineFrameCount() const;
+    uint32_t getSimulationRecordedTimelineFrames() const;
+    uint32_t getPlaybackAvailableFrame() const;
 
     void clear();
 
@@ -70,7 +80,9 @@ private:
     bool hasPublication(const SimNode& node) const;
     bool rebuildGraph();
     void bindIncomingConnections(size_t nodeIndex);
-    SimTickResult recordAndSubmit(uint32_t frameIndex);
+    SimTickResult recordAndSubmit(uint32_t renderFrameSlot);
+
+    uint64_t tickCounter = 0;
 
     std::vector<RegisteredNode> nodes;
     std::vector<SimConnection> connections;

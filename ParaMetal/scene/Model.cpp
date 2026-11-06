@@ -229,26 +229,27 @@ void Model::setRenderGeometry(
     renderIndices = newIndices;
     hasSplitRenderMesh = renderVertices != vertices || renderIndices != indices;
 
-    bool missingNormal = normals.size() != renderVertices.size() * 3;
-    if (!missingNormal) {
-        for (const Vertex& vertex : renderVertices) {
-            if (glm::dot(vertex.normal, vertex.normal) <= 1e-12f) {
-                missingNormal = true;
-                break;
-            }
+    if (normals.size() != renderVertices.size() * 3) {
+        // default missing normals
+        recalculateNormals();
+        return;
+    }
+
+    // check for zero normals
+    for (const Vertex& vertex : renderVertices) {
+        if (glm::dot(vertex.normal, vertex.normal) <= 1e-12f) {
+            recalculateNormals(true);
+            break;
         }
     }
-    if (missingNormal) recalculateNormals();
 }
 
-void Model::recalculateNormals() {
+void Model::recalculateNormals(bool fillMissingOnly) {
     if (renderVertices.empty() || renderIndices.empty()) {
         return;
     }
 
-    for (auto& vertex : renderVertices) {
-        vertex.normal = glm::vec3(0.0f);
-    }
+    std::vector<glm::vec3> accumulatedNormals(renderVertices.size(), glm::vec3(0.0f));
 
     for (size_t i = 0; i + 2 < renderIndices.size(); i += 3) {
         const uint32_t i0 = renderIndices[i];
@@ -268,17 +269,20 @@ void Model::recalculateNormals() {
             continue;
         }
 
-        renderVertices[i0].normal += faceNormal;
-        renderVertices[i1].normal += faceNormal;
-        renderVertices[i2].normal += faceNormal;
+        accumulatedNormals[i0] += faceNormal;
+        accumulatedNormals[i1] += faceNormal;
+        accumulatedNormals[i2] += faceNormal;
     }
 
-    for (auto& vertex : renderVertices) {
-        const float len2 = glm::dot(vertex.normal, vertex.normal);
+    for (std::size_t i = 0; i < renderVertices.size(); ++i) {
+        if (fillMissingOnly && glm::dot(renderVertices[i].normal, renderVertices[i].normal) > 1e-12f) {
+            continue;
+        }
+        const float len2 = glm::dot(accumulatedNormals[i], accumulatedNormals[i]);
         if (len2 > 1e-12f) {
-            vertex.normal *= (1.0f / std::sqrt(len2));
+            renderVertices[i].normal = accumulatedNormals[i] * (1.0f / std::sqrt(len2));
         } else {
-            vertex.normal = glm::vec3(0.0f, 0.0f, 1.0f);
+            renderVertices[i].normal = glm::vec3(0.0f, 0.0f, 1.0f);
         }
     }
 }

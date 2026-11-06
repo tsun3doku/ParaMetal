@@ -3,7 +3,6 @@
 #include <cstdint>
 
 #include "hash/HashValues.hpp"
-#include "nodegraph/NodeGraphCoreTypes.hpp"
 
 enum class NodeProductType : uint8_t {
     None,
@@ -19,8 +18,7 @@ struct ProductHandle {
     NodeProductType type = NodeProductType::None;
     uint64_t outputSocketKey = 0;
     HashValues hashes{};
-    // Exact publication identity. Content comparisons stay hash-based; this field
-    // is only used for exact PM lookup so older generations remain resolvable.
+    // publication identity for product manager lookup
     uint64_t publicationId = 0;
 
     bool isValid() const {

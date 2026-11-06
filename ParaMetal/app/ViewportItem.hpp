@@ -36,6 +36,9 @@ public slots:
     void requestHeatPaletteRange(float minimum, float maximum);
     void requestHeatPalette(int palette);
     void requestWorldUnit(int unit);
+    void requestProbePicking(int nodeId, int probeIndex = 0);
+    void requestExport(int nodeId);
+    void requestExportProducts(int nodeId, qulonglong requestId, qulonglong graphRevision);
     void applyViewportProjectState(const ProjectFile::Viewport& viewport);
     void requestCurrentViewportProjectState();
     void initializeGraph(const NodeGraphState& graphState);
@@ -57,7 +60,8 @@ protected:
     void focusOutEvent(QFocusEvent* event) override;
 
 private:
-    void updateMousePosition(const QPointF& position);
+    QPointF devicePixelPosition(const QPointF& position) const;
+    void pushMouseMoveEvent(const QPointF& position);
 
     ViewportMailbox mailbox;
     RuntimeSystems* runtime = nullptr;

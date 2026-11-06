@@ -3,9 +3,12 @@
 #include "UiRuntimeTypes.hpp"
 #include "nodegraph/NodeGraphState.hpp"
 #include "nodegraph/NodeGraphEditor.hpp"
+#include "nodegraph/NodeWriteParams.hpp"
 
 #include <QAbstractListModel>
+#include <QStringList>
 #include <QVariantList>
+#include <QVariantMap>
 
 #include <cstdint>
 #include <vector>
@@ -20,8 +23,17 @@ class NodeGraphUiModel final : public QAbstractListModel {
     Q_PROPERTY(QString selectedNodeDescription READ selectedNodeDescription NOTIFY selectedNodeChanged)
     Q_PROPERTY(QVariantList selectedNodeParameters READ selectedNodeParameters NOTIFY selectedNodeChanged)
     Q_PROPERTY(QVariantList serialPorts READ serialPorts NOTIFY serialPortsChanged)
+    Q_PROPERTY(bool probePickingActive READ isProbePickingActive NOTIFY probePickingActiveChanged)
+    Q_PROPERTY(QStringList exportProductLabels READ exportProductLabels NOTIFY exportProductsChanged)
+    Q_PROPERTY(int selectedExportProductIndex READ selectedExportProductIndex NOTIFY exportProductsChanged)
+    Q_PROPERTY(QStringList exportProductFormats READ exportProductFormats NOTIFY exportProductsChanged)
+    Q_PROPERTY(QString exportProductFormat READ exportProductFormat NOTIFY exportProductsChanged)
+    Q_PROPERTY(bool exportProductAvailable READ exportProductAvailable NOTIFY exportProductsChanged)
+    Q_PROPERTY(QString exportProductStatus READ exportProductStatus NOTIFY exportProductsChanged)
+    Q_PROPERTY(QString exportProductsError READ exportProductsError NOTIFY exportProductsChanged)
 
 public:
+    bool isProbePickingActive() const { return m_probePickingActive; }
     enum Role {
         NodeIdRole = Qt::UserRole + 1,
         TitleRole,
@@ -37,6 +49,7 @@ public:
     Q_ENUM(Role)
 
     explicit NodeGraphUiModel(QObject* parent = nullptr);
+    ~NodeGraphUiModel() override;
 
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
     QVariant data(const QModelIndex& index, int role) const override;
@@ -51,6 +64,13 @@ public:
     QString selectedNodeDescription() const;
     QVariantList selectedNodeParameters() const;
     QVariantList serialPorts() const;
+    QStringList exportProductLabels() const;
+    int selectedExportProductIndex() const;
+    QStringList exportProductFormats() const;
+    QString exportProductFormat() const;
+    bool exportProductAvailable() const;
+    QString exportProductStatus() const;
+    QString exportProductsError() const { return exportProductsErrorText; }
 
     void setRuntimeSelectedNodeId(int nodeId);
 
@@ -59,10 +79,14 @@ public slots:
     void replaceGraphState(const NodeGraphState& state);
     void applyDelta(const NodeGraphDelta& delta);
     void handleNodesPasted(const std::vector<NodeGraphNodeId>& nodeIds);
+    void applyExportProducts(int nodeId, qulonglong requestId, qulonglong graphRevision,
+                             const QVariantList& products, const QString& error);
 
 public:
     Q_INVOKABLE void moveNode(int nodeId, qreal x, qreal y);
     Q_INVOKABLE void removeNode(int nodeId);
+    Q_INVOKABLE void startProbePicking(int nodeId, int probeIndex = 0);
+    Q_INVOKABLE void cancelProbePicking();
     Q_INVOKABLE void removeSelectedNodes();
     Q_INVOKABLE void resetToDefaultGraph();
     Q_INVOKABLE int addNode(const QString& typeId, qreal x, qreal y);
@@ -77,12 +101,19 @@ public:
     Q_INVOKABLE void setParameterValue(int parameterId, const QVariant& value);
     Q_INVOKABLE void setHeatMaterialPreset(const QString& presetName);
     Q_INVOKABLE void refreshSerialPorts();
+    Q_INVOKABLE void exportNode(int nodeId);
+    Q_INVOKABLE QString nodeTitle(int nodeId) const;
+    Q_INVOKABLE QString selectedWriteFile() const;
+    Q_INVOKABLE void selectExportProduct(int rowIndex);
+    Q_INVOKABLE void setExportProductFormat(const QString& format);
 
 signals:
     void edgesChanged();
     void nodeCategoriesChanged();
     void selectedNodeChanged();
     void selectionRequested(int nodeId);
+    void probePickingRequested(int nodeId, int probeIndex);
+    void probePickingActiveChanged();
     void serialPortsChanged();
     void resetRequested();
     void addNodeRequested(const QString& typeId, float x, float y);
@@ -95,6 +126,9 @@ signals:
     void removeConnectionRequested(NodeGraphEdgeId edgeId);
     void setParameterRequested(NodeGraphNodeId nodeId, const NodeGraphParamValue& parameter);
     void pasteRequested(const GraphPastePayload& payload);
+    void exportRequested(int nodeId);
+    void exportProductsRequested(int nodeId, qulonglong requestId, qulonglong graphRevision);
+    void exportProductsChanged();
 
 private:
     QVariantList socketList(NodeGraphNodeId nodeId, const std::vector<NodeGraphSocket>& sockets) const;
@@ -102,6 +136,12 @@ private:
     void rebuildNodeCategories();
     void rebuildSelectedNode();
     void notifySelectionChanged(bool requestRuntimeSelection);
+    void requestCurrentExportProducts();
+    WriteProductSelection currentWriteSelection() const;
+    void setWriteSelection(const WriteProductSelection& selection);
+    QVariantMap selectedExportRow() const;
+    bool assignExportProductLabels();
+    void relabelExportProducts();
 
     uint64_t revision = UINT64_MAX;
     std::vector<NodeGraphNode> nodes;
@@ -117,4 +157,11 @@ private:
     QString selectedType;
     QVariantList selectedParameters;
     QVariantList serialPortItems;
+    bool m_probePickingActive = false;
+    QVariantList exportProductItems;
+    QString exportProductsErrorText;
+    uint64_t nextExportProductsRequestId = 1;
+    uint64_t expectedExportProductsRequestId = 0;
+    uint64_t expectedExportProductsRevision = 0;
+    int expectedExportProductsNodeId = 0;
 };

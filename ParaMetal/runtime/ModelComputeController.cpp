@@ -18,11 +18,10 @@ ModelComputeController::ModelComputeController(
       isOperating(isOperating) {
 }
 
-void ModelComputeController::apply(uint64_t socketKey, const Config& config) {
+bool ModelComputeController::apply(uint64_t socketKey, const Config& config) {
     if (socketKey == 0 || config.pointPositions.empty() ||
         config.triangleIndices.empty() || config.computeHash == 0) {
-        remove(socketKey);
-        return;
+        return false;
     }
 
     std::lock_guard<std::mutex> lock(executionMutex);
@@ -32,12 +31,10 @@ void ModelComputeController::apply(uint64_t socketKey, const Config& config) {
     const auto hashesIt = configuredComputeHashes.find(socketKey);
     if (runtimeModelId != 0 && hashesIt != configuredComputeHashes.end() &&
         hashesIt->second == config.computeHash) {
-        return;
+        return true;
     }
 
-    if (!rebuildModel(socketKey, config, runtimeModelId)) {
-        removeModel(socketKey);
-    }
+    return rebuildModel(socketKey, config, runtimeModelId);
 }
 
 bool ModelComputeController::buildProduct(uint64_t socketKey, ModelProduct& product) const {
@@ -73,6 +70,22 @@ void ModelComputeController::disableAll() {
     configuredComputeHashes.clear();
 }
 
+uint64_t ModelComputeController::getCurrentComputeHash(uint64_t socketKey) const {
+    std::lock_guard<std::mutex> lock(executionMutex);
+    const auto it = configuredComputeHashes.find(socketKey);
+    return it != configuredComputeHashes.end() ? it->second : 0;
+}
+
+bool ModelComputeController::hasAnyRetiring() const {
+    std::lock_guard<std::mutex> lock(executionMutex);
+    return modelRegistry.hasAnyRetiring();
+}
+
+void ModelComputeController::clearAllRetiring() {
+    std::lock_guard<std::mutex> lock(executionMutex);
+    modelRegistry.clearAllRetiring();
+}
+
 bool ModelComputeController::tryGetSocketKey(uint32_t runtimeModelId, uint64_t& outSocketKey) const {
     std::lock_guard<std::mutex> lock(executionMutex);
     outSocketKey = 0;
@@ -102,7 +115,14 @@ bool ModelComputeController::rebuildModel(uint64_t socketKey, const Config& conf
     if (!model->init()) return false;
 
     if (preferredModelId != 0) {
-        modelRegistry.removeModelByID(preferredModelId);
+        if (modelRegistry.hasModel(preferredModelId)) {
+            if (!modelRegistry.removeModelByID(preferredModelId)) {
+                        return false;
+            }
+        } else {
+                runtimeModelIdBySocketKey.erase(socketKey);
+            configuredComputeHashes.erase(socketKey);
+        }
         socketKeyByRuntimeModelId.erase(preferredModelId);
     }
     const uint32_t runtimeModelId = modelRegistry.addModel(std::move(model), preferredModelId);
@@ -121,11 +141,14 @@ bool ModelComputeController::removeModel(uint64_t socketKey) {
     const uint32_t runtimeModelId = runtimeIt->second;
 
     OperatingScope operatingScope(isOperating);
-    const bool removed = modelRegistry.removeModelByID(runtimeModelId);
+    if (modelRegistry.hasModel(runtimeModelId) &&
+        !modelRegistry.removeModelByID(runtimeModelId)) {
+        return false;
+    }
     runtimeModelIdBySocketKey.erase(runtimeIt);
     socketKeyByRuntimeModelId.erase(runtimeModelId);
     configuredComputeHashes.erase(socketKey);
-    return removed;
+    return true;
 }
 
 ModelComputeController::OperatingScope::OperatingScope(std::atomic<bool>& isOperating)

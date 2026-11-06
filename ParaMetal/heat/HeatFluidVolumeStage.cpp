@@ -250,26 +250,35 @@ bool HeatFluidVolumeStage::updateSeedToFluidNode(
         return false;
     }
 
+    if (globalDomain.cellFragmentOffsets.size() != seeds.size() + 1 ||
+        globalDomain.cellFragmentOffsets.back() != globalDomain.cellFragments.size()) {
+        std::cerr << "[HeatFluidVolumeStage] cell-to-fragment CSR is invalid"
+                  << std::endl;
+        return false;
+    }
+
     std::vector<uint32_t> seedToFluid(seeds.size(), 0xFFFFFFFFu);
-    if (!globalDomain.seedToFragment.empty()) {
-        for (size_t s = 0; s < seeds.size() && s < globalDomain.seedToFragment.size(); ++s) {
-            const uint32_t fragment = globalDomain.seedToFragment[s];
-            if (fragment < globalDomain.fragments.size() &&
-                globalDomain.fragments[fragment].instanceId == topology::InvalidInstanceId &&
-                fragment < globalFragmentToFluidNode.size()) {
-                seedToFluid[s] = globalFragmentToFluidNode[fragment];
+    for (size_t cell = 0; cell < seeds.size(); ++cell) {
+        uint32_t fluidFragment = 0xFFFFFFFFu;
+        for (uint32_t entry = globalDomain.cellFragmentOffsets[cell];
+             entry < globalDomain.cellFragmentOffsets[cell + 1]; ++entry) {
+            const uint32_t fragment = globalDomain.cellFragments[entry];
+            if (fragment >= globalDomain.fragments.size() ||
+                globalDomain.fragments[fragment].instanceId !=
+                    topology::InvalidInstanceId) {
+                continue;
             }
+            if (fluidFragment != 0xFFFFFFFFu) {
+                std::cerr << "[HeatFluidVolumeStage] seed cell " << cell
+                          << " has multiple fluid components; point location "
+                             "requires fragment boundary geometry"
+                          << std::endl;
+                return false;
+            }
+            fluidFragment = fragment;
         }
-    } else {
-        for (size_t f = 0; f < globalDomain.fragments.size(); ++f) {
-            const auto& frag = globalDomain.fragments[f];
-            if (frag.instanceId == topology::InvalidInstanceId && f < globalFragmentToFluidNode.size()) {
-                const uint32_t fluidNode = globalFragmentToFluidNode[f];
-                const uint32_t seedId = frag.seedId;
-                if (seedId < seedToFluid.size()) {
-                    seedToFluid[seedId] = fluidNode;
-                }
-            }
+        if (fluidFragment < globalFragmentToFluidNode.size()) {
+            seedToFluid[cell] = globalFragmentToFluidNode[fluidFragment];
         }
     }
 
@@ -351,7 +360,7 @@ void HeatFluidVolumeStage::recordCompute(
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, &currentSet, 0, nullptr);
 
-    // Invariant: The volume compute and graphics consumption rely on the same ordered submission queue.
+    // ordered submission queue for volume compute and display
     VkImageMemoryBarrier beforeWrite{};
     beforeWrite.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     beforeWrite.oldLayout = temperatureVolumeLayout;

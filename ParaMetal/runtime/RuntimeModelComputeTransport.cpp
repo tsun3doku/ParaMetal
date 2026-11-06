@@ -1,11 +1,17 @@
 #include "RuntimeModelComputeTransport.hpp"
 
-#include "util/GeometryUtils.hpp"
 #include "runtime/ModelComputeController.hpp"
 
-ProductHandle RuntimeModelComputeTransport::apply(uint64_t socketKey, const ModelPackage& package) {
-    if (!controller || !products || socketKey == 0) {
-        return {};
+ComputeApplyResult RuntimeModelComputeTransport::apply(
+    uint64_t socketKey,
+    const ModelPackage& package,
+    ModelProduct& outProduct) {
+    if (!controller || socketKey == 0) {
+        return ComputeApplyResult::Failed;
+    }
+
+    if (controller->getCurrentComputeHash(socketKey) == package.hashes.geometry) {
+        return ComputeApplyResult::Unchanged;
     }
 
     ModelComputeController::Config config{};
@@ -16,17 +22,16 @@ ProductHandle RuntimeModelComputeTransport::apply(uint64_t socketKey, const Mode
     config.renderTexcoords = package.sourceGeometry.renderTexcoords;
     config.renderIndices = package.sourceGeometry.renderIndices;
     config.computeHash = package.hashes.geometry;
-    controller->apply(socketKey, config);
-
-    ModelProduct product{};
-    if (!controller->buildProduct(socketKey, product)) {
-        return {};
+    if (!controller->apply(socketKey, config)) {
+        return ComputeApplyResult::Failed;
     }
 
-    ProductHandle handle = products->publish<ModelProduct>(socketKey, product);
-    return handle;
+    outProduct = {};
+    if (!controller->buildProduct(socketKey, outProduct)) {
+        return ComputeApplyResult::Failed;
+    }
+    return ComputeApplyResult::Prepared;
 }
-
 
 void RuntimeModelComputeTransport::remove(uint64_t socketKey) {
     if (!controller || socketKey == 0) {

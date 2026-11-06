@@ -11,6 +11,7 @@
 #include "vulkan/VulkanBuffer.hpp"
 #include "vulkan/VulkanDevice.hpp"
 
+#include <cassert>
 #include <unordered_set>
 
 HeatSystemComputeController::HeatSystemComputeController(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator,
@@ -71,43 +72,6 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
     system.setGlobalSolverParameters(config.solverMaxIterations, config.solverConvergenceTolerance);
 }
 
-void HeatSystemComputeController::applyRuntimeState(HeatSystem& system, const Config& config) {
-    system.setActive(config.active);
-    system.setPlaybackState(!timelinePlaying, timelineResetCounter);
-    system.setRewindFrame(timelineScrubFrame);
-}
-
-void HeatSystemComputeController::setTimelinePlaying(bool playing) {
-    timelinePlaying = playing;
-    if (playing) timelineScrubFrame = heat::NoRewindFrame;
-    for (auto& [key, system] : systemsBySocket) {
-        if (!system || !system->getIsActive()) continue;
-        system->setPlaybackState(!timelinePlaying, timelineResetCounter);
-        system->setRewindFrame(timelineScrubFrame);
-    }
-}
-
-void HeatSystemComputeController::resetTimeline() {
-    ++timelineResetCounter;
-    timelinePlaying = false;
-    timelineScrubFrame = heat::NoRewindFrame;
-    for (auto& [key, system] : systemsBySocket) {
-        if (!system || !system->getIsActive()) continue;
-        // Reset pauses heat so it does not advance against a paused CFD producer
-        system->setPlaybackState(true, timelineResetCounter);
-    }
-}
-
-void HeatSystemComputeController::scrubTimeline(uint32_t frame) {
-    timelinePlaying = false;
-    timelineScrubFrame = frame;
-    for (auto& [key, system] : systemsBySocket) {
-        if (!system || !system->getIsActive()) continue;
-        system->setPlaybackState(true, timelineResetCounter);
-        system->setRewindFrame(frame);
-    }
-}
-
 bool HeatSystemComputeController::apply(uint64_t socketKey, const Config& config) {
     if (socketKey == 0) {
         return false;
@@ -115,10 +79,15 @@ bool HeatSystemComputeController::apply(uint64_t socketKey, const Config& config
 
     const auto configIt = configuredConfigs.find(socketKey);
     if (configIt != configuredConfigs.end() && configIt->second.computeHash == config.computeHash) {
-        const auto it = systemsBySocket.find(socketKey);
-        if (it != systemsBySocket.end() && it->second) {
-            applyRuntimeState(*it->second, config);
+            configIt->second.heatProbesBySourceKey = config.heatProbesBySourceKey;
+        configIt->second.serialEnabledBySourceKey = config.serialEnabledBySourceKey;
+        configIt->second.serialPortNamesBySourceKey = config.serialPortNamesBySourceKey;
+        configIt->second.serialBaudRatesBySourceKey = config.serialBaudRatesBySourceKey;
+        if (HeatSystem* system = getSystem(socketKey)) {
+            system->syncHeatProbes(config.heatProbesBySourceKey);
         }
+        syncSerialInputs();
+        cancelCandidate(socketKey);
         return true;
     }
 
@@ -128,7 +97,12 @@ bool HeatSystemComputeController::apply(uint64_t socketKey, const Config& config
     }
     failedComputeHashes.erase(socketKey);
 
-    // Build replacement generation off to the side while active generation remains live
+    const auto slotIt = generationSlots.find(socketKey);
+    if (slotIt != generationSlots.end() &&
+        (slotIt->second.retiring || slotIt->second.candidate)) {
+        return false;
+    }
+
     std::unique_ptr<HeatSystem> candidate = buildHeatSystem();
     if (!candidate) {
         failedComputeHashes[socketKey] = config.computeHash;
@@ -137,25 +111,28 @@ bool HeatSystemComputeController::apply(uint64_t socketKey, const Config& config
 
     configureHeatSystem(*candidate, config);
     if (!candidate->ensureConfigured()) {
-        // Retain failed candidate to avoid destroying resources with in-flight GPU work
-        retainedSystems.push_back(std::move(candidate));
+        generationSlots[socketKey].retiring = std::move(candidate);
         failedComputeHashes[socketKey] = config.computeHash;
         return false;
     }
+    candidate->syncHeatProbes(config.heatProbesBySourceKey);
 
-    auto it = systemsBySocket.find(socketKey);
-    if (it != systemsBySocket.end()) {
-        if (it->second) {
-            retainedSystems.push_back(std::move(it->second));
-        }
-        it->second = std::move(candidate);
-    } else {
-        systemsBySocket.emplace(socketKey, std::move(candidate));
-    }
+    GenerationSlot& slot = generationSlots[socketKey];
+    configuredConfigs.try_emplace(socketKey);
+    pendingConfigs[socketKey] = config;
+    slot.candidate = std::move(candidate);
 
-    configuredConfigs[socketKey] = config;
     syncSerialInputs();
-    applyRuntimeState(*systemsBySocket[socketKey], config);
+    for (const auto& [sourceKey, portName] : config.serialPortNamesBySourceKey) {
+        auto& runtime = serialRuntimes[sourceKey];
+        if (!runtime) {
+            runtime = std::make_unique<SerialTemperatureRuntime>();
+        }
+        runtime->configure(
+            config.serialEnabledBySourceKey.at(sourceKey),
+            portName,
+            config.serialBaudRatesBySourceKey.at(sourceKey));
+    }
     return true;
 }
 
@@ -165,31 +142,103 @@ void HeatSystemComputeController::remove(uint64_t socketKey) {
     }
 
     failedComputeHashes.erase(socketKey);
-    configuredConfigs.erase(socketKey);
-    auto it = systemsBySocket.find(socketKey);
-    if (it != systemsBySocket.end()) {
-        if (it->second) {
-            it->second->setPlaybackState(false, 0);
-            it->second->setActive(false);
-            retainedSystems.push_back(std::move(it->second));
-        }
-        systemsBySocket.erase(it);
-    }
+    retireCurrent(socketKey);
     syncSerialInputs();
 }
 
-void HeatSystemComputeController::disableAll() {
-    configuredConfigs.clear();
-    failedComputeHashes.clear();
-    for (auto& [key, system] : systemsBySocket) {
-        (void)key;
-        if (system) {
-            system->setPlaybackState(false, 0);
-            system->setActive(false);
-            retainedSystems.push_back(std::move(system));
+bool HeatSystemComputeController::hasAnyRetiring() const {
+    for (const auto& [socketKey, slot] : generationSlots) {
+        (void)socketKey;
+        if (slot.retiring) return true;
+    }
+    return false;
+}
+
+void HeatSystemComputeController::clearAllRetiring() {
+    for (auto it = generationSlots.begin(); it != generationSlots.end();) {
+        GenerationSlot& slot = it->second;
+        slot.retiring.reset();
+        if (configuredConfigs.find(it->first) == configuredConfigs.end()) {
+            slot.current.reset();
+            slot.candidate.reset();
+        }
+        if (!slot.current && !slot.candidate && !slot.retiring) {
+            it = generationSlots.erase(it);
+        } else {
+            ++it;
         }
     }
-    systemsBySocket.clear();
+}
+
+void HeatSystemComputeController::commitPending(uint64_t socketKey) noexcept {
+    const auto it = generationSlots.find(socketKey);
+    if (it == generationSlots.end()) {
+        return;
+    }
+    GenerationSlot& slot = it->second;
+    assert(slot.retiring == nullptr);
+    if (slot.retiring != nullptr) {
+        return;
+    }
+    if (slot.candidate) {
+        slot.retiring = std::move(slot.current);
+        slot.current = std::move(slot.candidate);
+    }
+
+    const auto pending = pendingConfigs.find(socketKey);
+    if (pending != pendingConfigs.end()) {
+        const auto committed = configuredConfigs.find(socketKey);
+        if (committed != configuredConfigs.end()) {
+            committed->second = std::move(pending->second);
+        }
+        pendingConfigs.erase(pending);
+    }
+    failedComputeHashes.erase(socketKey);
+}
+
+void HeatSystemComputeController::cancelCandidate(uint64_t socketKey) {
+    const auto it = generationSlots.find(socketKey);
+    if (it != generationSlots.end() && it->second.candidate) {
+        assert(it->second.retiring == nullptr);
+        if (!it->second.retiring) {
+            it->second.retiring = std::move(it->second.candidate);
+        }
+    }
+    const bool hasCurrent = it != generationSlots.end() && it->second.current;
+    const auto pending = pendingConfigs.find(socketKey);
+    if (pending != pendingConfigs.end()) {
+        pendingConfigs.erase(pending);
+        const auto committed = configuredConfigs.find(socketKey);
+        if (committed != configuredConfigs.end() &&
+            committed->second.computeHash == 0 &&
+            !hasCurrent) {
+            configuredConfigs.erase(committed);
+        }
+    }
+}
+
+void HeatSystemComputeController::retireCurrent(uint64_t socketKey) {
+    configuredConfigs.erase(socketKey);
+    pendingConfigs.erase(socketKey);
+
+    const auto it = generationSlots.find(socketKey);
+    if (it == generationSlots.end()) {
+        return;
+    }
+    GenerationSlot& slot = it->second;
+    if (slot.candidate && !slot.retiring) {
+        slot.retiring = std::move(slot.candidate);
+    }
+    if (slot.current && !slot.retiring) {
+        slot.retiring = std::move(slot.current);
+    }
+}
+
+void HeatSystemComputeController::quiescedClear() noexcept {
+    generationSlots.clear();
+    configuredConfigs.clear();
+    pendingConfigs.clear();
+    failedComputeHashes.clear();
     serialRuntimes.clear();
     lastSerialRevisions.clear();
 }
@@ -234,23 +283,47 @@ bool HeatSystemComputeController::getSerialTemperatureStatus(
     return true;
 }
 
-bool HeatSystemComputeController::isAnyHeatSystemActive() const {
-    for (const auto& [key, config] : configuredConfigs) {
-        auto systemIt = systemsBySocket.find(key);
-        if (config.active && systemIt != systemsBySocket.end() && systemIt->second) {
+bool HeatSystemComputeController::getHeatProbeTemperatures(uint64_t sourceKey, std::vector<float>& outTemperaturesC) const {
+    for (const auto& [socketKey, slot] : generationSlots) {
+        if (configuredConfigs.find(socketKey) == configuredConfigs.end()) {
+            continue;
+        }
+        if (slot.current && slot.current->getHeatProbeTemperatures(sourceKey, outTemperaturesC)) {
             return true;
         }
     }
     return false;
 }
 
-bool HeatSystemComputeController::isAnyHeatSystemPaused() const {
-    for (const auto& [key, system] : systemsBySocket) {
-        if (system && system->getIsActive() && system->getIsPaused()) {
-            return true;
+bool HeatSystemComputeController::getVemTraceState(
+    uint64_t socketKey,
+    VkBuffer& outBuffer,
+    uint32_t& outTraceCount,
+    bool& outValid) const {
+    if (configuredConfigs.find(socketKey) == configuredConfigs.end()) {
+        return false;
+    }
+    const auto it = generationSlots.find(socketKey);
+    if (it == generationSlots.end() || !it->second.current) {
+        return false;
+    }
+    outBuffer = it->second.current->getVemTraceTemperatureBuffer();
+    outTraceCount = it->second.current->getVemTraceCount();
+    outValid = it->second.current->isVemTraceDisplayAvailable();
+    return true;
+}
+
+uint64_t HeatSystemComputeController::getDisplayRevision() const {
+    uint64_t revision = 0;
+    for (const auto& [socketKey, slot] : generationSlots) {
+        if (configuredConfigs.find(socketKey) == configuredConfigs.end()) {
+            continue;
+        }
+        if (slot.current) {
+            revision += slot.current->getVemTraceDisplayRevision();
         }
     }
-    return false;
+    return revision;
 }
 
 std::unique_ptr<HeatSystem> HeatSystemComputeController::buildHeatSystem() {
@@ -267,47 +340,21 @@ std::unique_ptr<HeatSystem> HeatSystemComputeController::buildHeatSystem() {
     return system;
 }
 
-std::vector<HeatSystem*> HeatSystemComputeController::getActiveSystems() const {
-    std::vector<HeatSystem*> systems;
-    systems.reserve(systemsBySocket.size());
-    for (const auto& [key, system] : systemsBySocket) {
-        if (system && system->hasDispatchableComputeWork()) {
-            systems.push_back(system.get());
-        }
-    }
-    return systems;
-}
-
-
-
-
-
-
 void HeatSystemComputeController::waitIdle() {
-    for (auto& [key, system] : systemsBySocket) {
+    for (auto& [key, slot] : generationSlots) {
         (void)key;
-        if (system) {
-            system->waitForSolvesIdle();
-        }
-    }
-    for (auto& system : retainedSystems) {
-        if (system) {
-            system->waitForSolvesIdle();
-        }
+        if (slot.current) slot.current->waitForSolvesIdle();
+        if (slot.retiring) slot.retiring->waitForSolvesIdle();
+        if (slot.candidate) slot.candidate->waitForSolvesIdle();
     }
 }
 
 void HeatSystemComputeController::releaseWaits() {
-    for (auto& [key, system] : systemsBySocket) {
+    for (auto& [key, slot] : generationSlots) {
         (void)key;
-        if (system) {
-            system->releasePendingSolveWaitOnHost();
-        }
-    }
-    for (auto& system : retainedSystems) {
-        if (system) {
-            system->releasePendingSolveWaitOnHost();
-        }
+        if (slot.current) slot.current->releasePendingSolveWaitOnHost();
+        if (slot.retiring) slot.retiring->releasePendingSolveWaitOnHost();
+        if (slot.candidate) slot.candidate->releasePendingSolveWaitOnHost();
     }
 }
 
@@ -315,26 +362,16 @@ bool HeatSystemComputeController::buildProduct(uint64_t socketKey, HeatProduct& 
     outProduct = {};
     if (socketKey == 0) return false;
 
-    auto sysIt = systemsBySocket.find(socketKey);
-    if (sysIt == systemsBySocket.end() || !sysIt->second) return false;
-    HeatSystem& system = *sysIt->second;
+    const auto sysIt = generationSlots.find(socketKey);
+    if (sysIt == generationSlots.end()) return false;
+    HeatSystem* systemPtr = sysIt->second.candidate
+        ? sysIt->second.candidate.get()
+        : sysIt->second.current.get();
+    if (!systemPtr) return false;
+    HeatSystem& system = *systemPtr;
 
-    const Config* config = getConfig(socketKey);
+    const Config* config = getBuildConfig(socketKey);
     if (!config) return false;
-
-    const auto freeProduct = [&]() {
-        for (size_t j = 0; j < outProduct.modelSurfaceBuffers.size(); ++j) {
-            if (outProduct.modelSurfaceBuffers[j] != VK_NULL_HANDLE)
-                memoryAllocator.free(outProduct.modelSurfaceBuffers[j],
-                    j < outProduct.modelSurfaceBufferOffsets.size() ? outProduct.modelSurfaceBufferOffsets[j] : 0);
-        }
-        for (size_t j = 0; j < outProduct.modelSurfaceGradientBuffers.size(); ++j) {
-            if (outProduct.modelSurfaceGradientBuffers[j] != VK_NULL_HANDLE)
-                memoryAllocator.free(outProduct.modelSurfaceGradientBuffers[j],
-                    j < outProduct.modelSurfaceGradientBufferOffsets.size() ? outProduct.modelSurfaceGradientBufferOffsets[j] : 0);
-        }
-        outProduct = {};
-    };
 
     outProduct.modelRuntimeModelIds.reserve(config->modelRuntimeModelIds.size());
     outProduct.modelSurfaceBuffers.reserve(config->modelRuntimeModelIds.size());
@@ -347,109 +384,69 @@ bool HeatSystemComputeController::buildProduct(uint64_t socketKey, HeatProduct& 
         HeatModelRuntime* model = system.getModelByRuntimeId(runtimeModelId);
         if (!model) continue;
 
-        const std::vector<glm::vec3>& positions = model->getSurfacePositions();
-        const std::vector<glm::vec3>& normals = model->getSurfaceNormals();
-        const std::vector<uint32_t>& triangleIndices = model->getSurfaceTriangleIndices();
-        const size_t vertexCount = model->getSurfaceVertexCount();
-        if (vertexCount == 0 || normals.size() != vertexCount || triangleIndices.size() < 3) {
-            freeProduct();
-            return false;
-        }
-
-        const std::vector<float> vertexAreas = computeVertexAreas(positions, triangleIndices);
-
-        std::vector<heat::SurfacePoint> surfacePoints(vertexCount);
-        for (size_t vertexId = 0; vertexId < vertexCount; ++vertexId) {
-            heat::SurfacePoint& surfacePoint = surfacePoints[vertexId];
-            surfacePoint.position = positions[vertexId];
-            surfacePoint.temperatureC = model->getInitialTemperatureC();
-            surfacePoint.normal = normals[vertexId];
-            surfacePoint.vertexArea = vertexId < vertexAreas.size() ? vertexAreas[vertexId] : 0.0f;
-            surfacePoint.color = glm::vec4(1.0f);
-        }
-
-        const VkDeviceSize storageAlignment =
-            vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment;
-
-        VkBuffer surfaceBuffer = VK_NULL_HANDLE;
-        VkDeviceSize surfaceBufferOffset = 0;
-        if (uploadDeviceBuffer(
-                memoryAllocator,
-                renderCommandPool,
-                surfacePoints.data(),
-                sizeof(heat::SurfacePoint) * vertexCount,
-                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT,
-                storageAlignment,
-                surfaceBuffer,
-                surfaceBufferOffset) != VK_SUCCESS) {
-            freeProduct();
-            return false;
-        }
-
-        std::vector<glm::vec4> zeroGradients(vertexCount, glm::vec4(0.0f));
-        VkBuffer gradientBuffer = VK_NULL_HANDLE;
-        VkDeviceSize gradientBufferOffset = 0;
-        if (uploadDeviceBuffer(
-                memoryAllocator,
-                renderCommandPool,
-                zeroGradients.data(),
-                sizeof(glm::vec4) * vertexCount,
-                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                storageAlignment,
-                gradientBuffer,
-                gradientBufferOffset) != VK_SUCCESS) {
-            memoryAllocator.free(surfaceBuffer, surfaceBufferOffset);
-            freeProduct();
+        const VkBuffer surfaceBuffer = model->getSurfaceBuffer();
+        const VkBuffer gradientBuffer = model->getSurfaceGradientBuffer();
+        if (surfaceBuffer == VK_NULL_HANDLE || gradientBuffer == VK_NULL_HANDLE) {
+            outProduct = {};
             return false;
         }
 
         outProduct.modelRuntimeModelIds.push_back(runtimeModelId);
         outProduct.modelSurfaceBuffers.push_back(surfaceBuffer);
-        outProduct.modelSurfaceBufferOffsets.push_back(surfaceBufferOffset);
-        outProduct.modelSurfacePointCounts.push_back(static_cast<uint32_t>(vertexCount));
+        outProduct.modelSurfaceBufferOffsets.push_back(model->getSurfaceBufferOffset());
+        outProduct.modelSurfacePointCounts.push_back(static_cast<uint32_t>(model->getSurfaceVertexCount()));
         outProduct.modelSurfaceGradientBuffers.push_back(gradientBuffer);
-        outProduct.modelSurfaceGradientBufferOffsets.push_back(gradientBufferOffset);
+        outProduct.modelSurfaceGradientBufferOffsets.push_back(model->getSurfaceGradientBufferOffset());
     }
 
     if (!outProduct.isValid()) {
-        freeProduct();
-        return false;
-    }
-
-    if (!system.setupDescriptors(
-            outProduct.modelSurfaceBuffers,
-            outProduct.modelSurfaceBufferOffsets,
-            outProduct.modelSurfaceGradientBuffers,
-            outProduct.modelSurfaceGradientBufferOffsets)) {
-        freeProduct();
+        outProduct = {};
         return false;
     }
 
     outProduct.fluidTemperatureVolumeView = system.getFluidTemperatureVolumeView();
     outProduct.fluidTemperatureVolumeSampler = system.getFluidTemperatureVolumeSampler();
     outProduct.hasFluidVolume = (outProduct.fluidTemperatureVolumeView != VK_NULL_HANDLE);
+    outProduct.vemTraceTemperatureBuffer = system.getVemTraceTemperatureBuffer();
+    outProduct.vemTraceCount = system.getVemTraceCount();
+    outProduct.vemTraceValid = system.isVemTraceDisplayAvailable();
 
     HashProduct::seal(outProduct);
     return true;
 }
 
 const HeatSystem* HeatSystemComputeController::getSystem(uint64_t socketKey) const {
-    const auto systemIt = systemsBySocket.find(socketKey);
-    if (systemIt == systemsBySocket.end() || !systemIt->second) {
+    if (configuredConfigs.find(socketKey) == configuredConfigs.end()) {
         return nullptr;
     }
-    return systemIt->second.get();
+    const auto systemIt = generationSlots.find(socketKey);
+    if (systemIt == generationSlots.end() || !systemIt->second.current) {
+        return nullptr;
+    }
+    return systemIt->second.current.get();
 }
 
 HeatSystem* HeatSystemComputeController::getSystem(uint64_t socketKey) {
-    const auto systemIt = systemsBySocket.find(socketKey);
-    if (systemIt == systemsBySocket.end() || !systemIt->second) {
+    if (configuredConfigs.find(socketKey) == configuredConfigs.end()) {
         return nullptr;
     }
-    return systemIt->second.get();
+    const auto systemIt = generationSlots.find(socketKey);
+    if (systemIt == generationSlots.end() || !systemIt->second.current) {
+        return nullptr;
+    }
+    return systemIt->second.current.get();
 }
 
 const HeatSystemComputeController::Config* HeatSystemComputeController::getConfig(uint64_t socketKey) const {
+    const auto configIt = configuredConfigs.find(socketKey);
+    return configIt != configuredConfigs.end() ? &configIt->second : nullptr;
+}
+
+const HeatSystemComputeController::Config* HeatSystemComputeController::getBuildConfig(uint64_t socketKey) const {
+    const auto pendingIt = pendingConfigs.find(socketKey);
+    if (pendingIt != pendingConfigs.end()) {
+        return &pendingIt->second;
+    }
     const auto configIt = configuredConfigs.find(socketKey);
     return configIt != configuredConfigs.end() ? &configIt->second : nullptr;
 }

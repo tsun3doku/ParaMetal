@@ -3,6 +3,7 @@
 #include "serial/SerialTemperatureRuntime.hpp"
 
 #include <cstdint>
+#include <vector>
 
 class RuntimeQuery {
 public:
@@ -10,12 +11,7 @@ public:
 
     virtual bool isSimulationActive() const = 0;
     virtual bool isSimulationPaused() const = 0;
-    virtual float getSimulationTotalTime() const = 0;
     virtual uint32_t getSimulationRecordedTimelineFrames() const = 0;
-    virtual uint32_t getSimulationTimelineFrameCount() const = 0;
-    virtual float getSimulationDuration() const = 0;
-    virtual uint32_t getSimulationResetCounter() const = 0;
-    virtual uint32_t getSimulationRewindFrame() const = 0;
 
     virtual bool isTimelinePlaying() const = 0;
     virtual uint32_t getTimelineCurrentFrame() const = 0;
@@ -25,4 +21,5 @@ public:
     virtual float getTimelineCurrentSeconds() const = 0;
     virtual float getTimelineDurationSeconds() const = 0;
     virtual bool getSerialTemperatureStatus(uint64_t sourceKey, SerialTemperatureRuntime::Status& outStatus) const = 0;
+    virtual bool getHeatProbeTemperatures(uint64_t sourceKey, std::vector<float>& outTemperaturesC) const = 0;
 };

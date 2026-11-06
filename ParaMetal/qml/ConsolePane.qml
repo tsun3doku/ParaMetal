@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Effects
 import QtQuick.Layouts
 
 Rectangle {
@@ -65,7 +66,8 @@ Rectangle {
 
         TextField {
             Layout.fillWidth: true
-            Layout.preferredHeight: 34
+            Layout.preferredHeight: 42
+            verticalAlignment: TextInput.AlignVCenter
             placeholderText: ">>>"
             color: theme.text
             placeholderTextColor: theme.mutedText

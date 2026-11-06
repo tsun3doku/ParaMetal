@@ -5,13 +5,15 @@
 #include "heat/HeatFluidRuntime.hpp"
 #include "cuda/CudaVulkanDevice.hpp"
 #include "vulkan/VulkanDevice.hpp"
+
+#include <cuda_runtime.h>
 #include "../vem/VEMMeshBuilder.hpp"
 #include "../vem/VEMDiffusion.hpp"
-#include "../vem/VEMAgglomerator.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <unordered_map>
 
 
@@ -47,7 +49,7 @@ void HeatDomainRuntime::removeModel(uint32_t runtimeModelId) {
 void HeatDomainRuntime::setGlobalDomain(topology::GlobalDomain domain) {
     globalDomain = std::move(domain);
     vemMeshCache = vem::VEMMesh{};
-    vemCellRemapCache = vem::VEMCellRemap{};
+    invalidateTraceVisual();
     globalTopologyDirtyFlag = true;
     globalValuesDirtyFlag = true;
     globalAdvectionDirtyFlag = true;
@@ -57,7 +59,6 @@ void HeatDomainRuntime::clearGlobalDomain() {
     waitGlobalSolveIdle();
     globalDomain = topology::GlobalDomain{};
     vemMeshCache = vem::VEMMesh{};
-    vemCellRemapCache = vem::VEMCellRemap{};
     globalSolver.reset();
     globalTopologyDirtyFlag = false;
     globalValuesDirtyFlag = false;
@@ -80,6 +81,13 @@ void HeatDomainRuntime::clearGlobalDomain() {
     advectionBoundaryFluxCuda.cleanup();
     advectionFaceFlux.cleanup();
     advectionBoundaryFlux.cleanup();
+    traceVisualCudaA.cleanup();
+    traceVisualCudaB.cleanup();
+    traceVisualA.cleanup();
+    traceVisualB.cleanup();
+    traceVisualCount = 0;
+    invalidateTraceVisual();
+    traceVisualCurrentIsA = true;
     vulkanDeviceHandle = VK_NULL_HANDLE;
 }
 
@@ -207,6 +215,13 @@ bool HeatDomainRuntime::rebuildGlobalSolver(
     float fixedTimeStep) {
     waitGlobalSolveIdle();
     globalSolver.reset();
+    traceVisualCudaA.cleanup();
+    traceVisualCudaB.cleanup();
+    traceVisualA.cleanup();
+    traceVisualB.cleanup();
+    traceVisualCount = 0;
+    invalidateTraceVisual();
+    traceVisualCurrentIsA = true;
 
     if (!globalDomain.isValid() || globalDomain.fragments.empty()) {
         return false;
@@ -222,29 +237,20 @@ bool HeatDomainRuntime::rebuildGlobalSolver(
         return false;
     }
 
-    const vem::VEMCellInputs fragmentInputs{
-        cellConductivity, cellCapacityOverDt, cellSourceAdditions, fixedCellTemperatures };
-    vem::VEMAgglomerationResult agglomeration;
-    if (!vem::VEMAgglomerator::build(
-            vem::VEMMeshBuilder::buildFromGlobalDomain(globalDomain),
-            fragmentInputs, agglomeration)) {
-        std::cerr << "[HeatDomainRuntime] VEM cell agglomeration failed\n";
+    vemMeshCache = vem::VEMMeshBuilder::buildFromGlobalDomain(globalDomain);
+    std::string meshValidationReason;
+    if (!vem::validateMesh(vemMeshCache, cellConductivity, &meshValidationReason)) {
+        std::cerr << "[HeatDomainRuntime] VEM mesh validation failed: "
+                  << meshValidationReason << std::endl;
         return false;
     }
-    vemMeshCache = std::move(agglomeration.mesh);
-    vemCellRemapCache = std::move(agglomeration.remap);
-    cellConductivity = std::move(agglomeration.inputs.conductivity);
-    cellCapacityOverDt = std::move(agglomeration.inputs.capacityOverDt);
-    cellSourceAdditions = std::move(agglomeration.inputs.sourceAdditions);
-    fixedCellTemperatures = std::move(agglomeration.inputs.fixedTemperatures);
     for (auto& pair : vemMeshCache.traceCouplings) {
         pair.coefficientPerArea = HeatSimDefaults::contactConductance;
     }
     const uint32_t cellCount = static_cast<uint32_t>(vemMeshCache.cells.size());
     if (cellCount == 0 || vemMeshCache.totalTraceCount == 0 ||
-        vemCellRemapCache.fragmentToCell.size() != globalDomain.fragments.size() ||
-        vemCellRemapCache.cellFragmentOffsets.size() != size_t(cellCount) + 1 ||
-        vemCellRemapCache.cellFragmentOffsets.back() != vemCellRemapCache.cellFragments.size()) {
+        cellCount != globalDomain.fragments.size() ||
+        cellCapacityOverDt.size() != cellCount) {
         return false;
     }
 
@@ -257,6 +263,7 @@ bool HeatDomainRuntime::rebuildGlobalSolver(
             cellConductivity,
             cellCapacityOverDt,
             vemMeshCache.totalTraceCount,
+            vemMeshCache.perfectContinuityPairs,
             vemBcs.data(),
             static_cast<uint32_t>(vemBcs.size()),
             vemMeshCache.traceCouplings,
@@ -264,6 +271,33 @@ bool HeatDomainRuntime::rebuildGlobalSolver(
             traceSystem)) {
         std::cerr << "[HeatDomainRuntime] VEMDiffusion::assembleTraceSystem FAILED\n";
         return false;
+    }
+
+    if (traceSystem.traceCount > 0) {
+        const int cudaDevice = cudaVulkan::findDevice(vulkanDevice.getPhysicalDevice());
+        const VkDeviceSize traceBytes =
+            static_cast<VkDeviceSize>(traceSystem.traceCount) * sizeof(float);
+        const VkBufferUsageFlags traceUsage =
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        if (cudaDevice >= 0 &&
+            cudaSetDevice(cudaDevice) == cudaSuccess &&
+            traceVisualA.initialize(vulkanDevice, traceBytes, traceUsage) &&
+            traceVisualB.initialize(vulkanDevice, traceBytes, traceUsage) &&
+            traceVisualCudaA.ensureMapped(traceVisualA, cudaDevice) &&
+            traceVisualCudaB.ensureMapped(traceVisualB, cudaDevice)) {
+            traceVisualCount = traceSystem.traceCount;
+        } else {
+            std::cerr << "[HeatDomainRuntime] VEM trace visual buffer allocation failed; "
+                         "GMLS surface mode remains available" << std::endl;
+            traceVisualCudaA.cleanup();
+            traceVisualCudaB.cleanup();
+            traceVisualA.cleanup();
+            traceVisualB.cleanup();
+            traceVisualCount = 0;
+            invalidateTraceVisual();
+        }
     }
 
     std::vector<uint32_t> modelIds;
@@ -302,39 +336,17 @@ bool HeatDomainRuntime::rebuildGlobalSolver(
         block.gatherOffsets.push_back(0);
         for (uint32_t c = 0; c < cellCount; ++c) {
             if (vemMeshCache.cells[c].ownerModelId != runtimeModelId) continue;
-            const uint32_t memberBegin = vemCellRemapCache.cellFragmentOffsets[c];
-            const uint32_t memberEnd = vemCellRemapCache.cellFragmentOffsets[c + 1];
-            if (memberBegin >= memberEnd || memberEnd > vemCellRemapCache.cellFragments.size()) return false;
-            double totalWeight = 0.0;
-            for (uint32_t member = memberBegin; member < memberEnd; ++member) {
-                const uint32_t fragment = vemCellRemapCache.cellFragments[member];
-                if (fragment >= fragmentInputs.capacityOverDt.size() ||
-                    fragmentToModelLocalNode[fragment] == UINT32_MAX) {
-                    std::cerr << "[HeatDomainRuntime] invalid solid fragment mapping for VEM cell " << c << '\n';
-                    return false;
-                }
-                totalWeight += std::max(0.0f, fragmentInputs.capacityOverDt[fragment]);
+            if (fragmentToModelLocalNode[c] == UINT32_MAX) {
+                std::cerr << "[HeatDomainRuntime] invalid solid fragment mapping for VEM cell " << c << '\n';
+                return false;
             }
-            const bool useCapacityWeights = totalWeight > 0.0;
-            if (!(totalWeight > 0.0)) {
-                for (uint32_t member = memberBegin; member < memberEnd; ++member) {
-                    totalWeight += globalDomain.fragments[vemCellRemapCache.cellFragments[member]].volume;
-                }
-            }
-            if (!(totalWeight > 0.0)) return false;
-
+            const uint32_t localNode = fragmentToModelLocalNode[c];
             block.gatherSolverNodeIds.push_back(c);
-            for (uint32_t member = memberBegin; member < memberEnd; ++member) {
-                const uint32_t fragment = vemCellRemapCache.cellFragments[member];
-                block.gatherLocalNodeIds.push_back(fragmentToModelLocalNode[fragment]);
-                const double rawWeight = useCapacityWeights
-                    ? std::max(0.0f, fragmentInputs.capacityOverDt[fragment])
-                    : globalDomain.fragments[fragment].volume;
-                block.gatherWeights.push_back(static_cast<float>(rawWeight / totalWeight));
-                block.scatterLocalNodeIds.push_back(fragmentToModelLocalNode[fragment]);
-                block.scatterSolverNodeIds.push_back(c);
-            }
+            block.gatherLocalNodeIds.push_back(localNode);
+            block.gatherWeights.push_back(1.0f);
             block.gatherOffsets.push_back(static_cast<uint32_t>(block.gatherLocalNodeIds.size()));
+            block.scatterLocalNodeIds.push_back(localNode);
+            block.scatterSolverNodeIds.push_back(c);
         }
         if (!block.gatherSolverNodeIds.empty()) {
             solverTemperatureNodes.push_back(std::move(block));
@@ -358,16 +370,11 @@ bool HeatDomainRuntime::rebuildGlobalSolver(
         }
         for (uint32_t c = 0; c < cellCount; ++c) {
             if (vemMeshCache.cells[c].ownerModelId != topology::InvalidInstanceId) continue;
-            const uint32_t memberBegin = vemCellRemapCache.cellFragmentOffsets[c];
-            const uint32_t memberEnd = vemCellRemapCache.cellFragmentOffsets[c + 1];
-            if (memberBegin >= memberEnd || memberEnd > vemCellRemapCache.cellFragments.size() ||
-                memberEnd != memberBegin + 1 ||
-                localGlobalFragmentToFluidNode[vemCellRemapCache.cellFragments[memberBegin]] == UINT32_MAX) {
+            if (localGlobalFragmentToFluidNode[c] == UINT32_MAX) {
                 std::cerr << "[HeatDomainRuntime] fluid cells must remain one-to-one with RVD fragments\n";
                 return false;
             }
-            const uint32_t fragment = vemCellRemapCache.cellFragments[memberBegin];
-            const uint32_t localNode = localGlobalFragmentToFluidNode[fragment];
+            const uint32_t localNode = localGlobalFragmentToFluidNode[c];
             fluidBlock.gatherSolverNodeIds.push_back(c);
             fluidBlock.gatherLocalNodeIds.push_back(localNode);
             fluidBlock.gatherWeights.push_back(1.0f);
@@ -400,10 +407,23 @@ bool HeatDomainRuntime::rebuildGlobalSolver(
 
     globalSolver = std::make_unique<HeatGlobalSolver>();
     globalSolver->setSolverParameters(solverMaxIterations, solverConvergenceTolerance);
+    float* traceVisualPointerA = traceVisualCount > 0
+        ? static_cast<float*>(traceVisualCudaA.getPointer())
+        : nullptr;
+    float* traceVisualPointerB = traceVisualCount > 0
+        ? static_cast<float*>(traceVisualCudaB.getPointer())
+        : nullptr;
     if (!globalSolver->initialize(
             vulkanDevice, traceSystem, cellCapacityOverDt, cellSourceAdditions,
-            solverTemperatureNodes, fixedCellTemperatures)) {
+            solverTemperatureNodes, fixedCellTemperatures,
+            traceVisualPointerA, traceVisualPointerB)) {
         globalSolver.reset();
+        traceVisualCudaA.cleanup();
+        traceVisualCudaB.cleanup();
+        traceVisualA.cleanup();
+        traceVisualB.cleanup();
+        traceVisualCount = 0;
+        invalidateTraceVisual();
         clearGlobalSynchronization();
         return false;
     }
@@ -452,16 +472,13 @@ bool HeatDomainRuntime::rebuildGlobalSolver(
             for (size_t i = 0; i < globalDomain.faces.size(); ++i) {
                 const uint32_t fragmentA = globalDomain.faces[i].fragmentA;
                 const uint32_t fragmentB = globalDomain.faces[i].fragmentB;
-                faces[i].nodeA = fragmentA < fragmentCount
-                    ? vemCellRemapCache.fragmentToCell[fragmentA] : InvalidSolverNode;
-                faces[i].nodeB = fragmentB < fragmentCount
-                    ? vemCellRemapCache.fragmentToCell[fragmentB] : InvalidSolverNode;
+                faces[i].nodeA = fragmentA < fragmentCount ? fragmentA : InvalidSolverNode;
+                faces[i].nodeB = fragmentB < fragmentCount ? fragmentB : InvalidSolverNode;
             }
             std::vector<heat::AdvectionBoundaryFace> boundaryFaces(globalDomain.boundaryFaces.size());
             for (size_t i = 0; i < globalDomain.boundaryFaces.size(); ++i) {
                 const uint32_t fragment = globalDomain.boundaryFaces[i].fragment;
-                boundaryFaces[i].node = fragment < fragmentCount
-                    ? vemCellRemapCache.fragmentToCell[fragment] : InvalidSolverNode;
+                boundaryFaces[i].node = fragment < fragmentCount ? fragment : InvalidSolverNode;
                 boundaryFaces[i].domainFace = globalDomain.boundaryFaces[i].domainFace;
             }
             std::vector<float> cellVolumes(cellCount, 0.0f);
@@ -480,8 +497,6 @@ bool HeatDomainRuntime::rebuildGlobalSolver(
                 clearGlobalSynchronization();
                 return false;
             }
-            std::cerr << "[HeatDomainRuntime] advection configured: faces=" << faces.size()
-                      << " boundaryFaces=" << boundaryFaces.size() << std::endl;
         }
 
         float inflowTemps[6];
@@ -534,26 +549,11 @@ bool HeatDomainRuntime::updateGlobalValues(
         return false;
     }
 
-    const vem::VEMCellInputs fragmentInputs{
-        cellConductivity, cellCapacityOverDt, cellSourceAdditions, fixedCellTemperatures };
-    vem::VEMCellInputs remappedInputs;
-    if (!vem::VEMAgglomerator::remapInputs(
-            vemCellRemapCache, fragmentInputs, remappedInputs)) {
-        std::cerr << "[HeatDomainRuntime] failed to remap updated VEM cell inputs\n";
-        return false;
-    }
-    cellConductivity = std::move(remappedInputs.conductivity);
-    cellCapacityOverDt = std::move(remappedInputs.capacityOverDt);
-    cellSourceAdditions = std::move(remappedInputs.sourceAdditions);
-    fixedCellTemperatures = std::move(remappedInputs.fixedTemperatures);
-
     // Geometry is cached from the last topology build, only coefficients change here
     if (vemMeshCache.cells.empty()) {
         std::cerr << "[HeatDomainRuntime] updateGlobalValues: VEM mesh missing (topology rebuild required)\n";
         return false;
     }
-    const uint32_t cellCount = static_cast<uint32_t>(vemMeshCache.cells.size());
-
     std::vector<vem::DirichletTrace> dirichletTraces = buildDirichletTraces(vemMeshCache, fixedCellTemperatures);
 
     vem::VEMTraceSystem traceSystem;
@@ -563,6 +563,7 @@ bool HeatDomainRuntime::updateGlobalValues(
             cellConductivity,
             cellCapacityOverDt,
             vemMeshCache.totalTraceCount,
+            vemMeshCache.perfectContinuityPairs,
             vemBcs.data(),
             static_cast<uint32_t>(vemBcs.size()),
             vemMeshCache.traceCouplings,
@@ -638,10 +639,16 @@ bool HeatDomainRuntime::pollGlobalSolve(bool& completedDestinationIsA) {
         completedDestinationIsA = pendingDestinationIsA;
         // Capture completion value for render wait
         completedCudaReadyValue = pendingCudaReadyValue;
+        if (traceVisualCount > 0) {
+            traceVisualValid = true;
+            traceVisualCurrentIsA = completedDestinationIsA;
+            ++traceVisualRevision;
+        }
         return true;
     }
     if (result == HeatGlobalSolver::SolvePollResult::Failed) {
         globalSolveInFlight = false;
+        invalidateTraceVisual();
         return false;
     }
     return false;

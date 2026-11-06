@@ -12,13 +12,6 @@ enum class BoundaryType : uint32_t {
     Robin     = 3  // Convective (HTC)
 };
 
-namespace bc {
-inline constexpr uint32_t Adiabatic = 0;
-inline constexpr uint32_t Dirichlet = 1;
-inline constexpr uint32_t Neumann = 2;
-inline constexpr uint32_t Robin = 3;
-}
-
 struct BoundaryCondition {
     BoundaryType type = BoundaryType::Adiabatic;
     float temperatureC = 20.0f;

@@ -24,7 +24,7 @@ public:
 
         std::unordered_set<uint64_t> nextSocketKeys;
         for (const auto& [socketKey, package] : registry.points()) {
-            if (!registry.isCurrent(socketKey)) continue;
+            if (!registry.isPackageCurrent(socketKey)) continue;
             if (visibleKeys.find(socketKey) == visibleKeys.end()) {
                 continue;
             }
@@ -54,6 +54,24 @@ public:
         controller->finalizeSync();
     }
 
+    // Deterministic detach used by the removal protocol before a backend retires.
+    void detach(uint64_t socketKey) {
+        if (!controller || socketKey == 0) {
+            return;
+        }
+        controller->remove(socketKey);
+        activeSocketKeys.erase(socketKey);
+    }
+
+    void detachAll() {
+        for (uint64_t socketKey : activeSocketKeys) {
+            if (controller) {
+                controller->remove(socketKey);
+            }
+        }
+        activeSocketKeys.clear();
+    }
+
 private:
     bool tryBuildConfig(
         uint64_t socketKey,
@@ -63,6 +81,9 @@ private:
             return false;
         }
 
+        if (!products->isCurrent<PointProduct>(package.productHandle)) {
+            return false;
+        }
         const PointProduct* product = products->resolve<PointProduct>(package.productHandle);
         if (!product || !product->isValid()) {
             return false;
@@ -74,6 +95,7 @@ private:
         outConfig.pointCount = product->pointCount;
         outConfig.modelMatrix = product->modelMatrix;
         outConfig.displayHash = product->hashes.display;
+        HashBuilder::combine(outConfig.displayHash, package.productHandle.publicationId);
         return true;
     }
 

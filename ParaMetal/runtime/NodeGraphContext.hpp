@@ -31,16 +31,12 @@ struct NodeGraphDisplayControllers {
     VoronoiDisplayController& voronoi;
 };
 
-// Owns node-graph payloads, package-to-product compilation, and compute/display transports
 class NodeGraphContext {
 public:
     NodeGraphContext();
     ~NodeGraphContext();
 
-    bool initialize(
-        VulkanCoreContext& core,
-        ComputeContext& compute,
-        const NodeGraphDisplayControllers& displayControllers);
+    bool initialize(VulkanCoreContext& core, ComputeContext& compute, const NodeGraphDisplayControllers& displayControllers);
     void shutdown();
     bool isInitialized() const;
 

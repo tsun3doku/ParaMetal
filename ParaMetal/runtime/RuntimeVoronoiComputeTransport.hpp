@@ -2,9 +2,12 @@
 
 #include <cstdint>
 
-#include "voronoi/VoronoiSystemComputeController.hpp"
+#include "runtime/ComputeTransportResult.hpp"
+#include "runtime/RuntimeProducts.hpp"
 #include "runtime/package/RuntimePackages.hpp"
-#include "runtime/RuntimeProductManager.hpp"
+#include "voronoi/VoronoiSystemComputeController.hpp"
+
+class RuntimeProductManager;
 
 class RuntimeVoronoiComputeTransport {
 public:
@@ -16,7 +19,12 @@ public:
         products = updatedProducts;
     }
 
-    ProductHandle apply(uint64_t socketKey, const VoronoiPackage& package);
+    ComputeApplyResult apply(
+        uint64_t socketKey,
+        const VoronoiPackage& package,
+        VoronoiProduct& outProduct);
+    void commitPending(uint64_t socketKey);
+    void cancelPending(uint64_t socketKey);
     void remove(uint64_t socketKey);
 
 private:

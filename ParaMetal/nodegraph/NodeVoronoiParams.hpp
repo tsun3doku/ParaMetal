@@ -9,13 +9,15 @@ struct NodeGraphNode;
 struct VoronoiPreviewSettings {
     bool showVoronoi = false;
     bool showPoints = false;
-    bool showContactManifold = false;
 };
 
 struct VoronoiNodeParams {
     double cellSize = 0.005;
     int voxelResolution = 128;
     double volumePadding = 0.01;
+    int lloydIterations = int(voronoi::DefaultLloydIterations);
+    double lloydVolumeThreshold = voronoi::DefaultLloydVolumeThresholdFraction;
+    double lloydDamping = voronoi::DefaultLloydDamping;
     double contactRange = voronoi::DefaultContactRange;
     VoronoiPreviewSettings preview{};
 };

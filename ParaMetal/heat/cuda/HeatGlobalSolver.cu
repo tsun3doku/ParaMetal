@@ -42,8 +42,12 @@ public:
         const std::vector<float>& cellCapacityOverDt,
         const std::vector<float>& cellSourceAdditions,
         const std::vector<TemperatureNodes>& inputTemperatureNodes,
-        const std::vector<float>& fixedCellTemperatures = {}) {
+        const std::vector<float>& fixedCellTemperatures = {},
+        float* traceVisualA = nullptr,
+        float* traceVisualB = nullptr) {
         cleanup();
+        d_traceVisualA = traceVisualA;
+        d_traceVisualB = traceVisualB;
         if (traceSystem.traceCount == 0 || traceSystem.cellCount == 0 ||
             cellCapacityOverDt.size() != traceSystem.cellCount ||
             traceSystem.rowOffsets.size() != traceSystem.traceCount + 1 ||
@@ -81,8 +85,7 @@ public:
             return false;
         }
 
-        // Import temperature CUDA external memory
-        temperatureNodes.reserve(inputTemperatureNodes.size());
+            temperatureNodes.reserve(inputTemperatureNodes.size());
         for (const auto& inputNode : inputTemperatureNodes) {
             if (!inputNode.externalA || !inputNode.externalB || !inputNode.temperatureA || !inputNode.temperatureB) {
                 cleanup();
@@ -131,8 +134,7 @@ public:
             }
         }
 
-        // Allocate CSR matrix and trace vector memory
-        if (!d_rowOffsets.allocate(static_cast<uint32_t>(traceSystem.rowOffsets.size())) ||
+            if (!d_rowOffsets.allocate(static_cast<uint32_t>(traceSystem.rowOffsets.size())) ||
             !d_columnIndices.allocate(matrixValueCount) ||
             !d_values.allocate(matrixValueCount) ||
             !d_invDiag.allocate(traceCount) ||
@@ -151,14 +153,12 @@ public:
             return false;
         }
 
-        // Zero PCG warm-start vector while remaining scratch is overwritten before use
-        if (!cudaUtils::cudaCheck(cudaMemset(d_traceSolution.get(), 0, traceCount * sizeof(float)), "zero d_traceSolution")) {
+            if (!cudaUtils::cudaCheck(cudaMemset(d_traceSolution.get(), 0, traceCount * sizeof(float)), "zero d_traceSolution")) {
             cleanup();
             return false;
         }
 
-        // Allocate Cell memory
-        if (!d_cellState.allocate(cellCount) ||
+            if (!d_cellState.allocate(cellCount) ||
             !d_cellCapacityOverDt.allocate(cellCount) ||
             !d_cellSourceAdditions.allocate(cellCount) ||
             !d_cellSource.allocate(cellCount)) {
@@ -166,8 +166,7 @@ public:
             return false;
         }
 
-        // Allocate VEM Recovery & Scatter memory
-        const uint32_t totalCellTraceEntries = static_cast<uint32_t>(traceSystem.cellTraceIndices.size());
+            const uint32_t totalCellTraceEntries = static_cast<uint32_t>(traceSystem.cellTraceIndices.size());
         const uint32_t totalScatterEntries = static_cast<uint32_t>(traceSystem.traceScatterCells.size());
 
         if (!d_cellRecoveryScale.allocate(cellCount) ||
@@ -182,16 +181,14 @@ public:
             return false;
         }
 
-        // Upload CSR data
-        if (!d_rowOffsets.upload(traceSystem.rowOffsets.data(), static_cast<uint32_t>(traceSystem.rowOffsets.size())) ||
+            if (!d_rowOffsets.upload(traceSystem.rowOffsets.data(), static_cast<uint32_t>(traceSystem.rowOffsets.size())) ||
             !d_columnIndices.upload(traceSystem.columnIndices.data(), matrixValueCount) ||
             !d_values.upload(traceSystem.values.data(), matrixValueCount)) {
             cleanup();
             return false;
         }
 
-        // Upload Cell data
-        if (!d_cellCapacityOverDt.upload(cellCapacityOverDt.data(), cellCount)) {
+            if (!d_cellCapacityOverDt.upload(cellCapacityOverDt.data(), cellCount)) {
             cleanup();
             return false;
         }
@@ -205,8 +202,7 @@ public:
             return false;
         }
 
-        // Upload VEM Recovery & Scatter data
-        if (!d_cellRecoveryScale.upload(traceSystem.cellRecoveryScale.data(), cellCount) ||
+            if (!d_cellRecoveryScale.upload(traceSystem.cellRecoveryScale.data(), cellCount) ||
             !d_cellTraceOffsets.upload(traceSystem.cellTraceOffsets.data(), static_cast<uint32_t>(traceSystem.cellTraceOffsets.size())) ||
             !d_cellTraceIndices.upload(traceSystem.cellTraceIndices.data(), totalCellTraceEntries) ||
             !d_cellTraceWeights.upload(traceSystem.cellTraceWeights.data(), totalCellTraceEntries) ||
@@ -218,7 +214,7 @@ public:
             return false;
         }
 
-        // Dirichlet buffers preallocated before graph capture; sentinels represent inactive entries
+        // Dirichlet buffers with inactive sentinels
         if (!traceSystem.traceIsDirichlet.empty()) {
             if (!d_traceIsDirichlet.upload(traceSystem.traceIsDirichlet.data(), traceCount) ||
                 !d_traceDirichletValue.upload(traceSystem.traceDirichletValue.data(), traceCount)) {
@@ -240,8 +236,7 @@ public:
             heat::globalsolver::fillNaNKernel<<<cellBlocks, heat::globalsolver::BlockSize, 0, solveStream>>>(cellCount, d_fixedCellTemperatures.get());
         }
 
-        // Compute initial Jacobi inverse diagonal over traceCount
-        const uint32_t gridTraces = (traceCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
+            const uint32_t gridTraces = (traceCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
         heat::globalsolver::computeInvDiagKernel<<<gridTraces, heat::globalsolver::BlockSize, 0, solveStream>>>(
             traceCount, d_rowOffsets.get(), d_columnIndices.get(), d_values.get(), d_invDiag.get());
         if (!cudaUtils::cudaCheck(cudaStreamSynchronize(solveStream), "computeInvDiagKernel")) {
@@ -249,8 +244,7 @@ public:
             return false;
         }
 
-        // Upload the graph-independent PCG parameters before graph construction.
-        cudaPcg::PcgConfig initialConfig{ solverMaxIterations, solverConvergenceTolerance };
+            cudaPcg::PcgConfig initialConfig{ solverMaxIterations, solverConvergenceTolerance };
         if (!d_config.upload(&initialConfig, 1)) {
             cleanup();
             return false;
@@ -258,8 +252,7 @@ public:
 
         initialized = true;
 
-        // Build execution graphs
-        if (!buildGraphs()) {
+            if (!buildGraphs()) {
             std::cerr << "[HeatGlobalSolver] Graph construction failed." << std::endl;
             cleanup();
             return false;
@@ -311,8 +304,7 @@ public:
             return false;
         }
 
-        // Refresh constraint buffers via sentinels without reallocating captured memory
-        if (!traceSystem.traceIsDirichlet.empty()) {
+            if (!traceSystem.traceIsDirichlet.empty()) {
             if (!d_traceIsDirichlet.uploadAsync(traceSystem.traceIsDirichlet.data(), traceCount, solveStream) ||
                 !d_traceDirichletValue.uploadAsync(traceSystem.traceDirichletValue.data(), traceCount, solveStream)) {
                 return false;
@@ -353,8 +345,7 @@ public:
 
         disableAdvection();
 
-        // Reject non-positive or non-finite cell volumes immediately
-        std::vector<float> invVolumes(cellCount, 0.0f);
+            std::vector<float> invVolumes(cellCount, 0.0f);
         for (uint32_t c = 0; c < cellCount; ++c) {
             const float volume = cellVolumes[c];
             if (!(volume > 0.0f) || !std::isfinite(volume)) {
@@ -447,8 +438,7 @@ public:
             cudaEventRecord(solveStartEvent, solveStream);
         }
 
-        // Wait for destination buffer last reader or current frame flux staging copy
-        if (destinationVulkanReleaseValue > 0) {
+            if (destinationVulkanReleaseValue > 0) {
             cudaExternalSemaphoreWaitParams waitParams{};
             waitParams.params.fence.value = destinationVulkanReleaseValue;
             if (!cudaUtils::cudaCheck(cudaWaitExternalSemaphoresAsync(&vulkanReleaseSemaphore, &waitParams, 1, solveStream), "wait Vulkan release")) {
@@ -456,10 +446,8 @@ public:
             }
         }
 
-        // Everything from here on is GPU compute enqueued on the solve stream.
-
-        // Gather source temperature into d_cellState
-        for (const auto& node : temperatureNodes) {
+    
+            for (const auto& node : temperatureNodes) {
             const uint32_t blocks = (node.gatherGroupCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
             heat::globalsolver::gatherTemperaturesKernel<<<blocks, heat::globalsolver::BlockSize, 0, solveStream>>>(
                 sourceIsA ? node.d_temperatureA : node.d_temperatureB,
@@ -471,15 +459,13 @@ public:
                 d_cellState.get());
         }
 
-        // Launch device-controlled conditional subcycle graph for fine conservative advection
-        if (advectionExec) {
+            if (advectionExec) {
             if (!cudaUtils::cudaCheck(cudaGraphLaunch(advectionExec, solveStream), "launch advection graph")) {
                 return false;
             }
         }
 
-        // Three ordered launches on solveStream: prologue, PCG loop, recovery + scatter. Stream order supplies the dependencies.
-        if (!preExec || !pcgExec || !postExecAToB || !postExecBToA) {
+            if (!preExec || !pcgExec || !postExecAToB || !postExecBToA) {
             std::cerr << "[HeatGlobalSolver] solve graphs are not built" << std::endl;
             return false;
         }
@@ -493,8 +479,22 @@ public:
             return false;
         }
 
-        // Signal CUDA ready semaphore
-        if (cudaReadyValue > 0) {
+            if (traceCount > 0) {
+            float* traceDestination = sourceIsA ? d_traceVisualB : d_traceVisualA;
+            if (traceDestination != nullptr &&
+                !cudaUtils::cudaCheck(
+                    cudaMemcpyAsync(
+                        traceDestination,
+                        d_traceSolution.get(),
+                        traceCount * sizeof(float),
+                        cudaMemcpyDeviceToDevice,
+                        solveStream),
+                    "copy trace solution to visual buffer")) {
+                return false;
+            }
+        }
+
+            if (cudaReadyValue > 0) {
             cudaExternalSemaphoreSignalParams signalParams{};
             signalParams.params.fence.value = cudaReadyValue;
             if (!cudaUtils::cudaCheck(cudaSignalExternalSemaphoresAsync(&cudaReadySemaphore, &signalParams, 1, solveStream), "signal CUDA ready")) {
@@ -502,8 +502,7 @@ public:
             }
         }
 
-        // Asynchronously download solve status to pinned memory on solve stream
-        if (advectionFaceCount > 0 && d_advectionTimestep.get() && pinnedAdvectionTimestep &&
+            if (advectionFaceCount > 0 && d_advectionTimestep.get() && pinnedAdvectionTimestep &&
             !d_advectionTimestep.downloadAsync(pinnedAdvectionTimestep, 1, solveStream)) {
             return false;
         }
@@ -511,8 +510,7 @@ public:
             return false;
         }
 
-        // Record solve completion event after all graph launches and staging copies
-        if (solveEndEvent) {
+            if (solveEndEvent) {
             cudaEventRecord(solveEndEvent, solveStream);
         }
 
@@ -543,8 +541,7 @@ public:
     }
 
     bool hasSolveFailed() {
-        // Check pinned advection and PCG completion status to reject failed steps
-        if (advectionFaceCount > 0 && d_advectionTimestep.get() && pinnedAdvectionTimestep) {
+            if (advectionFaceCount > 0 && d_advectionTimestep.get() && pinnedAdvectionTimestep) {
             const cudaSubcycle::SubcycleTimestep& timestep = *pinnedAdvectionTimestep;
             if (timestep.status != cudaSubcycle::SubcycleStatus::Ok) {
                 std::cerr << "[HeatGlobalSolver] advection step rejected: status="
@@ -578,12 +575,10 @@ public:
     }
 
     void setSolverParameters(uint32_t maxIterations, float convergenceTolerance) {
-        // 0 / non-positive means "keep the current value" (authoring default).
-        if (maxIterations > 0u) solverMaxIterations = maxIterations;
+            if (maxIterations > 0u) solverMaxIterations = maxIterations;
         if (convergenceTolerance > 0.0f) solverConvergenceTolerance = convergenceTolerance;
         if (!initialized || !d_config.get()) return;
-        // Solver parameters reside in device memory read by graph kernels without rebuilds
-        waitIdle();
+            waitIdle();
         cudaSetDevice(cudaDevice);
         cudaPcg::PcgConfig cfg{ solverMaxIterations, solverConvergenceTolerance };
         d_config.upload(&cfg, 1);
@@ -620,6 +615,8 @@ public:
         d_invDiag.reset();
         d_traceRhs.reset();
         d_traceSolution.reset();
+        d_traceVisualA = nullptr;
+        d_traceVisualB = nullptr;
         d_r.reset();
         d_z.reset();
         d_p.reset();
@@ -686,12 +683,11 @@ public:
     }
 
 private:
-    // Direction-independent prologue of the solve sequence.
     void recordPrePcgSequence(cudaStream_t stream) {
         const uint32_t cellBlocks = (cellCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
         const uint32_t traceBlocks = (traceCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
 
-        // 1. Build authoritative cell source: S_E = (C_E / dt) * u_E^adv + S_E^add
+        // cell source: S_E = (C_E / dt) * u_E^adv + S_E^add
         heat::globalsolver::buildCellSourceKernel<<<cellBlocks, heat::globalsolver::BlockSize, 0, stream>>>(
             cellCount,
             d_cellCapacityOverDt.get(),
@@ -699,7 +695,7 @@ private:
             d_cellSourceAdditions.get(),
             d_cellSource.get());
 
-        // 2. Assemble trace RHS: b_t = sum_E (w_Et * S_E / d_E) + b_bc, with Dirichlet override
+        // trace RHS: b_t = sum_E (w_Et * S_E / d_E) + b_bc
         heat::globalsolver::assembleTraceRhsKernel<<<traceBlocks, heat::globalsolver::BlockSize, 0, stream>>>(
             traceCount,
             d_traceScatterOffsets.get(),
@@ -713,11 +709,11 @@ private:
             d_traceRhs.get());
     }
 
-    // Recovery and scatter; direction only selects the destination buffer.
+    // recovery and scatter destination
     void recordPostPcgSequence(bool sourceIsA, cudaStream_t stream) {
         const uint32_t cellBlocks = (cellCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
 
-        // 3. Recover cell temperatures: u_E = (1 / d_E) * (sum_f w_Ef * lambda_f + S_E), with fixed temperature override
+        // cell temperature recovery: u_E = (1 / d_E) * (sum_f w_Ef * lambda_f + S_E)
         heat::globalsolver::recoverCellTemperaturesKernel<<<cellBlocks, heat::globalsolver::BlockSize, 0, stream>>>(
             cellCount,
             d_cellRecoveryScale.get(),
@@ -729,7 +725,7 @@ private:
             d_fixedCellTemperatures.get(),
             d_cellState.get());
 
-        // 4. Scatter solution into the alternate destination buffer
+        // scatter solution to alternate destination buffer
         for (const auto& node : temperatureNodes) {
             const uint32_t blocks = (node.scatterCount + heat::globalsolver::BlockSize - 1) / heat::globalsolver::BlockSize;
             heat::globalsolver::scatterTemperaturesKernel<<<blocks, heat::globalsolver::BlockSize, 0, stream>>>(
@@ -762,11 +758,9 @@ private:
     bool buildGraphs() {
         if (!solveStream) return false;
 
-        // Standalone PCG graph executable because CUDA disallows conditional nodes in child graphs
-        if (!buildPcgGraph()) return false;
+            if (!buildPcgGraph()) return false;
 
-        // Capture the direction-independent prologue.
-        {
+            {
             cudaGraph_t graph = nullptr;
             if (!cudaUtils::cudaCheck(cudaStreamBeginCapture(solveStream, cudaStreamCaptureModeGlobal), "begin capture pre")) return false;
             recordPrePcgSequence(solveStream);
@@ -775,8 +769,7 @@ private:
             cudaGraphDestroy(graph);
         }
 
-        // Capture recovery + scatter to B.
-        {
+            {
             cudaGraph_t graph = nullptr;
             if (!cudaUtils::cudaCheck(cudaStreamBeginCapture(solveStream, cudaStreamCaptureModeGlobal), "begin capture post AB")) return false;
             recordPostPcgSequence(true, solveStream);
@@ -785,8 +778,7 @@ private:
             cudaGraphDestroy(graph);
         }
 
-        // Capture recovery + scatter to A.
-        {
+            {
             cudaGraph_t graph = nullptr;
             if (!cudaUtils::cudaCheck(cudaStreamBeginCapture(solveStream, cudaStreamCaptureModeGlobal), "begin capture post BA")) return false;
             recordPostPcgSequence(false, solveStream);
@@ -798,7 +790,6 @@ private:
         return true;
     }
 
-    // Tears down advection so the solver degrades to heat-only on any failure.
     void disableAdvection() {
         if (advectionExec) { cudaGraphExecDestroy(advectionExec); advectionExec = nullptr; }
         advectionFaceCount = 0;
@@ -950,6 +941,8 @@ private:
     cudaUtils::CudaBuffer<float> d_invDiag;
     cudaUtils::CudaBuffer<float> d_traceRhs;
     cudaUtils::CudaBuffer<float> d_traceSolution;
+    float* d_traceVisualA = nullptr;
+    float* d_traceVisualB = nullptr;
     cudaUtils::CudaBuffer<float> d_r;
     cudaUtils::CudaBuffer<float> d_z;
     cudaUtils::CudaBuffer<float> d_p;
@@ -990,7 +983,6 @@ private:
     cudaUtils::CudaBuffer<uint32_t> d_advectionIter;
     cudaUtils::CudaBuffer<float> d_inflowTemperatures;
 
-    // Explicit fine-advection CFL target and substep cap safety ceiling
     static constexpr float AdvectionTargetCfl = 1.0f;
     static constexpr uint32_t MaxAdvectionSubsteps = 1024;
 
@@ -1001,7 +993,6 @@ private:
     uint32_t matrixValueCount = 0;
     bool initialized = false;
 
-    // Runtime PCG knobs uploaded to device config without graph rebuilds
     uint32_t solverMaxIterations = 200;
     float solverConvergenceTolerance = 3e-3f;
 };
@@ -1015,9 +1006,12 @@ bool HeatGlobalSolver::initialize(
     const std::vector<float>& cellCapacityOverDt,
     const std::vector<float>& cellSourceAdditions,
     const std::vector<TemperatureNodes>& temperatureNodes,
-    const std::vector<float>& fixedCellTemperatures) {
+    const std::vector<float>& fixedCellTemperatures,
+    float* traceVisualA,
+    float* traceVisualB) {
     return implementation->initialize(
-        vulkanDevice, traceSystem, cellCapacityOverDt, cellSourceAdditions, temperatureNodes, fixedCellTemperatures);
+        vulkanDevice, traceSystem, cellCapacityOverDt, cellSourceAdditions,
+        temperatureNodes, fixedCellTemperatures, traceVisualA, traceVisualB);
 }
 
 bool HeatGlobalSolver::launch(

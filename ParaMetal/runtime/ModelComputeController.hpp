@@ -31,11 +31,14 @@ public:
         ModelUploader& modelUploader,
         std::atomic<bool>& isOperating);
 
-    void apply(uint64_t socketKey, const Config& config);
+    bool apply(uint64_t socketKey, const Config& config);
     bool buildProduct(uint64_t socketKey, ModelProduct& product) const;
     void remove(uint64_t socketKey);
     void disableAll();
     bool tryGetSocketKey(uint32_t runtimeModelId, uint64_t& outSocketKey) const;
+    bool hasAnyRetiring() const;
+    void clearAllRetiring();
+    uint64_t getCurrentComputeHash(uint64_t socketKey) const;
 
 private:
     class OperatingScope {

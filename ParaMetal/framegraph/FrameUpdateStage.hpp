@@ -4,7 +4,7 @@
 
 #include "scene/SceneView.hpp"
 
-class InputController;
+class InteractionContext;
 class UniformBufferManager;
 class ModelRegistry;
 class LightingSystem;
@@ -15,7 +15,7 @@ class ModelSelection;
 class FrameUpdateStage {
 public:
     FrameUpdateStage(
-        InputController& inputController,
+        InteractionContext& interaction,
         UniformBufferManager& uniformBufferManager,
         ModelRegistry& modelRegistry,
         LightingSystem& lightingSystem,
@@ -27,7 +27,7 @@ public:
     void updateFrameState(uint32_t frameIndex, const render::SceneView& sceneView);
 
 private:
-    InputController& inputController;
+    InteractionContext& interaction;
     UniformBufferManager& uniformBufferManager;
     ModelRegistry& modelRegistry;
     LightingSystem& lightingSystem;

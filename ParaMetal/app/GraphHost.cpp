@@ -62,29 +62,20 @@ void GraphHost::loadGraphState(const NodeGraphState& state) {
     emit graphStateLoaded(true, {});
 }
 
+void GraphHost::requestExport(int nodeId) {
+    publishChanges();
+    emit exportRequested(nodeId);
+}
+
+void GraphHost::requestExportProducts(int nodeId, qulonglong requestId, qulonglong graphRevision) {
+    if (nodeId <= 0 || requestId == 0) return;
+    publishChanges();
+    emit exportProductsRequested(nodeId, requestId, graphRevision);
+}
+
 void GraphHost::resetGraph() {
     editor.resetToDefaultGraph();
     publishChanges();
-}
-
-void GraphHost::replaceGraph(const NodeGraphState& state) {
-    uint32_t nextNodeId = 1;
-    uint32_t nextSocketId = 1;
-    uint32_t nextEdgeId = 1;
-    for (const auto& entry : state.nodes) {
-        nextNodeId = std::max(nextNodeId, entry.first + 1);
-        for (const NodeGraphSocket& socket : entry.second.inputs) nextSocketId = std::max(nextSocketId, socket.id.value + 1);
-        for (const NodeGraphSocket& socket : entry.second.outputs) nextSocketId = std::max(nextSocketId, socket.id.value + 1);
-    }
-    for (const auto& entry : state.edges) nextEdgeId = std::max(nextEdgeId, entry.first + 1);
-
-    std::string error;
-    if (!graph.loadSerializedState(state, nextNodeId, nextSocketId, nextEdgeId, error)) {
-        return;
-    }
-    publishedRevision = graph.getRevision();
-    emit graphReplaced(graph.state());
-    publishTimelineRange();
 }
 
 void GraphHost::addNode(const QString& typeId, float x, float y) {
@@ -176,7 +167,18 @@ void GraphHost::publishChanges() {
     if (graph.consumeChanges(publishedRevision, delta)) {
         emit graphChanged(delta);
     }
-    publishTimelineRange();
+
+    bool nonLayout = true;
+    if (!delta.changes.empty()) {
+        nonLayout = false;
+        for (const NodeGraphChange& change : delta.changes) {
+            if (change.reason != NodeGraphChangeReason::Layout) {
+                nonLayout = true;
+                break;
+            }
+        }
+    }
+    if (nonLayout) publishTimelineRange();
 }
 
 void GraphHost::publishTimelineRange() {

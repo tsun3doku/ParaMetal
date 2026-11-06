@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Effects
 import QtQuick.Layouts
 import ParaMetal
 
@@ -40,7 +41,7 @@ Rectangle {
         }
 
         Rectangle {
-            SplitView.preferredHeight: 260
+            SplitView.preferredHeight: 380
             SplitView.minimumHeight: 150
             color: theme.panelBackground
             border.width: 1
@@ -249,6 +250,11 @@ Rectangle {
                             sourceSize.width: width
                             sourceSize.height: height
                             fillMode: Image.PreserveAspectFit
+                            layer.enabled: true
+                            layer.effect: MultiEffect {
+                                colorization: 1.0
+                                colorizationColor: theme.navigationText
+                            }
                         }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter

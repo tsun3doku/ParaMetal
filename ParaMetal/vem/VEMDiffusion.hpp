@@ -32,21 +32,6 @@ struct DirichletTrace {
     float value = 0.0f;
 };
 
-struct CellValidation {
-    bool passed = false;
-    float volume = 0.0f;
-    float surfaceArea = 0.0f;
-    float detNNT = 0.0f;
-    float conditionNNT = 0.0f;
-    float minEigenNNT = 0.0f;
-    float maxEigenNNT = 0.0f;
-    float gaussConsistencyError = 0.0f;
-    float closureError = 0.0f;
-    bool choleskySucceeded = false;
-    int failedPivot = -1;
-    double failedPivotValue = 0.0;
-};
-
 struct VEMTraceSystem {
     uint32_t traceCount = 0;
     uint32_t cellCount = 0;
@@ -74,8 +59,7 @@ public:
     static bool validateElementGeometry(
         const std::vector<FaceGeometry>& faceIncidences,
         const CellGeometry& cell,
-        double conductivity,
-        CellValidation& outValidation);
+        double conductivity);
 
     static bool assembleTraceSystem(
         const std::vector<FaceGeometry>& faceIncidences,
@@ -83,6 +67,7 @@ public:
         const std::vector<float>& cellDiffusionCoefficient,
         const std::vector<float>& cellStorageOverDt,
         uint32_t totalTraceCount,
+        const std::vector<uint64_t>& perfectContinuityPairs,
         const BoundaryCondition* boundaries,
         uint32_t boundaryCount,
         const std::vector<TraceCoupling>& traceCouplings,
@@ -114,8 +99,7 @@ private:
         const std::vector<FaceGeometry>& faceIncidences,
         const CellGeometry& cell,
         double conductivity,
-        std::vector<double>& W_E,
-        CellValidation& outValidation);
+        std::vector<double>& W_E);
     static bool invert3x3(const double A[3][3], double invA[3][3]);
     static bool choleskyInvert(
         const std::vector<double>& matrix,

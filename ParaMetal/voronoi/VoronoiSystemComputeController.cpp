@@ -6,6 +6,8 @@
 #include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/VulkanDevice.hpp"
 
+#include <iostream>
+
 VoronoiSystemComputeController::VoronoiSystemComputeController(
     VulkanDevice& vulkanDevice,
     MemoryAllocator& memoryAllocator,
@@ -22,6 +24,7 @@ bool VoronoiSystemComputeController::apply(uint64_t socketKey, const Config& con
 
     const auto configIt = configuredHashes.find(socketKey);
     if (configIt != configuredHashes.end() && configIt->second == config.computeHash) {
+        cancelCandidate(socketKey);
         return true;
     }
 
@@ -31,9 +34,20 @@ bool VoronoiSystemComputeController::apply(uint64_t socketKey, const Config& con
     }
     failedComputeHashes.erase(socketKey);
 
-    // Build replacement generation off to the side while active generation remains live
+    const auto slotIt = generationSlots.find(socketKey);
+    if (slotIt != generationSlots.end() &&
+        (slotIt->second.retiring || slotIt->second.candidate)) {
+        std::cerr << "[VoronoiSystemComputeController] generation slot occupied for socket "
+                  << socketKey << std::endl;
+        return false;
+    }
+
     auto candidate = std::make_unique<VoronoiSystem>(vulkanDevice, memoryAllocator, commandPool);
     candidate->setParams(config.cellSize, config.voxelResolution);
+    candidate->setLloydParams(
+        config.lloydIterations,
+        config.lloydVolumeThreshold,
+        config.lloydDamping);
     candidate->setContactRange(config.contactRange);
     candidate->setSeedPositions(config.pointPositions, config.pointDomainCorners);
     candidate->setGlobalGeometry(
@@ -42,26 +56,19 @@ bool VoronoiSystemComputeController::apply(uint64_t socketKey, const Config& con
         config.globalRemeshTriangleIndices,
         config.globalRemeshSurfacePositions,
         config.globalRemeshSurfaceTriangleIndices,
+        config.globalRemeshWorldToModel,
         config.volumePadding);
 
     if (!candidate->ensureConfigured()) {
-        // Retain failed candidate to avoid destroying resources with in-flight GPU work
-        retainedSystems.push_back(std::move(candidate));
+        generationSlots[socketKey].retiring = std::move(candidate);
         failedComputeHashes[socketKey] = config.computeHash;
         return false;
     }
 
-    auto it = systemsBySocket.find(socketKey);
-    if (it != systemsBySocket.end()) {
-        if (it->second) {
-            retainedSystems.push_back(std::move(it->second));
-        }
-        it->second = std::move(candidate);
-    } else {
-        systemsBySocket.emplace(socketKey, std::move(candidate));
-    }
-
-    configuredHashes[socketKey] = config.computeHash;
+    GenerationSlot& slot = generationSlots[socketKey];
+    configuredHashes.try_emplace(socketKey, 0);
+    pendingHashes[socketKey] = config.computeHash;
+    slot.candidate = std::move(candidate);
     failedComputeHashes.erase(socketKey);
     return true;
 }
@@ -71,57 +78,126 @@ void VoronoiSystemComputeController::remove(uint64_t socketKey) {
         return;
     }
 
-    configuredHashes.erase(socketKey);
     failedComputeHashes.erase(socketKey);
-    auto it = systemsBySocket.find(socketKey);
-    if (it != systemsBySocket.end()) {
-        if (it->second) {
-            retainedSystems.push_back(std::move(it->second));
+    retireCurrent(socketKey);
+}
+
+bool VoronoiSystemComputeController::hasAnyRetiring() const {
+    for (const auto& [socketKey, slot] : generationSlots) {
+        (void)socketKey;
+        if (slot.retiring) return true;
+    }
+    return false;
+}
+
+void VoronoiSystemComputeController::clearAllRetiring() {
+    for (auto it = generationSlots.begin(); it != generationSlots.end();) {
+        GenerationSlot& slot = it->second;
+        slot.retiring.reset();
+        if (configuredHashes.find(it->first) == configuredHashes.end()) {
+            slot.current.reset();
+            slot.candidate.reset();
         }
-        systemsBySocket.erase(it);
+        if (!slot.current && !slot.candidate && !slot.retiring) {
+            it = generationSlots.erase(it);
+        } else {
+            ++it;
+        }
     }
 }
 
-void VoronoiSystemComputeController::disableAll() {
-    configuredHashes.clear();
-    failedComputeHashes.clear();
-    for (auto& [socketKey, system] : systemsBySocket) {
-        (void)socketKey;
-        if (system) {
-            retainedSystems.push_back(std::move(system));
+void VoronoiSystemComputeController::commitPending(uint64_t socketKey) noexcept {
+    const auto it = generationSlots.find(socketKey);
+    if (it == generationSlots.end()) {
+        return;
+    }
+    GenerationSlot& slot = it->second;
+    assert(slot.retiring == nullptr);
+    if (slot.retiring != nullptr) {
+        return;
+    }
+    if (slot.candidate) {
+        slot.retiring = std::move(slot.current);
+        slot.current = std::move(slot.candidate);
+    }
+
+    const auto pending = pendingHashes.find(socketKey);
+    if (pending != pendingHashes.end()) {
+        const auto committed = configuredHashes.find(socketKey);
+        if (committed != configuredHashes.end()) {
+            committed->second = pending->second;
+        }
+        pendingHashes.erase(pending);
+    }
+    failedComputeHashes.erase(socketKey);
+}
+
+void VoronoiSystemComputeController::cancelCandidate(uint64_t socketKey) {
+    const auto it = generationSlots.find(socketKey);
+    if (it != generationSlots.end() && it->second.candidate) {
+        assert(it->second.retiring == nullptr);
+        if (!it->second.retiring) {
+            it->second.retiring = std::move(it->second.candidate);
+        }
+        if (!it->second.current) {
+            const auto committed = configuredHashes.find(socketKey);
+            if (committed != configuredHashes.end() && committed->second == 0) {
+                configuredHashes.erase(committed);
+            }
         }
     }
-    systemsBySocket.clear();
+    pendingHashes.erase(socketKey);
+}
+
+void VoronoiSystemComputeController::retireCurrent(uint64_t socketKey) {
+    configuredHashes.erase(socketKey);
+    pendingHashes.erase(socketKey);
+
+    const auto it = generationSlots.find(socketKey);
+    if (it == generationSlots.end()) {
+        return;
+    }
+    GenerationSlot& slot = it->second;
+    if (slot.candidate && !slot.retiring) {
+        slot.retiring = std::move(slot.candidate);
+    }
+    if (slot.current && !slot.retiring) {
+        slot.retiring = std::move(slot.current);
+    }
+}
+
+void VoronoiSystemComputeController::quiescedClear() noexcept {
+    generationSlots.clear();
+    configuredHashes.clear();
+    pendingHashes.clear();
+    failedComputeHashes.clear();
 }
 
 VoronoiSystem* VoronoiSystemComputeController::getSystem(uint64_t socketKey) {
-    const auto it = systemsBySocket.find(socketKey);
-    if (it == systemsBySocket.end() || !it->second || !it->second->isReady()) {
+    if (configuredHashes.find(socketKey) == configuredHashes.end()) {
         return nullptr;
     }
-    return it->second.get();
-}
-
-const VoronoiSystem* VoronoiSystemComputeController::getSystem(uint64_t socketKey) const {
-    const auto it = systemsBySocket.find(socketKey);
-    if (it == systemsBySocket.end() || !it->second || !it->second->isReady()) {
+    const auto it = generationSlots.find(socketKey);
+    if (it == generationSlots.end() || !it->second.current || !it->second.current->isReady()) {
         return nullptr;
     }
-    return it->second.get();
+    return it->second.current.get();
 }
 
 bool VoronoiSystemComputeController::buildProduct(uint64_t socketKey, VoronoiProduct& outProduct) {
     outProduct = {};
-    if (!isConfigured(socketKey)) {
+    const auto slotIt = generationSlots.find(socketKey);
+    if (slotIt == generationSlots.end()) {
         return false;
     }
-    VoronoiSystem* voronoiSystem = getSystem(socketKey);
-    if (!voronoiSystem) {
+    VoronoiSystem* voronoiSystem = slotIt->second.candidate
+        ? slotIt->second.candidate.get()
+        : slotIt->second.current.get();
+    if (!voronoiSystem || !voronoiSystem->isReady()) {
         return false;
     }
 
     VoronoiSystemBuildStage& buildStage = voronoiSystem->getBuildStage();
-    outProduct.globalDisplayRuntimeModelIds = buildStage.getGlobalDisplayRuntimeModelIds();
     outProduct.globalSeedPositions = buildStage.getGlobalSeedPositions();
     outProduct.globalDomainCorners = buildStage.getGlobalDomainCorners();
     outProduct.globalVolumeGridMin = buildStage.getGlobalVolumeGridMin();
@@ -129,7 +205,8 @@ bool VoronoiSystemComputeController::buildProduct(uint64_t socketKey, VoronoiPro
     outProduct.globalVolumeGridCellSize = buildStage.getGlobalVolumeGridCellSize();
     outProduct.fragmentInstanceIds = buildStage.getGlobalFragmentInstanceIds();
     outProduct.fragmentSeedIds = buildStage.getGlobalFragmentSeedIds();
-    outProduct.seedToFragment = buildStage.getGlobalSeedToFragment();
+    outProduct.cellFragmentOffsets = buildStage.getGlobalCellFragmentOffsets();
+    outProduct.cellFragments = buildStage.getGlobalCellFragments();
     outProduct.fragmentCentroids = buildStage.getGlobalFragmentCentroids();
     outProduct.fragmentVolumes = buildStage.getGlobalFragmentVolumes();
     outProduct.nominalCellSize = buildStage.getGlobalNominalCellSize();
@@ -144,7 +221,9 @@ bool VoronoiSystemComputeController::buildProduct(uint64_t socketKey, VoronoiPro
     outProduct.faceTypes = buildStage.getGlobalFaceTypes();
     outProduct.faceDomainFaces = buildStage.getGlobalFaceDomainFaces();
     outProduct.contactCouplingFaceA = buildStage.getGlobalContactCouplingFaceA();
+    outProduct.contactCouplingFragmentA = buildStage.getGlobalContactCouplingFragmentA();
     outProduct.contactCouplingFaceB = buildStage.getGlobalContactCouplingFaceB();
+    outProduct.contactCouplingFragmentB = buildStage.getGlobalContactCouplingFragmentB();
     outProduct.contactCouplingAreas = buildStage.getGlobalContactCouplingAreas();
     outProduct.boundaryFaceIndices = buildStage.getGlobalBoundaryFaceIndices();
     outProduct.boundaryFaceFragments = buildStage.getGlobalBoundaryFaceFragments();
@@ -154,18 +233,18 @@ bool VoronoiSystemComputeController::buildProduct(uint64_t socketKey, VoronoiPro
     outProduct.globalFaceCount = static_cast<uint32_t>(outProduct.faceAreasA.size());
     outProduct.globalContactCouplingCount = static_cast<uint32_t>(outProduct.contactCouplingFaceA.size());
     outProduct.globalBoundaryFaceCount = static_cast<uint32_t>(outProduct.boundaryFaceIndices.size());
+    outProduct.vemTraceRuntimeModelIds = buildStage.getVemTraceRuntimeModelIds();
+    outProduct.vemTraceVertexBuffers = buildStage.getVemTraceVertexBuffers();
+    outProduct.vemTraceVertexBufferOffsets = buildStage.getVemTraceVertexBufferOffsets();
+    outProduct.vemTraceVertexCounts = buildStage.getVemTraceVertexCounts();
 
-    // Validate CPU topology before taking ownership of GPU resources
     if (!outProduct.isValid()) {
         outProduct = {};
         return false;
     }
 
-    // Non-detaching copy of GPU resources, ownership transfers on commit
     buildStage.copyGpu(outProduct);
 
     HashProduct::seal(outProduct);
     return true;
 }
-
-

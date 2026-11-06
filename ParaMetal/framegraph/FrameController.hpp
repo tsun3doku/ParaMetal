@@ -19,29 +19,12 @@ class SceneRenderer;
 class FrameSync;
 class FrameStats;
 class CameraController;
-class ModelRegistry;
-class UniformBufferManager;
+class SceneContext;
+class InteractionContext;
 class ModelSelection;
-class GizmoController;
-class NavigationGizmoController;
 class WireframeRenderer;
 class VkFrameGraphBackend;
 class VkFrameGraphRuntime;
-class InputController;
-class LightingSystem;
-class MaterialSystem;
-
-struct FrameControllerServices {
-    ModelRegistry& modelRegistry;
-    UniformBufferManager& uniformBufferManager;
-    ModelSelection& modelSelection;
-    GizmoController& gizmoController;
-    NavigationGizmoController& navigationGizmoController;
-    WireframeRenderer& wireframeRenderer;
-    InputController& inputController;
-    LightingSystem& lightingSystem;
-    MaterialSystem& materialSystem;
-};
 
 class FrameController {
 public:
@@ -53,8 +36,10 @@ public:
         SceneRenderer& sceneRenderer,
         FrameSync& frameSync,
         FrameStats& frameStats,
-        CameraController& cameraController,
-        FrameControllerServices services,
+        SceneContext& scene,
+        InteractionContext& interaction,
+        ModelSelection& modelSelection,
+        WireframeRenderer& wireframeRenderer,
         std::atomic<bool>& isOperating,
         std::atomic<bool>& isShuttingDown);
 
@@ -70,7 +55,7 @@ private:
     FrameSync& frameSync;
     FrameStats& frameStats;
     CameraController& cameraController;
-    NavigationGizmoController& navigationGizmoController;
+    InteractionContext& interaction;
     std::atomic<bool>& isOperating;
     std::atomic<bool>& isShuttingDown;
 
@@ -83,4 +68,3 @@ private:
     VulkanDevice& vulkanDevice;
     VkFrameGraphRuntime& frameGraphRuntime;
 };
-

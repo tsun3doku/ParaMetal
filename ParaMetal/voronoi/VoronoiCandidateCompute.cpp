@@ -153,7 +153,6 @@ void VoronoiCandidateCompute::dispatch(uint32_t faceCount, uint32_t seedCount) {
     if (submitResult != VK_SUCCESS) {
         std::cerr << "VoronoiCandidateCompute: Failed to submit compute work VkResult=" << static_cast<int>(submitResult) << std::endl;
         vkDestroyFence(vulkanDevice.getDevice(), fence, nullptr);
-        std::cerr << "[FREE-CMD] VoronoiCandidateCompute::dispatch(submitFail) cmd=" << cmd << std::endl;
         vkFreeCommandBuffers(vulkanDevice.getDevice(), commandPool.getHandle(), 1, &cmd);
         return;
     }

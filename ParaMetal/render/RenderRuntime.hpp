@@ -15,25 +15,22 @@ class VulkanDevice;
 class ViewportTarget;
 class CommandPool;
 class FrameSync;
-class CameraController;
 class MemoryAllocator;
 class ModelRegistry;
 class UniformBufferManager;
-class InputController;
 class IBLSystem;
 class LightingSystem;
 class MaterialSystem;
 class FrameGraph;
 class SceneRenderer;
 class ModelSelection;
-class GizmoController;
-class NavigationGizmoController;
 class WireframeRenderer;
 class FrameController;
 class VkFrameGraphBackend;
 class VkFrameGraphRuntime;
 
-struct FrameControllerServices;
+class SceneContext;
+class InteractionContext;
 
 class RenderRuntime {
 public:
@@ -43,13 +40,12 @@ public:
         ViewportTarget& viewportTarget,
         CommandPool& renderCommandPool,
         FrameSync& frameSync,
-        CameraController& cameraController,
         std::atomic<bool>& isOperating,
         std::atomic<bool>& isShuttingDown);
     ~RenderRuntime();
 
     bool initializeBase(VkFormat swapChainFormat, VkExtent2D extent, MemoryAllocator& allocator, ModelRegistry& modelRegistry, UniformBufferManager& ubo, IBLSystem& iblSystem);
-    bool initializeFrameController(const FrameControllerServices& services);
+    bool initializeFrameController(SceneContext& scene, InteractionContext& interaction);
 
     bool renderFrame(
         VkCommandBuffer commandBuffer,
@@ -70,10 +66,6 @@ public:
     const SceneRenderer& getSceneRenderer() const;
     ModelSelection& getModelSelection();
     const ModelSelection& getModelSelection() const;
-    GizmoController& getGizmoController();
-    const GizmoController& getGizmoController() const;
-    NavigationGizmoController& getNavigationGizmoController();
-    const NavigationGizmoController& getNavigationGizmoController() const;
     WireframeRenderer& getWireframeRenderer();
     const WireframeRenderer& getWireframeRenderer() const;
 
@@ -83,7 +75,6 @@ private:
     ViewportTarget& viewportTarget;
     CommandPool& renderCommandPool;
     FrameSync& frameSync;
-    CameraController& cameraController;
     std::atomic<bool>& isOperating;
     std::atomic<bool>& isShuttingDown;
 
@@ -93,9 +84,6 @@ private:
     std::unique_ptr<VkFrameGraphBackend> frameGraphBackend;
     std::unique_ptr<SceneRenderer> sceneRenderer;
     std::unique_ptr<ModelSelection> modelSelection;
-    std::unique_ptr<GizmoController> gizmoController;
-    std::unique_ptr<NavigationGizmoController> navigationGizmoController;
     std::unique_ptr<WireframeRenderer> wireframeRenderer;
     std::unique_ptr<FrameController> frameController;
 };
-

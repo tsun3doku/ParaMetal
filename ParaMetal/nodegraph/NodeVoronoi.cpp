@@ -70,6 +70,10 @@ void NodeVoronoi::execute(NodeKernelEval& eval) const {
         voronoiData.voxelResolution = nodeParams.voxelResolution;
         voronoiData.volumePadding = static_cast<float>(nodeParams.volumePadding);
         voronoiData.contactRange = static_cast<float>(nodeParams.contactRange);
+        voronoiData.lloydIterations = nodeParams.lloydIterations;
+        voronoiData.lloydVolumeThreshold =
+            static_cast<float>(nodeParams.lloydVolumeThreshold);
+        voronoiData.lloydDamping = static_cast<float>(nodeParams.lloydDamping);
         voronoiData.modelMeshHandles = modelMeshHandles;
         voronoiData.pointsPayloadHandle = pointsPayloadHandle;
         voronoiData.active = active;
@@ -91,6 +95,9 @@ HashValues NodeVoronoi::computeOutputHashes(const NodeKernelHash& hash) const {
     HashBuilder::combine(hashValue, static_cast<uint64_t>(nodeParams.voxelResolution));
     HashBuilder::combineFloat(hashValue, static_cast<float>(nodeParams.volumePadding));
     HashBuilder::combineFloat(hashValue, static_cast<float>(nodeParams.contactRange));
+    HashBuilder::combine(hashValue, static_cast<uint64_t>(nodeParams.lloydIterations));
+    HashBuilder::combineFloat(hashValue, static_cast<float>(nodeParams.lloydVolumeThreshold));
+    HashBuilder::combineFloat(hashValue, static_cast<float>(nodeParams.lloydDamping));
 
     HashValues values{};
     values.full = hashValue;

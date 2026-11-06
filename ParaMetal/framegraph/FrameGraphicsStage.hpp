@@ -4,8 +4,7 @@
 
 class SceneRenderer;
 class ModelSelection;
-class GizmoController;
-class NavigationGizmoController;
+class InteractionContext;
 class WireframeRenderer;
 
 // Records the scene external command buffer without submitting
@@ -14,8 +13,7 @@ public:
     FrameGraphicsStage(
         SceneRenderer& sceneRenderer,
         ModelSelection& modelSelection,
-        GizmoController& gizmoController,
-        NavigationGizmoController& navigationGizmoController,
+        InteractionContext& interaction,
         WireframeRenderer& wireframeRenderer);
 
     bool collectExternal(
@@ -26,7 +24,6 @@ public:
 private:
     SceneRenderer& sceneRenderer;
     ModelSelection& modelSelection;
-    GizmoController& gizmoController;
-    NavigationGizmoController& navigationGizmoController;
+    InteractionContext& interaction;
     WireframeRenderer& wireframeRenderer;
 };

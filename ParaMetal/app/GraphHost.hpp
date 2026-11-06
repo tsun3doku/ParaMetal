@@ -20,7 +20,6 @@ public slots:
     void newProject();
     void newEmptyProject();
     void resetGraph();
-    void replaceGraph(const NodeGraphState& state);
     void addNode(const QString& typeId, float x, float y);
     void removeNode(NodeGraphNodeId nodeId);
     void moveNode(NodeGraphNodeId nodeId, float x, float y);
@@ -35,6 +34,8 @@ public slots:
     void activateTimeline();
     void requestGraphState();
     void loadGraphState(const NodeGraphState& state);
+    void requestExport(int nodeId);
+    void requestExportProducts(int nodeId, qulonglong requestId, qulonglong graphRevision);
 
 signals:
     void initialized(const NodeGraphState& state,const std::vector<NodeTypeDefinition>& definitions, const QString& pythonVersion);
@@ -45,6 +46,8 @@ signals:
     void timelineRangeChanged(uint32_t frameCount, float fps);
     void graphStateReady(const NodeGraphState& state);
     void graphStateLoaded(bool success, const QString& error);
+    void exportRequested(int nodeId);
+    void exportProductsRequested(int nodeId, qulonglong requestId, qulonglong graphRevision);
 
 private:
     void publishChanges();

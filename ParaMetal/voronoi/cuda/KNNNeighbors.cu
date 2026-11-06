@@ -201,9 +201,12 @@ bool KNNNeighbors::Implementation::buildSpatialIndex(
       !cellStart.allocate(grid.totalCells + 1))
     return false;
 
-  static_assert(sizeof(glm::vec4) == sizeof(float4));
-  if (!seeds.uploadAsync(reinterpret_cast<const float4 *>(seedsIn.data()),
-                         seedCountValue, stream))
+  std::vector<float4> uniformSeeds(seedCountValue);
+  for (uint32_t i = 0; i < seedCountValue; ++i) {
+    uniformSeeds[i] = make_float4(
+        seedsIn[i].x, seedsIn[i].y, seedsIn[i].z, 0.0f);
+  }
+  if (!seeds.uploadAsync(uniformSeeds.data(), seedCountValue, stream))
     return false;
 
   const bool ok =
@@ -289,7 +292,7 @@ bool KNNNeighbors::Implementation::buildGrid(
   for (uint32_t seed = 0; seed < seedCountValue; ++seed) {
     BucketEntry entry{};
     entry.position = make_float4(seedsIn[seed].x, seedsIn[seed].y,
-                                 seedsIn[seed].z, seedsIn[seed].w);
+                                 seedsIn[seed].z, 0.0f);
     entry.id = seed;
     hostEntries[hostCursor[hostCellIds[seed]]++] = entry;
   }

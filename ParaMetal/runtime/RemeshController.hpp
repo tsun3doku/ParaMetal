@@ -8,6 +8,7 @@
 
 #include "mesh/remesher/Remesher.hpp"
 #include "runtime/RemeshSystem.hpp"
+#include "runtime/RuntimeProducts.hpp"
 #include "util/Units.hpp"
 
 class MemoryAllocator;
@@ -34,9 +35,26 @@ public:
     bool apply(uint64_t socketKey, const Config& config);
     bool buildProduct(uint64_t socketKey, RemeshProduct& product);
     void remove(uint64_t socketKey);
-    void disableAll();
+    uint64_t getCurrentComputeHash(uint64_t socketKey) const {
+        const auto it = configuredHashes.find(socketKey);
+        return it != configuredHashes.end() ? it->second : 0;
+    }
+
+    bool hasAnyRetiring() const;
+    void clearAllRetiring();
+    void commitPending(uint64_t socketKey) noexcept;
+    void cancelCandidate(uint64_t socketKey);
+    void quiescedClear() noexcept;
 
 private:
+    void retireCurrent(uint64_t socketKey);
+
+    struct GenerationSlot {
+        std::unique_ptr<RemeshSystem> current;
+        std::unique_ptr<RemeshSystem> retiring;
+        std::unique_ptr<RemeshSystem> candidate;
+    };
+
     class OperatingScope {
     public:
         explicit OperatingScope(std::atomic<bool>& isOperating);
@@ -49,7 +67,8 @@ private:
 
     std::atomic<bool>& isOperating;
     Remesher remesher;
-    std::unordered_map<uint64_t, std::unique_ptr<RemeshSystem>> activeSystems;
+    std::unordered_map<uint64_t, GenerationSlot> generationSlots;
+    std::unordered_map<uint64_t, uint64_t> configuredHashes;
+    std::unordered_map<uint64_t, uint64_t> pendingHashes;
     std::unordered_map<uint64_t, uint64_t> failedComputeHashes;
-    std::vector<std::unique_ptr<RemeshSystem>> retainedSystems;
 };

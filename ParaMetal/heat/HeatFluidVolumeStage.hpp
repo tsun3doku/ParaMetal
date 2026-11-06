@@ -41,7 +41,11 @@ public:
     VkSampler getTemperatureVolumeSampler() const { return temperatureVolumeSampler; }
     VkImage getTemperatureVolumeImage() const { return temperatureVolumeImage; }
     glm::ivec3 getGridDimensions() const { return gridDimensions; }
-    bool isValid() const { return ready; }
+    bool isValid() const {
+        return ready &&
+            temperatureVolumeView != VK_NULL_HANDLE &&
+            seedToFluidNodeBuffer != VK_NULL_HANDLE;
+    }
 
 private:
     bool createPipeline();

@@ -113,3 +113,12 @@ void MemoryPool::free(VkDeviceSize offset, uint32_t order) {
 
     freeList[order].push_back(offset);
 }
+
+bool MemoryPool::isCompletelyFree() const {
+    if (freeList.size() <= maxOrder) return false;
+    if (freeList[maxOrder].size() != 1 || freeList[maxOrder][0] != 0) return false;
+    for (uint32_t o = 0; o < maxOrder; ++o) {
+        if (!freeList[o].empty()) return false;
+    }
+    return true;
+}

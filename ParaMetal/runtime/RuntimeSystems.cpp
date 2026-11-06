@@ -1,23 +1,20 @@
 #include "RuntimeSystems.hpp"
 
-#include "app/RawMouseInput.hpp"
-#include "cfd/CFDSystemComputeController.hpp"
 #include "cuda/CudaVulkanDevice.hpp"
-#include "heat/HeatSystem.hpp"
+#include "cfd/CFDSystemComputeController.hpp"
 #include "heat/HeatSystemComputeController.hpp"
 #include "nodegraph/NodeGraphController.hpp"
 #include "render/RenderConfig.hpp"
 #include "render/WindowRuntimeState.hpp"
 #include "render/SceneRenderer.hpp"
 #include "render/HeatOverlayRenderer.hpp"
-#include "scene/InputController.hpp"
 #include "scene/NavigationGizmoController.hpp"
+#include "simgraph/SimGraphRuntime.hpp"
+#include "vulkan/ModelRegistry.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <cstdlib>
 #include <iostream>
-#include <utility>
 
 #include <cuda_runtime.h>
 
@@ -44,6 +41,10 @@ bool RuntimeSystems::initialize(WindowRuntimeState& runtimeState, const AppVulka
         cleanup();
         return false;
     }
+    if (!interaction.initialize(scene.cameraController(), *scene.modelRegistry(), runtimeState)) {
+        cleanup();
+        return false;
+    }
     if (!frameSync.initialize(core.device().getDevice(), renderconfig::MaxFramesInFlight)) {
         cleanup();
         return false;
@@ -64,12 +65,8 @@ bool RuntimeSystems::initialize(WindowRuntimeState& runtimeState, const AppVulka
         return false;
     }
 
-    timelineControllerInstance.clearPlaybackTargets();
-    timelineControllerInstance.addPlaybackTarget(compute.heatSystemComputeController());
-    timelineControllerInstance.addPlaybackTarget(compute.cfdSystemComputeController());
-
     if (!runtimeController.initialize(
-            render, compute, nodeGraph, scene, core, runtimeState, &rawMouseInput)) {
+            render, compute, nodeGraph, scene, interaction, core, runtimeState, &rawMouseInput)) {
         cleanup();
         return false;
     }
@@ -82,43 +79,49 @@ void RuntimeSystems::tickFrame(float deltaTime, VkCommandBuffer commandBuffer, u
     if (!initialized || !windowRuntimeState || !runtimeController.isInitialized()) {
         return;
     }
-    if (isShuttingDown.load(std::memory_order_acquire)) {
+    if (isShuttingDown.load(std::memory_order_acquire) || runtimeBusy.load(std::memory_order_acquire)) {
         return;
     }
 
-    const bool heatActive = isSimulationActive();
-    const uint32_t heatFrameCount = getSimulationTimelineFrameCount();
-    if (heatActive && heatFrameCount > 0) {
-        timelineRuntime.setFrameCount(heatFrameCount + 1u);
-        const float heatDuration = getSimulationDuration();
-        if (heatDuration > 0.0f) {
-            timelineRuntime.setFps(static_cast<float>(heatFrameCount) / heatDuration);
+    SimGraphRuntime* simGraph = compute.simGraphRuntime();
+    if (simGraph != nullptr && simGraph->hasSimulationTimelineMetadata()) {
+        const uint32_t timelineFrames = simGraph->getSimulationTimelineFrameCount();
+        const float duration = simGraph->getSimulationDuration();
+        if (timelineFrames > 0) {
+            timelineRuntime.setFrameCount(timelineFrames + 1u);
         }
-
-        const uint32_t rewindFrame = getSimulationRewindFrame();
-        uint32_t syncedFrame = 0;
-        if (rewindFrame != UINT32_MAX) {
-            syncedFrame = rewindFrame;
-        } else {
-            const float fps = timelineRuntime.getFps();
-            syncedFrame = fps > 0.0f
-                ? static_cast<uint32_t>(std::round(getSimulationTotalTime() * fps))
-                : 0u;
+        if (duration > 0.0f && timelineFrames > 0) {
+            timelineRuntime.setFps(static_cast<float>(timelineFrames) / duration);
         }
-        timelineRuntime.setCurrentFrame(syncedFrame);
-        const bool heatAtEnd = timelineRuntime.getCurrentFrame() >= timelineRuntime.getMaxFrame() ||
-            (heatDuration > 0.0f && getSimulationTotalTime() >= heatDuration);
-        timelineRuntime.setPlaying(!isSimulationPaused() && !heatAtEnd);
     } else {
-        timelineRuntime.tick(deltaTime);
+        timelineRuntime.clearSimulationMetadata();
     }
+
+    uint32_t maxAdvanceFrame = timelineRuntime.getMaxFrame();
+    if (timelineRuntime.isPlaying() && simGraph != nullptr) {
+        const uint32_t availableFrame = simGraph->getPlaybackAvailableFrame();
+        if (availableFrame != UINT32_MAX) {
+            maxAdvanceFrame = std::min(maxAdvanceFrame, availableFrame);
+        }
+    }
+    timelineRuntime.tick(deltaTime, maxAdvanceFrame);
+
+    compute.tickDomainServices();
+
+    SimTickContext context{};
+    context.renderFrameSlot = frameIndex;
+    context.deltaSeconds = deltaTime;
+    context.playing = timelineRuntime.isPlaying();
+    context.currentFrame = timelineRuntime.getCurrentFrame();
+    context.resetEpoch = timelineRuntime.getResetEpoch();
 
     runtimeController.tick(
         deltaTime,
         frameCounter,
         commandBuffer,
         frameIndex,
-        renderSettingsState);
+        renderSettingsState,
+        context);
     dispatchViewportCommands();
 }
 
@@ -130,7 +133,48 @@ bool RuntimeSystems::updateViewportTarget(VkImage image, VkFormat format, VkExte
 }
 
 void RuntimeSystems::replaceGraphState(const NodeGraphState& state) {
-    if (NodeGraphController* controller = getNodeGraphController()) controller->resetGraph(state);
+    NodeGraphController* controller = getNodeGraphController();
+
+    if (controller) {
+        controller->detachRuntimeBindings();
+    }
+    if (SimGraphRuntime* simGraph = compute.simGraphRuntime()) {
+        simGraph->clear();
+    }
+
+    // Device may not exist yet during early initialization
+    const VkDevice device = core.device().getDevice();
+    const VkResult vkResult = device != VK_NULL_HANDLE ? vkDeviceWaitIdle(device) : VK_SUCCESS;
+    cudaError_t cudaResult = cudaSuccess;
+    const int cudaDevice = cudaVulkan::findDevice(core.device().getPhysicalDevice());
+    if (cudaDevice >= 0) {
+        const cudaError_t setDeviceResult = cudaSetDevice(cudaDevice);
+        cudaResult = setDeviceResult != cudaSuccess ? setDeviceResult : cudaDeviceSynchronize();
+    } else if (cudaVulkan::deviceWasFound()) {
+        cudaResult = cudaErrorInvalidDevice;
+    }
+    if (vkResult != VK_SUCCESS || cudaResult != cudaSuccess) {
+        std::cerr << "[RuntimeSystems] graph replacement quiesce failure: vk="
+                  << static_cast<int>(vkResult)
+                  << " cuda=" << static_cast<int>(cudaResult) << std::endl;
+        return;
+    }
+
+    if (controller) {
+        controller->quiescedClear();
+    }
+    compute.quiescedClear();
+    runtimeExport.clear();
+
+    if (ModelRegistry* registry = scene.modelRegistry()) {
+        registry->clearModels();
+    }
+    if (MemoryAllocator* allocator = core.allocator()) {
+        allocator->trim();
+    }
+    if (controller) {
+        controller->resetGraph(state);
+    }
 }
 
 bool RuntimeSystems::applyGraphDelta(const NodeGraphDelta& delta) {
@@ -162,6 +206,30 @@ bool RuntimeSystems::takePendingNodeParameters(
     return runtimeController.takePendingNodeParameters(outNodeId, outParameters);
 }
 
+void RuntimeSystems::requestExport(int nodeId) {
+    runtimeExport.request(nodeId);
+}
+
+void RuntimeSystems::requestExportProducts(int nodeId, uint64_t requestId, uint64_t graphRevision) {
+    runtimeExport.requestExportProducts(nodeId, requestId, graphRevision);
+}
+
+bool RuntimeSystems::takePendingExportResult(
+    int& outNodeId,
+    bool& outSuccess,
+    std::string& outMessage) {
+    return runtimeExport.takeResult(outNodeId, outSuccess, outMessage);
+}
+
+bool RuntimeSystems::takeExportProductsReady(ExportProductsReply& outReply) {
+    return runtimeExport.takeProductsReady(outReply);
+}
+
+void RuntimeSystems::processDeferredWork() {
+    runtimeExport.processPending(
+        getNodeGraphController(), compute.heatSystemComputeController());
+}
+
 void RuntimeSystems::shutdown() {
     if (!initialized && !core.isInitialized() && !scene.isInitialized() && !render.isInitialized() &&
         !runtimeController.isInitialized() && !windowRuntimeState) {
@@ -187,15 +255,31 @@ const RuntimeQuery* RuntimeSystems::runtimeQuery() const {
 }
 
 bool RuntimeSystems::getSerialTemperatureStatus(uint64_t sourceKey, SerialTemperatureRuntime::Status& outStatus) const {
-    const HeatSystemComputeController* controller = compute.heatSystemComputeController();
-    return controller && controller->getSerialTemperatureStatus(sourceKey, outStatus);
+    const HeatSystemComputeController* controller =
+        compute.heatSystemComputeController();
+    return controller &&
+        controller->getSerialTemperatureStatus(sourceKey, outStatus);
+}
+
+bool RuntimeSystems::getHeatProbeTemperatures(uint64_t sourceKey, std::vector<float>& outTemperaturesC) const {
+    const HeatSystemComputeController* controller =
+        compute.heatSystemComputeController();
+    return controller && controller->getHeatProbeTemperatures(sourceKey, outTemperaturesC);
+}
+
+void RuntimeSystems::startProbePicking(uint32_t targetNodeId, int probeIndex) {
+    if (interaction.isInitialized()) {
+        interaction.startProbePicking(targetNodeId, probeIndex);
+    }
+}
+
+void RuntimeSystems::cancelProbePicking() {
+    if (interaction.isInitialized()) {
+        interaction.cancelProbePicking();
+    }
 }
 
 TimelineController* RuntimeSystems::timelineController() {
-    return &timelineControllerInstance;
-}
-
-const TimelineController* RuntimeSystems::timelineController() const {
     return &timelineControllerInstance;
 }
 
@@ -213,8 +297,8 @@ void RuntimeSystems::setBackgroundMode(app::BackgroundMode mode) {
 
 void RuntimeSystems::setNavigationCubeVisible(bool visible) {
     renderSettingsState.navigationCubeVisible = visible;
-    if (render.runtime()) {
-        render.runtime()->getNavigationGizmoController().setEnabled(visible);
+    if (interaction.isInitialized()) {
+        interaction.navigationGizmoController().setEnabled(visible);
     }
 }
 
@@ -282,28 +366,8 @@ CameraController* RuntimeSystems::getCameraController() {
     return &scene.cameraController();
 }
 
-const CameraController* RuntimeSystems::getCameraController() const {
-    return &scene.cameraController();
-}
-
-SceneController* RuntimeSystems::getSceneController() {
-    return runtimeController.sceneController();
-}
-
-const SceneController* RuntimeSystems::getSceneController() const {
-    return runtimeController.sceneController();
-}
-
 ModelSelection* RuntimeSystems::getModelSelection() {
     RenderRuntime* renderRuntime = render.runtime();
-    if (!renderRuntime) {
-        return nullptr;
-    }
-    return &renderRuntime->getModelSelection();
-}
-
-const ModelSelection* RuntimeSystems::getModelSelection() const {
-    const RenderRuntime* renderRuntime = render.runtime();
     if (!renderRuntime) {
         return nullptr;
     }
@@ -314,19 +378,12 @@ NodeGraphController* RuntimeSystems::getNodeGraphController() {
     return nodeGraph.nodeGraphController();
 }
 
-const NodeGraphController* RuntimeSystems::getNodeGraphController() const {
-    return nodeGraph.nodeGraphController();
-}
-
 void RuntimeSystems::cleanup() {
-    timelineControllerInstance.clearPlaybackTargets();
     rawMouseInput.shutdown();
     runtimeController.shutdown();
 
     HeatSystemComputeController* heatSystemController = compute.heatSystemComputeController();
     cfd::CFDSystemComputeController* cfdSystemController = compute.cfdSystemComputeController();
-
-    // Host-signal undelivered release waits to prevent cross-API deadlock before global idle
     if (heatSystemController) {
         heatSystemController->releaseWaits();
     }
@@ -334,7 +391,6 @@ void RuntimeSystems::cleanup() {
         cfdSystemController->releaseWaits();
     }
 
-    // Device may not exist yet when cleanup runs from failed initialization
     const VkDevice device = core.device().getDevice();
     const VkResult vkResult = device != VK_NULL_HANDLE ? vkDeviceWaitIdle(device) : VK_SUCCESS;
     cudaError_t cudaResult = cudaSuccess;
@@ -346,7 +402,6 @@ void RuntimeSystems::cleanup() {
         cudaResult = cudaErrorInvalidDevice;
     }
 
-    // Failed quiescence is terminal, destructors will execute regardless
     if (vkResult != VK_SUCCESS || cudaResult != cudaSuccess) {
         std::cerr << "[RuntimeSystems] terminal shutdown quiesce failure: vk="
                   << static_cast<int>(vkResult)
@@ -357,6 +412,7 @@ void RuntimeSystems::cleanup() {
     nodeGraph.shutdown();
     compute.shutdown();
     render.shutdown();
+    interaction.shutdown();
     frameSync.shutdown();
     scene.shutdown();
     core.shutdown();
@@ -364,81 +420,18 @@ void RuntimeSystems::cleanup() {
 }
 
 bool RuntimeSystems::isSimulationActive() const {
-    const HeatSystemComputeController* heatSystemController = compute.heatSystemComputeController();
-    return heatSystemController && heatSystemController->isAnyHeatSystemActive();
+    const SimGraphRuntime* simGraph = compute.simGraphRuntime();
+    return simGraph != nullptr && simGraph->hasNodeInState(SimNodeState::Running);
 }
 
 bool RuntimeSystems::isSimulationPaused() const {
-    const HeatSystemComputeController* heatSystemController = compute.heatSystemComputeController();
-    return heatSystemController && heatSystemController->isAnyHeatSystemPaused();
-}
-
-float RuntimeSystems::getSimulationTotalTime() const {
-    const HeatSystemComputeController* controller = compute.heatSystemComputeController();
-    if (!controller) return 0.0f;
-    float total = 0.0f;
-    for (const HeatSystem* system : controller->getActiveSystems()) {
-        if (system && system->getIsActive()) {
-            total = std::max(total, system->getSimulationTimeSeconds());
-        }
-    }
-    return total;
+    const SimGraphRuntime* simGraph = compute.simGraphRuntime();
+    return simGraph != nullptr && simGraph->hasNodeInState(SimNodeState::Paused);
 }
 
 uint32_t RuntimeSystems::getSimulationRecordedTimelineFrames() const {
-    const HeatSystemComputeController* controller = compute.heatSystemComputeController();
-    if (!controller) return 0;
-    uint32_t maxRecorded = 0;
-    for (const HeatSystem* system : controller->getActiveSystems()) {
-        if (system && system->getIsActive()) {
-            maxRecorded = std::max(maxRecorded, system->getRecordedTimelineFrames());
-        }
-    }
-    return maxRecorded;
-}
-
-uint32_t RuntimeSystems::getSimulationTimelineFrameCount() const {
-    const HeatSystemComputeController* controller = compute.heatSystemComputeController();
-    if (!controller) return 0;
-    for (const HeatSystem* system : controller->getActiveSystems()) {
-        if (system && system->getIsActive()) {
-            return system->getTimelineFrameCount();
-        }
-    }
-    return 0;
-}
-
-float RuntimeSystems::getSimulationDuration() const {
-    const HeatSystemComputeController* controller = compute.heatSystemComputeController();
-    if (!controller) return 0.0f;
-    for (const HeatSystem* system : controller->getActiveSystems()) {
-        if (system && system->getIsActive()) {
-            return system->getSimulationDurationSeconds();
-        }
-    }
-    return 0.0f;
-}
-
-uint32_t RuntimeSystems::getSimulationResetCounter() const {
-    const HeatSystemComputeController* controller = compute.heatSystemComputeController();
-    if (!controller) return 0;
-    for (const HeatSystem* system : controller->getActiveSystems()) {
-        if (system && system->getIsActive()) {
-            return system->getResetCounter();
-        }
-    }
-    return 0;
-}
-
-uint32_t RuntimeSystems::getSimulationRewindFrame() const {
-    const HeatSystemComputeController* controller = compute.heatSystemComputeController();
-    if (!controller) return UINT32_MAX;
-    for (const HeatSystem* system : controller->getActiveSystems()) {
-        if (system && system->getIsActive()) {
-            return system->getRewindFrame();
-        }
-    }
-    return UINT32_MAX;
+    const SimGraphRuntime* simGraph = compute.simGraphRuntime();
+    return simGraph != nullptr ? simGraph->getSimulationRecordedTimelineFrames() : 0;
 }
 
 bool RuntimeSystems::isTimelinePlaying() const {

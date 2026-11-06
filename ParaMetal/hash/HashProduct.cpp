@@ -107,12 +107,11 @@ void HashProduct::seal(VoronoiProduct& p) {
     HashBuilder::combine(hash, p.seedPositionBufferOffset);
     combineVkBuffer(hash, p.candidatePointVertexBuffer);
     HashBuilder::combine(hash, p.candidatePointVertexBufferOffset);
-    combineVkBuffer(hash, p.contactVertexBuffer);
-    HashBuilder::combine(hash, p.contactVertexBufferOffset);
-    HashBuilder::combine(hash, uint64_t(p.contactVertexCount));
     HashBuilder::combinePodVector(hash, p.globalSeedPositions);
     HashBuilder::combinePodVector(hash, p.fragmentInstanceIds);
     HashBuilder::combinePodVector(hash, p.fragmentSeedIds);
+    HashBuilder::combinePodVector(hash, p.cellFragmentOffsets);
+    HashBuilder::combinePodVector(hash, p.cellFragments);
     HashBuilder::combinePodVector(hash, p.fragmentCentroids);
     HashBuilder::combinePodVector(hash, p.fragmentVolumes);
     HashBuilder::combineFloat(hash, p.nominalCellSize);
@@ -127,7 +126,9 @@ void HashProduct::seal(VoronoiProduct& p) {
     HashBuilder::combinePodVector(hash, p.faceTypes);
     HashBuilder::combinePodVector(hash, p.faceDomainFaces);
     HashBuilder::combinePodVector(hash, p.contactCouplingFaceA);
+    HashBuilder::combinePodVector(hash, p.contactCouplingFragmentA);
     HashBuilder::combinePodVector(hash, p.contactCouplingFaceB);
+    HashBuilder::combinePodVector(hash, p.contactCouplingFragmentB);
     HashBuilder::combinePodVector(hash, p.contactCouplingAreas);
     HashBuilder::combinePodVector(hash, p.boundaryFaceIndices);
     HashBuilder::combinePodVector(hash, p.boundaryFaceFragments);

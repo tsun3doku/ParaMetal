@@ -12,11 +12,15 @@ void RuntimeModelDisplayTransport::sync(const RuntimePackageManager& registry, c
 
     std::unordered_set<uint64_t> nextSocketKeys;
     for (const auto& [socketKey, package] : registry.models()) {
-        if (!registry.isCurrent(socketKey)) continue;
+        if (!registry.isPackageCurrent(socketKey)) continue;
         if (visibleKeys.find(socketKey) == visibleKeys.end()) {
             continue;
         }
 
+        if (!products->isCurrent<ModelProduct>(package.productHandle)) {
+            controller->remove(socketKey);
+            continue;
+        }
         const ModelProduct* product = products->resolve<ModelProduct>(package.productHandle);
         if (!product || product->runtimeModelId == 0) {
             controller->remove(socketKey);
@@ -30,6 +34,7 @@ void RuntimeModelDisplayTransport::sync(const RuntimePackageManager& registry, c
         HashBuilder::combine(displayHash, config.runtimeModelId);
         HashBuilder::combinePod(displayHash, config.modelMatrix);
         HashBuilder::combine(displayHash, product->hashes.display);
+        HashBuilder::combine(displayHash, package.productHandle.publicationId);
         config.displayHash = displayHash;
         controller->apply(socketKey, config);
         nextSocketKeys.insert(socketKey);
@@ -49,4 +54,23 @@ void RuntimeModelDisplayTransport::finalizeSync() {
     }
 
     controller->finalizeSync();
+}
+
+void RuntimeModelDisplayTransport::detach(uint64_t socketKey) {
+    if (!controller || socketKey == 0) {
+        return;
+    }
+    controller->remove(socketKey);
+    activeSocketKeys.erase(socketKey);
+}
+
+void RuntimeModelDisplayTransport::detachAll() {
+    if (!controller) {
+        activeSocketKeys.clear();
+        return;
+    }
+    for (uint64_t socketKey : activeSocketKeys) {
+        controller->remove(socketKey);
+    }
+    activeSocketKeys.clear();
 }

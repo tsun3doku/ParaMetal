@@ -26,7 +26,7 @@ public:
 
         std::unordered_set<uint64_t> nextSocketKeys;
         for (const auto& [socketKey, package] : registry.remeshes()) {
-            if (!registry.isCurrent(socketKey)) continue;
+            if (!registry.isPackageCurrent(socketKey)) continue;
             if (visibleKeys.find(socketKey) == visibleKeys.end()) {
                 continue;
             }
@@ -57,6 +57,23 @@ public:
         controller->finalizeSync();
     }
 
+    void detach(uint64_t socketKey) {
+        if (!controller || socketKey == 0) {
+            return;
+        }
+        controller->remove(socketKey);
+        activeSocketKeys.erase(socketKey);
+    }
+
+    void detachAll() {
+        for (uint64_t socketKey : activeSocketKeys) {
+            if (controller) {
+                controller->remove(socketKey);
+            }
+        }
+        activeSocketKeys.clear();
+    }
+
 private:
     bool tryBuildConfig(
         uint64_t socketKey,
@@ -73,11 +90,17 @@ private:
             return false;
         }
 
+        if (!products->isCurrent<RemeshProduct>(package.productHandle)) {
+            return false;
+        }
         const RemeshProduct* computeProduct = products->resolve<RemeshProduct>(package.productHandle);
         if (!computeProduct || !computeProduct->isValid()) {
             return false;
         }
 
+        if (!products->isCurrent<ModelProduct>(package.sourceModelProduct)) {
+            return false;
+        }
         const ModelProduct* modelProduct = products->resolve<ModelProduct>(package.sourceModelProduct);
         if (!modelProduct || modelProduct->runtimeModelId == 0) {
             return false;
@@ -113,6 +136,7 @@ private:
         outConfig.inputTriangleView = computeProduct->inputTriangleView;
         outConfig.inputLengthView = computeProduct->inputLengthView;
         outConfig.displayHash = buildDisplayHash(outConfig, computeProduct->hashes.display);
+        HashBuilder::combine(outConfig.displayHash, package.productHandle.publicationId);
         return true;
     }
 

@@ -8,6 +8,7 @@
 #include "domain/FluidData.hpp"
 #include "domain/HeatModelData.hpp"
 #include "domain/SerialTemperatureData.hpp"
+#include "domain/HeatProbeData.hpp"
 
 #include <cstddef>
 
@@ -36,31 +37,11 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodeGraphTypeRegistry* typ
         dataBlock.metadata.erase("geometry.triangle_count");
     }
 
-    dataBlock.metadata.erase("geometry.group_count");
-    dataBlock.metadata.erase("geometry.groups");
-    dataBlock.metadata.erase("geometry.group_names");
-    dataBlock.metadata.erase("geometry.group_names.vertex");
-    dataBlock.metadata.erase("geometry.group_names.object");
-    dataBlock.metadata.erase("geometry.group_names.material");
-    dataBlock.metadata.erase("geometry.group_names.smooth");
-
-    dataBlock.metadata.erase("intrinsic.vertex_count");
-    dataBlock.metadata.erase("intrinsic.triangle_count");
-    dataBlock.metadata.erase("intrinsic.face_count");
-
-    dataBlock.metadata.erase("remesh.vertex_count");
-    dataBlock.metadata.erase("remesh.triangle_count");
-    dataBlock.metadata.erase("remesh.face_count");
-
     if (dataBlock.dataType == payloadtypes::HeatModel) {
         const HeatModelData* heatModel = registry ? registry->get<HeatModelData>(dataBlock.payloadHandle) : nullptr;
         dataBlock.metadata["heat_model.initial_temperature_c"] =
             heatModel ? std::to_string(heatModel->initialTemperatureC) : std::string();
     } else {
-        dataBlock.metadata.erase("heat_model.boundary_condition");
-        dataBlock.metadata.erase("heat_model.fixed_temperature");
-        dataBlock.metadata.erase("heat_model.initial_temperature");
-        dataBlock.metadata.erase("heat_model.dirichlet_temperature_c");
         dataBlock.metadata.erase("heat_model.initial_temperature_c");
     }
 
@@ -89,6 +70,17 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodeGraphTypeRegistry* typ
         dataBlock.metadata.erase("serial.baud_rate");
     }
 
+    if (dataBlock.dataType == payloadtypes::HeatProbe) {
+        const auto* probe = registry ? registry->get<HeatProbeData>(dataBlock.payloadHandle) : nullptr;
+        dataBlock.metadata["probe.enabled"] = (probe && probe->enabled) ? "true" : "false";
+        dataBlock.metadata["probe.count"] = std::to_string(probe ? probe->items.size() : 0u);
+        dataBlock.metadata["probe.opc_port"] = std::to_string(probe ? probe->opcPort : 0u);
+    } else {
+        dataBlock.metadata.erase("probe.enabled");
+        dataBlock.metadata.erase("probe.count");
+        dataBlock.metadata.erase("probe.opc_port");
+    }
+
     if (dataBlock.dataType == payloadtypes::Heat) {
         const HeatData* heatData = registry ? registry->get<HeatData>(dataBlock.payloadHandle) : nullptr;
         dataBlock.metadata["heat.active"] = (heatData && heatData->active) ? "true" : "false";
@@ -110,11 +102,19 @@ void populateMetadata(NodeDataBlock& dataBlock, const NodeGraphTypeRegistry* typ
             voronoiData ? std::to_string(voronoiData->voxelResolution) : std::string();
         dataBlock.metadata["voronoi.contact_range"] =
             voronoiData ? std::to_string(voronoiData->contactRange) : std::string();
+        dataBlock.metadata["voronoi.lloyd_iterations"] =
+            voronoiData ? std::to_string(voronoiData->lloydIterations) : std::string();
+        dataBlock.metadata["voronoi.lloyd_volume_threshold"] =
+            voronoiData ? std::to_string(voronoiData->lloydVolumeThreshold) : std::string();
+        dataBlock.metadata["voronoi.lloyd_damping"] =
+            voronoiData ? std::to_string(voronoiData->lloydDamping) : std::string();
     } else {
         dataBlock.metadata.erase("voronoi.active");
-        dataBlock.metadata.erase("voronoi.receiver_count");
         dataBlock.metadata.erase("voronoi.cell_size");
         dataBlock.metadata.erase("voronoi.voxel_resolution");
         dataBlock.metadata.erase("voronoi.contact_range");
+        dataBlock.metadata.erase("voronoi.lloyd_iterations");
+        dataBlock.metadata.erase("voronoi.lloyd_volume_threshold");
+        dataBlock.metadata.erase("voronoi.lloyd_damping");
     }
 }

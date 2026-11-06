@@ -60,7 +60,6 @@ public:
         Failed,
         Error,
     };
-    // Non-blocking poll for in-flight solve completion
     SolvePollResult pollNativeSolveResult();
     bool hasPendingNativeSolve() const { return pcgStatusPending; }
 

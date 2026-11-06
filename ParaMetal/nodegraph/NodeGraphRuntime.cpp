@@ -115,7 +115,12 @@ void NodeGraphRuntime::applyDelta(const NodeGraphDelta& delta) {
             if (change.reason == NodeGraphChangeReason::Topology) {
                 topologyChanged = true;
             }
-            applyChange(change);
+            applyNodeGraphChange(graphState, change);
+            if (change.type == NodeGraphChangeType::Reset) {
+                cachedOutputsByNodeId.clear();
+            } else if (change.type == NodeGraphChangeType::NodeRemoved) {
+                cachedOutputsByNodeId.erase(change.nodeId.value);
+            }
         }
         if (topologyChanged) {
             for (auto it = cachedOutputsByNodeId.begin(); it != cachedOutputsByNodeId.end();) {
@@ -131,39 +136,6 @@ void NodeGraphRuntime::applyDelta(const NodeGraphDelta& delta) {
         }
     }
     graphState.revision = delta.toRevision;
-}
-
-void NodeGraphRuntime::applyChange(const NodeGraphChange& change) {
-    switch (change.type) {
-    case NodeGraphChangeType::Reset:
-        graphState.nodes.clear();
-        graphState.edges.clear();
-        break;
-    case NodeGraphChangeType::NodeUpsert: {
-        graphState.nodes[change.node.id.value] = change.node;
-        break;
-    }
-    case NodeGraphChangeType::NodeRemoved:
-        graphState.nodes.erase(change.nodeId.value);
-        {
-            std::vector<NodeGraphEdgeId> removedEdgeIds;
-            for (const auto& [edgeKey, edge] : graphState.edges) {
-                if (edge.fromNode == change.nodeId || edge.toNode == change.nodeId) {
-                    removedEdgeIds.push_back(edge.id);
-                }
-            }
-            for (NodeGraphEdgeId edgeId : removedEdgeIds) {
-                graphState.edges.remove(edgeId);
-            }
-        }
-        break;
-    case NodeGraphChangeType::EdgeUpsert:
-        graphState.edges.upsert(change.edge);
-        break;
-    case NodeGraphChangeType::EdgeRemoved:
-        graphState.edges.remove(change.edgeId);
-        break;
-    }
 }
 
 void NodeGraphRuntime::execute(const NodeGraphCompiled& compiled) {

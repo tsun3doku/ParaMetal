@@ -3,44 +3,45 @@ pragma Singleton
 import QtQuick
 
 QtObject {
-    readonly property color windowBackground: "#202023"
-    readonly property color panelBackground: "#2e2e34"
+    readonly property color windowBackground: "#1e1e1e"
+    readonly property color panelBackground: "#2e2e2e"
     readonly property color splitterCenter: windowBackground
     readonly property color splitterBorder: subtleBorder
     readonly property int splitterWidth: 2
     readonly property int splitterBorderWidth: 2
-    readonly property color cardBackground: "#2d2c32"
-    readonly property color border: "#3a393c"
-    readonly property color subtleBorder: "#3c3c45"
-    readonly property color inputBackground: "#242429"
-    readonly property color checkboxBackground: "#3a3946"
-    readonly property color checkboxBorder: "#77758b"
+    readonly property color cardBackground: "#3d3d3d"
+    readonly property color border: "#3a3a3a"
+    readonly property color subtleBorder: "#3a3a3a"
+    readonly property color inputBackground: "#545454"
+    readonly property color checkboxBackground: "#545454"
+    readonly property color checkboxBorder: "#3a3a3a"
 
-    readonly property color text: "#eceaf6"
-    readonly property color headingText: "#f6f5fb"
-    readonly property color secondaryText: "#d2d1de"
-    readonly property color mutedText: "#c8c6d4"
+    readonly property color text: "#f0f0f0"
+    readonly property color headingText: "#ffffff"
+    readonly property color secondaryText: "#b0b0b0"
+    readonly property color mutedText: "#808080"
     readonly property color onAccentText: "#ffffff"
-    readonly property color activeTabText: "#f4f2ff"
-    readonly property color navigationText: "#9695a2"
+    readonly property color activeTabText: "#ffffff"
+    readonly property color navigationText: "#a0a0a0"
+    readonly property color toolIconColor: "#ffffff"
 
-    readonly property color accent: "#5e7cff"
+    readonly property color accent: "#3578ff"
     readonly property color interactiveAccent: "#3578ff"
-    readonly property color interactiveHover: "#4180ff"
-    readonly property color hover: "#484752"
-    readonly property color selected: "#504f5c"
+    readonly property color interactiveHover: "#4a88ff"
+    readonly property color hover: "#4a4a4a"
+    readonly property color selected: "#545454"
 
-    readonly property color toolNormal: "#3a3a3a"
-    readonly property color toolHover: "#505050"
-    readonly property color toolPressed: "#5a5a5a"
-    readonly property color toolSelectedPressed: "#4b67e0"
-    readonly property color toolBorder: "#46464e"
-    readonly property color sliderTrack: "#696875"
-    readonly property color sliderHandle: "#2f2e35"
-    readonly property color sliderHandleBorder: "#e6e4ef"
-    readonly property color sourceButton: "#3a3950"
-    readonly property color sourceButtonHover: "#474664"
-    readonly property color sourceButtonBorder: "#585670"
+    readonly property color toolNormal: "#343434"
+    readonly property color toolHover: "#464646"
+    readonly property color toolPressed: "#282828"
+    readonly property color toolSelectedPressed: "#2868e0"
+    readonly property color toolBorder: "#3a3a3a"
+    readonly property color sliderTrack: "#808080"
+    readonly property color sliderHandle: "#e0e0e0"
+    readonly property color sliderHandleBorder: "#303030"
+    readonly property color sourceButton: "#4a4a4a"
+    readonly property color sourceButtonHover: "#585858"
+    readonly property color sourceButtonBorder: "#3a3a3a"
     readonly property int toolButtonSize: 24
     readonly property int toolButtonPadding: 2
     readonly property int toolButtonFrameInset: 1
@@ -53,30 +54,38 @@ QtObject {
                 + toolButtonFrameSize
     }
 
-    readonly property color menuBarBackground: "#252529"
-    readonly property color menuText: "#d2d2d7"
-    readonly property color menuDisabledText: "#6e6e76"
-    readonly property color menuSeparator: "#414048"
+    // Inspector Layout Metrics (Blender-aligned)
+    readonly property int inspectorRowSpacing: 6
+    readonly property int inspectorBoxSpacing: 1
+    readonly property int inspectorLabelSpacing: 6
+    readonly property int inspectorGroupSpacing: 10
+    readonly property int inspectorLabelWidth: 145
+    readonly property int inspectorCompactLabelWidth: 14
 
-    readonly property color timelineBackground: "#1e1e1e"
-    readonly property color timelineTrack: "#41434c"
+    readonly property color menuBarBackground: "#1e1e1e"
+    readonly property color menuText: "#f0f0f0"
+    readonly property color menuDisabledText: "#707070"
+    readonly property color menuSeparator: "#383838"
+
+    readonly property color timelineBackground: "#343434"
+    readonly property color timelineTrack: "#808080"
     readonly property color timelineRecorded: "#416d9c"
-    readonly property color timelineTick: "#767780"
-    readonly property color timelineText: "#cccccc"
+    readonly property color timelineTick: "#909090"
+    readonly property color timelineText: "#c0c0c0"
     readonly property color timelinePlayhead: "#2e7eff"
     readonly property color timelineFrameBackground: interactiveAccent
-    readonly property color timelineFrameText: "#f5f8ff"
-    readonly property color timelineFieldBackground: "#222328"
-    readonly property color welcomeBackdrop: Qt.rgba(0.04, 0.04, 0.05, 0.80)
-    readonly property color welcomeCardBackground: "#272022"
-    readonly property color welcomeTitleBar: "#d8d7dc"
-    readonly property color welcomeTitleBarText: "#242329"
-    readonly property color welcomeTitleBarBorder: "#bcbcc4"
-    readonly property color welcomeOptionBackground: "#1e1a1c"
-    readonly property color welcomeOptionHover: "#352b2f"
-    readonly property color welcomeCardBorder: "#4a3e44"
-    readonly property color welcomeText: "#f6f5fb"
-    readonly property color welcomeSubtext: "#aba9b6"
+    readonly property color timelineFrameText: "#ffffff"
+    readonly property color timelineFieldBackground: "#404040"
+    readonly property color welcomeBackdrop: Qt.rgba(0.04, 0.04, 0.04, 0.80)
+    readonly property color welcomeCardBackground: "#2e2e2e"
+    readonly property color welcomeTitleBar: "#d0d0d0"
+    readonly property color welcomeTitleBarText: "#202020"
+    readonly property color welcomeTitleBarBorder: "#a0a0a0"
+    readonly property color welcomeOptionBackground: "#1e1e1e"
+    readonly property color welcomeOptionHover: "#383838"
+    readonly property color welcomeCardBorder: "#3a3a3a"
+    readonly property color welcomeText: "#ffffff"
+    readonly property color welcomeSubtext: "#b0b0b0"
 
     readonly property string fontFamily: UiTypography.fontFamily
     readonly property string monoFamily: UiTypography.monoFamily

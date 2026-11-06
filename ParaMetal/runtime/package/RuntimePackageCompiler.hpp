@@ -76,6 +76,7 @@ private:
         std::vector<std::string>& errors) const;
 
     bool compileHeatPackage(
+        const NodeGraphState& graph,
         const NodeGraphNode& node,
         uint64_t outputSocketKey,
         const NodeDataBlock& output,

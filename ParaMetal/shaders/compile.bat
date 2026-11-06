@@ -28,6 +28,10 @@ C:/VulkanSDK/1.3.283.0/Bin/glslc.exe intrinsic_vertex_normals.geom -o intrinsic_
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe intrinsic_vertex_normals.frag -o intrinsic_vertex_normals_frag.spv
 
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe heat_buffer.frag -o heat_buffer_frag.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe vem_trace_surface.vert -o vem_trace_surface_vert.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe vem_trace_surface.frag -o vem_trace_surface_frag.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe isocontour.vert -o isocontour_vert.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe isocontour.frag -o isocontour_frag.spv
 
 
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe lighting.vert -o lighting_vert.spv
@@ -42,12 +46,6 @@ C:/VulkanSDK/1.3.283.0/Bin/glslc.exe blend.frag -o blend_frag.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe outline.vert -o outline_vert.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe outline.frag -o outline_frag.spv
 
-C:/VulkanSDK/1.3.283.0/Bin/glslc.exe hash_grid_vis.vert -o hash_grid_vis_vert.spv
-C:/VulkanSDK/1.3.283.0/Bin/glslc.exe hash_grid_vis.frag -o hash_grid_vis_frag.spv
-
-C:/VulkanSDK/1.3.283.0/Bin/glslc.exe surfel_debug.vert -o surfel_debug_vert.spv
-C:/VulkanSDK/1.3.283.0/Bin/glslc.exe surfel_debug.frag -o surfel_debug_frag.spv
-
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe voronoi_surface.geom -o voronoi_surface_geom.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe voronoi_surface.vert -o voronoi_surface_vert.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe voronoi_surface.frag -o voronoi_surface_frag.spv
@@ -61,19 +59,18 @@ C:/VulkanSDK/1.3.283.0/Bin/glslc.exe pick_gizmo.frag -o pick_gizmo_frag.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe point_cloud.vert -o point_cloud_vert.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe point_cloud.frag -o point_cloud_frag.spv
 
-C:/VulkanSDK/1.3.283.0/Bin/glslc.exe voronoi_contact.vert -o voronoi_contact_vert.spv
-C:/VulkanSDK/1.3.283.0/Bin/glslc.exe voronoi_contact.frag -o voronoi_contact_frag.spv
-
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe vector_arrow.vert -o vector_arrow_vert.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe vector_arrow.frag -o vector_arrow_frag.spv
 
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe heat_box.vert -o heat_box_vert.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe heat_box.frag -o heat_box_frag.spv
 
-C:/VulkanSDK/1.3.283.0/Bin/glslc.exe --target-env=vulkan1.3 hash_grid_build.comp -o hash_grid_build_comp.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe probe_marker.vert -o probe_marker_vert.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe probe_marker.frag -o probe_marker_frag.spv
 
 slangc heat_surface_temp.slang -target spirv -o heat_surface_temp_comp.spv
 slangc heat_surface_gradient.slang -target spirv -o heat_surface_gradient_comp.spv
+slangc heat_isocontour.slang -target spirv -stage compute -entry main -o heat_isocontour_comp.spv
 
 slangc heat_diffusion.slang -target spirv -o heat_diffusion_comp.spv
 slangc heat_fluid_volume.slang -target spirv -o heat_fluid_volume_comp.spv

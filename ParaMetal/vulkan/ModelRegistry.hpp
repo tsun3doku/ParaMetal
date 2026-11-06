@@ -22,9 +22,12 @@ public:
 
 	ModelRegistry(const ModelRegistry&) = delete;
 	ModelRegistry& operator=(const ModelRegistry&) = delete;
-	void cleanup();
+	void clearModels();
 	uint32_t addModel(std::unique_ptr<Model> model, uint32_t preferredModelId = 0);
 	bool removeModelByID(uint32_t modelID);
+	// Destroy retired models after GPU completion and recycle their IDs.
+	bool hasAnyRetiring() const { return !retiringModels.empty(); }
+	void clearAllRetiring();
 	std::vector<uint32_t> getRenderableModelIds() const;
 	bool hasModel(uint32_t modelID) const;
 	bool setModelVisible(uint32_t modelID, bool visible);
@@ -42,6 +45,7 @@ public:
 	bool tryGetLocalBounds(uint32_t modelID, glm::vec3& outMin, glm::vec3& outMax) const;
 	bool tryGetWorldBounds(uint32_t modelID, glm::vec3& outMin, glm::vec3& outMax) const;
 	glm::vec3 sceneWorldExtent() const;
+	const Model* getModel(uint32_t modelID) const { return findModel(modelID); }
 
 	MemoryAllocator& getMemoryAllocator() {
 		return memoryAllocator;
@@ -53,16 +57,16 @@ private:
 	uint32_t acquireModelId(uint32_t preferredModelId = 0);
 	void recycleModelId(uint32_t modelId);
 	void unregisterModel(uint32_t modelID);
-	void clearModels();
+
 	Model* findModel(uint32_t modelID);
 	const Model* findModel(uint32_t modelID) const;
 
 	MemoryAllocator& memoryAllocator;
 
     std::unordered_map<uint32_t, std::unique_ptr<Model>> models;
-    // Models removed from the registry stay alive until shutdown: published
-    // ModelProducts may still reference their buffers until the global quiesce.
-    std::vector<std::unique_ptr<Model>> retainedModels;
+    // Models removed from the registry stay alive until the retirement boundary:
+    // published ModelProducts may still reference their buffers until GPU completion.
+    std::unordered_map<uint32_t, std::unique_ptr<Model>> retiringModels;
     std::unordered_set<uint32_t> visibleModelIds;
 	std::vector<uint32_t> recycledModelIds;
 	uint32_t nextModelId = 1;

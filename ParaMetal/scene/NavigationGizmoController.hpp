@@ -6,6 +6,8 @@
 #include <glm/gtc/quaternion.hpp>
 #include <cstdint>
 
+#include "interaction/IViewportInteraction.hpp"
+
 class CameraController;
 
 struct NavigationGizmoRenderData {
@@ -17,16 +19,16 @@ struct NavigationGizmoRenderData {
     uint8_t pressedRegion = 0;
 };
 
-class NavigationGizmoController {
+class NavigationGizmoController : public IViewportInteraction {
 public:
     explicit NavigationGizmoController(CameraController& cameraController);
 
     void setEnabled(bool value);
     void setViewport(VkExtent2D extent, float dpiScale);
-    bool handlePointerMove(float x, float y);
-    bool handlePointerPress(float x, float y);
-    bool handlePointerRelease(float x, float y);
-    bool hasPointerCapture() const { return pressedRegion != 0; }
+    bool handlePointerMove(float x, float y) override;
+    bool handlePointerPress(float x, float y, int button = 1, bool shiftPressed = false) override;
+    bool handlePointerRelease(float x, float y, int button = 1) override;
+    bool hasPointerCapture() const override { return pressedRegion != 0; }
 
     uint8_t hitTest(float x, float y) const;
     NavigationGizmoRenderData getRenderData() const;

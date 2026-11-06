@@ -9,7 +9,6 @@
 #include <vector>
 
 class PointRenderer;
-class VoronoiContactRenderer;
 class UniformBufferManager;
 class VulkanDevice;
 class CommandPool;
@@ -28,7 +27,6 @@ public:
     void remove(uint64_t socketKey);
     void renderSurface(VkCommandBuffer commandBuffer, uint32_t frameIndex);
     void renderPoints(VkCommandBuffer commandBuffer, uint32_t frameIndex, VkExtent2D extent);
-    void renderContacts(VkCommandBuffer commandBuffer, uint32_t frameIndex);
     void cleanup();
 
 private:
@@ -36,7 +34,6 @@ private:
 
     std::unique_ptr<VoronoiRenderer> voronoiRenderer;
     std::unique_ptr<PointRenderer> pointRenderer;
-    std::unique_ptr<VoronoiContactRenderer> contactRenderer;
     std::unordered_map<uint64_t, VoronoiDisplayController::Config> configsBySocket;
     std::vector<VoronoiRenderer::RenderBinding> voronoiBindings;
     uint32_t maxFramesInFlight = 0;

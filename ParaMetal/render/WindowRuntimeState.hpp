@@ -29,8 +29,6 @@ struct WindowRuntimeState {
     std::atomic<uint32_t> width{960};
     std::atomic<uint32_t> height{540};
     std::atomic<float> devicePixelRatio{1.0f};
-    std::atomic<float> mouseX{0.0f};
-    std::atomic<float> mouseY{0.0f};
     std::atomic<bool> shiftPressed{false};
     std::atomic<bool> middleButtonPressed{false};
 

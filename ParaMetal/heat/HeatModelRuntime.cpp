@@ -10,6 +10,7 @@
 #include <cstring>
 #include <iostream>
 #include <vector>
+#include <map>
 
 HeatModelRuntime::HeatModelRuntime(
     VulkanDevice& device,
@@ -199,7 +200,6 @@ bool HeatModelRuntime::updateAllDescriptors(
         surfaceHistoryComputeSetA == VK_NULL_HANDLE ||
         surfaceGradientHistorySetA == VK_NULL_HANDLE) return false;
 
-    // Common info
     VkDescriptorBufferInfo surfaceInfo{ surfaceBuffer, surfaceBufferOffset, sizeof(heat::SurfacePoint) * surfaceVertexCount };
     VkDescriptorBufferInfo gradientInfo{ surfaceGradientBuffer, surfaceGradientBufferOffset, sizeof(glm::vec4) * surfaceVertexCount };
     VkDescriptorBufferInfo playbackInfo{ playbackBuffer, playbackBufferOffset, sizeof(heat::SimPlaybackUniform) };
@@ -215,16 +215,14 @@ bool HeatModelRuntime::updateAllDescriptors(
     for (uint32_t pass = 0; pass < 2; ++pass) {
         VkDescriptorBufferInfo nodeTempInfo{ tempBuffers[pass], tempOffsets[pass], simNodeCount * sizeof(float) };
 
-        // Surface Temperature Updates
-        std::array<VkWriteDescriptorSet, 4> sTempWrites{};
+            std::array<VkWriteDescriptorSet, 4> sTempWrites{};
         sTempWrites[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sTempSets[pass], 0, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &nodeTempInfo, nullptr};
         sTempWrites[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sTempSets[pass], 1, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &surfaceInfo, nullptr};
         sTempWrites[2] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sTempSets[pass], 10, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsStencilInfo, nullptr};
         sTempWrites[3] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sTempSets[pass], 11, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gmlsValueWeightInfo, nullptr};
         vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(sTempWrites.size()), sTempWrites.data(), 0, nullptr);
 
-        // Surface Gradient Updates
-        std::array<VkWriteDescriptorSet, 5> sGradWrites{};
+            std::array<VkWriteDescriptorSet, 5> sGradWrites{};
         sGradWrites[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sGradSets[pass], 0, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &nodeTempInfo, nullptr};
         sGradWrites[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sGradSets[pass], 1, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &surfaceInfo, nullptr};
         sGradWrites[2] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sGradSets[pass], 2, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &gradientInfo, nullptr};

@@ -12,7 +12,6 @@
 #include <chrono>
 #include <cstring>
 #include <iostream>
-#include <random>
 
 class MemoryAllocator;
 class VulkanDevice;
@@ -26,13 +25,11 @@ public:
 	void setColor(glm::vec3 newColor, UniformBufferObject& ubo);
 
 	void updateGridUniformBuffer(uint32_t currentImage, const render::SceneView& sceneView, GridUniformBufferObject& gridUbo, const glm::vec3& gridSize);
-	void updateSSAOKernelBuffer(uint32_t currentImage, SSAOKernelBufferObject& ssaoKernel);
 
 	void createUniformBuffers(uint32_t maxFramesInFlight);
 	void createGridUniformBuffers(uint32_t maxFramesInFlight);
 	void createLightUniformBuffers(uint32_t maxFramesInFlight);
 	void createMaterialUniformBuffers(uint32_t maxFramesInFlight);
-	void createSSAOKernelBuffers(uint32_t maxFramesInFlight);
 	
 	void cleanup(uint32_t maxFramesInFlight);
 
@@ -79,16 +76,6 @@ public:
 		return materialBufferOffsets_;
 	}
 
-	const std::vector<VkBuffer>& getSSAOKernelBuffers() const {
-		return SSAOKernelBuffers;
-	}
-	const std::vector<void*>& getSSAOKernelBuffersMapped() const {
-		return SSAOKernelBuffersMapped;
-	}
-	const std::vector<VkDeviceSize>& getSSAOKernelBufferOffsets() const {
-		return SSAOKernelBufferOffsets_;
-	}
-
 private:	
 	VulkanDevice& vulkanDevice;
 	MemoryAllocator& memoryAllocator;
@@ -108,8 +95,4 @@ private:
 	std::vector<VkBuffer> materialBuffers;
 	std::vector<void*> materialBuffersMapped;
 	std::vector<VkDeviceSize> materialBufferOffsets_;
-
-	std::vector<VkBuffer> SSAOKernelBuffers;
-	std::vector<void*> SSAOKernelBuffersMapped;
-	std::vector<VkDeviceSize> SSAOKernelBufferOffsets_;
 };

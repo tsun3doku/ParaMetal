@@ -39,6 +39,6 @@ struct HeatSimDefaults {
     static constexpr float minNormalDot = -0.65f;
     static constexpr float contactRadius = 0.01f;
 
-    // Interfacial contact conductance per unit area (W/(m^2 K)) between coupled solids.
+    // contact conductance per unit area (W/(m^2 K))
     static constexpr float contactConductance = 1.0e4f;
 };

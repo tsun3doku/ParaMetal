@@ -79,15 +79,7 @@ bool NodeGraph::removeNode(NodeGraphNodeId nodeId) {
     }
 
     nodes.erase(it);
-    std::vector<NodeGraphEdgeId> removedEdgeIds;
-    for (const auto& [edgeKey, edge] : edges) {
-        if (edge.fromNode == nodeId || edge.toNode == nodeId) {
-            removedEdgeIds.push_back(edge.id);
-        }
-    }
-    for (NodeGraphEdgeId edgeId : removedEdgeIds) {
-        edges.remove(edgeId);
-    }
+    edges.removeIncident(nodeId);
     bumpRevision();
 
     NodeGraphChange change{NodeGraphChangeType::NodeRemoved};
