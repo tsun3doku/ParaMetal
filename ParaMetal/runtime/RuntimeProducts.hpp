@@ -142,11 +142,6 @@ struct VoronoiProduct {
     VkBuffer globalSeedIdGridBuffer = VK_NULL_HANDLE;
     VkDeviceSize globalSeedIdGridBufferOffset = 0;
 
-    std::vector<uint32_t> vemTraceRuntimeModelIds;
-    std::vector<VkBuffer> vemTraceVertexBuffers;
-    std::vector<VkDeviceSize> vemTraceVertexBufferOffsets;
-    std::vector<uint32_t> vemTraceVertexCounts;
-
     HashValues hashes{};
 
     std::vector<glm::vec4> globalSeedPositions;
@@ -251,10 +246,6 @@ struct HeatProduct {
     VkImageView fluidTemperatureVolumeView = VK_NULL_HANDLE;
     VkSampler fluidTemperatureVolumeSampler = VK_NULL_HANDLE;
     bool hasFluidVolume = false;
-
-    VkBuffer vemTraceTemperatureBuffer = VK_NULL_HANDLE;
-    uint32_t vemTraceCount = 0;
-    bool vemTraceValid = false;
 
     HashValues hashes{};
 

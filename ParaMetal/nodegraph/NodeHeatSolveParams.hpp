@@ -9,7 +9,6 @@ struct NodeGraphNode;
 
 struct HeatPreviewSettings {
     bool showHeatOverlay = false;
-    bool useVemTraceSurface = false;
     bool showFluxVectors = false;
     bool showHeatPalette = false;
     bool showIsocontours = false;

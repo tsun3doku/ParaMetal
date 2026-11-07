@@ -873,12 +873,7 @@ uint32_t HeatSystem::getTimelineFrameCount() const {
     return computeTimelineFrameCount();
 }
 
-bool HeatSystem::isVemTraceDisplayAvailable() const {
-    return domainRuntime.isTraceVisualAvailable();
-}
-
 void HeatSystem::resetSimulationState() {
-    domainRuntime.invalidateTraceVisual();
     simulatedTime = 0.0f;
     shouldStepPhysics = false;
     physicsFailed = false;

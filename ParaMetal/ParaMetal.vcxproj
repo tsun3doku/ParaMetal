@@ -342,7 +342,6 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <CudaCompile Include="voronoi\cuda\RVDModelGeometry.cu" />
     <CudaCompile Include="voronoi\cuda\RVDLloyd.cu" />
     <CudaCompile Include="voronoi\cuda\RVDValidation.cu" />
-    <CudaCompile Include="voronoi\cuda\RVDTraceSurface.cu" />
     <CudaCompile Include="voronoi\cuda\RVDFragments.cu" />
     <CudaCompile Include="voronoi\cuda\RVDAgglomeration.cu" />
     <CudaCompile Include="voronoi\cuda\KNNNeighbors.cu">
@@ -385,7 +384,6 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="renderers\TimingRenderer.cpp" />
     <ClCompile Include="mesh\\remesher\\HalfEdgeMesh.cpp" />
     <ClCompile Include="renderers\HeatSurfaceRenderer.cpp" />
-    <ClCompile Include="renderers\VemTraceSurfaceRenderer.cpp" />
     <ClCompile Include="mesh\IsocontourBuilder.cpp" />
     <ClCompile Include="renderers\VectorArrowRenderer.cpp" />
     <ClCompile Include="renderers\HeatBoxRenderer.cpp" />
@@ -757,7 +755,6 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="renderers\TimingRenderer.hpp" />
     <ClInclude Include="mesh\\remesher\\HalfEdgeMesh.hpp" />
     <ClInclude Include="renderers\HeatSurfaceRenderer.hpp" />
-    <ClInclude Include="renderers\VemTraceSurfaceRenderer.hpp" />
     <ClInclude Include="mesh\IsocontourBuilder.hpp" />
     <ClInclude Include="renderers\VectorArrowRenderer.hpp" />
     <ClInclude Include="renderers\HeatBoxRenderer.hpp" />
@@ -866,7 +863,6 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="voronoi\cuda\RVDSurfacePartition.hpp" />
     <ClInclude Include="voronoi\cuda\RVDFragments.cuh" />
     <ClInclude Include="voronoi\cuda\RVDAgglomeration.cuh" />
-    <ClInclude Include="voronoi\cuda\RVDTraceSurface.hpp" />
 
     <ClInclude Include="voronoi\cuda\RVDBaseFacePartition.cuh" />
     <ClInclude Include="voronoi\cuda\RVDPredicates.cuh" />

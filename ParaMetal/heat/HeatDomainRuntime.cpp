@@ -49,7 +49,6 @@ void HeatDomainRuntime::removeModel(uint32_t runtimeModelId) {
 void HeatDomainRuntime::setGlobalDomain(topology::GlobalDomain domain) {
     globalDomain = std::move(domain);
     vemMeshCache = vem::VEMMesh{};
-    invalidateTraceVisual();
     globalTopologyDirtyFlag = true;
     globalValuesDirtyFlag = true;
     globalAdvectionDirtyFlag = true;
@@ -81,13 +80,6 @@ void HeatDomainRuntime::clearGlobalDomain() {
     advectionBoundaryFluxCuda.cleanup();
     advectionFaceFlux.cleanup();
     advectionBoundaryFlux.cleanup();
-    traceVisualCudaA.cleanup();
-    traceVisualCudaB.cleanup();
-    traceVisualA.cleanup();
-    traceVisualB.cleanup();
-    traceVisualCount = 0;
-    invalidateTraceVisual();
-    traceVisualCurrentIsA = true;
     vulkanDeviceHandle = VK_NULL_HANDLE;
 }
 
@@ -215,13 +207,6 @@ bool HeatDomainRuntime::rebuildGlobalSolver(
     float fixedTimeStep) {
     waitGlobalSolveIdle();
     globalSolver.reset();
-    traceVisualCudaA.cleanup();
-    traceVisualCudaB.cleanup();
-    traceVisualA.cleanup();
-    traceVisualB.cleanup();
-    traceVisualCount = 0;
-    invalidateTraceVisual();
-    traceVisualCurrentIsA = true;
 
     if (!globalDomain.isValid() || globalDomain.fragments.empty()) {
         return false;
@@ -271,33 +256,6 @@ bool HeatDomainRuntime::rebuildGlobalSolver(
             traceSystem)) {
         std::cerr << "[HeatDomainRuntime] VEMDiffusion::assembleTraceSystem FAILED\n";
         return false;
-    }
-
-    if (traceSystem.traceCount > 0) {
-        const int cudaDevice = cudaVulkan::findDevice(vulkanDevice.getPhysicalDevice());
-        const VkDeviceSize traceBytes =
-            static_cast<VkDeviceSize>(traceSystem.traceCount) * sizeof(float);
-        const VkBufferUsageFlags traceUsage =
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-        if (cudaDevice >= 0 &&
-            cudaSetDevice(cudaDevice) == cudaSuccess &&
-            traceVisualA.initialize(vulkanDevice, traceBytes, traceUsage) &&
-            traceVisualB.initialize(vulkanDevice, traceBytes, traceUsage) &&
-            traceVisualCudaA.ensureMapped(traceVisualA, cudaDevice) &&
-            traceVisualCudaB.ensureMapped(traceVisualB, cudaDevice)) {
-            traceVisualCount = traceSystem.traceCount;
-        } else {
-            std::cerr << "[HeatDomainRuntime] VEM trace visual buffer allocation failed; "
-                         "GMLS surface mode remains available" << std::endl;
-            traceVisualCudaA.cleanup();
-            traceVisualCudaB.cleanup();
-            traceVisualA.cleanup();
-            traceVisualB.cleanup();
-            traceVisualCount = 0;
-            invalidateTraceVisual();
-        }
     }
 
     std::vector<uint32_t> modelIds;
@@ -407,23 +365,10 @@ bool HeatDomainRuntime::rebuildGlobalSolver(
 
     globalSolver = std::make_unique<HeatGlobalSolver>();
     globalSolver->setSolverParameters(solverMaxIterations, solverConvergenceTolerance);
-    float* traceVisualPointerA = traceVisualCount > 0
-        ? static_cast<float*>(traceVisualCudaA.getPointer())
-        : nullptr;
-    float* traceVisualPointerB = traceVisualCount > 0
-        ? static_cast<float*>(traceVisualCudaB.getPointer())
-        : nullptr;
     if (!globalSolver->initialize(
             vulkanDevice, traceSystem, cellCapacityOverDt, cellSourceAdditions,
-            solverTemperatureNodes, fixedCellTemperatures,
-            traceVisualPointerA, traceVisualPointerB)) {
+            solverTemperatureNodes, fixedCellTemperatures)) {
         globalSolver.reset();
-        traceVisualCudaA.cleanup();
-        traceVisualCudaB.cleanup();
-        traceVisualA.cleanup();
-        traceVisualB.cleanup();
-        traceVisualCount = 0;
-        invalidateTraceVisual();
         clearGlobalSynchronization();
         return false;
     }
@@ -639,16 +584,10 @@ bool HeatDomainRuntime::pollGlobalSolve(bool& completedDestinationIsA) {
         completedDestinationIsA = pendingDestinationIsA;
         // Capture completion value for render wait
         completedCudaReadyValue = pendingCudaReadyValue;
-        if (traceVisualCount > 0) {
-            traceVisualValid = true;
-            traceVisualCurrentIsA = completedDestinationIsA;
-            ++traceVisualRevision;
-        }
         return true;
     }
     if (result == HeatGlobalSolver::SolvePollResult::Failed) {
         globalSolveInFlight = false;
-        invalidateTraceVisual();
         return false;
     }
     return false;

@@ -82,7 +82,6 @@ constexpr uint32_t FluidVolumeOpacity = 16;
 constexpr uint32_t SolverMaxIterations = 30;
 constexpr uint32_t SolverConvergenceTolerance = 31;
 constexpr uint32_t ShowIsocontours = 32;
-constexpr uint32_t UseVemTraceSurface = 33;
 constexpr uint32_t IsocontourSpacingC = 34;
 
 // Domain Boundary Conditions (6 faces: 0=-X, 1=+X, 2=-Y, 3=+Y, 4=-Z, 5=+Z)

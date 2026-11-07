@@ -162,7 +162,6 @@ void HashPackage::seal(HeatPackage& pkg, const HashValues& authoredHashes) {
 
     uint64_t displayHash = HashBuilder::start();
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showHeatOverlay ? 1u : 0u));
-    HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.useVemTraceSurface ? 1u : 0u));
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showFluxVectors ? 1u : 0u));
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showHeatPalette ? 1u : 0u));
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showIsocontours ? 1u : 0u));

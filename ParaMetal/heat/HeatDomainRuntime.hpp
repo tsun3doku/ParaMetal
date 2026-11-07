@@ -119,22 +119,6 @@ public:
     void releasePendingSolveWaitOnHost();
     bool hasSolveFailed() const { return globalSolver ? globalSolver->hasSolveFailed() : false; }
 
-    bool isTraceVisualAvailable() const { return traceVisualValid; }
-    void invalidateTraceVisual() {
-        traceVisualValid = false;
-        ++traceVisualRevision;
-    }
-    uint64_t getTraceVisualRevision() const { return traceVisualRevision; }
-    uint32_t getTraceVisualCount() const { return traceVisualCount; }
-    VkBuffer getTraceVisualBufferA() const { return traceVisualA.getBuffer(); }
-    VkBuffer getTraceVisualBufferB() const { return traceVisualB.getBuffer(); }
-    VkBuffer getCurrentTraceVisualBuffer() const {
-        if (!traceVisualValid) return VK_NULL_HANDLE;
-        return traceVisualCurrentIsA
-            ? traceVisualA.getBuffer()
-            : traceVisualB.getBuffer();
-    }
-
     void setGlobalSolverParameters(uint32_t maxIterations, float convergenceTolerance) {
         solverMaxIterations = maxIterations;
         solverConvergenceTolerance = convergenceTolerance;
@@ -195,15 +179,6 @@ private:
     uint64_t lastReaderReleaseValue[2] = {0, 0};
     std::vector<uint32_t> fluidNodeToGlobalFragment;
     std::vector<uint32_t> globalFragmentToFluidNode;
-
-    VulkanExternalBuffer traceVisualA;
-    VulkanExternalBuffer traceVisualB;
-    CudaExternalBuffer traceVisualCudaA;
-    CudaExternalBuffer traceVisualCudaB;
-    uint32_t traceVisualCount = 0;
-    bool traceVisualValid = false;
-    bool traceVisualCurrentIsA = true;
-    uint64_t traceVisualRevision = 0;
 
     AdvectionInput advectionInput{};
     bool advectionConnected = false;

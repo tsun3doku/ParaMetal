@@ -450,9 +450,6 @@
     <ClCompile Include="renderers\HeatSurfaceRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="renderers\VemTraceSurfaceRenderer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="mesh\IsocontourBuilder.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -1362,9 +1359,6 @@
     <ClInclude Include="voronoi\cuda\RVDSurfacePartition.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="voronoi\cuda\RVDTraceSurface.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="voronoi\cuda\RVDFragments.cuh">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1426,9 +1420,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="renderers\HeatSurfaceRenderer.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="renderers\VemTraceSurfaceRenderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="mesh\IsocontourBuilder.hpp">

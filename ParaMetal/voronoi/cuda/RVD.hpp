@@ -67,9 +67,6 @@ struct RestrictedSurface {
   uint32_t triangleId = InvalidId;
 };
 
-using VemTraceSurfaceVertex = topology::VemTraceSurfaceVertex;
-using VemTraceSurfaceMesh = topology::VemTraceSurfaceMesh;
-
 using FaceType = topology::FaceType;
 using FragmentFace = topology::Face;
 using ContactCoupling = topology::ContactCoupling;
@@ -78,9 +75,6 @@ struct RVDResult {
   std::vector<Fragment> fragments;
   std::vector<FragmentFace> fragmentFaces;
   std::vector<ContactCoupling> contactCouplings;
-
-  // triangle-list mesh per model from clipped patches
-  std::vector<VemTraceSurfaceMesh> vemTraceSurfaceMeshes;
 
   std::vector<glm::vec4> seedPositions;
   std::vector<uint32_t> cellFragmentOffsets;

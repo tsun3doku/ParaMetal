@@ -353,7 +353,6 @@ bool RuntimePackageCompiler::compileHeatPackage(
     }
     const HeatSolveNodeParams params = readHeatSolveNodeParams(node);
     package.display.showHeatOverlay = params.preview.showHeatOverlay;
-    package.display.useVemTraceSurface = params.preview.useVemTraceSurface;
     package.display.showFluxVectors = params.preview.showFluxVectors;
     package.display.showHeatPalette = params.preview.showHeatPalette;
     package.display.showIsocontours = params.preview.showIsocontours;

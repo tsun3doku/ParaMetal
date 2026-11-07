@@ -20,14 +20,8 @@ class HeatVolumeRenderer;
 
 class HeatDisplayController {
 public:
-    enum class SurfaceSource : uint32_t {
-        GmlsIntrinsic = 0,
-        VemTraceDirect = 1
-    };
-
     struct Config {
         bool showHeatOverlay = false;
-        SurfaceSource surfaceSource = SurfaceSource::GmlsIntrinsic;
         bool showFluxVectors = false;
         bool showHeatPalette = false;
         bool showIsocontours = false;
@@ -55,15 +49,6 @@ public:
         std::vector<std::array<VkBufferView, 11>> modelBufferViews;
         std::vector<VkBuffer> modelSurfaceGradientBuffers;
         std::vector<VkDeviceSize> modelSurfaceGradientBufferOffsets;
-
-        std::vector<uint32_t> vemTraceRuntimeModelIds;
-        std::vector<VkBuffer> vemTraceVertexBuffers;
-        std::vector<VkDeviceSize> vemTraceVertexBufferOffsets;
-        std::vector<uint32_t> vemTraceVertexCounts;
-        std::vector<glm::mat4> vemTraceModelMatrices;
-        VkBuffer vemTraceTemperatureBuffer = VK_NULL_HANDLE;
-        uint32_t vemTraceCount = 0;
-        bool vemTraceValid = false;
 
         glm::vec3 globalVolumeGridMin{0.0f};
         glm::ivec3 globalVolumeGridDim{0};
@@ -122,17 +107,6 @@ private:
 inline uint64_t buildDisplayHash(const HeatDisplayController::Config& config, uint64_t productDisplayHash) {
     uint64_t hash = HashBuilder::start();
     HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showHeatOverlay ? 1u : 0u));
-    HashBuilder::combinePod(hash, static_cast<uint64_t>(config.surfaceSource));
-    HashBuilder::combinePod(hash, static_cast<uint64_t>(config.vemTraceVertexBuffers.size()));
-    const size_t vemCount = std::min(
-        config.vemTraceVertexBuffers.size(),
-        config.vemTraceVertexCounts.size());
-    for (size_t i = 0; i < vemCount; ++i) {
-        HashBuilder::combine(hash, reinterpret_cast<uint64_t>(config.vemTraceVertexBuffers[i]));
-        HashBuilder::combine(hash, static_cast<uint64_t>(config.vemTraceVertexCounts[i]));
-    }
-    HashBuilder::combine(hash, reinterpret_cast<uint64_t>(config.vemTraceTemperatureBuffer));
-    HashBuilder::combine(hash, static_cast<uint64_t>(config.vemTraceCount));
     HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showFluxVectors ? 1u : 0u));
     HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showHeatPalette ? 1u : 0u));
     HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showIsocontours ? 1u : 0u));

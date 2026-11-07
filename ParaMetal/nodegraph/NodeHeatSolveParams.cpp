@@ -16,7 +16,6 @@ HeatSolveNodeParams readHeatSolveNodeParams(const NodeGraphNode& node) {
     params.solverConvergenceTolerance = static_cast<float>(NodeParamUtils::readFloatParam(node, nodegraphparams::heatsolve::SolverConvergenceTolerance, 3e-3));
     params.isocontourSpacingC = static_cast<float>(NodeParamUtils::readFloatParam(node, nodegraphparams::heatsolve::IsocontourSpacingC, 10.0));
     params.preview.showHeatOverlay = NodeParamUtils::readBoolParam(node, nodegraphparams::heatsolve::ShowHeatOverlay, false);
-    params.preview.useVemTraceSurface = NodeParamUtils::readBoolParam(node, nodegraphparams::heatsolve::UseVemTraceSurface, false);
     params.preview.showFluxVectors = NodeParamUtils::readBoolParam(node, nodegraphparams::heatsolve::ShowFluxVectors, false);
     params.preview.showHeatPalette = NodeParamUtils::readBoolParam(node, nodegraphparams::heatsolve::ShowHeatPalette, false);
     params.preview.showIsocontours = NodeParamUtils::readBoolParam(node, nodegraphparams::heatsolve::ShowIsocontours, false);
@@ -46,7 +45,6 @@ bool writeHeatSolveNodeParams(NodeGraphEditor& editor, NodeGraphNodeId nodeId, c
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatsolve::SolverConvergenceTolerance, NodeGraphParamType::Float, static_cast<double>(params.solverConvergenceTolerance)}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatsolve::IsocontourSpacingC, NodeGraphParamType::Float, static_cast<double>(params.isocontourSpacingC)}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatsolve::ShowHeatOverlay, NodeGraphParamType::Bool, 0.0, 0, params.preview.showHeatOverlay}) &&
-        editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatsolve::UseVemTraceSurface, NodeGraphParamType::Bool, 0.0, 0, params.preview.useVemTraceSurface}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatsolve::ShowFluxVectors, NodeGraphParamType::Bool, 0.0, 0, params.preview.showFluxVectors}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatsolve::ShowHeatPalette, NodeGraphParamType::Bool, 0.0, 0, params.preview.showHeatPalette}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatsolve::ShowIsocontours, NodeGraphParamType::Bool, 0.0, 0, params.preview.showIsocontours}) &&

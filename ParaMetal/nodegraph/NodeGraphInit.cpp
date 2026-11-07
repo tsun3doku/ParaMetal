@@ -281,7 +281,6 @@ static NodeTypeDefinition buildHeatSolveNode() {
             {nodegraphparams::heatsolve::Paused, "Paused", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::ResetRequested, "Reset Requested", NodeGraphParamType::Int, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::ShowHeatOverlay, "Show Heat Overlay", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
-            {nodegraphparams::heatsolve::UseVemTraceSurface, "VEM Trace Surface", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::ShowFluxVectors, "Show Flux Vectors", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::ShowHeatPalette, "Show Heat Palette", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::heatsolve::ShowIsocontours, "Show Isocontours", NodeGraphParamType::Bool, 0.0, 0, false, "", false},

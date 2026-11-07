@@ -139,44 +139,6 @@ bool VoronoiSystemBuildStage::buildGlobalDomain(VoronoiRuntime& runtime) {
         return false;
     }
 
-    for (size_t i = 0; i < vemTraceVertexBuffers.size(); ++i) {
-        freeBuffer(
-            memoryAllocator,
-            vemTraceVertexBuffers[i],
-            vemTraceVertexBufferOffsets[i]);
-    }
-    vemTraceRuntimeModelIds.clear();
-    vemTraceVertexBuffers.clear();
-    vemTraceVertexBufferOffsets.clear();
-    vemTraceVertexCounts.clear();
-    vemTraceMeshes.clear();
-
-    for (const voronoi::VemTraceSurfaceMesh& mesh : result.vemTraceSurfaceMeshes) {
-        if (mesh.vertices.empty()) continue;
-
-        VkBuffer buffer = VK_NULL_HANDLE;
-        VkDeviceSize offset = 0;
-        if (uploadDeviceBuffer(
-                memoryAllocator,
-                commandPool,
-                mesh.vertices.data(),
-                mesh.vertices.size() * sizeof(topology::VemTraceSurfaceVertex),
-                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                alignof(topology::VemTraceSurfaceVertex),
-                buffer,
-                offset) != VK_SUCCESS) {
-            std::cerr << "[VoronoiBuild] failed to upload VEM trace surface mesh for model "
-                      << mesh.runtimeModelId << std::endl;
-            continue;
-        }
-
-        vemTraceRuntimeModelIds.push_back(mesh.runtimeModelId);
-        vemTraceVertexBuffers.push_back(buffer);
-        vemTraceVertexBufferOffsets.push_back(offset);
-        vemTraceVertexCounts.push_back(static_cast<uint32_t>(mesh.vertices.size()));
-        vemTraceMeshes.push_back(mesh);
-    }
-
     const size_t fragmentCount = result.fragments.size();
     globalFragmentInstanceIds.resize(fragmentCount);
     globalFragmentSeedIds.resize(fragmentCount);
@@ -468,17 +430,6 @@ void VoronoiSystemBuildStage::cleanup() {
         candidatePointVertexBuffer = VK_NULL_HANDLE;
         candidatePointVertexBufferOffset = 0;
     }
-    for (size_t i = 0; i < vemTraceVertexBuffers.size(); ++i) {
-        freeBuffer(
-            memoryAllocator,
-            vemTraceVertexBuffers[i],
-            vemTraceVertexBufferOffsets[i]);
-    }
-    vemTraceRuntimeModelIds.clear();
-    vemTraceVertexBuffers.clear();
-    vemTraceVertexBufferOffsets.clear();
-    vemTraceVertexCounts.clear();
-    vemTraceMeshes.clear();
     globalSeedIdGridCuda.cleanup();
     globalSeedIdGridExternal.cleanup();
     globalSeedIdGridBuffer = VK_NULL_HANDLE;

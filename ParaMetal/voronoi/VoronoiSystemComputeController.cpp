@@ -233,10 +233,6 @@ bool VoronoiSystemComputeController::buildProduct(uint64_t socketKey, VoronoiPro
     outProduct.globalFaceCount = static_cast<uint32_t>(outProduct.faceAreasA.size());
     outProduct.globalContactCouplingCount = static_cast<uint32_t>(outProduct.contactCouplingFaceA.size());
     outProduct.globalBoundaryFaceCount = static_cast<uint32_t>(outProduct.boundaryFaceIndices.size());
-    outProduct.vemTraceRuntimeModelIds = buildStage.getVemTraceRuntimeModelIds();
-    outProduct.vemTraceVertexBuffers = buildStage.getVemTraceVertexBuffers();
-    outProduct.vemTraceVertexBufferOffsets = buildStage.getVemTraceVertexBufferOffsets();
-    outProduct.vemTraceVertexCounts = buildStage.getVemTraceVertexCounts();
 
     if (!outProduct.isValid()) {
         outProduct = {};

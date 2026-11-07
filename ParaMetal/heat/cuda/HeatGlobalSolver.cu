@@ -42,12 +42,8 @@ public:
         const std::vector<float>& cellCapacityOverDt,
         const std::vector<float>& cellSourceAdditions,
         const std::vector<TemperatureNodes>& inputTemperatureNodes,
-        const std::vector<float>& fixedCellTemperatures = {},
-        float* traceVisualA = nullptr,
-        float* traceVisualB = nullptr) {
+        const std::vector<float>& fixedCellTemperatures = {}) {
         cleanup();
-        d_traceVisualA = traceVisualA;
-        d_traceVisualB = traceVisualB;
         if (traceSystem.traceCount == 0 || traceSystem.cellCount == 0 ||
             cellCapacityOverDt.size() != traceSystem.cellCount ||
             traceSystem.rowOffsets.size() != traceSystem.traceCount + 1 ||
@@ -479,21 +475,6 @@ public:
             return false;
         }
 
-            if (traceCount > 0) {
-            float* traceDestination = sourceIsA ? d_traceVisualB : d_traceVisualA;
-            if (traceDestination != nullptr &&
-                !cudaUtils::cudaCheck(
-                    cudaMemcpyAsync(
-                        traceDestination,
-                        d_traceSolution.get(),
-                        traceCount * sizeof(float),
-                        cudaMemcpyDeviceToDevice,
-                        solveStream),
-                    "copy trace solution to visual buffer")) {
-                return false;
-            }
-        }
-
             if (cudaReadyValue > 0) {
             cudaExternalSemaphoreSignalParams signalParams{};
             signalParams.params.fence.value = cudaReadyValue;
@@ -615,8 +596,6 @@ public:
         d_invDiag.reset();
         d_traceRhs.reset();
         d_traceSolution.reset();
-        d_traceVisualA = nullptr;
-        d_traceVisualB = nullptr;
         d_r.reset();
         d_z.reset();
         d_p.reset();
@@ -941,8 +920,6 @@ private:
     cudaUtils::CudaBuffer<float> d_invDiag;
     cudaUtils::CudaBuffer<float> d_traceRhs;
     cudaUtils::CudaBuffer<float> d_traceSolution;
-    float* d_traceVisualA = nullptr;
-    float* d_traceVisualB = nullptr;
     cudaUtils::CudaBuffer<float> d_r;
     cudaUtils::CudaBuffer<float> d_z;
     cudaUtils::CudaBuffer<float> d_p;
@@ -1006,12 +983,10 @@ bool HeatGlobalSolver::initialize(
     const std::vector<float>& cellCapacityOverDt,
     const std::vector<float>& cellSourceAdditions,
     const std::vector<TemperatureNodes>& temperatureNodes,
-    const std::vector<float>& fixedCellTemperatures,
-    float* traceVisualA,
-    float* traceVisualB) {
+    const std::vector<float>& fixedCellTemperatures) {
     return implementation->initialize(
         vulkanDevice, traceSystem, cellCapacityOverDt, cellSourceAdditions,
-        temperatureNodes, fixedCellTemperatures, traceVisualA, traceVisualB);
+        temperatureNodes, fixedCellTemperatures);
 }
 
 bool HeatGlobalSolver::launch(

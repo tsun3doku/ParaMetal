@@ -1,19 +1,15 @@
 #pragma once
 
 #include "nodegraph/NodeGraphProductTypes.hpp"
-#include "heat/HeatSystemComputeController.hpp"
 #include "runtime/HeatDisplayController.hpp"
 #include "runtime/package/RuntimePackageManager.hpp"
 #include "runtime/RuntimeProductManager.hpp"
 #include "util/GeometryUtils.hpp"
 
 #include <algorithm>
-#include <cstdlib>
 #include <iostream>
 #include <unordered_set>
 #include <vector>
-
-class HeatSystemComputeController;
 
 class RuntimeHeatDisplayTransport {
 public:
@@ -23,10 +19,6 @@ public:
 
     void setProducts(RuntimeProductManager* updatedProducts) {
         products = updatedProducts;
-    }
-
-    void setComputeController(HeatSystemComputeController* updatedController) {
-        computeController = updatedController;
     }
 
     void sync(const RuntimePackageManager& registry, const std::unordered_set<uint64_t>& visibleKeys) {
@@ -115,23 +107,6 @@ private:
 
         outConfig = {};
         outConfig.showHeatOverlay = package.display.showHeatOverlay;
-        outConfig.surfaceSource = package.display.useVemTraceSurface
-            ? HeatDisplayController::SurfaceSource::VemTraceDirect
-            : HeatDisplayController::SurfaceSource::GmlsIntrinsic;
-        static const bool forceVemTrace = [] {
-            char* value = nullptr;
-            size_t length = 0;
-            if (_dupenv_s(&value, &length, "HEATSPECTRA_FORCE_VEM_TRACE") == 0 &&
-                value != nullptr) {
-                const bool enabled = value[0] != '\0' && value[0] != '0';
-                std::free(value);
-                return enabled;
-            }
-            return false;
-        }();
-        if (forceVemTrace) {
-            outConfig.surfaceSource = HeatDisplayController::SurfaceSource::VemTraceDirect;
-        }
         outConfig.showFluxVectors = package.display.showFluxVectors;
         outConfig.showHeatPalette = package.display.showHeatPalette;
         outConfig.showIsocontours = package.display.showIsocontours;
@@ -148,21 +123,6 @@ private:
             outConfig.fluidTemperatureVolumeSampler = computeProduct->fluidTemperatureVolumeSampler;
             outConfig.hasFluidVolume = true;
         }
-        outConfig.vemTraceTemperatureBuffer = computeProduct->vemTraceTemperatureBuffer;
-        outConfig.vemTraceCount = computeProduct->vemTraceCount;
-        outConfig.vemTraceValid = computeProduct->vemTraceValid;
-        if (computeController) {
-            VkBuffer liveBuffer = VK_NULL_HANDLE;
-            uint32_t liveCount = 0;
-            bool liveValid = false;
-            if (computeController->getVemTraceState(
-                    socketKey, liveBuffer, liveCount, liveValid)) {
-                outConfig.vemTraceTemperatureBuffer = liveBuffer;
-                outConfig.vemTraceCount = liveCount;
-                outConfig.vemTraceValid = liveValid;
-            }
-        }
-
         for (const auto& [nodeId, probeData] : package.resolvedHeatProbes) {
             if (!probeData.enabled) continue;
             for (const auto& item : probeData.items) {
@@ -188,16 +148,11 @@ private:
                 outConfig.globalVolumeGridMin = voronoi->globalVolumeGridMin;
                 outConfig.globalVolumeGridDim = voronoi->globalVolumeGridDim;
                 outConfig.globalVolumeGridCellSize = voronoi->globalVolumeGridCellSize;
-                outConfig.vemTraceRuntimeModelIds = voronoi->vemTraceRuntimeModelIds;
-                outConfig.vemTraceVertexBuffers = voronoi->vemTraceVertexBuffers;
-                outConfig.vemTraceVertexBufferOffsets = voronoi->vemTraceVertexBufferOffsets;
-                outConfig.vemTraceVertexCounts = voronoi->vemTraceVertexCounts;
                 HashBuilder::combine(productDisplayHash, voronoi->hashes.geometry);
                 HashBuilder::combine(productDisplayHash, voronoi->hashes.display);
             }
         }
 
-        std::unordered_map<uint32_t, glm::mat4> remeshMatrixByRuntimeId;
         for (const HeatModelPackage& model : package.models) {
             if (!products->isCurrent<ModelProduct>(model.modelProduct) ||
                 !products->isCurrent<RemeshProduct>(model.remeshProduct)) {
@@ -236,8 +191,6 @@ private:
             }
 
             outConfig.modelRuntimeIds.push_back(modelProduct->runtimeModelId);
-            remeshMatrixByRuntimeId[modelProduct->runtimeModelId] =
-                toMat4(model.remeshLocalToWorld);
             outConfig.modelRenderVertexBuffers.push_back(modelProduct->renderVertexBuffer);
             outConfig.modelRenderVertexBufferOffsets.push_back(modelProduct->renderVertexBufferOffset);
             outConfig.modelRenderIndexBuffers.push_back(modelProduct->renderIndexBuffer);
@@ -280,27 +233,12 @@ private:
             }
         }
 
-        outConfig.vemTraceModelMatrices.clear();
-        outConfig.vemTraceModelMatrices.reserve(
-            outConfig.vemTraceRuntimeModelIds.size());
-        for (uint32_t runtimeModelId : outConfig.vemTraceRuntimeModelIds) {
-            const auto matrixIt = remeshMatrixByRuntimeId.find(runtimeModelId);
-            outConfig.vemTraceModelMatrices.push_back(
-                matrixIt != remeshMatrixByRuntimeId.end()
-                    ? matrixIt->second
-                    : glm::mat4(1.0f));
-        }
-
         outConfig.displayHash = buildDisplayHash(outConfig, productDisplayHash);
         HashBuilder::combine(outConfig.displayHash, package.productHandle.publicationId);
-        if (computeController) {
-                    HashBuilder::combine(outConfig.displayHash, computeController->getDisplayRevision());
-        }
         return true;
     }
 
     HeatDisplayController* controller = nullptr;
     RuntimeProductManager* products = nullptr;
-    HeatSystemComputeController* computeController = nullptr;
     std::unordered_set<uint64_t> activeSocketKeys;
 };

@@ -28,8 +28,6 @@ C:/VulkanSDK/1.3.283.0/Bin/glslc.exe intrinsic_vertex_normals.geom -o intrinsic_
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe intrinsic_vertex_normals.frag -o intrinsic_vertex_normals_frag.spv
 
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe heat_buffer.frag -o heat_buffer_frag.spv
-C:/VulkanSDK/1.3.283.0/Bin/glslc.exe vem_trace_surface.vert -o vem_trace_surface_vert.spv
-C:/VulkanSDK/1.3.283.0/Bin/glslc.exe vem_trace_surface.frag -o vem_trace_surface_frag.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe isocontour.vert -o isocontour_vert.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe isocontour.frag -o isocontour_frag.spv
 

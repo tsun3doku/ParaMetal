@@ -39,9 +39,7 @@ public:
         const std::vector<float>& cellCapacityOverDt,
         const std::vector<float>& cellSourceAdditions,
         const std::vector<TemperatureNodes>& temperatureNodes,
-        const std::vector<float>& fixedCellTemperatures = {},
-        float* traceVisualA = nullptr,
-        float* traceVisualB = nullptr);
+        const std::vector<float>& fixedCellTemperatures = {});
 
     enum class SolvePollResult {
         Pending,

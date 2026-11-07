@@ -73,7 +73,6 @@ bool NodeGraphContext::initialize(
     runtimeRemeshDisplayTransportState->setController(&displayControllers.remesh);
     runtimeVoronoiDisplayTransportState->setController(&displayControllers.voronoi);
     runtimeHeatDisplayTransportState->setController(&displayControllers.heat);
-    runtimeHeatDisplayTransportState->setComputeController(compute.heatSystemComputeController());
 
     RuntimeConnections runtimeConnections{};
     runtimeConnections.modelComputeTransport = runtimeModelComputeTransportState.get();

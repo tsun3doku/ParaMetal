@@ -16,12 +16,16 @@ Rectangle {
     function nodeIconFolder(typeId) {
         switch (String(typeId)) {
         case "heat_solve": return "HeatSystem"
+        case "heat_probe": return "HeatProbe"
         case "model": return "Model"
         case "heat_model": return "HeatModel"
+        case "fluid": return "Fluid"
         case "remesh": return "Remesh"
         case "transform": return "Transform"
         case "voronoi": return "VoronoiSystem"
         case "mesh_points": return "Points"
+        case "write": return "Write"
+        case "merge": return "Merge"
         default: return ""
         }
     }

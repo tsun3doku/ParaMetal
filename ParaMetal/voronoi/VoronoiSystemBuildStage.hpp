@@ -68,11 +68,6 @@ class VoronoiSystemBuildStage {
     const std::vector<glm::vec4>& getGlobalSeedPositions() const { return globalSeedPositions; }
     const std::array<glm::vec3, 8>& getGlobalDomainCorners() const { return globalDomainCorners; }
 
-    const std::vector<uint32_t>& getVemTraceRuntimeModelIds() const { return vemTraceRuntimeModelIds; }
-    const std::vector<VkBuffer>& getVemTraceVertexBuffers() const { return vemTraceVertexBuffers; }
-    const std::vector<VkDeviceSize>& getVemTraceVertexBufferOffsets() const { return vemTraceVertexBufferOffsets; }
-    const std::vector<uint32_t>& getVemTraceVertexCounts() const { return vemTraceVertexCounts; }
-
     const std::vector<uint32_t>& getGlobalDisplayFaceCounts() const;
     const std::vector<VkBuffer>& getGlobalDisplayVertexBuffers() const;
     const std::vector<VkDeviceSize>& getGlobalDisplayVertexBufferOffsets() const;
@@ -97,12 +92,6 @@ class VoronoiSystemBuildStage {
     VkDeviceSize seedPositionBufferOffset = 0;
     VkBuffer candidatePointVertexBuffer = VK_NULL_HANDLE;
     VkDeviceSize candidatePointVertexBufferOffset = 0;
-
-    std::vector<uint32_t> vemTraceRuntimeModelIds;
-    std::vector<VkBuffer> vemTraceVertexBuffers;
-    std::vector<VkDeviceSize> vemTraceVertexBufferOffsets;
-    std::vector<uint32_t> vemTraceVertexCounts;
-    std::vector<topology::VemTraceSurfaceMesh> vemTraceMeshes;
 
     std::vector<uint32_t> globalFragmentInstanceIds;
     std::vector<uint32_t> globalFragmentSeedIds;

@@ -295,37 +295,6 @@ bool HeatSystemComputeController::getHeatProbeTemperatures(uint64_t sourceKey, s
     return false;
 }
 
-bool HeatSystemComputeController::getVemTraceState(
-    uint64_t socketKey,
-    VkBuffer& outBuffer,
-    uint32_t& outTraceCount,
-    bool& outValid) const {
-    if (configuredConfigs.find(socketKey) == configuredConfigs.end()) {
-        return false;
-    }
-    const auto it = generationSlots.find(socketKey);
-    if (it == generationSlots.end() || !it->second.current) {
-        return false;
-    }
-    outBuffer = it->second.current->getVemTraceTemperatureBuffer();
-    outTraceCount = it->second.current->getVemTraceCount();
-    outValid = it->second.current->isVemTraceDisplayAvailable();
-    return true;
-}
-
-uint64_t HeatSystemComputeController::getDisplayRevision() const {
-    uint64_t revision = 0;
-    for (const auto& [socketKey, slot] : generationSlots) {
-        if (configuredConfigs.find(socketKey) == configuredConfigs.end()) {
-            continue;
-        }
-        if (slot.current) {
-            revision += slot.current->getVemTraceDisplayRevision();
-        }
-    }
-    return revision;
-}
-
 std::unique_ptr<HeatSystem> HeatSystemComputeController::buildHeatSystem() {
     std::unique_ptr<HeatSystem> system = std::make_unique<HeatSystem>(
         vulkanDevice,
@@ -407,9 +376,6 @@ bool HeatSystemComputeController::buildProduct(uint64_t socketKey, HeatProduct& 
     outProduct.fluidTemperatureVolumeView = system.getFluidTemperatureVolumeView();
     outProduct.fluidTemperatureVolumeSampler = system.getFluidTemperatureVolumeSampler();
     outProduct.hasFluidVolume = (outProduct.fluidTemperatureVolumeView != VK_NULL_HANDLE);
-    outProduct.vemTraceTemperatureBuffer = system.getVemTraceTemperatureBuffer();
-    outProduct.vemTraceCount = system.getVemTraceCount();
-    outProduct.vemTraceValid = system.isVemTraceDisplayAvailable();
 
     HashProduct::seal(outProduct);
     return true;

@@ -50,22 +50,6 @@ struct BoundaryFace {
     uint32_t domainFace = 0;
 };
 
-// triangle-list vertex for VEM trace surface overlay
-struct VemTraceSurfaceVertex {
-    glm::vec3 positionModel{0.0f};
-    glm::vec3 normalModel{0.0f};
-    uint32_t traceIndex = 0xffffffffu;
-};
-
-static_assert(sizeof(VemTraceSurfaceVertex) == 28, "VEM trace vertex stride mismatch");
-static_assert(offsetof(VemTraceSurfaceVertex, normalModel) == 12, "VEM trace normal offset mismatch");
-static_assert(offsetof(VemTraceSurfaceVertex, traceIndex) == 24, "VEM trace index offset mismatch");
-
-struct VemTraceSurfaceMesh {
-    uint32_t runtimeModelId = 0xffffffffu;
-    std::vector<VemTraceSurfaceVertex> vertices;
-};
-
 struct GlobalDomain {
     std::vector<Fragment> fragments;
     std::vector<Face> faces;

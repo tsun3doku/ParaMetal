@@ -89,8 +89,6 @@ public:
     void updateSerialInputs();
     bool getSerialTemperatureStatus(uint64_t sourceKey, SerialTemperatureRuntime::Status& outStatus) const;
     bool getHeatProbeTemperatures(uint64_t sourceKey, std::vector<float>& outTemperaturesC) const;
-    bool getVemTraceState(uint64_t socketKey, VkBuffer& outBuffer, uint32_t& outTraceCount, bool& outValid) const;
-    uint64_t getDisplayRevision() const;
 
     void waitIdle();
     void releaseWaits();

@@ -40,12 +40,16 @@ static QColor graphBlendColor(const QColor& first, const QColor& second, qreal a
 
 static QString graphIconFolder(const QString& typeId) {
     if (typeId == QStringLiteral("heat_solve")) return QStringLiteral("HeatSystem");
+    if (typeId == QStringLiteral("heat_probe")) return QStringLiteral("HeatProbe");
     if (typeId == QStringLiteral("model")) return QStringLiteral("Model");
     if (typeId == QStringLiteral("heat_model")) return QStringLiteral("HeatModel");
+    if (typeId == QStringLiteral("fluid")) return QStringLiteral("Fluid");
     if (typeId == QStringLiteral("remesh")) return QStringLiteral("Remesh");
     if (typeId == QStringLiteral("transform")) return QStringLiteral("Transform");
     if (typeId == QStringLiteral("voronoi")) return QStringLiteral("VoronoiSystem");
     if (typeId == QStringLiteral("mesh_points") || typeId == QStringLiteral("points")) return QStringLiteral("Points");
+    if (typeId == QStringLiteral("write")) return QStringLiteral("Write");
+    if (typeId == QStringLiteral("merge")) return QStringLiteral("Merge");
     return {};
 }
 

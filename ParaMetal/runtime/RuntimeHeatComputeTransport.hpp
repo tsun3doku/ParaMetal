@@ -19,10 +19,6 @@ public:
         products = updatedProducts;
     }
 
-    uint64_t getDisplayRevision() const {
-        return controller ? controller->getDisplayRevision() : 0;
-    }
-
     ComputeApplyResult apply(
         uint64_t socketKey,
         const HeatPackage& package,

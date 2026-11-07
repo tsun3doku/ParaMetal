@@ -388,7 +388,6 @@ Item {
             InspectorField { width: parent.width; theme: root.theme; label: qsTr("PCG Tolerance"); parameter: root.parameter(31); decimals: 6; onValueEdited: value => root.setValue(31, value) }
             }
             InspectorField { width: parent.width; theme: root.theme; editor: "bool"; label: qsTr("Show Heat Overlay"); parameter: root.parameter(5); onValueEdited: value => root.setValue(5, value) }
-            InspectorField { visible: root.parameter(5) && root.parameter(5).value; width: parent.width; theme: root.theme; editor: "bool"; label: qsTr("VEM Trace Surface"); parameter: root.parameter(33); onValueEdited: value => root.setValue(33, value) }
             InspectorField { width: parent.width; theme: root.theme; editor: "bool"; label: qsTr("Show Isocontours"); parameter: root.parameter(32); onValueEdited: value => root.setValue(32, value) }
             InspectorField { width: parent.width; theme: root.theme; editor: "slider"; label: qsTr("Isocontour Spacing (C)"); parameter: root.parameter(34); minimum: 0.1; maximum: 1000; decimals: 1; onValueEdited: value => root.setValue(34, value) }
             InspectorField { width: parent.width; theme: root.theme; editor: "bool"; label: qsTr("Show Flux Vectors"); parameter: root.parameter(7); onValueEdited: value => root.setValue(7, value) }

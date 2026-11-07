@@ -3,7 +3,6 @@
 #include "renderers/HeatBoxRenderer.hpp"
 #include "renderers/HeatSurfaceRenderer.hpp"
 #include "renderers/ProbeMarkerRenderer.hpp"
-#include "renderers/VemTraceSurfaceRenderer.hpp"
 #include "renderers/VectorArrowRenderer.hpp"
 #include "runtime/HeatDisplayController.hpp"
 
@@ -54,13 +53,11 @@ private:
     CommandPool& commandPool;
     MemoryAllocator& memoryAllocator;
     std::unique_ptr<HeatSurfaceRenderer> surfaceRenderer;
-    std::unique_ptr<VemTraceSurfaceRenderer> vemTraceSurfaceRenderer;
     std::unique_ptr<VectorArrowRenderer> vectorArrowRenderer;
     std::unique_ptr<HeatBoxRenderer> boxRenderer;
     std::unique_ptr<ProbeMarkerRenderer> probeRenderer;
     std::unordered_map<uint64_t, HeatDisplayController::Config> configsBySocket;
     std::vector<HeatSurfaceRenderer::SurfaceRenderBinding> surfaceBindings;
-    std::vector<VemTraceSurfaceRenderer::RenderBinding> vemTraceBindings;
     std::vector<VectorArrowRenderer::VectorRenderBinding> fluxVectorBindings;
     std::vector<HeatBoxRenderer::RenderBinding> boxBindings;
     std::vector<ProbeMarkerRenderer::RenderBinding> probeBindings;

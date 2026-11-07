@@ -6,7 +6,6 @@
 
 #include "RVDFragments.cuh"
 #include "RVDBaseFacePartition.cuh"
-#include "RVDTraceSurface.hpp"
 #include "RVDModelGeometry.cuh"
 #include "RVDSurfacePartition.hpp"
 #include "RVDContact.cuh"
@@ -207,11 +206,6 @@ public:
       std::cerr << "[RVD] fragment agglomeration failed" << std::endl;
       return false;
     }
-    buildVemTraceSurfaceMeshes(
-        effectiveInput.geometries,
-        surfaceRegions,
-        result.vemTraceSurfaceMeshes);
-
     if (!validateFragmentTopology(result, totalBaseFragmentFaces, 0.005, 0.01)) {
       std::cerr << "[RVD] geometric topology validation failed" << std::endl;
       return false;

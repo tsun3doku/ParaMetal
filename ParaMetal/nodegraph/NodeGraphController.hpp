@@ -44,7 +44,6 @@ public:
 
 private:
     void rebuildForDelta(const NodeGraphDelta& delta);
-    void updateHeatDisplayTransport();
     void syncSimulationNodes();
     void reclaimRetiringGenerations();
     bool compileRuntimePackages();
@@ -60,7 +59,6 @@ private:
     uint64_t lastDisplaySyncStateRevision = UINT64_MAX;
     uint64_t lastDisplaySyncProductRevision = UINT64_MAX;
     uint64_t lastDisplaySyncPackageRevision = UINT64_MAX;
-    uint64_t lastDisplaySyncHeatTraceRevision = UINT64_MAX;
     NodeGraphCompiled plan{};
     NodeGraphDisplay nodeGraphDisplay{};
     RuntimePackageCompiler packageCompiler{};

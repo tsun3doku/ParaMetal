@@ -114,19 +114,6 @@ public:
     uint64_t completedStepCount() const override { return completedSteps; }
     bool advectionStagingCopyScheduled() const { return domainRuntime.advectionStagingCopyScheduled(); }
     bool voronoiReady() const;
-    // show latest trace only on latest frame, fallback to GMLS when scrubbing
-    bool isVemTraceDisplayAvailable() const;
-    VkBuffer getVemTraceTemperatureBuffer() const {
-        return isVemTraceDisplayAvailable()
-            ? domainRuntime.getCurrentTraceVisualBuffer()
-            : VK_NULL_HANDLE;
-    }
-    uint32_t getVemTraceCount() const {
-        return domainRuntime.getTraceVisualCount();
-    }
-    uint64_t getVemTraceDisplayRevision() const {
-        return domainRuntime.getTraceVisualRevision();
-    }
 
     bool hasTimelineMetadata() const override;
     float getSimulationTimeSeconds() const override { return simulatedTime; }

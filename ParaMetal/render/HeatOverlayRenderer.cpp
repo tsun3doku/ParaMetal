@@ -21,7 +21,6 @@ HeatOverlayRenderer::HeatOverlayRenderer(
       commandPool(commandPool),
       memoryAllocator(allocator),
       surfaceRenderer(std::make_unique<HeatSurfaceRenderer>(device, allocator, uniformBufferManager, commandPool)),
-      vemTraceSurfaceRenderer(std::make_unique<VemTraceSurfaceRenderer>(device, allocator, uniformBufferManager, commandPool)),
       vectorArrowRenderer(std::make_unique<VectorArrowRenderer>(device, allocator, uniformBufferManager, commandPool)),
       boxRenderer(std::make_unique<HeatBoxRenderer>(device, allocator, uniformBufferManager)),
       probeRenderer(std::make_unique<ProbeMarkerRenderer>(device, allocator, uniformBufferManager, commandPool)) {
@@ -38,18 +37,6 @@ void HeatOverlayRenderer::initializeSurface(VkRenderPass renderPass, uint32_t su
 
     maxFramesInFlight = updatedMaxFramesInFlight;
     surfaceRenderer->initialize(renderPass, surfaceSubpass, maxFramesInFlight);
-    if (vemTraceSurfaceRenderer) {
-        VemTraceSurfaceRenderer::PaletteAssets assets{};
-        assets.sampler = surfaceRenderer->getPaletteSampler();
-        assets.inferno = surfaceRenderer->getInfernoView();
-        assets.viridis = surfaceRenderer->getViridisView();
-        assets.inferno2 = surfaceRenderer->getInferno2View();
-        assets.parula = surfaceRenderer->getParulaView();
-        assets.isocontour = surfaceRenderer->getIsocontourTextureView();
-        assets.isocontourSampler = surfaceRenderer->getIsocontourTextureSampler();
-        vemTraceSurfaceRenderer->initialize(
-            renderPass, surfaceSubpass, maxFramesInFlight, assets);
-    }
     surfaceInitialized = true;
     rebuildBindings();
 }
@@ -100,7 +87,6 @@ void HeatOverlayRenderer::rebuildBindings() {
     }
 
     surfaceBindings.clear();
-    vemTraceBindings.clear();
     fluxVectorBindings.clear();
     boxBindings.clear();
     probeBindings.clear();
@@ -121,43 +107,7 @@ void HeatOverlayRenderer::rebuildBindings() {
             isocontourSpacingC = config.isocontourSpacingC;
         }
 
-        const bool vemRequested =
-            config.showHeatOverlay &&
-            config.surfaceSource == HeatDisplayController::SurfaceSource::VemTraceDirect;
-        if (vemRequested &&
-            config.vemTraceValid &&
-            config.vemTraceTemperatureBuffer != VK_NULL_HANDLE) {
-            vemTraceBindings.reserve(
-                vemTraceBindings.size() + config.vemTraceRuntimeModelIds.size());
-            for (size_t i = 0; i < config.vemTraceRuntimeModelIds.size(); ++i) {
-                if (i >= config.vemTraceVertexBuffers.size() ||
-                    i >= config.vemTraceVertexBufferOffsets.size() ||
-                    i >= config.vemTraceVertexCounts.size()) {
-                    break;
-                }
-                if (config.vemTraceVertexBuffers[i] == VK_NULL_HANDLE ||
-                    config.vemTraceVertexCounts[i] == 0) {
-                    continue;
-                }
-
-                if (i >= config.vemTraceModelMatrices.size()) {
-                    continue;
-                }
-
-                const uint32_t runtimeModelId = config.vemTraceRuntimeModelIds[i];
-                VemTraceSurfaceRenderer::RenderBinding binding{};
-                binding.runtimeModelId = runtimeModelId;
-                binding.vertexBuffer = config.vemTraceVertexBuffers[i];
-                binding.vertexBufferOffset = config.vemTraceVertexBufferOffsets[i];
-                binding.vertexCount = config.vemTraceVertexCounts[i];
-                binding.modelMatrix = config.vemTraceModelMatrices[i];
-                binding.traceTemperatureBuffer = config.vemTraceTemperatureBuffer;
-                binding.traceCount = config.vemTraceCount;
-                vemTraceBindings.push_back(binding);
-            }
-        }
-
-        if (config.showHeatOverlay && !vemRequested) {
+        if (config.showHeatOverlay) {
             surfaceBindings.reserve(surfaceBindings.size() + config.modelRuntimeIds.size());
             for (size_t index = 0; index < config.modelRuntimeIds.size(); ++index) {
                 if (config.modelRuntimeIds[index] == 0 ||
@@ -268,13 +218,6 @@ void HeatOverlayRenderer::rebuildBindings() {
     if (surfaceRenderer) {
         const float spacing = anyIsocontours ? isocontourSpacingC : 0.0f;
         surfaceRenderer->setIsocontourSpacing(spacing);
-        if (vemTraceSurfaceRenderer) {
-            vemTraceSurfaceRenderer->setPalette(surfaceRenderer->getPalette());
-            vemTraceSurfaceRenderer->setRange(
-                surfaceRenderer->getMinTemperature(),
-                surfaceRenderer->getMaxTemperature());
-            vemTraceSurfaceRenderer->setIsocontourSpacing(spacing);
-        }
     }
 }
 
@@ -285,20 +228,15 @@ void HeatOverlayRenderer::renderSurface(VkCommandBuffer commandBuffer, uint32_t 
     }
 
     surfaceRenderer->render(commandBuffer, frameIndex, surfaceBindings);
-    if (vemTraceSurfaceRenderer) {
-        vemTraceSurfaceRenderer->render(commandBuffer, frameIndex, vemTraceBindings);
-    }
 }
 
 void HeatOverlayRenderer::setPaletteRange(float minimum, float maximum) {
     if (std::isfinite(minimum) && std::isfinite(maximum) && maximum > minimum) {
         if (surfaceRenderer) surfaceRenderer->setRange(minimum, maximum);
-        if (vemTraceSurfaceRenderer) vemTraceSurfaceRenderer->setRange(minimum, maximum);
     }
 }
 void HeatOverlayRenderer::setPalette(int palette) {
     if (surfaceRenderer) surfaceRenderer->setPalette(palette);
-    if (vemTraceSurfaceRenderer) vemTraceSurfaceRenderer->setPalette(palette);
 }
 
 uint32_t HeatOverlayRenderer::getPalette() const {
@@ -342,16 +280,12 @@ void HeatOverlayRenderer::renderOverlay(
 void HeatOverlayRenderer::cleanup() {
     configsBySocket.clear();
     surfaceBindings.clear();
-    vemTraceBindings.clear();
     fluxVectorBindings.clear();
     boxBindings.clear();
     probeBindings.clear();
     maxFramesInFlight = 0;
     surfaceInitialized = false;
     overlayInitialized = false;
-    if (vemTraceSurfaceRenderer) {
-        vemTraceSurfaceRenderer->cleanup();
-    }
     if (surfaceRenderer) {
         surfaceRenderer->cleanup();
     }

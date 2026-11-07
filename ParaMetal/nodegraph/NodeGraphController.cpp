@@ -60,9 +60,6 @@ void NodeGraphController::tick() {
     const RuntimeProductManager* products = packageController.products();
     const uint64_t stateRevision = runtime.state().revision;
     const uint64_t productRevision = products != nullptr ? products->getRevision() : 0;
-    const uint64_t heatTraceRevision = runtimeConnections.heatComputeTransport
-        ? runtimeConnections.heatComputeTransport->getDisplayRevision()
-        : 0;
     const bool fullDisplaySync =
         stateRevision != lastDisplaySyncStateRevision ||
         productRevision != lastDisplaySyncProductRevision ||
@@ -72,11 +69,7 @@ void NodeGraphController::tick() {
         lastDisplaySyncStateRevision = stateRevision;
         lastDisplaySyncProductRevision = productRevision;
         lastDisplaySyncPackageRevision = packageCompileRevision;
-    } else if (heatTraceRevision != lastDisplaySyncHeatTraceRevision) {
-        // update heat display transport only
-        updateHeatDisplayTransport();
     }
-    lastDisplaySyncHeatTraceRevision = heatTraceRevision;
 }
 
 void NodeGraphController::detachRuntimeBindings() {
@@ -98,7 +91,6 @@ void NodeGraphController::quiescedClear() {
     lastDisplaySyncStateRevision = UINT64_MAX;
     lastDisplaySyncProductRevision = UINT64_MAX;
     lastDisplaySyncPackageRevision = UINT64_MAX;
-    lastDisplaySyncHeatTraceRevision = UINT64_MAX;
     lastPackageErrors_.clear();
 }
 
@@ -334,21 +326,6 @@ void NodeGraphController::setWorldUnit(units::LengthUnit unit) {
     packageCompilationPending = true;
     frozenPackageRebuildPending = true;
     ++packageCompileRevision;
-}
-
-void NodeGraphController::updateHeatDisplayTransport() {
-    if (!runtimeConnections.heatDisplayTransport) return;
-
-    RuntimePackageManager& packages = packageController.packages();
-    const std::unordered_set<uint64_t> visibleKeys =
-        nodeGraphDisplay.computeDisplayKeys(
-            runtime.state(),
-            runtime.evaluation(),
-            packages,
-            &payloadRegistry);
-
-    runtimeConnections.heatDisplayTransport->sync(packages, visibleKeys);
-    runtimeConnections.heatDisplayTransport->finalizeSync();
 }
 
 void NodeGraphController::updateDisplayTransports() {
