@@ -37,18 +37,6 @@ void launchCorrectBoundaryFluxes(
     float* d_boundaryFlux,
     cudaStream_t stream);
 
-void launchComputeOutflowRate(
-    uint32_t cellCount,
-    uint32_t faceCount,
-    uint32_t boundaryFaceCount,
-    const FaceTopology* d_faces,
-    const CFDBoundaryFaceGpu* d_boundaryFaces,
-    const float* d_faceFlux,
-    const float* d_boundaryFlux,
-    const float* d_cellVolumes,
-    float* d_outflowRates,
-    cudaStream_t stream);
-
 void launchZeroMasked(
     uint32_t cellCount,
     const uint8_t* d_isPinned,

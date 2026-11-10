@@ -400,38 +400,6 @@ void launchCorrectBoundaryFluxes(
         boundaryFaceCount, d_boundaryFaces, d_boundaryConditions, d_psi, d_boundaryFlux);
 }
 
-void launchComputeOutflowRate(
-    uint32_t cellCount,
-    uint32_t faceCount,
-    uint32_t boundaryFaceCount,
-    const FaceTopology* d_faces,
-    const CFDBoundaryFaceGpu* d_boundaryFaces,
-    const float* d_faceFlux,
-    const float* d_boundaryFlux,
-    const float* d_cellVolumes,
-    float* d_outflowRates,
-    cudaStream_t stream) {
-    if (cellCount == 0 || !d_outflowRates || !d_cellVolumes) return;
-
-    cudaMemsetAsync(d_outflowRates, 0, cellCount * sizeof(float), stream);
-
-    if (faceCount > 0 && d_faces && d_faceFlux) {
-        const uint32_t blocks = (faceCount + BlockSize - 1) / BlockSize;
-        computeOutflowFacesKernel<<<blocks, BlockSize, 0, stream>>>(
-            faceCount, d_faces, d_faceFlux, d_outflowRates, nullptr);
-    }
-
-    if (boundaryFaceCount > 0 && d_boundaryFaces && d_boundaryFlux) {
-        const uint32_t blocks = (boundaryFaceCount + BlockSize - 1) / BlockSize;
-        computeOutflowBoundaryKernel<<<blocks, BlockSize, 0, stream>>>(
-            boundaryFaceCount, d_boundaryFaces, d_boundaryFlux, d_outflowRates, nullptr);
-    }
-
-    const uint32_t blocks = (cellCount + BlockSize - 1) / BlockSize;
-    finalizeOutflowRateKernel<<<blocks, BlockSize, 0, stream>>>(
-        cellCount, d_cellVolumes, d_outflowRates, nullptr);
-}
-
 void launchZeroMasked(
     uint32_t cellCount,
     const uint8_t* d_isPinned,
