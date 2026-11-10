@@ -210,8 +210,12 @@ bool buildCFDTopology(
     }
 
     std::vector<CFDFaceGpu> fineFaceGpu;
+    std::vector<FaceTopology> fineFaceTopology;
+    std::vector<FaceFluxVectors> fineFaceFluxVectors;
     std::vector<uint32_t> fineFaceGlobalIndex;
     fineFaceGpu.reserve(fineFluidFaces.size());
+    fineFaceTopology.reserve(fineFluidFaces.size());
+    fineFaceFluxVectors.reserve(fineFluidFaces.size());
     fineFaceGlobalIndex.reserve(fineFluidFaces.size());
     for (const RawFineFace& raw : fineFluidFaces) {
         CFDFaceGpu gpu{};
@@ -225,6 +229,18 @@ bool buildCFDTopology(
         gpu.fluxVectorB = raw.normal * (raw.area * weightB);
         gpu.projectionWeight = raw.weight;
         fineFaceGpu.push_back(gpu);
+
+        FaceTopology topology{};
+        topology.cellA = raw.fineA;
+        topology.cellB = raw.fineB;
+        topology.projectionWeight = raw.weight;
+        fineFaceTopology.push_back(topology);
+
+        FaceFluxVectors fluxVectors{};
+        fluxVectors.fluxVectorA = gpu.fluxVectorA;
+        fluxVectors.fluxVectorB = gpu.fluxVectorB;
+        fineFaceFluxVectors.push_back(fluxVectors);
+
         fineFaceGlobalIndex.push_back(raw.globalFaceIndex);
     }
 
@@ -272,6 +288,8 @@ bool buildCFDTopology(
 
     outTopology.fluidNodeCount = fineNodeCount;
     outTopology.faces = std::move(fineFaceGpu);
+    outTopology.faceTopology = std::move(fineFaceTopology);
+    outTopology.faceFluxVectors = std::move(fineFaceFluxVectors);
     outTopology.faceGlobalIndex = std::move(fineFaceGlobalIndex);
     outTopology.boundaryFaces = std::move(fineBoundaryFaceGpu);
     outTopology.boundaryGlobalIndex = std::move(fineBoundaryGlobalIndex);

@@ -15,6 +15,20 @@ struct CFDFaceGpu {
 };
 static_assert(sizeof(CFDFaceGpu) == 36, "CFDFaceGpu must match GPU stride");
 
+struct FaceTopology {
+    uint32_t cellA = 0;
+    uint32_t cellB = 0;
+    float projectionWeight = 0.0f;
+    uint32_t pad = 0;
+};
+static_assert(sizeof(FaceTopology) == 16, "FaceTopology must match GPU stride");
+
+struct FaceFluxVectors {
+    glm::vec3 fluxVectorA{0.0f};
+    glm::vec3 fluxVectorB{0.0f};
+};
+static_assert(sizeof(FaceFluxVectors) == 24, "FaceFluxVectors must match GPU stride");
+
 struct CFDBoundaryFaceGpu {
     uint32_t cell = 0;
     uint32_t boundaryCondition = UINT32_MAX; // 0..5 domain boundary, 6 embedded solid wall

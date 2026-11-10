@@ -113,6 +113,8 @@ void CFDSolver::releaseTopologyBuffers() {
     d_velocity.reset();
     d_velocityStar.reset();
     d_faces.reset();
+    d_faceTopology.reset();
+    d_faceFluxVectors.reset();
     d_boundaryFaces.reset();
     d_faceGlobalIndex.reset();
     d_boundaryGlobalIndex.reset();
@@ -193,6 +195,8 @@ bool CFDSolver::buildTopology(
     }
 
     this->hostFaces = std::move(topology.faces);
+    std::vector<FaceTopology> hostFaceTopology = std::move(topology.faceTopology);
+    std::vector<FaceFluxVectors> hostFaceFluxVectors = std::move(topology.faceFluxVectors);
     this->hostBoundaryFaces = std::move(topology.boundaryFaces);
     this->hostCellVolumes = std::move(topology.cellVolumes);
     this->component = std::move(topology.component);
@@ -213,6 +217,8 @@ bool CFDSolver::buildTopology(
 
     if (faceCount > 0) {
         if (!d_faces.allocate(faceCount) ||
+            !d_faceTopology.allocate(faceCount) ||
+            !d_faceFluxVectors.allocate(faceCount) ||
             !d_faceGlobalIndex.allocate(faceCount) ||
             !d_faceFlux.allocate(faceCount)) {
             clearTopology();
@@ -256,6 +262,8 @@ bool CFDSolver::buildTopology(
 
     if (faceCount > 0) {
         if (!d_faces.uploadAsync(this->hostFaces.data(), faceCount, stream) ||
+            !d_faceTopology.uploadAsync(hostFaceTopology.data(), faceCount, stream) ||
+            !d_faceFluxVectors.uploadAsync(hostFaceFluxVectors.data(), faceCount, stream) ||
             !d_faceGlobalIndex.uploadAsync(topology.faceGlobalIndex.data(), faceCount, stream) ||
             !cudaUtils::cudaCheck(cudaMemsetAsync(d_faceFlux.get(), 0, faceCount * sizeof(float), stream), "zero d_faceFlux")) {
             clearTopology();

@@ -12,6 +12,8 @@ struct CFDTopology {
     uint32_t fluidNodeCount = 0;
 
     std::vector<CFDFaceGpu> faces;
+    std::vector<FaceTopology> faceTopology;
+    std::vector<FaceFluxVectors> faceFluxVectors;
     std::vector<uint32_t> faceGlobalIndex;
     std::vector<CFDBoundaryFaceGpu> boundaryFaces;
     std::vector<uint32_t> boundaryGlobalIndex;

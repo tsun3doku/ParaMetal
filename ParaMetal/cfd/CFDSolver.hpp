@@ -99,6 +99,8 @@ private:
     cudaUtils::CudaBuffer<float> d_boundaryFlux;
 
     cudaUtils::CudaBuffer<CFDFaceGpu> d_faces;
+    cudaUtils::CudaBuffer<FaceTopology> d_faceTopology;
+    cudaUtils::CudaBuffer<FaceFluxVectors> d_faceFluxVectors;
     cudaUtils::CudaBuffer<CFDBoundaryFaceGpu> d_boundaryFaces;
 
     // local face to global face index mapping
