@@ -29,18 +29,15 @@ void NodeMeshPoints::execute(NodeKernelEval& eval) const {
         outputValue.dataType = outputSocket.contract.producedPayloadType;
 
         if (!payloadRegistry || outputValue.dataType != payloadtypes::Points) {
-            populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
 
         if (!inputData || inputData->payloadHandle.key == 0) {
-            populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
 
         const GeometryData* geometryData = payloadRegistry->resolveGeometry(inputData->payloadHandle);
         if (!geometryData || geometryData->pointPositions.empty()) {
-            populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
 
@@ -62,13 +59,11 @@ void NodeMeshPoints::execute(NodeKernelEval& eval) const {
         if (!payloadRegistry->resolveLocalToWorld(
                 inputData->payloadHandle,
                 payload.localToWorld)) {
-            populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
         payload.active = true;
         const uint64_t payloadKey = NodeSocketKey(eval.node.id, outputSocket.id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, eval.outputHashes);
-        populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 

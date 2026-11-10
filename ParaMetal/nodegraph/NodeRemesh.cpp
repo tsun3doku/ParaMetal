@@ -27,7 +27,8 @@ void NodeRemesh::execute(NodeKernelEval& eval) const {
         upstreamGeometryValue = nullptr;
     }
 
-    const bool hasValidInput = payloadRegistry && upstreamGeometryValue;
+    const bool hasValidInput = payloadRegistry && upstreamGeometryValue &&
+        upstreamGeometryValue->payloadHandle.key != 0;
     if (hasValidInput) {
         const RemeshNodeParams params = readRemeshNodeParams(eval.node);
         remeshData.sourceMeshHandle = upstreamGeometryValue->payloadHandle;
@@ -44,14 +45,12 @@ void NodeRemesh::execute(NodeKernelEval& eval) const {
         outputValue = {};
         outputValue.dataType = outputSocket.contract.producedPayloadType;
 
-        if (!payloadRegistry || outputValue.dataType != payloadtypes::Remesh) {
-            populateMetadata(outputValue, nullptr, payloadRegistry);
+        if (!payloadRegistry || outputValue.dataType != payloadtypes::Remesh || !hasValidInput) {
             continue;
         }
 
         const uint64_t payloadKey = NodeSocketKey(eval.node.id, outputSocket.id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, remeshData, eval.outputHashes);
-        populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 

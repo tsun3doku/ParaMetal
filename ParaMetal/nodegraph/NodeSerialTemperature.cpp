@@ -15,7 +15,6 @@ void NodeSerialTemperature::execute(NodeKernelEval& eval) const {
     output = {};
     output.dataType = eval.node.outputs.front().contract.producedPayloadType;
     if (!eval.runtime.payloadRegistry || output.dataType != payloadtypes::SerialTemperature) {
-        populateMetadata(output, nullptr, eval.runtime.payloadRegistry);
         return;
     }
     const auto params = readSerialTemperatureNodeParams(eval.node);
@@ -25,7 +24,6 @@ void NodeSerialTemperature::execute(NodeKernelEval& eval) const {
     data.baudRate = params.baudRate;
     const uint64_t key = NodeSocketKey(eval.node.id, eval.node.outputs.front().id);
     output.payloadHandle = eval.runtime.payloadRegistry->store(key, data, eval.outputHashes);
-    populateMetadata(output, nullptr, eval.runtime.payloadRegistry);
 }
 
 HashValues NodeSerialTemperature::computeOutputHashes(const NodeKernelHash& hash) const {

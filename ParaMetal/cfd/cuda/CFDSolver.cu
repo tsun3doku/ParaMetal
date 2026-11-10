@@ -81,6 +81,17 @@ void CFDSolver::clearTopology() {
     projectionSolver.cleanup();
     destroyMomentumSubcycleGraph();
 
+    d_maxOutflowRate.reset();
+    d_subcycleInvalid.reset();
+    d_subcycleIteration.reset();
+    d_subcycleTimestep.reset();
+    d_macroDt.reset();
+    d_kinematicViscosity.reset();
+    if (pinnedSubcycleTimestep != nullptr) {
+        cudaFreeHost(pinnedSubcycleTimestep);
+        pinnedSubcycleTimestep = nullptr;
+    }
+
     fluidNodeCount = 0;
     faceCount = 0;
     boundaryFaceCount = 0;
@@ -193,6 +204,8 @@ bool CFDSolver::buildTopology(
     if (!d_cellVolumes.allocate(fluidNodeCount) ||
         !d_velocity.allocate(fluidNodeCount) ||
         !d_velocityStar.allocate(fluidNodeCount) ||
+        !d_momentumAccum.allocate(fluidNodeCount) ||
+        !d_cellViscousWeight.allocate(fluidNodeCount) ||
         !d_outflowRates.allocate(fluidNodeCount) ||
         !d_cflPacked.allocate(1) ||
         !d_boundaryConditions.allocate(7)) {
@@ -217,6 +230,22 @@ bool CFDSolver::buildTopology(
             return false;
         }
     }
+
+    if (!d_maxOutflowRate.allocate(1) ||
+        !d_subcycleInvalid.allocate(1) ||
+        !d_subcycleIteration.allocate(1) ||
+        !d_subcycleTimestep.allocate(1) ||
+        !d_macroDt.allocate(1) ||
+        !d_kinematicViscosity.allocate(1)) {
+        clearTopology();
+        return false;
+    }
+    if (cudaMallocHost(reinterpret_cast<void**>(&pinnedSubcycleTimestep), sizeof(cudaSubcycle::SubcycleTimestep)) != cudaSuccess) {
+        pinnedSubcycleTimestep = nullptr;
+        clearTopology();
+        return false;
+    }
+    *pinnedSubcycleTimestep = cudaSubcycle::SubcycleTimestep{};
 
     auto initialGpuBcs = toGpuArray(boundaryConditions);
     if (!d_cellVolumes.uploadAsync(this->hostCellVolumes.data(), fluidNodeCount, stream) ||
@@ -263,9 +292,6 @@ bool CFDSolver::buildTopology(
 
 bool CFDSolver::buildMomentumViscousWeights(const std::array<BoundaryCondition, 7>& bcs) {
     if (fluidNodeCount == 0) return true;
-    if (!d_momentumAccum.allocate(fluidNodeCount) || !d_cellViscousWeight.allocate(fluidNodeCount)) {
-        return false;
-    }
     std::vector<float> diagWeights(fluidNodeCount, 0.0f);
     for (const auto& cf : hostFaces) {
         if (cf.cellA < fluidNodeCount && cf.cellB < fluidNodeCount && cf.cellA != cf.cellB) {
@@ -287,35 +313,18 @@ bool CFDSolver::buildMomentumViscousWeights(const std::array<BoundaryCondition, 
 }
 
 bool CFDSolver::buildMomentumSubcycleGraph(float targetCourant) {
+    if (momentumExec != nullptr && targetCourant == builtTargetCourant) {
+        return true;
+    }
     destroyMomentumSubcycleGraph();
-
-    if (!d_maxOutflowRate.allocate(1) ||
-        !d_subcycleInvalid.allocate(1) ||
-        !d_subcycleIteration.allocate(1) ||
-        !d_subcycleTimestep.allocate(1) ||
-        !d_macroDt.allocate(1) ||
-        !d_kinematicViscosity.allocate(1)) {
-        destroyMomentumSubcycleGraph();
-        return false;
-    }
-    if (cudaMallocHost(reinterpret_cast<void**>(&pinnedSubcycleTimestep), sizeof(cudaSubcycle::SubcycleTimestep)) != cudaSuccess) {
-        pinnedSubcycleTimestep = nullptr;
-        destroyMomentumSubcycleGraph();
-        return false;
-    }
-    *pinnedSubcycleTimestep = cudaSubcycle::SubcycleTimestep{};
 
     const float zero = 0.0f;
     if (!d_macroDt.upload(&zero, 1) || !d_kinematicViscosity.upload(&zero, 1)) {
-        destroyMomentumSubcycleGraph();
         return false;
     }
 
-    constexpr uint32_t MaxSubsteps = 128;
-
     cudaGraph_t graph = nullptr;
     if (!cudaUtils::cudaCheck(cudaGraphCreate(&graph, 0), "momentum subcycle graph create")) {
-        destroyMomentumSubcycleGraph();
         return false;
     }
 
@@ -334,7 +343,7 @@ bool CFDSolver::buildMomentumSubcycleGraph(float targetCourant) {
     schedule.invalidFlag = d_subcycleInvalid.get();
     schedule.macroDt = d_macroDt.get();
     schedule.targetCfl = targetCourant;
-    schedule.maxCount = MaxSubsteps;
+    schedule.maxCount = MaxMomentumSubsteps;
     schedule.timestep = d_subcycleTimestep.get();
     schedule.iteration = d_subcycleIteration.get();
 
@@ -362,7 +371,6 @@ bool CFDSolver::buildMomentumSubcycleGraph(float targetCourant) {
     if (!cudaUtils::cudaCheck(cudaGraphInstantiate(&momentumExec, graph, nullptr, nullptr, 0), "momentum subcycle instantiate")) {
         cudaGraphDestroy(graph);
         momentumExec = nullptr;
-        destroyMomentumSubcycleGraph();
         return false;
     }
     cudaGraphDestroy(graph);
@@ -375,16 +383,6 @@ void CFDSolver::destroyMomentumSubcycleGraph() {
         cudaGraphExecDestroy(momentumExec);
         momentumExec = nullptr;
     }
-    if (pinnedSubcycleTimestep) {
-        cudaFreeHost(pinnedSubcycleTimestep);
-        pinnedSubcycleTimestep = nullptr;
-    }
-    d_maxOutflowRate.reset();
-    d_subcycleInvalid.reset();
-    d_subcycleIteration.reset();
-    d_subcycleTimestep.reset();
-    d_macroDt.reset();
-    d_kinematicViscosity.reset();
     builtTargetCourant = 0.0f;
 }
 
@@ -456,6 +454,14 @@ bool CFDSolver::initializeVelocity(const glm::vec3& initialVelocity) {
     }
 
     failed = false;
+
+    // Reinitialization discards the previous step's plan; otherwise the first
+    // step of the new run rejects that stale plan and fails again.
+    if (pinnedSubcycleTimestep != nullptr) {
+        *pinnedSubcycleTimestep = cudaSubcycle::SubcycleTimestep{};
+        pinnedSubcycleTimestep->status = cudaSubcycle::SubcycleStatus::Ok;
+    }
+
     cudaSetDevice(cudaDevice);
     cudaStream_t stream = reinterpret_cast<cudaStream_t>(flowStreamHandle);
 
@@ -537,6 +543,7 @@ CFDSolver::StepOutcome CFDSolver::stepCfd(
             pinnedSubcycleTimestep->status != cudaSubcycle::SubcycleStatus::Ok) {
             std::cerr << "[CFDSolver] subcycle plan rejected: status="
                       << static_cast<uint32_t>(pinnedSubcycleTimestep->status)
+                      << " (cap " << MaxMomentumSubsteps << " substeps)"
                       << "; halting until reinitialization" << std::endl;
             failed = true;
             return StepOutcome::Failed;
@@ -581,11 +588,9 @@ CFDSolver::StepOutcome CFDSolver::stepCfd(
     }
 
     if (momentumExec == nullptr || !(targetCourant == builtTargetCourant)) {
-        if (!buildMomentumSubcycleGraph(targetCourant)) {
-            std::cerr << "[CFDSolver] momentum subcycle graph build failed\n";
-            failed = true;
-            return StepOutcome::Failed;
-        }
+        std::cerr << "[CFDSolver] momentum subcycle graph was not prepared for this step" << std::endl;
+        failed = true;
+        return StepOutcome::Failed;
     }
 
     if (!d_macroDt.uploadAsync(&macroDt, 1, stream) ||

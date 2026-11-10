@@ -20,7 +20,9 @@ void bindRegistry(py::module_& m) {
         .value("Vector3", NodeGraphValueType::Vector3)
         .value("ScalarFloat", NodeGraphValueType::ScalarFloat)
         .value("ScalarInt", NodeGraphValueType::ScalarInt)
-        .value("ScalarBool", NodeGraphValueType::ScalarBool);
+        .value("ScalarBool", NodeGraphValueType::ScalarBool)
+        .value("Simulation", NodeGraphValueType::Simulation)
+        .value("Boundary", NodeGraphValueType::Boundary);
 
     py::enum_<NodeGraphSocketDirection>(m, "SocketDirection")
         .value("Input", NodeGraphSocketDirection::Input)

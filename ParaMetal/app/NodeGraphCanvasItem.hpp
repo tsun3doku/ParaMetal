@@ -85,7 +85,8 @@ private:
         Pan,
         MoveNode,
         Connect,
-        BoxSelect
+        BoxSelect,
+        EdgeCut
     };
 
     void refreshModel();
@@ -112,6 +113,7 @@ private:
     static bool socketTypesCompatible(const Socket& source, const Socket& target);
     int edgeIndexAt(const QPointF& graphPosition) const;
     void finishConnection(const QPointF& itemPosition);
+    void updateCutEdges();
 
     NodeGraphUiModel* graphModel = nullptr;
     std::vector<Node> nodes;
@@ -127,9 +129,15 @@ private:
     int interactionSocketId = 0;
     bool connectionFromOutput = false;
     QPointF connectionEnd;
+    int unpluggedEdgeId = 0;
+    int unpluggedOriginalToNode = 0;
+    int unpluggedOriginalToSocket = 0;
     QPointF selectionStart;
     QPointF selectionEnd;
     bool selectionAdditive = false;
+    QPointF cutStart;
+    QPointF cutEnd;
+    std::vector<int> cutEdgeIds;
     int hoveredNodeId = 0;
     int hoveredCap = 0;
     int hoveredSocketNodeId = 0;

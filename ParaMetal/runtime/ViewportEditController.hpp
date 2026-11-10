@@ -10,31 +10,26 @@
 #include <deque>
 #include <vector>
 
-struct WindowRuntimeState;
-class InputController;
+class InteractionContext;
+class ModelRegistry;
 class NodeGraphController;
 class SceneController;
-class ModelRegistry;
-class RawMouseInput;
-class InteractionContext;
+
 struct GizmoDragBegin;
 struct GizmoDragUpdate;
-enum class ViewportCommand : uint8_t;
 
-class RuntimeInput {
+class ViewportEditController {
 public:
-    RuntimeInput(
-        WindowRuntimeState& windowRuntimeState,
-        InputController& inputController,
-        InteractionContext& interaction,
+    ViewportEditController(
+        InteractionContext& interactionContext,
         const NodeGraphController& graphController,
         const SceneController& sceneController,
-        ModelRegistry& modelRegistry,
-        RawMouseInput* rawMouseInput);
+        ModelRegistry& modelRegistry);
 
     void tick();
-    std::vector<ViewportCommand> takePendingViewportCommands();
-    bool takePendingNodeParameters(NodeGraphNodeId& outNodeId, std::vector<NodeGraphParamValue>& outParameters);
+    bool takePendingNodeParameters(
+        NodeGraphNodeId& outNodeId,
+        std::vector<NodeGraphParamValue>& outParameters);
 
 private:
     struct PendingNodeParameters {
@@ -46,15 +41,12 @@ private:
     void updateGizmoDrag(const GizmoDragUpdate& update);
     void endGizmoDrag();
     void resetGizmoDrag();
+    void syncHeatProbeMarkers();
 
-    WindowRuntimeState& windowRuntimeState;
-    InputController& inputController;
     InteractionContext& interaction;
     const NodeGraphController& graphController;
     const SceneController& sceneController;
     ModelRegistry& modelRegistry;
-    RawMouseInput* rawMouseInput = nullptr;
-    bool rawDragActive = false;
 
     NodeGraphNodeId activeTransformNodeId{};
     uint32_t activeRuntimeModelId = 0;
@@ -66,4 +58,3 @@ private:
     GizmoAxis activeAxis = GizmoAxis::None;
     std::deque<PendingNodeParameters> pendingNodeParameters;
 };
-

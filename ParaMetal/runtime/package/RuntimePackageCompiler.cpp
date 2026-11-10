@@ -1,5 +1,6 @@
 #include "RuntimePackageCompiler.hpp"
 
+#include "domain/BoundaryData.hpp"
 #include "domain/FluidData.hpp"
 #include "domain/HeatModelData.hpp"
 #include "domain/PointData.hpp"
@@ -10,6 +11,7 @@
 #include "nodegraph/NodeGraphState.hpp"
 #include "nodegraph/NodeGraphUtils.hpp"
 #include "nodegraph/NodeHeatSolveParams.hpp"
+#include "nodegraph/NodeCFDParams.hpp"
 #include "nodegraph/NodeHeatProbeParams.hpp"
 #include "domain/HeatProbeData.hpp"
 #include "nodegraph/NodeMergeParams.hpp"
@@ -171,6 +173,7 @@ bool RuntimePackageCompiler::compileRemeshPackage(
     package.remeshHandle = output.payloadHandle;
     package.sourceMeshHandle = remesh->sourceMeshHandle;
     package.sourceModelProduct = model->productHandle;
+    package.displayDependencyKeys.push_back(model->productHandle.outputSocketKey);
     runtimepackage::CoordinatePass{}.run(package, worldUnit);
     HashPackage::seal(package, resolveHandleHashes(payloads, remesh->sourceMeshHandle));
     packages.apply<RemeshPackage>(outputSocketKey, package);
@@ -226,6 +229,8 @@ bool RuntimePackageCompiler::compileVoronoiPackage(
         package.globalRemeshHandles.push_back(remeshHandle);
         package.globalRemeshProducts.push_back(remesh->productHandle);
         package.globalModelProducts.push_back(model->productHandle);
+        package.displayDependencyKeys.push_back(remesh->productHandle.outputSocketKey);
+        package.displayDependencyKeys.push_back(model->productHandle.outputSocketKey);
     }
 
     runtimepackage::CoordinatePass{}.run(package, worldUnit);
@@ -362,11 +367,18 @@ bool RuntimePackageCompiler::compileHeatPackage(
     package.display.fluxVectorScale = static_cast<float>(params.preview.fluxVectorScale);
     package.display.isocontourSpacingC = params.isocontourSpacingC;
 
-    for (uint32_t face = 0; face < 6; ++face) {
-        package.domainBoundaryTypes[face] = static_cast<uint32_t>(heat->boundaries[face].type);
-        package.domainBoundaryTemperaturesC[face] = heat->boundaries[face].temperatureC;
-        package.domainBoundaryHeatFluxes[face] = heat->boundaries[face].heatFlux;
-        package.domainBoundaryHeatTransferCoefficients[face] = heat->boundaries[face].htc;
+    const BoundaryData* boundary = heat->boundaryHandle.key != 0
+        ? payloads.get<BoundaryData>(heat->boundaryHandle)
+        : nullptr;
+    if (boundary) {
+        for (uint32_t face = 0; face < 6; ++face) {
+            const BoundaryData::Face& authored = boundary->faces[face];
+            package.domainBoundaryTypes[face] = static_cast<uint32_t>(authored.thermalType);
+            package.domainBoundaryTemperaturesC[face] = authored.temperatureC;
+            package.domainBoundaryHeatFluxes[face] = authored.heatFlux;
+            package.domainBoundaryHeatTransferCoefficients[face] = authored.htc;
+            package.domainBoundaryInflowTemperaturesC[face] = authored.inflowTemperatureC;
+        }
     }
 
     struct AuthoredHeatModel {
@@ -385,6 +397,11 @@ bool RuntimePackageCompiler::compileHeatPackage(
         heat->activeVoronoiCount == 1;
 
     if (heat->active) {
+        if (!boundary) {
+            errors.push_back("HeatSolve requires a Boundary Conditions input.");
+            return false;
+        }
+
         if (!canResolveDomain) {
             errors.push_back("HeatSolve requires exactly one active Voronoi input.");
             return false;
@@ -497,12 +514,29 @@ bool RuntimePackageCompiler::compileHeatPackage(
                 errors.push_back("Heat package CFD input does not share the same Voronoi domain as Heat.");
                 return false;
             }
+            if (heat->heatFluidHandle.key != 0 && cfdPackage->fluidHandle.key != 0 &&
+                heat->heatFluidHandle.key != cfdPackage->fluidHandle.key) {
+                errors.push_back("Heat and CFD must share the same Fluid input.");
+                return false;
+            }
+            if (heat->boundaryHandle.key != 0 && cfdPackage->boundaryHandle.key != 0 &&
+                heat->boundaryHandle.key != cfdPackage->boundaryHandle.key) {
+                errors.push_back("Heat and CFD must share the same Boundary Conditions input.");
+                return false;
+            }
         }
     }
 
     runtimepackage::CoordinatePass{}.run(package, worldUnit);
     if (domainPackage) {
         package.domainVoronoiProduct = domainPackage->productHandle;
+    }
+    for (const HeatModelPackage& model : package.models) {
+        package.displayDependencyKeys.push_back(model.modelProduct.outputSocketKey);
+        package.displayDependencyKeys.push_back(model.remeshProduct.outputSocketKey);
+    }
+    if (package.domainVoronoiProduct.isValid()) {
+        package.displayDependencyKeys.push_back(package.domainVoronoiProduct.outputSocketKey);
     }
     HashPackage::seal(package, output.hashes);
     packages.apply<HeatPackage>(outputSocketKey, package);
@@ -517,8 +551,7 @@ bool RuntimePackageCompiler::compileCFDPackage(
     units::LengthUnit worldUnit,
     RuntimePackageManager& packages,
     std::vector<std::string>& errors) const {
-    (void)node;
-    (void)worldUnit;
+    const CFDNodeParams params = readCFDNodeParams(node);
     const CFDData* cfd = payloads.get<CFDData>(output.payloadHandle);
     if (!cfd) return true;
 
@@ -526,20 +559,37 @@ bool RuntimePackageCompiler::compileCFDPackage(
     const CFDPackage* previous = packages.findStored<CFDPackage>(outputSocketKey);
     package.productHandle = previous ? previous->productHandle : ProductHandle{};
     package.domainVoronoiHandle = cfd->domainVoronoiHandle;
+    package.fluidHandle = cfd->fluidHandle;
+    package.boundaryHandle = cfd->boundaryHandle;
     package.initialVelocity = cfd->initialVelocity;
     package.fixedTimeStep = cfd->fixedTimeStep;
     package.targetCourant = cfd->targetCourant;
     package.pressureIterations = cfd->pressureIterations;
     package.pressureTolerance = cfd->pressureTolerance;
+    package.simulationDuration = cfd->simulationDuration;
     package.active = cfd->active;
+    package.canonicalToWorldScale = units::canonicalToWorldScale(worldUnit);
+    package.display.showStreamlines = params.preview.showStreamlines;
+    package.display.showDomainBox = params.preview.showDomainBox;
+    package.display.showVelocityPalette = params.preview.showVelocityPalette;
 
-    for (uint32_t i = 0; i < 6; ++i) {
-        package.domainBoundaryTypes[i] = static_cast<uint32_t>(cfd->boundaries[i].type);
-        package.domainBoundaryVelocities[i] = cfd->boundaries[i].velocity;
+    const BoundaryData* boundary = cfd->boundaryHandle.key != 0
+        ? payloads.get<BoundaryData>(cfd->boundaryHandle)
+        : nullptr;
+    if (boundary) {
+        for (uint32_t i = 0; i < 6; ++i) {
+            package.domainBoundaryTypes[i] = static_cast<uint32_t>(boundary->faces[i].flowType);
+            package.domainBoundaryVelocities[i] = boundary->faces[i].velocity;
+        }
     }
 
     const bool canResolveDomain = cfd->domainVoronoiHandle.key != 0;
     if (cfd->active) {
+        if (!boundary) {
+            errors.push_back("CFD requires a Boundary Conditions input.");
+            return false;
+        }
+
         if (!canResolveDomain) {
             errors.push_back("CFD requires an active Voronoi domain input.");
             return false;
@@ -570,6 +620,13 @@ bool RuntimePackageCompiler::compileCFDPackage(
 
     if (domainPackage) {
         package.domainVoronoiProduct = domainPackage->productHandle;
+        package.displayDependencyKeys.push_back(domainPackage->productHandle.outputSocketKey);
+        for (const ProductHandle& handle : domainPackage->globalRemeshProducts) {
+            package.displayDependencyKeys.push_back(handle.outputSocketKey);
+        }
+        for (const ProductHandle& handle : domainPackage->globalModelProducts) {
+            package.displayDependencyKeys.push_back(handle.outputSocketKey);
+        }
     }
 
     if (cfd->hasFluid && cfd->fluidHandle.key != 0) {

@@ -23,6 +23,7 @@ inline constexpr const char* SerialTemperature = "serial_temperature";
 inline constexpr const char* CFD = "cfd";
 inline constexpr const char* HeatProbe = "heat_probe";
 inline constexpr const char* Write = "write";
+inline constexpr const char* BoundaryConditions = "boundary_conditions";
 }
 
 namespace nodegraphparams {
@@ -83,12 +84,18 @@ constexpr uint32_t SolverMaxIterations = 30;
 constexpr uint32_t SolverConvergenceTolerance = 31;
 constexpr uint32_t ShowIsocontours = 32;
 constexpr uint32_t IsocontourSpacingC = 34;
+}
 
-// Domain Boundary Conditions (6 faces: 0=-X, 1=+X, 2=-Y, 3=+Y, 4=-Z, 5=+Z)
-inline constexpr uint32_t domainBoundaryTypeParam(uint32_t face) { return 100 + face * 4; }
-inline constexpr uint32_t domainBoundaryTempParam(uint32_t face) { return 101 + face * 4; }
-inline constexpr uint32_t domainBoundaryFluxParam(uint32_t face) { return 102 + face * 4; }
-inline constexpr uint32_t domainBoundaryHtcParam(uint32_t face)  { return 103 + face * 4; }
+namespace boundaryconditions {
+inline constexpr uint32_t flowTypeParam(uint32_t face)           { return 100 + face * 10; }
+inline constexpr uint32_t velocityXParam(uint32_t face)          { return 101 + face * 10; }
+inline constexpr uint32_t velocityYParam(uint32_t face)          { return 102 + face * 10; }
+inline constexpr uint32_t velocityZParam(uint32_t face)          { return 103 + face * 10; }
+inline constexpr uint32_t thermalTypeParam(uint32_t face)        { return 104 + face * 10; }
+inline constexpr uint32_t temperatureParam(uint32_t face)        { return 105 + face * 10; }
+inline constexpr uint32_t heatFluxParam(uint32_t face)           { return 106 + face * 10; }
+inline constexpr uint32_t htcParam(uint32_t face)                { return 107 + face * 10; }
+inline constexpr uint32_t inflowTemperatureParam(uint32_t face)  { return 108 + face * 10; }
 }
 
 namespace voronoi {
@@ -142,10 +149,6 @@ constexpr uint32_t Density = 1;
 constexpr uint32_t SpecificHeat = 2;
 constexpr uint32_t Conductivity = 3;
 constexpr uint32_t InitialTemperatureC = 4;
-constexpr uint32_t VelocityX = 5;
-constexpr uint32_t VelocityY = 6;
-constexpr uint32_t VelocityZ = 7;
-constexpr uint32_t InletTemperatureC = 8;
 constexpr uint32_t KinematicViscosity = 9;
 }
 namespace fluid = heatfluid;
@@ -163,12 +166,12 @@ constexpr uint32_t VelocityY = 5;
 constexpr uint32_t VelocityZ = 6;
 constexpr uint32_t PressureIterations = 7;
 constexpr uint32_t PressureTolerance = 8;
+constexpr uint32_t Duration = 9;
 
-// Domain Boundary Conditions (6 faces: 0=-X, 1=+X, 2=-Y, 3=+Y, 4=-Z, 5=+Z)
-inline constexpr uint32_t domainBoundaryTypeParam(uint32_t face) { return 100 + face * 4; }
-inline constexpr uint32_t domainBoundaryVelocityXParam(uint32_t face) { return 101 + face * 4; }
-inline constexpr uint32_t domainBoundaryVelocityYParam(uint32_t face) { return 102 + face * 4; }
-inline constexpr uint32_t domainBoundaryVelocityZParam(uint32_t face) { return 103 + face * 4; }
+// Preview
+constexpr uint32_t ShowDomainBox = 24;
+constexpr uint32_t ShowStreamlines = 28;
+constexpr uint32_t ShowVelocityPalette = 29;
 }
 
 namespace write {

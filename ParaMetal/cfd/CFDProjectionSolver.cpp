@@ -195,12 +195,6 @@ bool CFDProjectionSolver::build(
         return false;
     }
 
-    std::cerr << "[CFDProjectionSolver] pressure solver=native-pcg"
-              << " cells=" << cellCount
-              << " nnz=" << pressureValues.size()
-              << " maxIterations=" << nativeIterationLimit(pressureMaxIterations)
-              << " tolerance=" << nativeTolerance(pressureTolerance)
-              << std::endl;
     return true;
 }
 

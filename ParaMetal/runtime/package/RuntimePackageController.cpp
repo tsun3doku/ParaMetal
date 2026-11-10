@@ -5,6 +5,7 @@
 #include "runtime/RuntimeHeatComputeTransport.hpp"
 #include "runtime/RuntimeCFDComputeTransport.hpp"
 #include "runtime/RuntimeHeatDisplayTransport.hpp"
+#include "runtime/RuntimeCFDDisplayTransport.hpp"
 #include "runtime/RuntimeModelComputeTransport.hpp"
 #include "runtime/RuntimeModelDisplayTransport.hpp"
 #include "runtime/RuntimePointComputeTransport.hpp"
@@ -21,22 +22,22 @@ RuntimePackageController::~RuntimePackageController() {
 
 void RuntimePackageController::clear() {
     for (const auto& [key, _] : packageManager.models()) {
-        if (connections.modelComputeTransport) connections.modelComputeTransport->remove(key);
+        if (transports.modelComputeTransport) transports.modelComputeTransport->remove(key);
     }
     for (const auto& [key, _] : packageManager.points()) {
-        if (connections.pointComputeTransport) connections.pointComputeTransport->remove(key);
+        if (transports.pointComputeTransport) transports.pointComputeTransport->remove(key);
     }
     for (const auto& [key, _] : packageManager.remeshes()) {
-        if (connections.remeshComputeTransport) connections.remeshComputeTransport->remove(key);
+        if (transports.remeshComputeTransport) transports.remeshComputeTransport->remove(key);
     }
     for (const auto& [key, _] : packageManager.voronois()) {
-        if (connections.voronoiComputeTransport) connections.voronoiComputeTransport->remove(key);
+        if (transports.voronoiComputeTransport) transports.voronoiComputeTransport->remove(key);
     }
     for (const auto& [key, _] : packageManager.heatSystems()) {
-        if (connections.heatComputeTransport) connections.heatComputeTransport->remove(key);
+        if (transports.heatComputeTransport) transports.heatComputeTransport->remove(key);
     }
     for (const auto& [key, _] : packageManager.cfdSystems()) {
-        if (connections.cfdComputeTransport) connections.cfdComputeTransport->remove(key);
+        if (transports.cfdComputeTransport) transports.cfdComputeTransport->remove(key);
     }
     packageManager.clearAll();
     processedSockets.clear();
@@ -45,19 +46,20 @@ void RuntimePackageController::clear() {
     }
 }
 
-RuntimePackageController::RuntimePackageController(const RuntimeConnections& runtimeConnections)
-    : connections(runtimeConnections),
+RuntimePackageController::RuntimePackageController(const RuntimeTransports& runtimeTransports)
+    : transports(runtimeTransports),
       productManager(std::make_unique<RuntimeProductManager>()) {
     RuntimeProductManager* products = productManager.get();
-    if (connections.remeshComputeTransport) connections.remeshComputeTransport->setProducts(products);
-    if (connections.voronoiComputeTransport) connections.voronoiComputeTransport->setProducts(products);
-    if (connections.heatComputeTransport) connections.heatComputeTransport->setProducts(products);
-    if (connections.cfdComputeTransport) connections.cfdComputeTransport->setProducts(products);
-    if (connections.modelDisplayTransport) connections.modelDisplayTransport->setProducts(products);
-    if (connections.pointDisplayTransport) connections.pointDisplayTransport->setProducts(products);
-    if (connections.remeshDisplayTransport) connections.remeshDisplayTransport->setProducts(products);
-    if (connections.voronoiDisplayTransport) connections.voronoiDisplayTransport->setProducts(products);
-    if (connections.heatDisplayTransport) connections.heatDisplayTransport->setProducts(products);
+    if (transports.remeshComputeTransport) transports.remeshComputeTransport->setProducts(products);
+    if (transports.voronoiComputeTransport) transports.voronoiComputeTransport->setProducts(products);
+    if (transports.heatComputeTransport) transports.heatComputeTransport->setProducts(products);
+    if (transports.cfdComputeTransport) transports.cfdComputeTransport->setProducts(products);
+    if (transports.modelDisplayTransport) transports.modelDisplayTransport->setProducts(products);
+    if (transports.pointDisplayTransport) transports.pointDisplayTransport->setProducts(products);
+    if (transports.remeshDisplayTransport) transports.remeshDisplayTransport->setProducts(products);
+    if (transports.voronoiDisplayTransport) transports.voronoiDisplayTransport->setProducts(products);
+    if (transports.heatDisplayTransport) transports.heatDisplayTransport->setProducts(products);
+    if (transports.cfdDisplayTransport) transports.cfdDisplayTransport->setProducts(products);
 }
 
 void RuntimePackageController::beginCompilation() {
@@ -119,9 +121,9 @@ bool RuntimePackageController::applyNode(const NodeGraphNode& node) {
 }
 
 bool RuntimePackageController::applyPackage(uint64_t socketKey, const ModelPackage& package) {
-    if (!connections.modelComputeTransport) return true;
+    if (!transports.modelComputeTransport) return true;
     ModelProduct product{};
-    const ComputeApplyResult result = connections.modelComputeTransport->apply(socketKey, package, product);
+    const ComputeApplyResult result = transports.modelComputeTransport->apply(socketKey, package, product);
     if (result == ComputeApplyResult::Unchanged) {
         const ProductHandle handle = productManager->getCurrentHandle<ModelProduct>(socketKey);
         if (handle.isValid()) {
@@ -141,9 +143,9 @@ bool RuntimePackageController::applyPackage(uint64_t socketKey, const ModelPacka
 }
 
 bool RuntimePackageController::applyPackage(uint64_t socketKey, const PointPackage& package) {
-    if (!connections.pointComputeTransport) return true;
+    if (!transports.pointComputeTransport) return true;
     PointProduct product{};
-    const ComputeApplyResult result = connections.pointComputeTransport->apply(socketKey, package, product);
+    const ComputeApplyResult result = transports.pointComputeTransport->apply(socketKey, package, product);
     if (result == ComputeApplyResult::Unchanged) {
         const ProductHandle handle = productManager->getCurrentHandle<PointProduct>(socketKey);
         if (handle.isValid()) {
@@ -154,20 +156,20 @@ bool RuntimePackageController::applyPackage(uint64_t socketKey, const PointPacka
     } else if (result == ComputeApplyResult::Prepared) {
         const ProductHandle handle = productManager->publish<PointProduct>(socketKey, product);
         if (handle.isValid()) {
-            connections.pointComputeTransport->commitPending(socketKey);
+            transports.pointComputeTransport->commitPending(socketKey);
             packageManager.setProductHandle(socketKey, handle);
             processedSockets.insert(socketKey);
             return true;
         }
-        connections.pointComputeTransport->cancelPending(socketKey);
+        transports.pointComputeTransport->cancelPending(socketKey);
     }
     return false;
 }
 
 bool RuntimePackageController::applyPackage(uint64_t socketKey, const RemeshPackage& package) {
-    if (!connections.remeshComputeTransport) return true;
+    if (!transports.remeshComputeTransport) return true;
     RemeshProduct product{};
-    const ComputeApplyResult result = connections.remeshComputeTransport->apply(socketKey, package, product);
+    const ComputeApplyResult result = transports.remeshComputeTransport->apply(socketKey, package, product);
     if (result == ComputeApplyResult::Unchanged) {
         const ProductHandle handle = productManager->getCurrentHandle<RemeshProduct>(socketKey);
         if (handle.isValid()) {
@@ -178,20 +180,20 @@ bool RuntimePackageController::applyPackage(uint64_t socketKey, const RemeshPack
     } else if (result == ComputeApplyResult::Prepared) {
         const ProductHandle handle = productManager->publish<RemeshProduct>(socketKey, product);
         if (handle.isValid()) {
-            connections.remeshComputeTransport->commitPending(socketKey);
+            transports.remeshComputeTransport->commitPending(socketKey);
             packageManager.setProductHandle(socketKey, handle);
             processedSockets.insert(socketKey);
             return true;
         }
-        connections.remeshComputeTransport->cancelPending(socketKey);
+        transports.remeshComputeTransport->cancelPending(socketKey);
     }
     return false;
 }
 
 bool RuntimePackageController::applyPackage(uint64_t socketKey, const VoronoiPackage& package) {
-    if (!connections.voronoiComputeTransport) return true;
+    if (!transports.voronoiComputeTransport) return true;
     VoronoiProduct product{};
-    const ComputeApplyResult result = connections.voronoiComputeTransport->apply(socketKey, package, product);
+    const ComputeApplyResult result = transports.voronoiComputeTransport->apply(socketKey, package, product);
     if (result == ComputeApplyResult::Unchanged) {
         const ProductHandle handle = productManager->getCurrentHandle<VoronoiProduct>(socketKey);
         if (handle.isValid()) {
@@ -202,20 +204,20 @@ bool RuntimePackageController::applyPackage(uint64_t socketKey, const VoronoiPac
     } else if (result == ComputeApplyResult::Prepared) {
         const ProductHandle handle = productManager->publish<VoronoiProduct>(socketKey, product);
         if (handle.isValid()) {
-            connections.voronoiComputeTransport->commitPending(socketKey);
+            transports.voronoiComputeTransport->commitPending(socketKey);
             packageManager.setProductHandle(socketKey, handle);
             processedSockets.insert(socketKey);
             return true;
         }
-        connections.voronoiComputeTransport->cancelPending(socketKey);
+        transports.voronoiComputeTransport->cancelPending(socketKey);
     }
     return false;
 }
 
 bool RuntimePackageController::applyPackage(uint64_t socketKey, const HeatPackage& package) {
-    if (!connections.heatComputeTransport) return true;
+    if (!transports.heatComputeTransport) return true;
     HeatProduct product{};
-    const ComputeApplyResult result = connections.heatComputeTransport->apply(socketKey, package, product);
+    const ComputeApplyResult result = transports.heatComputeTransport->apply(socketKey, package, product);
     if (result == ComputeApplyResult::Unchanged) {
         const ProductHandle handle = productManager->getCurrentHandle<HeatProduct>(socketKey);
         if (handle.isValid()) {
@@ -226,20 +228,20 @@ bool RuntimePackageController::applyPackage(uint64_t socketKey, const HeatPackag
     } else if (result == ComputeApplyResult::Prepared) {
         const ProductHandle handle = productManager->publish<HeatProduct>(socketKey, product);
         if (handle.isValid()) {
-            connections.heatComputeTransport->commitPending(socketKey);
+            transports.heatComputeTransport->commitPending(socketKey);
             packageManager.setProductHandle(socketKey, handle);
             processedSockets.insert(socketKey);
             return true;
         }
-        connections.heatComputeTransport->cancelPending(socketKey);
+        transports.heatComputeTransport->cancelPending(socketKey);
     }
     return false;
 }
 
 bool RuntimePackageController::applyPackage(uint64_t socketKey, const CFDPackage& package) {
-    if (!connections.cfdComputeTransport) return true;
+    if (!transports.cfdComputeTransport) return true;
     CFDProduct product{};
-    const ComputeApplyResult result = connections.cfdComputeTransport->apply(socketKey, package, product);
+    const ComputeApplyResult result = transports.cfdComputeTransport->apply(socketKey, package, product);
     if (result == ComputeApplyResult::Unchanged) {
         const ProductHandle handle = productManager->getCurrentHandle<CFDProduct>(socketKey);
         if (handle.isValid()) {
@@ -250,12 +252,12 @@ bool RuntimePackageController::applyPackage(uint64_t socketKey, const CFDPackage
     } else if (result == ComputeApplyResult::Prepared) {
         const ProductHandle handle = productManager->publish<CFDProduct>(socketKey, product);
         if (handle.isValid()) {
-            connections.cfdComputeTransport->commitPending(socketKey);
+            transports.cfdComputeTransport->commitPending(socketKey);
             packageManager.setProductHandle(socketKey, handle);
             processedSockets.insert(socketKey);
             return true;
         }
-        connections.cfdComputeTransport->cancelPending(socketKey);
+        transports.cfdComputeTransport->cancelPending(socketKey);
     }
     return false;
 }
@@ -274,11 +276,12 @@ void RuntimePackageController::finishCompilation(bool success) {
 }
 
 void RuntimePackageController::detachAllDisplayBindings() {
-    if (connections.modelDisplayTransport) connections.modelDisplayTransport->detachAll();
-    if (connections.pointDisplayTransport) connections.pointDisplayTransport->detachAll();
-    if (connections.remeshDisplayTransport) connections.remeshDisplayTransport->detachAll();
-    if (connections.voronoiDisplayTransport) connections.voronoiDisplayTransport->detachAll();
-    if (connections.heatDisplayTransport) connections.heatDisplayTransport->detachAll();
+    if (transports.modelDisplayTransport) transports.modelDisplayTransport->detachAll();
+    if (transports.pointDisplayTransport) transports.pointDisplayTransport->detachAll();
+    if (transports.remeshDisplayTransport) transports.remeshDisplayTransport->detachAll();
+    if (transports.voronoiDisplayTransport) transports.voronoiDisplayTransport->detachAll();
+    if (transports.heatDisplayTransport) transports.heatDisplayTransport->detachAll();
+    if (transports.cfdDisplayTransport) transports.cfdDisplayTransport->detachAll();
 }
 
 void RuntimePackageController::quiescedClear() {
@@ -293,11 +296,12 @@ void RuntimePackageController::detachDisplayBindings(uint64_t socketKey) {
     if (socketKey == 0) {
         return;
     }
-    if (connections.modelDisplayTransport) connections.modelDisplayTransport->detach(socketKey);
-    if (connections.pointDisplayTransport) connections.pointDisplayTransport->detach(socketKey);
-    if (connections.remeshDisplayTransport) connections.remeshDisplayTransport->detach(socketKey);
-    if (connections.voronoiDisplayTransport) connections.voronoiDisplayTransport->detach(socketKey);
-    if (connections.heatDisplayTransport) connections.heatDisplayTransport->detach(socketKey);
+    if (transports.modelDisplayTransport) transports.modelDisplayTransport->detach(socketKey);
+    if (transports.pointDisplayTransport) transports.pointDisplayTransport->detach(socketKey);
+    if (transports.remeshDisplayTransport) transports.remeshDisplayTransport->detach(socketKey);
+    if (transports.voronoiDisplayTransport) transports.voronoiDisplayTransport->detach(socketKey);
+    if (transports.heatDisplayTransport) transports.heatDisplayTransport->detach(socketKey);
+    if (transports.cfdDisplayTransport) transports.cfdDisplayTransport->detach(socketKey);
 }
 
 void RuntimePackageController::removeNodeRuntime(uint64_t socketKey) {
@@ -314,12 +318,12 @@ void RuntimePackageController::removeNodeRuntime(uint64_t socketKey) {
         productManager->unpublish<HeatProduct>(socketKey);
         productManager->unpublish<CFDProduct>(socketKey);
     }
-    if (connections.modelComputeTransport) connections.modelComputeTransport->remove(socketKey);
-    if (connections.pointComputeTransport) connections.pointComputeTransport->remove(socketKey);
-    if (connections.remeshComputeTransport) connections.remeshComputeTransport->remove(socketKey);
-    if (connections.voronoiComputeTransport) connections.voronoiComputeTransport->remove(socketKey);
-    if (connections.heatComputeTransport) connections.heatComputeTransport->remove(socketKey);
-    if (connections.cfdComputeTransport) connections.cfdComputeTransport->remove(socketKey);
+    if (transports.modelComputeTransport) transports.modelComputeTransport->remove(socketKey);
+    if (transports.pointComputeTransport) transports.pointComputeTransport->remove(socketKey);
+    if (transports.remeshComputeTransport) transports.remeshComputeTransport->remove(socketKey);
+    if (transports.voronoiComputeTransport) transports.voronoiComputeTransport->remove(socketKey);
+    if (transports.heatComputeTransport) transports.heatComputeTransport->remove(socketKey);
+    if (transports.cfdComputeTransport) transports.cfdComputeTransport->remove(socketKey);
 }
 
 void RuntimePackageController::invalidateOutputsForNode(const NodeGraphNode& node) {

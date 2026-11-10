@@ -1,7 +1,9 @@
 #include "CFDSystemComputeController.hpp"
+#include "hash/HashProduct.hpp"
 #include "runtime/RuntimeProducts.hpp"
 #include <glm/glm.hpp>
 #include <cassert>
+#include <cmath>
 #include <iostream>
 
 namespace cfd {
@@ -13,11 +15,24 @@ bool CFDSystemComputeController::canUpdateInPlace(const Config& previous, const 
     if (previous.targetCourant != next.targetCourant) {
         return false;
     }
+    // History frame index is duration / time step; changing either reallocates it.
+    if (previous.fixedTimeStep != next.fixedTimeStep) {
+        return false;
+    }
+    if (previous.simulationDuration != next.simulationDuration) {
+        return false;
+    }
     if (glm::length(previous.initialVelocity - next.initialVelocity) > 1e-6f) {
+        return false;
+    }
+    if (std::abs(previous.kinematicViscosity - next.kinematicViscosity) > 1e-12f) {
         return false;
     }
     for (uint32_t i = 0; i < 6; ++i) {
         if (previous.domainBoundaryTypes[i] != next.domainBoundaryTypes[i]) {
+            return false;
+        }
+        if (glm::length(previous.domainBoundaryVelocities[i] - next.domainBoundaryVelocities[i]) > 1e-6f) {
             return false;
         }
     }
@@ -26,9 +41,11 @@ bool CFDSystemComputeController::canUpdateInPlace(const Config& previous, const 
 
 CFDSystemComputeController::CFDSystemComputeController(
     VulkanDevice& device,
+    MemoryAllocator& allocator,
     CommandPool& cmdPool,
     uint32_t maxFramesInFlight)
     : vulkanDevice(device),
+      memoryAllocator(allocator),
       commandPool(cmdPool),
       maxFramesInFlight(maxFramesInFlight) {
 }
@@ -79,6 +96,7 @@ bool CFDSystemComputeController::apply(uint64_t socketKey, const Config& config)
 
     auto candidate = std::make_unique<CFDSystem>(
         vulkanDevice,
+        memoryAllocator,
         commandPool,
         maxFramesInFlight);
     if (!candidate->configure(
@@ -90,7 +108,8 @@ bool CFDSystemComputeController::apply(uint64_t socketKey, const Config& config)
             config.fixedTimeStep,
             config.targetCourant,
             config.pressureIterations,
-            config.pressureTolerance)) {
+            config.pressureTolerance,
+            config.simulationDuration)) {
         generationSlots[socketKey].retiring = std::move(candidate);
         failedComputeHashes[socketKey] = config.computeHash;
         std::cerr << "[CFDSystemComputeController] Failed to configure CFDSystem for socket "
@@ -243,9 +262,9 @@ bool CFDSystemComputeController::buildProduct(uint64_t socketKey, CFDProduct& ou
     const auto& runtime = systemPtr->getRuntime();
     outProduct.fluidNodeCount = runtime.getFluidNodeCount();
 
-    outProduct.velocityBuffer = runtime.velocityBuffer();
-    outProduct.velocityBufferSize = runtime.getVelocityExternalBuffer().getBufferSize();
-    outProduct.velocityBufferOffset = 0;
+    outProduct.streamlineVertexBuffer = systemPtr->streamlineVertexBuffer();
+    outProduct.streamlineVertexBufferOffset = systemPtr->streamlineVertexBufferOffset();
+    outProduct.streamlineVertexCount = systemPtr->streamlineVertexCount();
 
     outProduct.faceFluxBuffer = runtime.faceFluxBuffer();
     outProduct.faceFluxBufferSize = runtime.getFaceFluxExternalBuffer().getBufferSize();
@@ -258,11 +277,10 @@ bool CFDSystemComputeController::buildProduct(uint64_t socketKey, CFDProduct& ou
     outProduct.boundaryFluxCount = runtime.getGlobalBoundaryFaceCount();
 
     const Config* config = getBuildConfig(socketKey);
-    if (config) {
-        outProduct.hashes.simulation = config->computeHash;
-        outProduct.hashes.geometry = config->geometryHash;
-        outProduct.hashes.full = config->computeHash;
-    }
+    HashProduct::seal(
+        outProduct,
+        config ? config->geometryHash : 0,
+        config ? config->computeHash : 0);
 
     return outProduct.isValid();
 }

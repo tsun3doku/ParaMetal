@@ -9,6 +9,7 @@
 #include "runtime/PointDisplayController.hpp"
 #include "runtime/RemeshDisplayController.hpp"
 #include "runtime/HeatDisplayController.hpp"
+#include "runtime/CFDDisplayController.hpp"
 #include "runtime/VoronoiDisplayController.hpp"
 #include "app/ViewportTarget.hpp"
 #include "render/RenderRuntime.hpp"
@@ -46,6 +47,7 @@ private:
     std::unique_ptr<PointDisplayController> pointDisplayControllerState;
     std::unique_ptr<RemeshDisplayController> remeshDisplayControllerState;
     std::unique_ptr<HeatDisplayController> heatDisplayControllerState;
+    std::unique_ptr<CFDDisplayController> cfdDisplayControllerState;
     std::unique_ptr<VoronoiDisplayController> voronoiDisplayControllerState;
     bool initialized = false;
 };

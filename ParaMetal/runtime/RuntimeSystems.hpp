@@ -31,13 +31,13 @@ struct WindowRuntimeState;
 
 class RuntimeSystems : public RuntimeQuery {
 public:
-    RuntimeSystems() = default;
+    RuntimeSystems();
     ~RuntimeSystems();
 
     bool initialize(WindowRuntimeState& runtimeState, const AppVulkanContext& vulkanContext);
     void tickFrame(float deltaTime, VkCommandBuffer commandBuffer, uint32_t frameIndex);
     bool updateViewportTarget(VkImage image, VkFormat format, VkExtent2D extent);
-    void replaceGraphState(const NodeGraphState& state);
+    bool replaceGraphState(const NodeGraphState& state);
     bool applyGraphDelta(const NodeGraphDelta& delta);
     bool takePendingNodeParameters(NodeGraphNodeId& outNodeId, std::vector<NodeGraphParamValue>& outParameters);
     void requestExport(int nodeId);
@@ -62,8 +62,11 @@ public:
     void setCameraPanSpeed(float speed);
     void setHeatPaletteRange(float minimum, float maximum);
     void setHeatPalette(int palette);
+    void setVelocityPaletteRange(float minimum, float maximum);
+    void setVelocityPalette(int palette);
     void setWorldUnit(int unit);
     bool isHeatPaletteVisible() const;
+    bool isVelocityPaletteVisible() const;
     const app::RenderSettings& renderSettings() const;
     CameraController* getCameraController();
     ModelSelection* getModelSelection();
@@ -76,6 +79,7 @@ public:
 private:
     void cleanup();
     void dispatchViewportCommands();
+    void reclaimRetiredGenerations();
     bool isSimulationActive() const override;
     bool isSimulationPaused() const override;
     uint32_t getSimulationRecordedTimelineFrames() const override;
@@ -109,5 +113,6 @@ private:
     units::LengthUnit worldUnitState = units::defaultLengthUnit();
     TimelineRuntime timelineRuntime;
     TimelineController timelineControllerInstance{&timelineRuntime};
+    bool hadSimulationTimeline = false;
     RuntimeExport runtimeExport;
 };

@@ -3,7 +3,6 @@
 #include <glm/glm.hpp>
 #include <vulkan/vulkan.h>
 
-#include <unordered_map>
 #include <vector>
 
 class MemoryAllocator;
@@ -11,9 +10,12 @@ class UniformBufferManager;
 class VulkanDevice;
 class CommandPool;
 
-class VectorArrowRenderer {
+// Flat arrow glyphs laid on sampled surfaces (heat flux vectors). Reads the
+// surface point stream and a per-point gradient, and is depth tested against
+// the geometry it sits on.
+class SurfaceVectorRenderer {
 public:
-    struct VectorRenderBinding {
+    struct RenderBinding {
         uint64_t bindingKey = 0;
         VkBuffer surfaceBuffer = VK_NULL_HANDLE;
         VkDeviceSize surfaceBufferOffset = 0;
@@ -25,11 +27,11 @@ public:
         float canonicalToWorldScale = 1.0f;
     };
 
-    VectorArrowRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, CommandPool& commandPool);
-    ~VectorArrowRenderer();
+    SurfaceVectorRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, CommandPool& commandPool);
+    ~SurfaceVectorRenderer();
 
     void initialize(VkRenderPass renderPass, uint32_t subpass, uint32_t maxFramesInFlight);
-    void render(VkCommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<VectorRenderBinding>& vectors);
+    void render(VkCommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<RenderBinding>& vectors);
     void cleanup();
 
 private:
@@ -45,9 +47,9 @@ private:
     bool createDescriptorSetLayout();
     bool createDescriptorPool(uint32_t maxFramesInFlight);
     bool createPipeline(VkRenderPass renderPass, uint32_t subpass);
-    
+
     VkDescriptorSet allocateDescriptorSet(VkDescriptorPool pool);
-    void updateDescriptorSet(VkDescriptorSet set, uint32_t frameIndex, const VectorRenderBinding& binding);
+    void updateDescriptorSet(VkDescriptorSet set, uint32_t frameIndex, const RenderBinding& binding);
 
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;

@@ -7,6 +7,7 @@
 #include "hash/HashBuilder.hpp"
 #include "hash/HashNodeCache.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
+#include "domain/BoundaryData.hpp"
 #include "domain/CFDData.hpp"
 #include "domain/FluidData.hpp"
 #include "domain/VoronoiData.hpp"
@@ -55,17 +56,30 @@ void NodeCFD::execute(NodeKernelEval& eval) const {
     const bool hasValidInputs = domainVoronoiHandle.key != 0 && hasFluid;
     const bool active = params.enabled && hasValidInputs;
 
+    NodeDataHandle boundaryHandle{};
+    const std::size_t boundarySocketIndex = inputIndexOf(eval.node, NodeGraphValueType::Boundary);
+    if (boundarySocketIndex < eval.inputs.size() && !eval.inputs[boundarySocketIndex].empty()) {
+        const NodeDataBlock* block = eval.inputs[boundarySocketIndex].front();
+        if (block && block->dataType == payloadtypes::Boundary && block->payloadHandle.key != 0) {
+            const BoundaryData* boundary = payloadRegistry->get<BoundaryData>(block->payloadHandle);
+            if (boundary) {
+                boundaryHandle = block->payloadHandle;
+            }
+        }
+    }
+
     CFDData cfdData{};
     cfdData.domainVoronoiHandle = domainVoronoiHandle;
     cfdData.fluidHandle = fluidHandle;
+    cfdData.boundaryHandle = boundaryHandle;
     cfdData.hasFluid = hasFluid;
     cfdData.active = active;
     cfdData.fixedTimeStep = static_cast<float>(params.timeStep);
     cfdData.targetCourant = static_cast<float>(params.targetCourant);
     cfdData.pressureIterations = static_cast<int>(params.pressureIterations);
     cfdData.pressureTolerance = static_cast<float>(params.pressureTolerance);
+    cfdData.simulationDuration = static_cast<float>(params.simulationDuration);
     cfdData.initialVelocity = params.initialVelocity;
-    cfdData.boundaries = params.boundaries;
 
     for (std::size_t outputIndex = 0; outputIndex < eval.outputs.size() && outputIndex < eval.node.outputs.size(); ++outputIndex) {
         NodeDataBlock& outputValue = eval.outputs[outputIndex];
@@ -74,13 +88,11 @@ void NodeCFD::execute(NodeKernelEval& eval) const {
         outputValue.dataType = outputSocket.contract.producedPayloadType;
 
         if (!payloadRegistry || outputSocket.contract.producedPayloadType != payloadtypes::CFD) {
-            populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
 
         const uint64_t payloadKey = NodeSocketKey(eval.node.id, outputSocket.id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, cfdData, eval.outputHashes);
-        populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 
@@ -89,23 +101,16 @@ HashValues NodeCFD::computeOutputHashes(const NodeKernelHash& hash) const {
     HashBuilder::combineString(simulationHash, nodegraphtypes::CFD);
     HashNodeCache::combineSocket(simulationHash, hash, NodeGraphValueType::Volume, HashDomain::Simulation);
     HashNodeCache::combineOptionalSocket(simulationHash, hash, NodeGraphValueType::Fluid, HashDomain::Simulation);
+    HashNodeCache::combineOptionalSocket(simulationHash, hash, NodeGraphValueType::Boundary, HashDomain::Simulation);
 
     const CFDNodeParams params = readCFDNodeParams(hash.node);
     HashBuilder::combineFloat(simulationHash, static_cast<float>(params.timeStep));
     HashBuilder::combineFloat(simulationHash, static_cast<float>(params.targetCourant));
     HashBuilder::combineFloat(simulationHash, static_cast<float>(params.pressureIterations));
     HashBuilder::combineFloat(simulationHash, static_cast<float>(params.pressureTolerance));
+    HashBuilder::combineFloat(simulationHash, static_cast<float>(params.simulationDuration));
     HashBuilder::combinePod(simulationHash, params.initialVelocity);
     HashBuilder::combine(simulationHash, static_cast<uint64_t>(params.enabled ? 1u : 0u));
-
-    for (const auto& bc : params.boundaries) {
-        HashBuilder::combine(
-            simulationHash,
-            static_cast<uint64_t>(bc.type));
-        HashBuilder::combinePod(
-            simulationHash,
-            bc.velocity);
-    }
 
     HashValues values{};
     values.full = simulationHash;

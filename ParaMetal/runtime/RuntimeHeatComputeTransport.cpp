@@ -177,6 +177,12 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(uint64_t socketKey, const HeatP
     }
     globalDomain.cellFragmentOffsets = domainProduct->cellFragmentOffsets;
     globalDomain.cellFragments = domainProduct->cellFragments;
+    globalDomain.domainMin = domainProduct->globalDomainCorners[0];
+    globalDomain.domainMax = domainProduct->globalDomainCorners[0];
+    for (const glm::vec3& corner : domainProduct->globalDomainCorners) {
+        globalDomain.domainMin = glm::min(globalDomain.domainMin, corner);
+        globalDomain.domainMax = glm::max(globalDomain.domainMax, corner);
+    }
     globalDomain.volumeGridMin = domainProduct->globalVolumeGridMin;
     globalDomain.volumeGridDim = domainProduct->globalVolumeGridDim;
     globalDomain.volumeGridCellSize = domainProduct->globalVolumeGridCellSize;
@@ -238,6 +244,7 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(uint64_t socketKey, const HeatP
         outConfig.domainBoundaryTemperaturesC[face] = package.domainBoundaryTemperaturesC[face];
         outConfig.domainBoundaryHeatFluxes[face] = package.domainBoundaryHeatFluxes[face];
         outConfig.domainBoundaryHeatTransferCoefficients[face] = package.domainBoundaryHeatTransferCoefficients[face];
+        outConfig.domainBoundaryInflowTemperaturesC[face] = package.domainBoundaryInflowTemperaturesC[face];
     }
 
     return true;

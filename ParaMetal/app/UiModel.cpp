@@ -2,8 +2,8 @@
 
 UiModel::UiModel(QObject* parent)
     : QObject(parent),
-      viewportModel(nullptr), heatPaletteModel(nullptr), timelineModel(nullptr), graphModel(nullptr),
-      consoleModel(nullptr) {
+      viewportModel(nullptr), heatPaletteModel(nullptr), velocityPaletteModel(nullptr),
+      timelineModel(nullptr), graphModel(nullptr), consoleModel(nullptr) {
 }
 
 void UiModel::newProject() {

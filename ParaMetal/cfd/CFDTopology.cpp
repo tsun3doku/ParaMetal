@@ -13,12 +13,6 @@ namespace cfd {
 
 namespace {
 
-glm::vec3 getDomainBoxNormal(uint32_t domainFace) {
-    switch (domainFace) {
-        case 0: return {-1.0f,  0.0f,  0.0f};         case 1: return { 1.0f,  0.0f,  0.0f};         case 2: return { 0.0f, -1.0f,  0.0f};         case 3: return { 0.0f,  1.0f,  0.0f};         case 4: return { 0.0f,  0.0f, -1.0f};         case 5: return { 0.0f,  0.0f,  1.0f};         default: return {0.0f,  0.0f,  0.0f};
-    }
-}
-
 struct RawFineFace {
     uint32_t globalFaceIndex = 0;
     uint32_t fineA = 0;
@@ -86,13 +80,6 @@ bool buildCFDTopology(
     std::vector<RawFineFace> fineFluidFaces;
     std::vector<RawFineBoundaryFace> fineBoundaryFaces;
 
-    uint64_t internalFloorFaces = 0;
-    uint64_t internalFaceTotal = 0;
-    uint64_t wallFloorFaces = 0;
-    uint64_t wallFaceTotal = 0;
-    uint64_t domainFloorFaces = 0;
-    uint64_t domainFaceTotal = 0;
-    float worstFloorRatio = 1.0f;
 
     for (uint32_t faceIdx = 0; faceIdx < faces.size(); ++faceIdx) {
         const auto& face = faces[faceIdx];
@@ -135,13 +122,6 @@ bool buildCFDTopology(
             const float dB = std::max(rawDB, minDB);
             const float dist = dA + dB;
 
-            ++internalFaceTotal;
-            if (rawDA < minDA || rawDB < minDB) {
-                ++internalFloorFaces;
-                if (rawDA < minDA) worstFloorRatio = std::min(worstFloorRatio, rawDA / minDA);
-                if (rawDB < minDB) worstFloorRatio = std::min(worstFloorRatio, rawDB / minDB);
-            }
-
             if (!std::isfinite(dA) || !std::isfinite(dB) || dA < 0.0f || dB < 0.0f ||
                 !std::isfinite(dist) || !(dist > 0.0f)) {
                 std::cerr << "[CFDTopology] build FAILED: invalid internal face geometry on face " << faceIdx << "\n";
@@ -163,11 +143,6 @@ bool buildCFDTopology(
             // embedded solid wall: fluid nodeA -> solid
             const float minDA = 0.25f * std::cbrt(std::max(refVolume[nodeA], 1e-12f));
             const float effDA = std::max(rawDA, minDA);
-            ++wallFaceTotal;
-            if (rawDA < minDA) {
-                ++wallFloorFaces;
-                worstFloorRatio = std::min(worstFloorRatio, rawDA / minDA);
-            }
             if (!std::isfinite(effDA) || !(effDA > 0.0f)) {
                 std::cerr << "[CFDTopology] build FAILED: invalid wall geometry on face " << faceIdx << "\n";
                 return false;
@@ -184,11 +159,6 @@ bool buildCFDTopology(
             // embedded solid wall: solid -> fluid nodeB
             const float minDB = 0.25f * std::cbrt(std::max(refVolume[nodeB], 1e-12f));
             const float effDB = std::max(rawDB, minDB);
-            ++wallFaceTotal;
-            if (rawDB < minDB) {
-                ++wallFloorFaces;
-                worstFloorRatio = std::min(worstFloorRatio, rawDB / minDB);
-            }
             if (!std::isfinite(effDB) || !(effDB > 0.0f)) {
                 std::cerr << "[CFDTopology] build FAILED: invalid wall geometry on face " << faceIdx << "\n";
                 return false;
@@ -223,11 +193,6 @@ bool buildCFDTopology(
             }
             const float minD = 0.25f * std::cbrt(std::max(refVolume[node], 1e-12f));
             const float effD = std::max(rawD, minD);
-            ++domainFaceTotal;
-            if (rawD < minD) {
-                ++domainFloorFaces;
-                worstFloorRatio = std::min(worstFloorRatio, rawD / minD);
-            }
             if (!std::isfinite(faceArea) || !(faceArea > 0.0) ||
                 !std::isfinite(effD) || !(effD > 0.0f)) {
                 std::cerr << "[CFDTopology] build FAILED: invalid domain boundary geometry on face " << bfIdx << "\n";
@@ -313,14 +278,6 @@ bool buildCFDTopology(
     outTopology.cellVolumes = fineVolumes;
     outTopology.component = std::move(fineComponent);
     outTopology.componentCount = fineComponentCount;
-
-    std::cout << "[CFDTopology] Topology generated successfully: "
-              << outTopology.faces.size() << " faces, "
-              << outTopology.boundaryFaces.size() << " boundary faces.\n";
-    std::cout << "[CFDTopology] geometry floors: internal=" << internalFloorFaces << "/" << internalFaceTotal
-              << " wall=" << wallFloorFaces << "/" << wallFaceTotal
-              << " domain=" << domainFloorFaces << "/" << domainFaceTotal
-              << " worstRawFloorRatio=" << worstFloorRatio << "\n";
 
     return true;
 }

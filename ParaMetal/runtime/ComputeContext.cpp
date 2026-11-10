@@ -69,6 +69,7 @@ bool ComputeContext::initialize(
         renderconfig::MaxFramesInFlight);
     cfdSystemComputeControllerState = std::make_unique<cfd::CFDSystemComputeController>(
         core.device(),
+        *allocator,
         *commandPool,
         renderconfig::MaxFramesInFlight);
 

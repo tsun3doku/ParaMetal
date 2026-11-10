@@ -1,104 +1,34 @@
-#include "RuntimeInput.hpp"
+#include "ViewportEditController.hpp"
 
-#include "app/RawMouseInput.hpp"
 #include "interaction/InteractionContext.hpp"
 #include "nodegraph/NodeGraphController.hpp"
 #include "nodegraph/NodeGraphRegistry.hpp"
 #include "nodegraph/NodeHeatProbeParams.hpp"
 #include "nodegraph/NodeTransform.hpp"
-#include "render/WindowRuntimeState.hpp"
-#include "scene/InputController.hpp"
 #include "scene/MarkerInteractionController.hpp"
 #include "scene/SceneController.hpp"
 #include "util/Units.hpp"
 #include "vulkan/ModelRegistry.hpp"
 
-#include <QtCore/qnamespace.h>
-
 #include <glm/gtc/matrix_inverse.hpp>
 
+#include <optional>
 #include <utility>
 #include <vector>
 
-RuntimeInput::RuntimeInput(
-    WindowRuntimeState& windowRuntimeState,
-    InputController& inputController,
-    InteractionContext& interaction,
+ViewportEditController::ViewportEditController(
+    InteractionContext& interactionContext,
     const NodeGraphController& graphController,
     const SceneController& sceneController,
-    ModelRegistry& modelRegistry,
-    RawMouseInput* rawMouseInput)
-    : windowRuntimeState(windowRuntimeState),
-      inputController(inputController),
-      interaction(interaction),
+    ModelRegistry& modelRegistry)
+    : interaction(interactionContext),
       graphController(graphController),
       sceneController(sceneController),
-      modelRegistry(modelRegistry),
-      rawMouseInput(rawMouseInput) {
+      modelRegistry(modelRegistry) {
 }
 
-void RuntimeInput::tick() {
-    std::vector<WindowInputEvent> inputEvents;
-    windowRuntimeState.consumeInputEvents(inputEvents);
-    for (const WindowInputEvent& inputEvent : inputEvents) {
-        switch (inputEvent.type) {
-        case WindowInputEventType::Scroll:
-            inputController.handleScrollInput(inputEvent.yOffset);
-            break;
-        case WindowInputEventType::Key:
-            inputController.handleKeyInput(static_cast<Qt::Key>(inputEvent.key), inputEvent.pressed, inputEvent.ctrlPressed);
-            break;
-        case WindowInputEventType::MousePress:
-            inputController.handleMouseButton(
-                inputEvent.button,
-                inputEvent.x,
-                inputEvent.y,
-                inputEvent.shiftPressed);
-            break;
-        case WindowInputEventType::MouseRelease:
-            inputController.handleMouseRelease(
-                inputEvent.button,
-                inputEvent.x,
-                inputEvent.y);
-            break;
-        case WindowInputEventType::MouseMove:
-            inputController.handleMouseMove(
-                inputEvent.x,
-                inputEvent.y);
-            break;
-        }
-    }
-
-    const bool middlePressed = windowRuntimeState.middleButtonPressed.load(std::memory_order_acquire);
-    const bool shiftPressed = windowRuntimeState.shiftPressed.load(std::memory_order_acquire);
-
-    // Camera drags consume raw mouse input independently of GUI thread pacing
-    if (rawMouseInput != nullptr && rawMouseInput->isInitialized()) {
-        if (!middlePressed) {
-            rawDragActive = false;
-        } else if (!rawDragActive) {
-            rawDragActive = true;
-            RawMouseInput::Sample stale[64];
-            while (rawMouseInput->drain(stale, 64) > 0) {
-            }
-        } else {
-            float dx = 0.0f;
-            float dy = 0.0f;
-            RawMouseInput::Sample samples[128];
-            size_t count = 0;
-            do {
-                count = rawMouseInput->drain(samples, 128);
-                for (size_t i = 0; i < count; ++i) {
-                    dx += samples[i].dx;
-                    dy += samples[i].dy;
-                }
-            } while (count == 128);
-            inputController.processRawDrag(shiftPressed, dx, dy);
-        }
-    }
-
+void ViewportEditController::tick() {
     auto& gizmoController = interaction.gizmoController();
-    auto& markerInteractionController = interaction.markerInteractionController();
 
     if (std::optional<GizmoDragBegin> begin = gizmoController.takePendingDragBegin()) {
         if (!beginGizmoDrag(*begin)) {
@@ -115,24 +45,11 @@ void RuntimeInput::tick() {
         endGizmoDrag();
     }
 
-    // Sync active heat probe markers from node graph to MarkerInteractionController
-    const auto& nodes = graphController.graphState().nodes;
-    std::vector<MarkerItem> activeMarkers;
-    for (const auto& [nodeId, nodeData] : nodes) {
-        if (nodeData.typeId == nodegraphtypes::HeatProbe) {
-            HeatProbeNodeParams params = readHeatProbeNodeParams(nodeData);
-            if (!params.enabled) continue;
-            for (int i = 0; i < static_cast<int>(params.items.size()); ++i) {
-                const auto& item = params.items[i];
-                if (!item.enabled) continue;
-                activeMarkers.push_back(MarkerItem{ nodeId, i, item.id, item.worldPosition });
-            }
-        }
-    }
-    markerInteractionController.updateMarkers(activeMarkers);
+    syncHeatProbeMarkers();
 
-    // Commit any position updates from marker placement or viewport dragging
+    auto& markerInteractionController = interaction.markerInteractionController();
     if (std::optional<MarkerCommit> hit = markerInteractionController.takePendingCommit()) {
+        const auto& nodes = graphController.graphState().nodes;
         auto nodeIt = nodes.find(hit->nodeId);
         if (nodeIt != nodes.end()) {
             HeatProbeNodeParams probeParams = readHeatProbeNodeParams(nodeIt->second);
@@ -152,11 +69,7 @@ void RuntimeInput::tick() {
     }
 }
 
-std::vector<ViewportCommand> RuntimeInput::takePendingViewportCommands() {
-    return inputController.takePendingViewportCommands();
-}
-
-bool RuntimeInput::takePendingNodeParameters(
+bool ViewportEditController::takePendingNodeParameters(
     NodeGraphNodeId& outNodeId,
     std::vector<NodeGraphParamValue>& outParameters) {
     if (pendingNodeParameters.empty()) {
@@ -170,7 +83,24 @@ bool RuntimeInput::takePendingNodeParameters(
     return true;
 }
 
-bool RuntimeInput::beginGizmoDrag(const GizmoDragBegin& begin) {
+void ViewportEditController::syncHeatProbeMarkers() {
+    const auto& nodes = graphController.graphState().nodes;
+    std::vector<MarkerItem> activeMarkers;
+    for (const auto& [nodeId, nodeData] : nodes) {
+        if (nodeData.typeId == nodegraphtypes::HeatProbe) {
+            HeatProbeNodeParams params = readHeatProbeNodeParams(nodeData);
+            if (!params.enabled) continue;
+            for (int i = 0; i < static_cast<int>(params.items.size()); ++i) {
+                const auto& item = params.items[i];
+                if (!item.enabled) continue;
+                activeMarkers.push_back(MarkerItem{ nodeId, i, item.id, item.worldPosition });
+            }
+        }
+    }
+    interaction.markerInteractionController().updateMarkers(activeMarkers);
+}
+
+bool ViewportEditController::beginGizmoDrag(const GizmoDragBegin& begin) {
     uint64_t outputSocketKey = 0;
     if (begin.runtimeModelId == 0 ||
         !sceneController.tryGetRuntimeModelSocketKey(begin.runtimeModelId, outputSocketKey) ||
@@ -209,7 +139,7 @@ bool RuntimeInput::beginGizmoDrag(const GizmoDragBegin& begin) {
     return true;
 }
 
-void RuntimeInput::updateGizmoDrag(const GizmoDragUpdate& update) {
+void ViewportEditController::updateGizmoDrag(const GizmoDragUpdate& update) {
     if (!activeTransformNodeId.isValid() || activeRuntimeModelId == 0) {
         return;
     }
@@ -240,7 +170,7 @@ void RuntimeInput::updateGizmoDrag(const GizmoDragUpdate& update) {
         dragParentWorld * previewLocal);
 }
 
-void RuntimeInput::endGizmoDrag() {
+void ViewportEditController::endGizmoDrag() {
     if (!activeTransformNodeId.isValid()) {
         resetGizmoDrag();
         return;
@@ -269,7 +199,7 @@ void RuntimeInput::endGizmoDrag() {
     resetGizmoDrag();
 }
 
-void RuntimeInput::resetGizmoDrag() {
+void ViewportEditController::resetGizmoDrag() {
     activeTransformNodeId = {};
     activeRuntimeModelId = 0;
     dragStartParams = {};

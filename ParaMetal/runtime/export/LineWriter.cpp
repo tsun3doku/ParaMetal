@@ -11,7 +11,7 @@
 
 ExportResult LineWriter::writeOBJ(
     const std::string& filePath,
-    const std::vector<IsocontourPolyline>& polylines) {
+    const std::vector<mesh::Polyline>& polylines) {
     const std::filesystem::path destination(filePath);
     const std::filesystem::path directory = destination.has_parent_path()
         ? destination.parent_path()
@@ -39,7 +39,7 @@ ExportResult LineWriter::writeOBJ(
             out << "# Wavefront OBJ lines exported from ParaMetal\n";
             out << std::fixed << std::setprecision(9);
             uint64_t nextVertexIndex = 1;
-            for (const IsocontourPolyline& polyline : polylines) {
+            for (const mesh::Polyline& polyline : polylines) {
                 if (polyline.points.size() < 2) continue;
 
                 std::vector<uint64_t> indices;

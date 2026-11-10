@@ -5,6 +5,7 @@ import QtQuick
 QtObject {
     readonly property color windowBackground: "#1e1e1e"
     readonly property color panelBackground: "#2e2e2e"
+    readonly property color panelHeaderBackground: "#161616"
     readonly property color splitterCenter: windowBackground
     readonly property color splitterBorder: subtleBorder
     readonly property int splitterWidth: 2

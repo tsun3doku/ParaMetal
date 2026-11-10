@@ -68,7 +68,8 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
         config.domainBoundaryTypes,
         config.domainBoundaryTemperaturesC,
         config.domainBoundaryHeatFluxes,
-        config.domainBoundaryHeatTransferCoefficients);
+        config.domainBoundaryHeatTransferCoefficients,
+        config.domainBoundaryInflowTemperaturesC);
     system.setGlobalSolverParameters(config.solverMaxIterations, config.solverConvergenceTolerance);
 }
 

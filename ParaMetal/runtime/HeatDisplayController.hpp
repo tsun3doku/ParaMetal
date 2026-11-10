@@ -15,7 +15,7 @@
 
 namespace render {
 class HeatOverlayRenderer;
-class HeatVolumeRenderer;
+class SimVolumeRenderer;
 }
 
 class HeatDisplayController {
@@ -58,6 +58,12 @@ public:
         VkImageView fluidTemperatureVolumeView = VK_NULL_HANDLE;
         VkSampler fluidTemperatureVolumeSampler = VK_NULL_HANDLE;
 
+        bool showCfdStreamlines = false;
+        bool showCfdVelocityPalette = false;
+        VkBuffer cfdStreamlineVertexBuffer = VK_NULL_HANDLE;
+        VkDeviceSize cfdStreamlineVertexBufferOffset = 0;
+        uint32_t cfdStreamlineVertexCount = 0;
+
         std::vector<glm::vec3> probePositions;
         std::vector<uint32_t> probeIds;
         std::vector<std::string> probeNames;
@@ -68,7 +74,7 @@ public:
         uint64_t displayHash = 0;
 
         bool anyVisible() const {
-            return showHeatOverlay || showFluxVectors || showHeatPalette || showIsocontours || showDomainBox || showFluidVolume || !probePositions.empty();
+            return showHeatOverlay || showFluxVectors || showHeatPalette || showIsocontours || showDomainBox || showFluidVolume || showCfdStreamlines || showCfdVelocityPalette || !probePositions.empty();
         }
 
         bool isValid() const {
@@ -92,14 +98,14 @@ public:
     };
 
     void setOverlayRenderer(render::HeatOverlayRenderer* updatedOverlayRenderer);
-    void setVolumeRenderer(render::HeatVolumeRenderer* updatedVolumeRenderer);
+    void setVolumeRenderer(render::SimVolumeRenderer* updatedVolumeRenderer);
     void apply(uint64_t socketKey, const Config& config);
     void remove(uint64_t socketKey);
     void finalizeSync();
 
 private:
     render::HeatOverlayRenderer* overlayRenderer = nullptr;
-    render::HeatVolumeRenderer* volumeRenderer = nullptr;
+    render::SimVolumeRenderer* volumeRenderer = nullptr;
     std::unordered_map<uint64_t, Config> configsBySocket;
     std::unordered_set<uint64_t> syncedSockets;
 };
@@ -113,6 +119,8 @@ inline uint64_t buildDisplayHash(const HeatDisplayController::Config& config, ui
     HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showDomainBox ? 1u : 0u));
     HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showFluidVolume ? 1u : 0u));
     HashBuilder::combinePod(hash, config.fluidVolumeOpacity);
+    HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showCfdStreamlines ? 1u : 0u));
+    HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showCfdVelocityPalette ? 1u : 0u));
     HashBuilder::combinePod(hash, config.fluxVectorScale);
     HashBuilder::combinePod(hash, config.isocontourSpacingC);
     HashBuilder::combinePod(hash, static_cast<uint64_t>(config.authoredActive ? 1u : 0u));

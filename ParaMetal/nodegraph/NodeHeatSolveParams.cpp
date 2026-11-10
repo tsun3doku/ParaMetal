@@ -24,13 +24,6 @@ HeatSolveNodeParams readHeatSolveNodeParams(const NodeGraphNode& node) {
     params.preview.fluidVolumeOpacity = NodeParamUtils::readFloatParam(node, nodegraphparams::heatsolve::FluidVolumeOpacity, 0.25);
     params.preview.fluxVectorScale = NodeParamUtils::readFloatParam(node, nodegraphparams::heatsolve::FluxVectorScale, 1.0);
 
-    for (uint32_t face = 0; face < 6; ++face) {
-        params.domainBoundaryTypes[face] = static_cast<uint32_t>(NodeParamUtils::readEnumParam(node, nodegraphparams::heatsolve::domainBoundaryTypeParam(face), 0));
-        params.domainBoundaryTemperaturesC[face] = static_cast<float>(NodeParamUtils::readFloatParam(node, nodegraphparams::heatsolve::domainBoundaryTempParam(face), HeatSimDefaults::ambientTemperatureC));
-        params.domainBoundaryHeatFluxes[face] = static_cast<float>(NodeParamUtils::readFloatParam(node, nodegraphparams::heatsolve::domainBoundaryFluxParam(face), 0.0));
-        params.domainBoundaryHeatTransferCoefficients[face] = static_cast<float>(NodeParamUtils::readFloatParam(node, nodegraphparams::heatsolve::domainBoundaryHtcParam(face), 0.0));
-    }
-
     return params;
 }
 
@@ -53,20 +46,5 @@ bool writeHeatSolveNodeParams(NodeGraphEditor& editor, NodeGraphNodeId nodeId, c
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatsolve::FluidVolumeOpacity, NodeGraphParamType::Float, params.preview.fluidVolumeOpacity}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatsolve::FluxVectorScale, NodeGraphParamType::Float, params.preview.fluxVectorScale});
 
-    if (!baseOk) {
-        return false;
-    }
-
-    for (uint32_t face = 0; face < 6; ++face) {
-        const bool faceOk =
-            editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatsolve::domainBoundaryTypeParam(face), NodeGraphParamType::Enum, 0.0, static_cast<int64_t>(params.domainBoundaryTypes[face]), false}) &&
-            editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatsolve::domainBoundaryTempParam(face), NodeGraphParamType::Float, static_cast<double>(params.domainBoundaryTemperaturesC[face])}) &&
-            editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatsolve::domainBoundaryFluxParam(face), NodeGraphParamType::Float, static_cast<double>(params.domainBoundaryHeatFluxes[face])}) &&
-            editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::heatsolve::domainBoundaryHtcParam(face), NodeGraphParamType::Float, static_cast<double>(params.domainBoundaryHeatTransferCoefficients[face])});
-        if (!faceOk) {
-            return false;
-        }
-    }
-
-    return true;
+    return baseOk;
 }

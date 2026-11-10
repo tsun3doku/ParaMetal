@@ -28,7 +28,7 @@ protected:
 private:
     // Node ids are reused across graphs; statuses must die with the graph they
     // describe, on the render thread, so no publish can follow this clear.
-    void applyGraphReplacement(const NodeGraphState& graphState);
+    bool applyGraphReplacement(const NodeGraphState& graphState);
     void applySelection(int selectedNode);
     void publishState();
 
@@ -40,6 +40,7 @@ private:
     QElapsedTimer snapshotTimer;
     ViewportUiState publishedViewport{};
     bool publishedHeatPaletteVisible = false;
+    bool publishedVelocityPaletteVisible = false;
     TimelineUiState publishedTimeline{};
     bool initialized = false;
     bool runtimeFresh = false;

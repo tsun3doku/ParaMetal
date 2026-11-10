@@ -192,37 +192,24 @@ bool HeatFluidVolumeStage::createPipeline() {
 }
 
 bool HeatFluidVolumeStage::createVolumeResources(const glm::ivec3& gridDim) {
-    VkResult res = createImage3D(
+    // -1e30 is InvalidTemperature in heat_fluid_volume.slang: an empty, sampleable volume.
+    const VkResult res = initializeR32FloatImage3D(
         vulkanDevice,
         memoryAllocator,
-        static_cast<uint32_t>(gridDim.x),
-        static_cast<uint32_t>(gridDim.y),
-        static_cast<uint32_t>(gridDim.z),
-        VK_FORMAT_R32_SFLOAT,
-        VK_IMAGE_TILING_OPTIMAL,
+        commandPool,
+        gridDim,
         VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        -1e30f,
         temperatureVolumeImage,
-        temperatureVolumeMemory);
-
-    if (res != VK_SUCCESS) {
-        std::cerr << "[HeatFluidVolumeStage] Failed to create 3D image." << std::endl;
-        return false;
-    }
-
-    res = createImageView3D(
-        vulkanDevice,
-        temperatureVolumeImage,
-        VK_FORMAT_R32_SFLOAT,
-        VK_IMAGE_ASPECT_COLOR_BIT,
+        temperatureVolumeMemory,
         temperatureVolumeView);
 
     if (res != VK_SUCCESS) {
-        std::cerr << "[HeatFluidVolumeStage] Failed to create 3D image view." << std::endl;
+        std::cerr << "[HeatFluidVolumeStage] Failed to initialize 3D image." << std::endl;
         return false;
     }
 
-    temperatureVolumeLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    temperatureVolumeLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;

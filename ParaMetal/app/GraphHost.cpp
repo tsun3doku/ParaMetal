@@ -153,15 +153,6 @@ void GraphHost::executePython(const QString& source) {
     emit pythonFinished(result);
 }
 
-void GraphHost::activateTimeline() {
-    const NodeGraphNodeId nodeId = timelineHeatSolveNode();
-    if (!nodeId.isValid()) return;
-    if (editor.setNodeParameter(nodeId, NodeGraphParamValue{
-            nodegraphparams::heatsolve::Enabled, NodeGraphParamType::Bool, 0.0, 0, true})) {
-        publishChanges();
-    }
-}
-
 void GraphHost::publishChanges() {
     NodeGraphDelta delta{};
     if (graph.consumeChanges(publishedRevision, delta)) {

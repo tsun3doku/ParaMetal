@@ -99,12 +99,13 @@ void NodeGraphEditor::resetToDefaultGraph() {
     const CreatedNode merge = createNode(nodegraphtypes::Merge, "Merge", centerColumnX, row5Y);
     const CreatedNode voronoi = createNode(nodegraphtypes::Voronoi, "Voronoi", centerColumnX, row6Y);
     const CreatedNode heatFluid = createNode(nodegraphtypes::Fluid, "Fluid", rightColumnX, row6Y);
+    const CreatedNode boundaryConditions = createNode(nodegraphtypes::BoundaryConditions, "Boundary Conditions", rightColumnX, row7Y);
     const CreatedNode heatSolve = createNode(nodegraphtypes::HeatSolve, "Ember", centerColumnX, row7Y);
 
     if (!receiverModel.id.isValid() || !receiverTransform.id.isValid() || !receiverRemesh.id.isValid() ||
         !sourceModel.id.isValid() || !sourceTransform.id.isValid() || !sourceRemesh.id.isValid() ||
         !receiverHeatModel.id.isValid() || !sourceHeatModel.id.isValid() ||
-        !voronoi.id.isValid() || !heatFluid.id.isValid() || !heatSolve.id.isValid() ||
+        !voronoi.id.isValid() || !heatFluid.id.isValid() || !boundaryConditions.id.isValid() || !heatSolve.id.isValid() ||
         !points.id.isValid() || !pointsTransform.id.isValid() ||
         !receiverMeshPoints.id.isValid() || !sourceMeshPoints.id.isValid() || !merge.id.isValid()) {
         return;
@@ -164,7 +165,9 @@ void NodeGraphEditor::resetToDefaultGraph() {
     const NodeGraphSocketId heatSolveVoronoiInputId = inputSocketByType(heatSolve.node, NodeGraphValueType::Volume);
     const NodeGraphSocketId heatSolveHeatModelInputId = inputSocketByType(heatSolve.node, NodeGraphValueType::HeatModel);
     const NodeGraphSocketId heatSolveHeatFluidInputId = inputSocketByType(heatSolve.node, NodeGraphValueType::Fluid);
+    const NodeGraphSocketId heatSolveBoundaryInputId = inputSocketByType(heatSolve.node, NodeGraphValueType::Boundary);
     const NodeGraphSocketId heatFluidOutputId = firstOutputSocket(heatFluid.node);
+    const NodeGraphSocketId boundaryConditionsOutputId = firstOutputSocket(boundaryConditions.node);
     const NodeGraphSocketId receiverHeatModelOutputId = firstOutputSocket(receiverHeatModel.node);
     const NodeGraphSocketId sourceHeatModelOutputId = firstOutputSocket(sourceHeatModel.node);
     const NodeGraphSocketId voronoiOutputId = firstOutputSocket(voronoi.node);
@@ -184,7 +187,8 @@ void NodeGraphEditor::resetToDefaultGraph() {
         !sourceRemeshOutputId.isValid() || !receiverHeatModelInputId.isValid() || !sourceHeatModelInputId.isValid() ||
         !voronoiRemeshesInputId.isValid() || !voronoiPointsInputId.isValid() ||
         !heatSolveVoronoiInputId.isValid() || !heatSolveHeatModelInputId.isValid() ||
-        !heatSolveHeatFluidInputId.isValid() || !heatFluidOutputId.isValid() ||
+        !heatSolveHeatFluidInputId.isValid() || !heatSolveBoundaryInputId.isValid() ||
+        !heatFluidOutputId.isValid() || !boundaryConditionsOutputId.isValid() ||
         !receiverHeatModelOutputId.isValid() || !sourceHeatModelOutputId.isValid() || !voronoiOutputId.isValid() ||
         !pointsOutputId.isValid() || !pointsTransformInputId.isValid() || !pointsTransformOutputId.isValid() ||
         !receiverMeshPointsInputId.isValid() || !receiverMeshPointsOutputId.isValid() ||
@@ -239,6 +243,7 @@ void NodeGraphEditor::resetToDefaultGraph() {
     connectSockets(receiverHeatModel.id, receiverHeatModelOutputId, heatSolve.id, heatSolveHeatModelInputId, errorMessage);
     connectSockets(sourceHeatModel.id, sourceHeatModelOutputId, heatSolve.id, heatSolveHeatModelInputId, errorMessage);
     connectSockets(heatFluid.id, heatFluidOutputId, heatSolve.id, heatSolveHeatFluidInputId, errorMessage);
+    connectSockets(boundaryConditions.id, boundaryConditionsOutputId, heatSolve.id, heatSolveBoundaryInputId, errorMessage);
     connectSockets(points.id, pointsOutputId, pointsTransform.id, pointsTransformInputId, errorMessage);
     connectSockets(receiverRemesh.id, receiverRemeshOutputId, receiverMeshPoints.id, receiverMeshPointsInputId, errorMessage);
     connectSockets(sourceRemesh.id, sourceRemeshOutputId, sourceMeshPoints.id, sourceMeshPointsInputId, errorMessage);

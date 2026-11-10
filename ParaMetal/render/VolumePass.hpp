@@ -2,7 +2,7 @@
 
 #include "framegraph/FramePass.hpp"
 #include "framegraph/FrameGraphTypes.hpp"
-#include "renderers/HeatVolumeRenderer.hpp"
+#include "renderers/SimVolumeRenderer.hpp"
 
 #include <memory>
 #include <vulkan/vulkan.h>
@@ -34,7 +34,7 @@ public:
     void record(const FrameContext& context, const SceneView& view, const RenderFlags& flags, RenderServices& services) override;
     void destroy() override;
 
-    HeatVolumeRenderer* getHeatVolumeRenderer() const { return heatVolumeRenderer.get(); }
+    SimVolumeRenderer* getHeatVolumeRenderer() const { return heatVolumeRenderer.get(); }
 
 private:
     VulkanDevice& vulkanDevice;
@@ -45,7 +45,7 @@ private:
     uint32_t maxFramesInFlight = 0;
     framegraph::PassId passId{};
 
-    std::unique_ptr<HeatVolumeRenderer> heatVolumeRenderer;
+    std::unique_ptr<SimVolumeRenderer> heatVolumeRenderer;
     bool ready = false;
 };
 

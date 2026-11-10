@@ -121,6 +121,9 @@
     <ClCompile Include="runtime\VoronoiDisplayController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="runtime\CFDDisplayController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="runtime\HeatDisplayController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -157,7 +160,7 @@
     <ClCompile Include="runtime\TimelineRuntime.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="runtime\RuntimeInput.cpp">
+    <ClCompile Include="runtime\ViewportEditController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="runtime\RuntimeRenderController.cpp">
@@ -199,6 +202,9 @@
     <ClCompile Include="render\HeatOverlayRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="render\CFDOverlayRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="render\VoronoiOverlayRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -208,7 +214,7 @@
     <ClCompile Include="render\VolumePass.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="renderers\HeatVolumeRenderer.cpp">
+    <ClCompile Include="renderers\SimVolumeRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="spatial\Grid.cpp">
@@ -224,6 +230,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="heat\HeatSystemPlayback.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="cfd\CFDSystemPlayback.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="heat\HeatSystemSurfaceStage.cpp">
@@ -363,6 +372,9 @@
     </ClCompile>    <ClCompile Include="cfd\CFDSystem.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="cfd\CFDStreamlineStage.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="cfd\CFDSystemComputeController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -460,6 +472,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="renderers\ProbeMarkerRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="renderers\StreamlineRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="util\GlyphText.cpp">
@@ -580,6 +595,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="nodegraph\NodeCFDParams.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="nodegraph\NodeBoundaryConditions.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="nodegraph\NodeBoundaryConditionsParams.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="nodegraph\NodeHeatMaterialPresets.cpp">
@@ -733,6 +754,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="app\HeatPaletteUiModel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\VelocityPaletteUiModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="app\TimelineUiModel.cpp">
@@ -1054,7 +1078,7 @@
     <ClInclude Include="render\RenderRuntime.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="runtime\RuntimeConnections.hpp"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="runtime\RuntimeTransports.hpp"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="runtime\package\RuntimePackageCompiler.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1079,7 +1103,7 @@
     <ClInclude Include="runtime\TimelineRuntime.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="runtime\RuntimeInput.hpp">
+    <ClInclude Include="runtime\ViewportEditController.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="runtime\RuntimeRenderController.hpp">
@@ -1140,13 +1164,16 @@
     <ClInclude Include="render\VoronoiOverlayRenderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="render\CFDOverlayRenderer.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="render\BlendPass.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="render\VolumePass.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="renderers\HeatVolumeRenderer.hpp">
+    <ClInclude Include="renderers\SimVolumeRenderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="spatial\Grid.hpp">
@@ -1174,6 +1201,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="heat\HeatSystemPlayback.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="cfd\CFDSystemPlayback.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="voronoi\VoronoiSystem.hpp">
@@ -1425,6 +1455,9 @@
     <ClInclude Include="mesh\IsocontourBuilder.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="mesh\Polyline.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="renderers\VectorArrowRenderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1432,6 +1465,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="renderers\ProbeMarkerRenderer.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="renderers\StreamlineRenderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="util\GlyphText.hpp">
@@ -1560,6 +1596,12 @@
     <ClInclude Include="runtime\RuntimeCFDComputeTransport.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="runtime\CFDDisplayController.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\RuntimeCFDDisplayTransport.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="nodegraph\NodeVoronoi.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1570,6 +1612,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\NodeCFDParams.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nodegraph\NodeBoundaryConditions.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nodegraph\NodeBoundaryConditionsParams.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\NodeHeatMaterialPresets.hpp">
@@ -1624,6 +1672,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="cfd\CFDSystem.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="cfd\CFDStreamlineStage.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="cfd\CFDSystemComputeController.hpp">
@@ -1717,6 +1768,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="domain\HeatModelData.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="domain\BoundaryData.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="domain\FluidData.hpp">
@@ -1953,6 +2007,9 @@
     <ClInclude Include="cfd\CFDBoundaryConditions.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="cfd\CFDGpuStructs.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="heat\HeatBoundaryConditions.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1962,6 +2019,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="app\HeatPaletteUiModel.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="app\VelocityPaletteUiModel.hpp">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="app\TimelineUiModel.hpp">

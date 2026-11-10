@@ -125,6 +125,7 @@ std::string valueTypeToString(NodeGraphValueType value) {
     case NodeGraphValueType::ScalarInt:   return "ScalarInt";
     case NodeGraphValueType::ScalarBool:  return "ScalarBool";
     case NodeGraphValueType::Simulation:  return "Simulation";
+    case NodeGraphValueType::Boundary:    return "Boundary";
     }
     return "None";
 }

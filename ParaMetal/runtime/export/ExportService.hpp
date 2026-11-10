@@ -3,6 +3,7 @@
 #include "ExportTypes.hpp"
 #include "PayloadExporter.hpp"
 #include "mesh/IsocontourBuilder.hpp"
+#include "mesh/Polyline.hpp"
 #include "nodegraph/NodeWriteParams.hpp"
 #include "nodegraph/NodeGraphCoreTypes.hpp"
 
@@ -30,6 +31,6 @@ public:
         bool applyTransform,
         HeatSystemComputeController& heatController,
         const std::vector<std::vector<float>>* temperaturesByModel,
-        std::vector<IsocontourPolyline>& out,
+        std::vector<mesh::Polyline>& out,
         std::string& outError);
 };

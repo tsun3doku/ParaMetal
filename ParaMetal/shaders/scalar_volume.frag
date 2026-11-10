@@ -10,7 +10,7 @@ layout(set = 0, binding = 0) uniform CameraUBO {
     vec3 color;
 } camera;
 
-layout(set = 0, binding = 1) uniform sampler3D fluidTemperatureVolume;
+layout(set = 0, binding = 1) uniform sampler3D scalarVolume;
 layout(set = 0, binding = 2) uniform sampler2D infernoLut;
 layout(set = 0, binding = 3) uniform sampler2D viridisLut;
 layout(set = 0, binding = 4) uniform sampler2D inferno2Lut;
@@ -22,8 +22,8 @@ layout(push_constant) uniform PushConstants {
     float cellSize;
     ivec3 gridDim;
     float opacity;
-    float minTemperature;
-    float maxTemperature;
+    float minValue;
+    float maxValue;
     uint palette;
 } push;
 
@@ -55,10 +55,10 @@ vec3 samplePaletteLut(sampler2D lut, float normalized) {
     return srgbToLinear(mix(lowerSrgb, upperSrgb, interpolation));
 }
 
-vec3 heatColorFromTemperature(float temperature) {
-    float temperatureRange = max(push.maxTemperature - push.minTemperature, 1e-6);
-    float normalizedTemperature = (temperature - push.minTemperature) / temperatureRange;
-    float paletteCoordinate = 1.0 - normalizedTemperature;
+vec3 scalarColor(float scalar) {
+    float scalarRange = max(push.maxValue - push.minValue, 1e-6);
+    float normalizedScalar = (scalar - push.minValue) / scalarRange;
+    float paletteCoordinate = 1.0 - normalizedScalar;
     if (push.palette == 0u) {
         return samplePaletteLut(inferno2Lut, paletteCoordinate);
     }
@@ -132,16 +132,16 @@ void main() {
         vec3 uvw = ((pos - push.gridMin) / push.cellSize + vec3(0.5)) / vec3(push.gridDim);
 
         if (all(greaterThanEqual(uvw, vec3(0.0))) && all(lessThanEqual(uvw, vec3(1.0)))) {
-            float temp = texture(fluidTemperatureVolume, uvw).r;
+            float scalar = texture(scalarVolume, uvw).r;
 
             // Solid heatsink: immediate termination
-            if (temp < -1.5e30) {
+            if (scalar < -1.5e30) {
                 break;
             }
 
-            // Valid fluid temperature
-            if (temp > -0.5e30) {
-                vec3 col = heatColorFromTemperature(temp);
+            // Valid fluid scalar (NaN voxels fail both comparisons and are skipped)
+            if (scalar > -0.5e30) {
+                vec3 col = scalarColor(scalar);
                 float alphaStep = 1.0 - exp(-push.opacity * 15.0 * dt);
 
                 accum.rgb += (1.0 - accum.a) * col * alphaStep;

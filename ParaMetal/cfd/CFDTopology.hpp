@@ -4,23 +4,9 @@
 #include <vector>
 #include <glm/glm.hpp>
 #include "../voronoi/GlobalDomainTopology.hpp"
+#include "CFDGpuStructs.hpp"
 
 namespace cfd {
-
-struct CFDFaceGpu {
-    uint32_t cellA = 0;
-    uint32_t cellB = 0;
-    glm::vec3 fluxVectorA{0.0f};
-    glm::vec3 fluxVectorB{0.0f};
-    float projectionWeight = 0.0f; // sum of constituent projection weights
-};
-
-struct CFDBoundaryFaceGpu {
-    uint32_t cell = 0;
-    uint32_t boundaryCondition = UINT32_MAX; // 0..5 domain boundary, 6 embedded solid wall
-    glm::vec3 areaVector{0.0f};
-    float projectionWeight = 0.0f; // sum of constituent (area / distance)
-};
 
 struct CFDTopology {
     uint32_t fluidNodeCount = 0;

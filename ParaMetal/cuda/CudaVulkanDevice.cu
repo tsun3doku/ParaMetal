@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <cstring>
+#include <iostream>
 
 namespace cudaVulkan {
 
@@ -34,6 +35,26 @@ int findDevice(VkPhysicalDevice physicalDevice) {
 
 bool deviceWasFound() {
     return deviceFound.load(std::memory_order_acquire);
+}
+
+bool waitForGpuIdle(VkDevice device, VkPhysicalDevice physicalDevice) {
+    const VkResult vkResult =
+        device != VK_NULL_HANDLE ? vkDeviceWaitIdle(device) : VK_SUCCESS;
+    cudaError_t cudaResult = cudaSuccess;
+    const int cudaDevice = findDevice(physicalDevice);
+    if (cudaDevice >= 0) {
+        const cudaError_t setDeviceResult = cudaSetDevice(cudaDevice);
+        cudaResult = setDeviceResult != cudaSuccess ? setDeviceResult : cudaDeviceSynchronize();
+    } else if (deviceWasFound()) {
+        cudaResult = cudaErrorInvalidDevice;
+    }
+    if (vkResult != VK_SUCCESS || cudaResult != cudaSuccess) {
+        std::cerr << "[cudaVulkan] waitForGpuIdle failed: vk="
+                  << static_cast<int>(vkResult)
+                  << " cuda=" << static_cast<int>(cudaResult) << std::endl;
+        return false;
+    }
+    return true;
 }
 
 } // namespace cudaVulkan

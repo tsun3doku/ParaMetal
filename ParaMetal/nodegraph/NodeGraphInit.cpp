@@ -9,7 +9,9 @@
 
 #include <cstdint>
 #include <initializer_list>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace payloadtypes {
     uint8_t None = 0;
@@ -23,6 +25,7 @@ namespace payloadtypes {
     uint8_t SerialTemperature = 0;
     uint8_t CFD = 0;
     uint8_t HeatProbe = 0;
+    uint8_t Boundary = 0;
 }
 
 static NodeSocketSignature makeInputSocket(
@@ -274,6 +277,7 @@ static NodeTypeDefinition buildHeatSolveNode() {
             makeInputSocket("HeatModel", NodeGraphValueType::HeatModel, true, false),
             makeInputSocket("Fluid", NodeGraphValueType::Fluid, false, false),
             makeInputSocket("CFD", NodeGraphValueType::Simulation, false, false),
+            makeInputSocket("Boundary", NodeGraphValueType::Boundary),
             makeOutputSocket("Heat", NodeGraphValueType::Simulation, payloadtypes::Heat),
         },
         {
@@ -293,54 +297,6 @@ static NodeTypeDefinition buildHeatSolveNode() {
             {nodegraphparams::heatsolve::FluidVolumeOpacity, "Fluid Volume Opacity", NodeGraphParamType::Float, 0.25, 0, false, "", false},
             {nodegraphparams::heatsolve::SolverMaxIterations, "Max PCG Iterations (0=default)", NodeGraphParamType::Int, 100.0, 100, false, "", false},
             {nodegraphparams::heatsolve::SolverConvergenceTolerance, "PCG Tolerance (0=default)", NodeGraphParamType::Float, 3e-3, 0, false, "", false},
-
-            makeEnumParamDefinition(
-                nodegraphparams::heatsolve::domainBoundaryTypeParam(0),
-                "-X Boundary Type", "Adiabatic",
-                {"Adiabatic", "Dirichlet", "Neumann", "Robin"}),
-            {nodegraphparams::heatsolve::domainBoundaryTempParam(0), "-X Temperature", NodeGraphParamType::Float, HeatSimDefaults::ambientTemperatureC, 0, false, "", false},
-            {nodegraphparams::heatsolve::domainBoundaryFluxParam(0), "-X Heat Flux", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-            {nodegraphparams::heatsolve::domainBoundaryHtcParam(0), "-X HTC", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-
-            makeEnumParamDefinition(
-                nodegraphparams::heatsolve::domainBoundaryTypeParam(1),
-                "+X Boundary Type", "Adiabatic",
-                {"Adiabatic", "Dirichlet", "Neumann", "Robin"}),
-            {nodegraphparams::heatsolve::domainBoundaryTempParam(1), "+X Temperature", NodeGraphParamType::Float, HeatSimDefaults::ambientTemperatureC, 0, false, "", false},
-            {nodegraphparams::heatsolve::domainBoundaryFluxParam(1), "+X Heat Flux", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-            {nodegraphparams::heatsolve::domainBoundaryHtcParam(1), "+X HTC", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-
-            makeEnumParamDefinition(
-                nodegraphparams::heatsolve::domainBoundaryTypeParam(2),
-                "-Y Boundary Type", "Adiabatic",
-                {"Adiabatic", "Dirichlet", "Neumann", "Robin"}),
-            {nodegraphparams::heatsolve::domainBoundaryTempParam(2), "-Y Temperature", NodeGraphParamType::Float, HeatSimDefaults::ambientTemperatureC, 0, false, "", false},
-            {nodegraphparams::heatsolve::domainBoundaryFluxParam(2), "-Y Heat Flux", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-            {nodegraphparams::heatsolve::domainBoundaryHtcParam(2), "-Y HTC", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-
-            makeEnumParamDefinition(
-                nodegraphparams::heatsolve::domainBoundaryTypeParam(3),
-                "+Y Boundary Type", "Adiabatic",
-                {"Adiabatic", "Dirichlet", "Neumann", "Robin"}),
-            {nodegraphparams::heatsolve::domainBoundaryTempParam(3), "+Y Temperature", NodeGraphParamType::Float, HeatSimDefaults::ambientTemperatureC, 0, false, "", false},
-            {nodegraphparams::heatsolve::domainBoundaryFluxParam(3), "+Y Heat Flux", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-            {nodegraphparams::heatsolve::domainBoundaryHtcParam(3), "+Y HTC", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-
-            makeEnumParamDefinition(
-                nodegraphparams::heatsolve::domainBoundaryTypeParam(4),
-                "-Z Boundary Type", "Adiabatic",
-                {"Adiabatic", "Dirichlet", "Neumann", "Robin"}),
-            {nodegraphparams::heatsolve::domainBoundaryTempParam(4), "-Z Temperature", NodeGraphParamType::Float, HeatSimDefaults::ambientTemperatureC, 0, false, "", false},
-            {nodegraphparams::heatsolve::domainBoundaryFluxParam(4), "-Z Heat Flux", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-            {nodegraphparams::heatsolve::domainBoundaryHtcParam(4), "-Z HTC", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-
-            makeEnumParamDefinition(
-                nodegraphparams::heatsolve::domainBoundaryTypeParam(5),
-                "+Z Boundary Type", "Adiabatic",
-                {"Adiabatic", "Dirichlet", "Neumann", "Robin"}),
-            {nodegraphparams::heatsolve::domainBoundaryTempParam(5), "+Z Temperature", NodeGraphParamType::Float, HeatSimDefaults::ambientTemperatureC, 0, false, "", false},
-            {nodegraphparams::heatsolve::domainBoundaryFluxParam(5), "+Z Heat Flux", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-            {nodegraphparams::heatsolve::domainBoundaryHtcParam(5), "+Z HTC", NodeGraphParamType::Float, 0.0, 0, false, "", false},
         },
     };
 }
@@ -353,6 +309,7 @@ static NodeTypeDefinition buildCFDNode() {
         {
             makeInputSocket("Volume", NodeGraphValueType::Volume, false, true),
             makeInputSocket("Fluid", NodeGraphValueType::Fluid, false, false),
+            makeInputSocket("Boundary", NodeGraphValueType::Boundary),
             makeOutputSocket("CFD", NodeGraphValueType::Simulation, payloadtypes::CFD),
         },
         {
@@ -364,55 +321,51 @@ static NodeTypeDefinition buildCFDNode() {
             {nodegraphparams::cfd::VelocityZ, "Initial Velocity Z (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
             {nodegraphparams::cfd::PressureIterations, "Pressure Iterations", NodeGraphParamType::Int, 200.0, 200, false, "", false},
             {nodegraphparams::cfd::PressureTolerance, "Pressure Tolerance", NodeGraphParamType::Float, 1e-4, 0, false, "", false},
+            {nodegraphparams::cfd::Duration, "Simulation Duration (s)", NodeGraphParamType::Float, 10.0, 0, false, "", false},
 
-            makeEnumParamDefinition(
-                nodegraphparams::cfd::domainBoundaryTypeParam(0),
-                "-X Boundary Type", "Velocity Inlet",
-                {"No-Slip Wall", "Velocity Inlet", "Pressure Outlet"}),
-            {nodegraphparams::cfd::domainBoundaryVelocityXParam(0), "-X Velocity X (m/s)", NodeGraphParamType::Float, 0.1, 0, false, "", false},
-            {nodegraphparams::cfd::domainBoundaryVelocityYParam(0), "-X Velocity Y (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-            {nodegraphparams::cfd::domainBoundaryVelocityZParam(0), "-X Velocity Z (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-
-            makeEnumParamDefinition(
-                nodegraphparams::cfd::domainBoundaryTypeParam(1),
-                "+X Boundary Type", "Pressure Outlet",
-                {"No-Slip Wall", "Velocity Inlet", "Pressure Outlet"}),
-            {nodegraphparams::cfd::domainBoundaryVelocityXParam(1), "+X Velocity X (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-            {nodegraphparams::cfd::domainBoundaryVelocityYParam(1), "+X Velocity Y (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-            {nodegraphparams::cfd::domainBoundaryVelocityZParam(1), "+X Velocity Z (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-
-            makeEnumParamDefinition(
-                nodegraphparams::cfd::domainBoundaryTypeParam(2),
-                "-Y Boundary Type", "No-Slip Wall",
-                {"No-Slip Wall", "Velocity Inlet", "Pressure Outlet"}),
-            {nodegraphparams::cfd::domainBoundaryVelocityXParam(2), "-Y Velocity X (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-            {nodegraphparams::cfd::domainBoundaryVelocityYParam(2), "-Y Velocity Y (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-            {nodegraphparams::cfd::domainBoundaryVelocityZParam(2), "-Y Velocity Z (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-
-            makeEnumParamDefinition(
-                nodegraphparams::cfd::domainBoundaryTypeParam(3),
-                "+Y Boundary Type", "No-Slip Wall",
-                {"No-Slip Wall", "Velocity Inlet", "Pressure Outlet"}),
-            {nodegraphparams::cfd::domainBoundaryVelocityXParam(3), "+Y Velocity X (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-            {nodegraphparams::cfd::domainBoundaryVelocityYParam(3), "+Y Velocity Y (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-            {nodegraphparams::cfd::domainBoundaryVelocityZParam(3), "+Y Velocity Z (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-
-            makeEnumParamDefinition(
-                nodegraphparams::cfd::domainBoundaryTypeParam(4),
-                "-Z Boundary Type", "No-Slip Wall",
-                {"No-Slip Wall", "Velocity Inlet", "Pressure Outlet"}),
-            {nodegraphparams::cfd::domainBoundaryVelocityXParam(4), "-Z Velocity X (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-            {nodegraphparams::cfd::domainBoundaryVelocityYParam(4), "-Z Velocity Y (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-            {nodegraphparams::cfd::domainBoundaryVelocityZParam(4), "-Z Velocity Z (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-
-            makeEnumParamDefinition(
-                nodegraphparams::cfd::domainBoundaryTypeParam(5),
-                "+Z Boundary Type", "No-Slip Wall",
-                {"No-Slip Wall", "Velocity Inlet", "Pressure Outlet"}),
-            {nodegraphparams::cfd::domainBoundaryVelocityXParam(5), "+Z Velocity X (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-            {nodegraphparams::cfd::domainBoundaryVelocityYParam(5), "+Z Velocity Y (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
-            {nodegraphparams::cfd::domainBoundaryVelocityZParam(5), "+Z Velocity Z (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::cfd::ShowStreamlines, "Show Streamlines", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
+            {nodegraphparams::cfd::ShowDomainBox, "Show Domain Box", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
+            {nodegraphparams::cfd::ShowVelocityPalette, "Show Velocity Palette", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
         },
+    };
+}
+
+static NodeTypeDefinition buildBoundaryConditionsNode() {
+    const char* const faceNames[6] = { "-X", "+X", "-Y", "+Y", "-Z", "+Z" };
+    const char* const defaultFlow[6] = {
+        "Velocity Inlet", "Pressure Outlet", "No-Slip Wall", "No-Slip Wall", "No-Slip Wall", "No-Slip Wall"
+    };
+    const double defaultVelocityX[6] = { 0.1, 0.0, 0.0, 0.0, 0.0, 0.0 };
+
+    std::vector<NodeGraphParamDefinition> parameters;
+    parameters.reserve(54);
+    for (uint32_t face = 0; face < 6; ++face) {
+        const std::string prefix = std::string(faceNames[face]) + " ";
+        parameters.push_back(makeEnumParamDefinition(
+            nodegraphparams::boundaryconditions::flowTypeParam(face),
+            (prefix + "Flow").c_str(), defaultFlow[face],
+            {"No-Slip Wall", "Velocity Inlet", "Pressure Outlet"}));
+        parameters.push_back({nodegraphparams::boundaryconditions::velocityXParam(face), prefix + "Velocity X (m/s)", NodeGraphParamType::Float, defaultVelocityX[face], 0, false, "", false});
+        parameters.push_back({nodegraphparams::boundaryconditions::velocityYParam(face), prefix + "Velocity Y (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false});
+        parameters.push_back({nodegraphparams::boundaryconditions::velocityZParam(face), prefix + "Velocity Z (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false});
+        parameters.push_back(makeEnumParamDefinition(
+            nodegraphparams::boundaryconditions::thermalTypeParam(face),
+            (prefix + "Thermal").c_str(), "Adiabatic",
+            {"Adiabatic", "Dirichlet", "Neumann", "Robin"}));
+        parameters.push_back({nodegraphparams::boundaryconditions::temperatureParam(face), prefix + "Temperature (C)", NodeGraphParamType::Float, HeatSimDefaults::ambientTemperatureC, 0, false, "", false});
+        parameters.push_back({nodegraphparams::boundaryconditions::heatFluxParam(face), prefix + "Heat Flux (W/m2)", NodeGraphParamType::Float, 0.0, 0, false, "", false});
+        parameters.push_back({nodegraphparams::boundaryconditions::htcParam(face), prefix + "HTC (W/(m2 K))", NodeGraphParamType::Float, 0.0, 0, false, "", false});
+        parameters.push_back({nodegraphparams::boundaryconditions::inflowTemperatureParam(face), prefix + "Inflow Temperature (C)", NodeGraphParamType::Float, 20.0, 0, false, "", false});
+    }
+
+    return {
+        nodegraphtypes::BoundaryConditions,
+        "Boundary Conditions",
+        NodeGraphNodeCategory::System,
+        {
+            makeOutputSocket("Boundary", NodeGraphValueType::Boundary, payloadtypes::Boundary),
+        },
+        std::move(parameters),
     };
 }
 
@@ -510,6 +463,7 @@ void initNodeGraph(NodeGraphRegistry& registry) {
     payloadtypes::SerialTemperature = registry.registerPayloadType("serial_temperature", NodeGraphValueType::ScalarFloat);
     payloadtypes::CFD        = registry.registerPayloadType("cfd",       NodeGraphValueType::Simulation);
     payloadtypes::HeatProbe  = registry.registerPayloadType("heat_probe", NodeGraphValueType::ScalarFloat);
+    payloadtypes::Boundary   = registry.registerPayloadType("boundary",   NodeGraphValueType::Boundary);
 
     registry.registerNodeType(buildModelNode());
     registry.registerNodeType(buildTransformNode());
@@ -526,4 +480,5 @@ void initNodeGraph(NodeGraphRegistry& registry) {
     registry.registerNodeType(buildSerialTemperatureNode());
     registry.registerNodeType(buildHeatProbeNode());
     registry.registerNodeType(buildWriteNode());
+    registry.registerNodeType(buildBoundaryConditionsNode());
 }

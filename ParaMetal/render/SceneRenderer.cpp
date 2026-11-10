@@ -22,7 +22,8 @@
 #include "PickPass.hpp"
 #include "BlendPass.hpp"
 #include "HeatOverlayRenderer.hpp"
-#include "renderers/HeatVolumeRenderer.hpp"
+#include "CFDOverlayRenderer.hpp"
+#include "renderers/SimVolumeRenderer.hpp"
 #include "VoronoiOverlayRenderer.hpp"
 #include "renderers/IntrinsicRenderer.hpp"
 #include "renderers/GizmoRenderer.hpp"
@@ -111,6 +112,11 @@ bool SceneRenderer::initializePasses() {
         memoryAllocator,
         uniformBufferManager,
         renderCommandPool);
+    cfdOverlayRenderer = std::make_unique<render::CFDOverlayRenderer>(
+        vulkanDevice,
+        memoryAllocator,
+        uniformBufferManager,
+        renderCommandPool);
     voronoiOverlayRenderer = std::make_unique<render::VoronoiOverlayRenderer>(
         vulkanDevice,
         memoryAllocator,
@@ -139,7 +145,7 @@ bool SceneRenderer::initializePasses() {
         renderCommandPool,
         frameGraphRuntime.getRenderPass(),
         framegraph::toIndex(overlayPassId));
-    if (!heatOverlayRenderer || !voronoiOverlayRenderer || !intrinsicRenderer || !gizmoRenderer ||
+    if (!heatOverlayRenderer || !cfdOverlayRenderer || !voronoiOverlayRenderer || !intrinsicRenderer || !gizmoRenderer ||
         !screenTextRenderer || !screenTextRenderer->isReady() ||
         !navigationGizmoRenderer || !navigationGizmoRenderer->isReady()) {
         std::cerr << "[SceneRenderer] Failed to create surface visualization renderers" << std::endl;
@@ -191,6 +197,7 @@ bool SceneRenderer::initializePasses() {
         uniformBufferManager,
         *geometryPass,
         *heatOverlayRenderer,
+        *cfdOverlayRenderer,
         *voronoiOverlayRenderer,
         *intrinsicRenderer,
         *gizmoRenderer,
@@ -354,6 +361,10 @@ render::HeatOverlayRenderer* SceneRenderer::getHeatOverlayRenderer() const {
     return heatOverlayRenderer.get();
 }
 
+render::CFDOverlayRenderer* SceneRenderer::getCFDOverlayRenderer() const {
+    return cfdOverlayRenderer.get();
+}
+
 render::PointOverlayRenderer* SceneRenderer::getPointOverlayRenderer() const {
     return overlayPass ? overlayPass->getPointOverlayRenderer() : nullptr;
 }
@@ -362,7 +373,7 @@ render::VoronoiOverlayRenderer* SceneRenderer::getVoronoiOverlayRenderer() const
     return voronoiOverlayRenderer.get();
 }
 
-render::HeatVolumeRenderer* SceneRenderer::getHeatVolumeRenderer() const {
+render::SimVolumeRenderer* SceneRenderer::getHeatVolumeRenderer() const {
     return volumePass ? volumePass->getHeatVolumeRenderer() : nullptr;
 }
 
@@ -390,6 +401,27 @@ void SceneRenderer::setHeatPalette(int palette) {
     }
 }
 
+void SceneRenderer::setVelocityPaletteRange(float minimum, float maximum) {
+    if (overlayPass) {
+        overlayPass->setVelocityPaletteRange(minimum, maximum);
+    }
+}
+
+void SceneRenderer::setVelocityPalette(int palette) {
+    if (overlayPass) {
+        overlayPass->setVelocityPalette(static_cast<uint32_t>(palette));
+    }
+}
+
+bool SceneRenderer::isHeatPaletteVisible() const {
+    return heatOverlayRenderer && heatOverlayRenderer->isPaletteVisible();
+}
+
+bool SceneRenderer::isVelocityPaletteVisible() const {
+    return (cfdOverlayRenderer && cfdOverlayRenderer->isVelocityPaletteVisible()) ||
+        (heatOverlayRenderer && heatOverlayRenderer->isCfdVelocityPaletteVisible());
+}
+
 void SceneRenderer::setTimingOverlayLines(const std::vector<std::string>& lines) {
     if (overlayPass) {
         overlayPass->setTimingOverlayLines(lines);
@@ -408,13 +440,6 @@ VkDescriptorSetLayout SceneRenderer::getGbufferDescriptorSetLayout() const {
         return VK_NULL_HANDLE;
     }
     return geometryPass->getDescriptorSetLayout();
-}
-
-VkDescriptorSet SceneRenderer::getGeometryDescriptorSet(uint32_t frameIndex) const {
-    if (!geometryPass) {
-        return VK_NULL_HANDLE;
-    }
-    return geometryPass->getDescriptorSet(frameIndex);
 }
 
 void SceneRenderer::setWorldUnit(units::LengthUnit unit) {
@@ -564,6 +589,7 @@ void SceneRenderer::cleanup() {
     pickPass = nullptr;
     blendPass = nullptr;
     heatOverlayRenderer.reset();
+    cfdOverlayRenderer.reset();
     voronoiOverlayRenderer.reset();
     intrinsicRenderer.reset();
     if (gizmoRenderer) {
@@ -613,18 +639,6 @@ void SceneRenderer::destroyGpuTimingQueryPool() {
     gpuTimingPassNames.clear();
     gpuTimingQueriesPerFrame = 0;
     gpuTimingValidFrames.clear();
-}
-
-bool SceneRenderer::tryGetGpuFrameTimeMs(uint32_t frameIndex, float& outGpuMs) const {
-    GpuTimingStats stats{};
-
-    if (!getGpuTimingStats(frameIndex, stats)) {
-        outGpuMs = 0.0f;
-        return false;
-    }
-
-    outGpuMs = stats.totalMs;
-    return true;
 }
 
 bool SceneRenderer::getGpuTimingStats(uint32_t frameIndex, GpuTimingStats& outStats) const {

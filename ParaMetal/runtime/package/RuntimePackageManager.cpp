@@ -35,6 +35,28 @@ void RuntimePackageManager::setProductHandle(uint64_t socketKey, const ProductHa
     setProductHandle(socketKey, handle, cfdPackages, pendingCfdPackages);
 }
 
+const std::vector<uint64_t>* RuntimePackageManager::displayDependencyKeysFor(uint64_t socketKey) const {
+    if (const ModelPackage* package = findAny<ModelPackage>(socketKey)) {
+        return &package->displayDependencyKeys;
+    }
+    if (const PointPackage* package = findAny<PointPackage>(socketKey)) {
+        return &package->displayDependencyKeys;
+    }
+    if (const RemeshPackage* package = findAny<RemeshPackage>(socketKey)) {
+        return &package->displayDependencyKeys;
+    }
+    if (const VoronoiPackage* package = findAny<VoronoiPackage>(socketKey)) {
+        return &package->displayDependencyKeys;
+    }
+    if (const HeatPackage* package = findAny<HeatPackage>(socketKey)) {
+        return &package->displayDependencyKeys;
+    }
+    if (const CFDPackage* package = findAny<CFDPackage>(socketKey)) {
+        return &package->displayDependencyKeys;
+    }
+    return nullptr;
+}
+
 void RuntimePackageManager::destroyStale() {
     eraseStale(modelPackages);
     eraseStale(pointPackages);

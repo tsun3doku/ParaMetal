@@ -53,7 +53,6 @@ void NodeMerge::execute(NodeKernelEval& eval) const {
     outputValue = {};
 
     if (dataType == payloadtypes::None) {
-        populateMetadata(outputValue, nullptr, payloadRegistry);
         return;
     }
 
@@ -73,7 +72,6 @@ void NodeMerge::execute(NodeKernelEval& eval) const {
         }
 
         if (pointInputs.empty()) {
-            populateMetadata(outputValue, nullptr, payloadRegistry);
             return;
         }
 
@@ -202,7 +200,6 @@ void NodeMerge::execute(NodeKernelEval& eval) const {
         const uint64_t payloadKey = NodeSocketKey(eval.node.id, eval.node.outputs[0].id);
         outputValue.dataType = payloadtypes::Points;
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, eval.outputHashes);
-        populateMetadata(outputValue, nullptr, payloadRegistry);
 
     } else if (dataType == payloadtypes::Geometry || dataType == payloadtypes::Remesh) {
         std::vector<const GeometryData*> geometryInputs;
@@ -222,7 +219,6 @@ void NodeMerge::execute(NodeKernelEval& eval) const {
         }
 
         if (geometryInputs.empty()) {
-            populateMetadata(outputValue, nullptr, payloadRegistry);
             return;
         }
 
@@ -357,7 +353,6 @@ void NodeMerge::execute(NodeKernelEval& eval) const {
         const uint64_t payloadKey = NodeSocketKey(eval.node.id, eval.node.outputs[0].id);
         outputValue.dataType = payloadtypes::Geometry;
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, eval.outputHashes);
-        populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 

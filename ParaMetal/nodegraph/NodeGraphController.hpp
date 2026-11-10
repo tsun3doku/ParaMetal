@@ -2,7 +2,7 @@
 
 #include "NodeGraphDisplay.hpp"
 #include "NodeGraphRuntime.hpp"
-#include "runtime/RuntimeConnections.hpp"
+#include "runtime/RuntimeTransports.hpp"
 #include "runtime/package/RuntimePackageCompiler.hpp"
 #include "runtime/package/RuntimePackageController.hpp"
 #include "util/Units.hpp"
@@ -12,13 +12,15 @@
 #include <unordered_set>
 #include <vector>
 
+class ComputeContext;
 class NodePayloadRegistry;
 
 class NodeGraphController {
 public:
     NodeGraphController(
         NodePayloadRegistry& payloadRegistry,
-        const RuntimeConnections& connections);
+        ComputeContext& compute,
+        const RuntimeTransports& transports);
 
     void tick();
     void resetGraph(const NodeGraphState& state);
@@ -35,6 +37,8 @@ public:
     bool runtimeCompilationPending() const { return packageCompilationPending; }
     const NodeGraphCompiled& compiledState() const;
     bool runtimeModelIdsForNode(NodeGraphNodeId nodeId, std::vector<uint32_t>& outIds) const;
+    bool hasRetiringGenerations() const;
+    void clearRetiringGenerations();
 
     RuntimeProductManager* getProductManager() { return packageController.products(); }
     const RuntimeProductManager* getProductManager() const { return packageController.products(); }
@@ -45,13 +49,14 @@ public:
 private:
     void rebuildForDelta(const NodeGraphDelta& delta);
     void syncSimulationNodes();
-    void reclaimRetiringGenerations();
     bool compileRuntimePackages();
+    void publishPackageErrors(const std::vector<std::string>& errors);
     bool runtimeModelIdsForSocket(uint64_t socketKey, std::vector<uint32_t>& outIds) const;
     void addRuntimeModelId(std::vector<uint32_t>& outIds, uint32_t id) const;
 
     NodePayloadRegistry& payloadRegistry;
-    RuntimeConnections runtimeConnections{};
+    ComputeContext& compute;
+    RuntimeTransports transports{};
     NodeGraphRuntime runtime;
     bool packageCompilationPending = false;
     bool frozenPackageRebuildPending = false;

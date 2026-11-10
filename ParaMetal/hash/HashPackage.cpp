@@ -158,6 +158,7 @@ void HashPackage::seal(HeatPackage& pkg, const HashValues& authoredHashes) {
         HashBuilder::combineFloat(simulationHash, pkg.domainBoundaryTemperaturesC[face]);
         HashBuilder::combineFloat(simulationHash, pkg.domainBoundaryHeatFluxes[face]);
         HashBuilder::combineFloat(simulationHash, pkg.domainBoundaryHeatTransferCoefficients[face]);
+        HashBuilder::combineFloat(simulationHash, pkg.domainBoundaryInflowTemperaturesC[face]);
     }
 
     uint64_t displayHash = HashBuilder::start();
@@ -200,9 +201,21 @@ void HashPackage::seal(CFDPackage& pkg, const HashValues& authoredHashes) {
     HashBuilder::combineFloat(simulationHash, pkg.targetCourant);
     HashBuilder::combine(simulationHash, pkg.active ? 1u : 0u);
 
-    pkg.hashes.full = simulationHash;
+    uint64_t displayHash = HashBuilder::start();
+    HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showStreamlines ? 1u : 0u));
+    HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showDomainBox ? 1u : 0u));
+    HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showVelocityPalette ? 1u : 0u));
+    HashBuilder::combineFloat(displayHash, pkg.canonicalToWorldScale);
+
+    uint64_t fullHash = HashBuilder::start();
+    HashBuilder::combine(fullHash, simulationHash);
+    HashBuilder::combine(fullHash, displayHash);
+    HashBuilder::combine(fullHash, authoredHashes.full);
+
+    pkg.hashes.full = fullHash;
     pkg.hashes.simulation = simulationHash;
     pkg.hashes.geometry = pkg.domainVoronoiProduct.hashes.geometry;
+    pkg.hashes.display = displayHash;
 }
 
 

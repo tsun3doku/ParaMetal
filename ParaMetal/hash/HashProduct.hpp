@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 //                                                          [ HashProduct
 //                                                            -Centralized product sealing
 //                                                            -Computes domain specific hash values for each
@@ -11,6 +13,7 @@ struct RemeshProduct;
 struct VoronoiProduct;
 struct PointProduct;
 struct HeatProduct;
+struct CFDProduct;
 
 class HashProduct {
 public:
@@ -19,4 +22,5 @@ public:
     static void seal(VoronoiProduct& product);
     static void seal(PointProduct& product);
     static void seal(HeatProduct& product);
+    static void seal(CFDProduct& product, uint64_t geometryHash, uint64_t simulationHash);
 };

@@ -126,6 +126,14 @@ bool SimGraphRuntime::hasPublication(const SimNode& node) const {
     return node.publicationReadySemaphore() != VK_NULL_HANDLE && node.publicationReadyValue() > 0;
 }
 
+uint64_t SimGraphRuntime::simulationStepTotal() const {
+    uint64_t total = 0;
+    for (const RegisteredNode& registered : nodes) {
+        total += registered.node->completedStepCount();
+    }
+    return total;
+}
+
 bool SimGraphRuntime::rebuildGraph() {
     nodeIndexBySocket.clear();
     incomingConnectionsByNode.assign(nodes.size(), {});
@@ -208,6 +216,7 @@ void SimGraphRuntime::bindIncomingConnections(size_t nodeIndex) {
 
 SimTickResult SimGraphRuntime::tick(const SimTickContext& context) {
     SimTickResult result{};
+    result.completedStepCount = simulationStepTotal();
 
     if (vulkanDevice == nullptr || frameSync == nullptr) {
         return result;
@@ -215,7 +224,13 @@ SimTickResult SimGraphRuntime::tick(const SimTickContext& context) {
 
     // Slot fence before any work is scheduled, so a pass cannot write resources a
     // previous submission on the same slot is still using.
-    frameSync->prepareExternalFrame(context.renderFrameSlot);
+    const VkResult frameFenceResult = frameSync->prepareExternalFrame(context.renderFrameSlot);
+    if (frameFenceResult != VK_SUCCESS) {
+        result.status = frameFenceResult == VK_ERROR_DEVICE_LOST
+            ? SimStatus::DeviceLost
+            : SimStatus::Failed;
+        return result;
+    }
 
     if (!enabled) {
         return result;
@@ -246,6 +261,7 @@ SimTickResult SimGraphRuntime::tick(const SimTickContext& context) {
 
 SimTickResult SimGraphRuntime::recordAndSubmit(uint32_t renderFrameSlot) {
     SimTickResult result{};
+    result.completedStepCount = simulationStepTotal();
 
     std::vector<size_t> activeNodes;
     activeNodes.reserve(topologicalOrder.size());
@@ -263,13 +279,10 @@ SimTickResult SimGraphRuntime::recordAndSubmit(uint32_t renderFrameSlot) {
     // Total GPU compute work performed by this frame's nodes, each from its own
     // stream events. Nodes may overlap, so this is work done, not wall time.
     float computeMs = 0.0f;
-    uint64_t completedSteps = 0;
     for (size_t nodeIndex : activeNodes) {
         computeMs += nodes[nodeIndex].node->computeGpuMs();
-        completedSteps += nodes[nodeIndex].node->completedStepCount();
     }
     result.computeGpuMs = computeMs;
-    result.completedStepCount = completedSteps;
 
     std::vector<size_t> submissionIndexByNode(nodes.size(), SIZE_MAX);
     std::vector<FrameComputeSubmission> submissions;

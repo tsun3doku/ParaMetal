@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Effects
 import QtQuick.Layouts
 
 Rectangle {
@@ -65,6 +64,7 @@ Rectangle {
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: theme.subtleBorder }
 
         TextField {
+            id: inputField
             Layout.fillWidth: true
             Layout.preferredHeight: 42
             verticalAlignment: TextInput.AlignVCenter
@@ -76,9 +76,61 @@ Rectangle {
             leftPadding: 10
             rightPadding: 10
             background: Rectangle { color: theme.panelBackground }
+
+            property var commandHistory: []
+            property int historyIndex: 0
+            property string draftInput: ""
+
             onAccepted: {
-                bridge.execute(text)
+                var cmd = text
+                if (cmd.length > 0) {
+                    commandHistory.push(cmd)
+                    historyIndex = commandHistory.length
+                }
+                draftInput = ""
+                bridge.execute(cmd)
                 text = ""
+            }
+
+            Keys.onUpPressed: function(event) {
+                if (commandHistory.length === 0) return
+                if (historyIndex === commandHistory.length) {
+                    draftInput = text
+                }
+                if (historyIndex > 0) {
+                    historyIndex--
+                    text = commandHistory[historyIndex]
+                    cursorPosition = text.length
+                }
+                event.accepted = true
+            }
+
+            Keys.onDownPressed: function(event) {
+                if (commandHistory.length === 0) return
+                if (historyIndex < commandHistory.length - 1) {
+                    historyIndex++
+                    text = commandHistory[historyIndex]
+                    cursorPosition = text.length
+                } else if (historyIndex === commandHistory.length - 1) {
+                    historyIndex = commandHistory.length
+                    text = draftInput
+                    cursorPosition = text.length
+                }
+                event.accepted = true
+            }
+
+            Keys.onTabPressed: function(event) {
+                var pos = cursorPosition
+                insert(pos, "    ")
+                cursorPosition = pos + 4
+                event.accepted = true
+            }
+
+            Keys.onEscapePressed: function(event) {
+                text = ""
+                draftInput = ""
+                historyIndex = commandHistory.length
+                event.accepted = true
             }
         }
     }

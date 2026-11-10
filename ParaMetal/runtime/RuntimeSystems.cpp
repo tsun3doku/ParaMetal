@@ -7,16 +7,20 @@
 #include "render/RenderConfig.hpp"
 #include "render/WindowRuntimeState.hpp"
 #include "render/SceneRenderer.hpp"
+#include "render/CFDOverlayRenderer.hpp"
 #include "render/HeatOverlayRenderer.hpp"
 #include "scene/NavigationGizmoController.hpp"
 #include "simgraph/SimGraphRuntime.hpp"
 #include "vulkan/ModelRegistry.hpp"
 
+
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
 
-#include <cuda_runtime.h>
+static constexpr uint64_t RetireReclaimWaitNs = 5'000'000'000ull;
+
+RuntimeSystems::RuntimeSystems() = default;
 
 RuntimeSystems::~RuntimeSystems() {
     shutdown();
@@ -27,11 +31,13 @@ bool RuntimeSystems::initialize(WindowRuntimeState& runtimeState, const AppVulka
         return true;
     }
 
+    renderSettingsState = {};
     windowRuntimeState = &runtimeState;
     isShuttingDown.store(false, std::memory_order_release);
     runtimeBusy.store(false, std::memory_order_release);
     frameCounter = 0;
     timelineRuntime.reset();
+    hadSimulationTimeline = false;
 
     if (!core.initialize(vulkanContext)) {
         cleanup();
@@ -83,8 +89,11 @@ void RuntimeSystems::tickFrame(float deltaTime, VkCommandBuffer commandBuffer, u
         return;
     }
 
+
     SimGraphRuntime* simGraph = compute.simGraphRuntime();
-    if (simGraph != nullptr && simGraph->hasSimulationTimelineMetadata()) {
+    const bool hasSimulationTimeline =
+        simGraph != nullptr && simGraph->hasSimulationTimelineMetadata();
+    if (hasSimulationTimeline) {
         const uint32_t timelineFrames = simGraph->getSimulationTimelineFrameCount();
         const float duration = simGraph->getSimulationDuration();
         if (timelineFrames > 0) {
@@ -93,18 +102,22 @@ void RuntimeSystems::tickFrame(float deltaTime, VkCommandBuffer commandBuffer, u
         if (duration > 0.0f && timelineFrames > 0) {
             timelineRuntime.setFps(static_cast<float>(timelineFrames) / duration);
         }
-    } else {
+
+        uint32_t maxAdvanceFrame = timelineRuntime.getMaxFrame();
+        if (timelineRuntime.isPlaying()) {
+            const uint32_t availableFrame = simGraph->getPlaybackAvailableFrame();
+            if (availableFrame != UINT32_MAX) {
+                maxAdvanceFrame = std::min(maxAdvanceFrame, availableFrame);
+            }
+        }
+        timelineRuntime.tick(deltaTime, maxAdvanceFrame);
+    } else if (hadSimulationTimeline) {
+        // Playback metadata went away. Clear its range once instead of every frame:
+        // clearing also drops the play state, which would stop live simulation nodes
+        // that record no playback frames.
         timelineRuntime.clearSimulationMetadata();
     }
-
-    uint32_t maxAdvanceFrame = timelineRuntime.getMaxFrame();
-    if (timelineRuntime.isPlaying() && simGraph != nullptr) {
-        const uint32_t availableFrame = simGraph->getPlaybackAvailableFrame();
-        if (availableFrame != UINT32_MAX) {
-            maxAdvanceFrame = std::min(maxAdvanceFrame, availableFrame);
-        }
-    }
-    timelineRuntime.tick(deltaTime, maxAdvanceFrame);
+    hadSimulationTimeline = hasSimulationTimeline;
 
     compute.tickDomainServices();
 
@@ -114,6 +127,8 @@ void RuntimeSystems::tickFrame(float deltaTime, VkCommandBuffer commandBuffer, u
     context.playing = timelineRuntime.isPlaying();
     context.currentFrame = timelineRuntime.getCurrentFrame();
     context.resetEpoch = timelineRuntime.getResetEpoch();
+
+    reclaimRetiredGenerations();
 
     runtimeController.tick(
         deltaTime,
@@ -125,6 +140,25 @@ void RuntimeSystems::tickFrame(float deltaTime, VkCommandBuffer commandBuffer, u
     dispatchViewportCommands();
 }
 
+void RuntimeSystems::reclaimRetiredGenerations() {
+    NodeGraphController* controller = getNodeGraphController();
+    if (controller == nullptr || !controller->hasRetiringGenerations()) {
+        return;
+    }
+    if (!frameSync.waitForAllFrameFences(RetireReclaimWaitNs)) {
+        std::cerr << "[RuntimeSystems] compute submissions still in flight; retiring generations retained"
+                  << std::endl;
+        return;
+    }
+    if (!cudaVulkan::waitForGpuIdle(
+            core.device().getDevice(), core.device().getPhysicalDevice())) {
+        std::cerr << "[RuntimeSystems] GPU idle wait failed; retiring generations retained"
+                  << std::endl;
+        return;
+    }
+    controller->clearRetiringGenerations();
+}
+
 bool RuntimeSystems::updateViewportTarget(VkImage image, VkFormat format, VkExtent2D extent) {
     if (!initialized) {
         return false;
@@ -132,7 +166,7 @@ bool RuntimeSystems::updateViewportTarget(VkImage image, VkFormat format, VkExte
     return render.updateViewportTarget(image, format, extent);
 }
 
-void RuntimeSystems::replaceGraphState(const NodeGraphState& state) {
+bool RuntimeSystems::replaceGraphState(const NodeGraphState& state) {
     NodeGraphController* controller = getNodeGraphController();
 
     if (controller) {
@@ -143,21 +177,11 @@ void RuntimeSystems::replaceGraphState(const NodeGraphState& state) {
     }
 
     // Device may not exist yet during early initialization
-    const VkDevice device = core.device().getDevice();
-    const VkResult vkResult = device != VK_NULL_HANDLE ? vkDeviceWaitIdle(device) : VK_SUCCESS;
-    cudaError_t cudaResult = cudaSuccess;
-    const int cudaDevice = cudaVulkan::findDevice(core.device().getPhysicalDevice());
-    if (cudaDevice >= 0) {
-        const cudaError_t setDeviceResult = cudaSetDevice(cudaDevice);
-        cudaResult = setDeviceResult != cudaSuccess ? setDeviceResult : cudaDeviceSynchronize();
-    } else if (cudaVulkan::deviceWasFound()) {
-        cudaResult = cudaErrorInvalidDevice;
-    }
-    if (vkResult != VK_SUCCESS || cudaResult != cudaSuccess) {
-        std::cerr << "[RuntimeSystems] graph replacement quiesce failure: vk="
-                  << static_cast<int>(vkResult)
-                  << " cuda=" << static_cast<int>(cudaResult) << std::endl;
-        return;
+    if (!cudaVulkan::waitForGpuIdle(
+            core.device().getDevice(), core.device().getPhysicalDevice())) {
+        std::cerr << "[RuntimeSystems] graph replacement aborted after GPU idle wait failure"
+                  << std::endl;
+        return false;
     }
 
     if (controller) {
@@ -175,6 +199,7 @@ void RuntimeSystems::replaceGraphState(const NodeGraphState& state) {
     if (controller) {
         controller->resetGraph(state);
     }
+    return true;
 }
 
 bool RuntimeSystems::applyGraphDelta(const NodeGraphDelta& delta) {
@@ -227,7 +252,9 @@ bool RuntimeSystems::takeExportProductsReady(ExportProductsReply& outReply) {
 
 void RuntimeSystems::processDeferredWork() {
     runtimeExport.processPending(
-        getNodeGraphController(), compute.heatSystemComputeController());
+        getNodeGraphController(),
+        compute.heatSystemComputeController(),
+        compute.cfdSystemComputeController());
 }
 
 void RuntimeSystems::shutdown() {
@@ -355,7 +382,24 @@ void RuntimeSystems::setHeatPalette(int palette) {
 
 bool RuntimeSystems::isHeatPaletteVisible() const {
     const RenderRuntime* runtimeState = render.runtime();
-    return runtimeState && runtimeState->getSceneRenderer().getHeatOverlayRenderer()->isPaletteVisible();
+    return runtimeState && runtimeState->getSceneRenderer().isHeatPaletteVisible();
+}
+
+void RuntimeSystems::setVelocityPaletteRange(float minimum, float maximum) {
+    if (render.runtime()) {
+        render.runtime()->getSceneRenderer().setVelocityPaletteRange(minimum, maximum);
+    }
+}
+
+void RuntimeSystems::setVelocityPalette(int palette) {
+    if (render.runtime()) {
+        render.runtime()->getSceneRenderer().setVelocityPalette(palette);
+    }
+}
+
+bool RuntimeSystems::isVelocityPaletteVisible() const {
+    const RenderRuntime* runtimeState = render.runtime();
+    return runtimeState && runtimeState->getSceneRenderer().isVelocityPaletteVisible();
 }
 
 const app::RenderSettings& RuntimeSystems::renderSettings() const {
@@ -391,21 +435,10 @@ void RuntimeSystems::cleanup() {
         cfdSystemController->releaseWaits();
     }
 
-    const VkDevice device = core.device().getDevice();
-    const VkResult vkResult = device != VK_NULL_HANDLE ? vkDeviceWaitIdle(device) : VK_SUCCESS;
-    cudaError_t cudaResult = cudaSuccess;
-    const int cudaDevice = cudaVulkan::findDevice(core.device().getPhysicalDevice());
-    if (cudaDevice >= 0) {
-        const cudaError_t setDeviceResult = cudaSetDevice(cudaDevice);
-        cudaResult = setDeviceResult != cudaSuccess ? setDeviceResult : cudaDeviceSynchronize();
-    } else if (cudaVulkan::deviceWasFound()) {
-        cudaResult = cudaErrorInvalidDevice;
-    }
-
-    if (vkResult != VK_SUCCESS || cudaResult != cudaSuccess) {
-        std::cerr << "[RuntimeSystems] terminal shutdown quiesce failure: vk="
-                  << static_cast<int>(vkResult)
-                  << " cuda=" << static_cast<int>(cudaResult) << std::endl;
+    if (!cudaVulkan::waitForGpuIdle(
+            core.device().getDevice(), core.device().getPhysicalDevice())) {
+        std::cerr << "[RuntimeSystems] terminal shutdown aborted after GPU idle wait failure"
+                  << std::endl;
         std::abort();
     }
 

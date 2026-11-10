@@ -193,6 +193,7 @@ Rectangle {
                         theme: root.theme
                         bridge: ui.viewport
                         heatPalette: ui.heatPalette
+                        velocityPalette: ui.velocityPalette
                     }
                 }
 

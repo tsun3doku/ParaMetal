@@ -49,20 +49,8 @@ public:
     void markGlobalValuesDirty() { globalValuesDirtyFlag = true; }
     void markAdvectionDirty() { globalAdvectionDirtyFlag = true; }
 
-    void setDomainBoundaryConditions(
-        const uint32_t types[6],
-        const float temperaturesC[6],
-        const float heatFluxes[6],
-        const float heatTransferCoefficients[6]) {
-        domainBoundaries = heat::fromFlatArrays(types, temperaturesC, heatFluxes, heatTransferCoefficients);
-    }
-
     void setDomainBoundaryConditions(const heat::DomainBoundaryConditions& boundaries) {
         domainBoundaries = boundaries;
-    }
-
-    const heat::DomainBoundaryConditions& getDomainBoundaryConditions() const {
-        return domainBoundaries;
     }
 
     struct AdvectionInput {
@@ -112,10 +100,8 @@ public:
     bool pollGlobalSolve(bool& completedDestinationIsA);
     bool isGlobalSolveInFlight() const { return globalSolveInFlight; }
     void prepareGlobalRenderSynchronization(bool newSolveCompleted);
-    // Records current frame release value for the active read buffer to sync next solve overwrite
     void noteTemperatureReader(bool currentIsA);
     void waitGlobalSolveIdle();
-    // Release pending solve wait on host during terminal recovery
     void releasePendingSolveWaitOnHost();
     bool hasSolveFailed() const { return globalSolver ? globalSolver->hasSolveFailed() : false; }
 
@@ -175,7 +161,6 @@ private:
     uint64_t pendingCudaReadyValue = 0;
     uint64_t completedCudaReadyValue = 0;
     uint64_t pendingSolveReleaseValue = 0;
-    // Last reader release values per solution buffer (0 = A, 1 = B)
     uint64_t lastReaderReleaseValue[2] = {0, 0};
     std::vector<uint32_t> fluidNodeToGlobalFragment;
     std::vector<uint32_t> globalFragmentToFluidNode;

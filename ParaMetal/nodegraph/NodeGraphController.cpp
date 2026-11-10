@@ -4,6 +4,7 @@
 #include "NodeGraphDebugCache.hpp"
 #include "cfd/CFDSystemComputeController.hpp"
 #include "heat/HeatSystemComputeController.hpp"
+#include "runtime/ComputeContext.hpp"
 #include "runtime/ModelComputeController.hpp"
 #include "runtime/PointComputeRuntime.hpp"
 #include "runtime/RemeshController.hpp"
@@ -11,8 +12,8 @@
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
 #include "NodePayloadRegistry.hpp"
-#include "runtime/RuntimeHeatComputeTransport.hpp"
 #include "runtime/RuntimeHeatDisplayTransport.hpp"
+#include "runtime/RuntimeCFDDisplayTransport.hpp"
 #include "runtime/RuntimeModelDisplayTransport.hpp"
 #include "runtime/RuntimePointDisplayTransport.hpp"
 #include "runtime/RuntimeProductManager.hpp"
@@ -25,11 +26,13 @@
 
 NodeGraphController::NodeGraphController(
     NodePayloadRegistry& payloadRegistry,
-    const RuntimeConnections& connections)
+    ComputeContext& computeContext,
+    const RuntimeTransports& transportBindings)
     : payloadRegistry(payloadRegistry),
-      runtimeConnections(connections),
+      compute(computeContext),
+      transports(transportBindings),
       runtime(&payloadRegistry),
-      packageController(connections) {
+      packageController(transportBindings) {
     plan.isValid = false;
 }
 
@@ -75,11 +78,11 @@ void NodeGraphController::tick() {
 void NodeGraphController::detachRuntimeBindings() {
     packageController.detachAllDisplayBindings();
     // unblock interop waits before quiescing gpu
-    if (runtimeConnections.heatController) {
-        runtimeConnections.heatController->releaseWaits();
+    if (compute.heatSystemComputeController()) {
+        compute.heatSystemComputeController()->releaseWaits();
     }
-    if (runtimeConnections.cfdController) {
-        runtimeConnections.cfdController->releaseWaits();
+    if (compute.cfdSystemComputeController()) {
+        compute.cfdSystemComputeController()->releaseWaits();
     }
 }
 
@@ -96,39 +99,39 @@ void NodeGraphController::quiescedClear() {
 
 // sync committed simulation systems into sim graph
 void NodeGraphController::syncSimulationNodes() {
-    SimGraphRuntime* simGraph = runtimeConnections.simGraph;
+    SimGraphRuntime* simGraph = compute.simGraphRuntime();
     if (simGraph == nullptr) return;
 
     const RuntimePackageManager& packages = packageController.packages();
     std::unordered_set<uint64_t> desired;
     desired.reserve(packages.cfdSystems().size() + packages.heatSystems().size());
 
-    if (runtimeConnections.cfdController) {
+    if (compute.cfdSystemComputeController()) {
         for (const auto& [socketKey, package] : packages.cfdSystems()) {
             (void)package;
-            cfd::CFDSystem* system = runtimeConnections.cfdController->getSystem(socketKey);
+            cfd::CFDSystem* system = compute.cfdSystemComputeController()->getSystem(socketKey);
             if (system == nullptr) continue;
             simGraph->registerNode(socketKey, system);
             desired.insert(socketKey);
         }
     }
 
-    if (runtimeConnections.heatController) {
+    if (compute.heatSystemComputeController()) {
         for (const auto& [socketKey, package] : packages.heatSystems()) {
-            HeatSystem* system = runtimeConnections.heatController->getSystem(socketKey);
+            HeatSystem* system = compute.heatSystemComputeController()->getSystem(socketKey);
             if (system == nullptr) continue;
             simGraph->registerNode(socketKey, system);
             desired.insert(socketKey);
 
             const HeatSystemComputeController::Config* heatConfig =
-                runtimeConnections.heatController->getConfig(socketKey);
+                compute.heatSystemComputeController()->getConfig(socketKey);
             const uint64_t producerSocket =
                 heatConfig && heatConfig->hasAdvection && package.cfdProduct.isValid()
                     ? package.cfdProduct.outputSocketKey
                     : 0;
             if (producerSocket == 0 ||
-                runtimeConnections.cfdController == nullptr ||
-                runtimeConnections.cfdController->getSystem(producerSocket) == nullptr) {
+                compute.cfdSystemComputeController() == nullptr ||
+                compute.cfdSystemComputeController()->getSystem(producerSocket) == nullptr) {
                 simGraph->disconnect(socketKey);
                 continue;
             }
@@ -193,89 +196,90 @@ bool NodeGraphController::resolveGizmoTransformNode(
             runtime.state(), outputSocketKey, nodegraphtypes::Transform, outNodeId);
 }
 
-void NodeGraphController::reclaimRetiringGenerations() {
-    RuntimeProductManager* products = packageController.products();
-    bool anyRetiring = products != nullptr && products->hasAnyRetiring();
-    if (runtimeConnections.modelComputeController &&
-        runtimeConnections.modelComputeController->hasAnyRetiring()) {
-        anyRetiring = true;
+bool NodeGraphController::hasRetiringGenerations() const {
+    const RuntimeProductManager* products = packageController.products();
+    if (products != nullptr && products->hasAnyRetiring()) {
+        return true;
     }
-    if (runtimeConnections.pointComputeRuntime &&
-        runtimeConnections.pointComputeRuntime->hasAnyRetiring()) {
-        anyRetiring = true;
+    if (compute.modelComputeController() &&
+        compute.modelComputeController()->hasAnyRetiring()) {
+        return true;
     }
-    if (runtimeConnections.remeshController &&
-        runtimeConnections.remeshController->hasAnyRetiring()) {
-        anyRetiring = true;
+    if (compute.pointComputeRuntime() &&
+        compute.pointComputeRuntime()->hasAnyRetiring()) {
+        return true;
     }
-    if (runtimeConnections.voronoiController &&
-        runtimeConnections.voronoiController->hasAnyRetiring()) {
-        anyRetiring = true;
+    if (compute.remeshController() &&
+        compute.remeshController()->hasAnyRetiring()) {
+        return true;
     }
-    if (runtimeConnections.heatController &&
-        runtimeConnections.heatController->hasAnyRetiring()) {
-        anyRetiring = true;
+    if (compute.voronoiSystemComputeController() &&
+        compute.voronoiSystemComputeController()->hasAnyRetiring()) {
+        return true;
     }
-    if (runtimeConnections.cfdController &&
-        runtimeConnections.cfdController->hasAnyRetiring()) {
-        anyRetiring = true;
+    if (compute.heatSystemComputeController() &&
+        compute.heatSystemComputeController()->hasAnyRetiring()) {
+        return true;
     }
-    if (!anyRetiring) {
-        return;
+    if (compute.cfdSystemComputeController() &&
+        compute.cfdSystemComputeController()->hasAnyRetiring()) {
+        return true;
     }
+    return false;
+}
 
-    if (!runtimeConnections.quiesceGpu || !runtimeConnections.quiesceGpu()) {
-        std::cerr << "[NodeGraphController] GPU quiesce failed; retiring generations retained"
-                  << std::endl;
-        return;
+void NodeGraphController::clearRetiringGenerations() {
+    if (RuntimeProductManager* products = packageController.products()) {
+        products->clearAllRetiring();
     }
-    if (products) products->clearAllRetiring();
-    if (runtimeConnections.modelComputeController) runtimeConnections.modelComputeController->clearAllRetiring();
-    if (runtimeConnections.pointComputeRuntime) runtimeConnections.pointComputeRuntime->clearAllRetiring();
-    if (runtimeConnections.remeshController) runtimeConnections.remeshController->clearAllRetiring();
-    if (runtimeConnections.voronoiController) runtimeConnections.voronoiController->clearAllRetiring();
-    if (runtimeConnections.heatController) runtimeConnections.heatController->clearAllRetiring();
-    if (runtimeConnections.cfdController) runtimeConnections.cfdController->clearAllRetiring();
+    if (compute.modelComputeController()) compute.modelComputeController()->clearAllRetiring();
+    if (compute.pointComputeRuntime()) compute.pointComputeRuntime()->clearAllRetiring();
+    if (compute.remeshController()) compute.remeshController()->clearAllRetiring();
+    if (compute.voronoiSystemComputeController()) compute.voronoiSystemComputeController()->clearAllRetiring();
+    if (compute.heatSystemComputeController()) compute.heatSystemComputeController()->clearAllRetiring();
+    if (compute.cfdSystemComputeController()) compute.cfdSystemComputeController()->clearAllRetiring();
 }
 
 bool NodeGraphController::compileRuntimePackages() {
-    reclaimRetiringGenerations();
     runtime.execute(plan);
     const NodeGraphEvaluation& evaluation = runtime.evaluation();
     const RuntimePackageCompiler::FrozenPackages frozenPackages =
         frozenPackageRebuildPending
             ? RuntimePackageCompiler::FrozenPackages::Rebuild
             : RuntimePackageCompiler::FrozenPackages::Preserve;
-    std::vector<std::string> errors;
+    std::vector<std::string> messages;
+    bool failed = false;
     if (!packageCompiler.validate(
             runtime.state(),
             plan,
             evaluation,
             payloadRegistry,
-            errors)) {
-        lastPackageErrors_.clear();
-        for (const std::string& error : errors) {
-            if (!lastPackageErrors_.empty()) lastPackageErrors_ += "; ";
-            lastPackageErrors_ += error;
-            std::cerr << "Runtime package compilation failed: " << error << '\n';
-        }
+            messages)) {
+        publishPackageErrors(messages);
         return false;
     }
 
     const RuntimeProductManager* products = packageController.products();
-    if (!products) return false;
+    if (!products) {
+        return false;
+    }
     packageController.beginCompilation();
     for (NodeGraphNodeId nodeId : plan.executionOrder) {
         const NodeGraphNode* node = runtime.state().node(nodeId);
         if (!node) {
-            errors.push_back("Package schedule references a missing node.");
-            lastPackageErrors_.clear();
-            lastPackageErrors_ = errors.back();
-            std::cerr << "Runtime package compilation failed: " << errors.back() << '\n';
-            packageController.finishCompilation(/*success=*/false);
-            return false;
+            messages.push_back("Package schedule references a missing node.");
+            failed = true;
+            continue;
         }
 
+        const std::string label = node->title.empty() ? node->typeId : node->title;
+        for (const NodeGraphSocket& input : node->inputs) {
+            if (!input.required) continue;
+            if (!runtime.state().edges.incoming(node->id, input.id).empty()) continue;
+            messages.push_back(label + ": input '" + input.name + "' is not connected.");
+        }
+
+        std::vector<std::string> nodeErrors;
         if (!packageCompiler.compileNode(
                 runtime.state(),
                 *node,
@@ -285,39 +289,40 @@ bool NodeGraphController::compileRuntimePackages() {
                 activeWorldUnit,
                 frozenPackages,
                 packageController.packages(),
-                errors)) {
+                nodeErrors)) {
             packageController.invalidateOutputsForNode(*node);
-            lastPackageErrors_.clear();
-            for (const std::string& error : errors) {
-                if (!lastPackageErrors_.empty()) lastPackageErrors_ += "; ";
-                lastPackageErrors_ += error;
-                std::cerr << "Runtime package compilation failed: " << error << '\n';
-            }
-            packageController.finishCompilation(/*success=*/false);
-            return false;
+            messages.insert(messages.end(), nodeErrors.begin(), nodeErrors.end());
+            failed = true;
+            continue;
         }
 
         if (!packageController.applyNode(*node)) {
             packageController.invalidateOutputsForNode(*node);
-            errors.push_back("update failed; node invalidated");
-            lastPackageErrors_.clear();
-            for (const std::string& error : errors) {
-                if (!lastPackageErrors_.empty()) lastPackageErrors_ += "; ";
-                lastPackageErrors_ += error;
-                std::cerr << "Runtime package compilation failed: " << error << '\n';
-            }
-            packageController.finishCompilation(/*success=*/false);
-            return false;
+            messages.push_back(label + ": runtime update failed; node invalidated.");
+            failed = true;
         }
     }
     packageController.finishCompilation(/*success=*/true);
-    lastPackageErrors_.clear();
+    publishPackageErrors(messages);
+    if (failed) {
+        return false;
+    }
     frozenPackageRebuildPending = false;
 
     NodeGraphDebugCache::instance().update(
         runtime.state().revision,
         evaluation.outputsBySocket);
     return true;
+}
+
+void NodeGraphController::publishPackageErrors(const std::vector<std::string>& errors) {
+    std::string joined;
+    for (const std::string& error : errors) {
+        if (!joined.empty()) joined += "; ";
+        joined += error;
+    }
+    if (joined == lastPackageErrors_) return;
+    lastPackageErrors_ = joined;
 }
 
 void NodeGraphController::setWorldUnit(units::LengthUnit unit) {
@@ -329,11 +334,12 @@ void NodeGraphController::setWorldUnit(units::LengthUnit unit) {
 }
 
 void NodeGraphController::updateDisplayTransports() {
-    const bool hasDisplayTransports = runtimeConnections.modelDisplayTransport ||
-        runtimeConnections.remeshDisplayTransport ||
-        runtimeConnections.voronoiDisplayTransport ||
-        runtimeConnections.heatDisplayTransport ||
-        runtimeConnections.pointDisplayTransport;
+    const bool hasDisplayTransports = transports.modelDisplayTransport ||
+        transports.remeshDisplayTransport ||
+        transports.voronoiDisplayTransport ||
+        transports.heatDisplayTransport ||
+        transports.cfdDisplayTransport ||
+        transports.pointDisplayTransport;
     if (!hasDisplayTransports) return;
 
     RuntimePackageManager& packages = packageController.packages();
@@ -344,25 +350,29 @@ void NodeGraphController::updateDisplayTransports() {
             packages,
             &payloadRegistry);
 
-    if (runtimeConnections.modelDisplayTransport) {
-        runtimeConnections.modelDisplayTransport->sync(packages, visibleKeys);
-        runtimeConnections.modelDisplayTransport->finalizeSync();
+    if (transports.modelDisplayTransport) {
+        transports.modelDisplayTransport->sync(packages, visibleKeys);
+        transports.modelDisplayTransport->finalizeSync();
     }
-    if (runtimeConnections.remeshDisplayTransport) {
-        runtimeConnections.remeshDisplayTransport->sync(packages, visibleKeys);
-        runtimeConnections.remeshDisplayTransport->finalizeSync();
+    if (transports.remeshDisplayTransport) {
+        transports.remeshDisplayTransport->sync(packages, visibleKeys);
+        transports.remeshDisplayTransport->finalizeSync();
     }
-    if (runtimeConnections.voronoiDisplayTransport) {
-        runtimeConnections.voronoiDisplayTransport->sync(packages, visibleKeys);
-        runtimeConnections.voronoiDisplayTransport->finalizeSync();
+    if (transports.voronoiDisplayTransport) {
+        transports.voronoiDisplayTransport->sync(packages, visibleKeys);
+        transports.voronoiDisplayTransport->finalizeSync();
     }
-    if (runtimeConnections.heatDisplayTransport) {
-        runtimeConnections.heatDisplayTransport->sync(packages, visibleKeys);
-        runtimeConnections.heatDisplayTransport->finalizeSync();
+    if (transports.heatDisplayTransport) {
+        transports.heatDisplayTransport->sync(packages, visibleKeys);
+        transports.heatDisplayTransport->finalizeSync();
     }
-    if (runtimeConnections.pointDisplayTransport) {
-        runtimeConnections.pointDisplayTransport->sync(packages, visibleKeys);
-        runtimeConnections.pointDisplayTransport->finalizeSync();
+    if (transports.cfdDisplayTransport) {
+        transports.cfdDisplayTransport->sync(packages, visibleKeys);
+        transports.cfdDisplayTransport->finalizeSync();
+    }
+    if (transports.pointDisplayTransport) {
+        transports.pointDisplayTransport->sync(packages, visibleKeys);
+        transports.pointDisplayTransport->finalizeSync();
     }
 }
 

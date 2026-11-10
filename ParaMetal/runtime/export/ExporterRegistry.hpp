@@ -6,10 +6,13 @@
 #include <unordered_map>
 
 class HeatSystemComputeController;
+namespace cfd { class CFDSystemComputeController; }
 
 class ExporterRegistry {
 public:
-    explicit ExporterRegistry(HeatSystemComputeController* heatController);
+    ExporterRegistry(
+        HeatSystemComputeController* heatController,
+        cfd::CFDSystemComputeController* cfdController);
     const PayloadExporter* find(uint8_t payloadType) const;
 
 private:

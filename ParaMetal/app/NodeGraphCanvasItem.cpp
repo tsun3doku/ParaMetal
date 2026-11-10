@@ -24,10 +24,37 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 static constexpr qreal simulationRingBitmapMinScale = 0.5;
 static constexpr qreal simulationRingBitmapMaxScale = 4.0;
 static constexpr qreal simulationRingBitmapScaleStep = 0.25;
+static constexpr int edgeCutSampleCount = 24;
+
+static qreal graphCross(const QPointF& a, const QPointF& b) {
+    return a.x() * b.y() - a.y() * b.x();
+}
+
+static bool graphSegmentsCross(const QPointF& p1, const QPointF& p2, const QPointF& q1, const QPointF& q2) {
+    const QPointF r = p2 - p1;
+    const QPointF s = q2 - q1;
+    const qreal denominator = graphCross(r, s);
+    if (std::fabs(denominator) < 1e-9) return false;
+    const QPointF delta = q1 - p1;
+    const qreal t = graphCross(delta, s) / denominator;
+    const qreal u = graphCross(delta, r) / denominator;
+    return t >= 0.0 && t <= 1.0 && u >= 0.0 && u <= 1.0;
+}
+
+static bool cutCrossesEdgePath(const QPointF& cutStart, const QPointF& cutEnd, const QPainterPath& path) {
+    QPointF previous = path.pointAtPercent(0.0);
+    for (int sample = 1; sample <= edgeCutSampleCount; ++sample) {
+        const QPointF current = path.pointAtPercent(static_cast<qreal>(sample) / edgeCutSampleCount);
+        if (graphSegmentsCross(previous, current, cutStart, cutEnd)) return true;
+        previous = current;
+    }
+    return false;
+}
 
 static QColor graphBlendColor(const QColor& first, const QColor& second, qreal amount) {
     const qreal factor = std::clamp(amount, 0.0, 1.0);
@@ -479,7 +506,7 @@ int NodeGraphCanvasItem::nodeIndexAt(const QPointF& position) const {
 
 int NodeGraphCanvasItem::socketIndexAt(const Node& node, bool output, const QPointF& position) const {
     const auto& sockets = output ? node.outputs : node.inputs;
-    const qreal hitRadius = nodegraphscene::socketRadius * zoomValue + nodegraphscene::socketHoverPadding;
+    const qreal hitRadius = std::max(nodegraphscene::socketRadius * zoomValue + nodegraphscene::socketHoverPadding, 9.0);
     for (int index = 0; index < static_cast<int>(sockets.size()); ++index) {
         if (QLineF(itemPosition(socketPosition(node, output, index)), position).length() <= hitRadius) return index;
     }
@@ -488,7 +515,8 @@ int NodeGraphCanvasItem::socketIndexAt(const Node& node, bool output, const QPoi
 
 int NodeGraphCanvasItem::edgeIndexAt(const QPointF& position) const {
     QPainterPathStroker stroker;
-    stroker.setWidth(nodegraphscene::edgeHoveredWidth / std::max(zoomValue, 0.001));
+    const qreal hitWidth = std::max(nodegraphscene::edgeHoveredWidth / std::max(zoomValue, 0.001), 10.0 / std::max(zoomValue, 0.001));
+    stroker.setWidth(hitWidth);
     stroker.setCapStyle(Qt::RoundCap);
     stroker.setJoinStyle(Qt::RoundJoin);
     for (int index = static_cast<int>(edges.size()) - 1; index >= 0; --index) {
@@ -503,6 +531,20 @@ int NodeGraphCanvasItem::edgeIndexAt(const QPointF& position) const {
         }
     }
     return -1;
+}
+
+void NodeGraphCanvasItem::updateCutEdges() {
+    cutEdgeIds.clear();
+    for (const Edge& edge : edges) {
+        if (edge.id == unpluggedEdgeId) continue;
+        const Node* from = findNode(edge.fromNode);
+        const Node* to = findNode(edge.toNode);
+        if (!from || !to) continue;
+        const QPainterPath path = nodegraphscene::buildEdgePath(
+            socketPositionById(*from, true, edge.fromSocket),
+            socketPositionById(*to, false, edge.toSocket));
+        if (cutCrossesEdgePath(cutStart, cutEnd, path)) cutEdgeIds.push_back(edge.id);
+    }
 }
 
 void NodeGraphCanvasItem::updateHover(const QPointF& position) {
@@ -539,6 +581,7 @@ void NodeGraphCanvasItem::updateHover(const QPointF& position) {
                 socketCompatible = socketTypesCompatible(*sourceSocket, socket) &&
                     node.id != source->id;
                 for (const Edge& edge : edges) {
+                    if (edge.id == unpluggedEdgeId) continue;
                     const bool sameDirection = connectionFromOutput &&
                         edge.fromNode == source->id && edge.fromSocket == interactionSocketId &&
                         edge.toNode == node.id && edge.toSocket == socket.id;
@@ -631,8 +674,10 @@ void NodeGraphCanvasItem::mousePressEvent(QMouseEvent* event) {
         }
     }
     if (event->button() == Qt::RightButton) {
-        if (nodeIndex >= 0) emit nodeMenuRequested(nodes[nodeIndex].id);
-        else emit createMenuRequested(graph.x(), graph.y());
+        interaction = Interaction::EdgeCut;
+        cutStart = cutEnd = graph;
+        cutEdgeIds.clear();
+        requestRender();
         event->accept();
         return;
     }
@@ -655,19 +700,57 @@ void NodeGraphCanvasItem::mousePressEvent(QMouseEvent* event) {
     bool output = false;
     if (socketIndex < 0) { socketIndex = socketIndexAt(node, true, event->position()); output = true; }
     if (socketIndex >= 0) {
-        if (!output) {
+        interaction = Interaction::Connect;
+        connectionEnd = event->position();
+        unpluggedEdgeId = 0;
+        unpluggedOriginalToNode = 0;
+        unpluggedOriginalToSocket = 0;
+
+        if (output) {
+            interactionNodeId = node.id;
+            interactionSocketId = node.outputs[socketIndex].id;
+            connectionFromOutput = true;
+        } else {
+            const int inputSocketId = node.inputs[socketIndex].id;
+            std::vector<const Edge*> incomingEdges;
             for (const Edge& edge : edges) {
-                if (edge.toNode == node.id && edge.toSocket == node.inputs[socketIndex].id) {
-                    graphModel->removeConnection(edge.id);
-                    break;
+                if (edge.toNode == node.id && edge.toSocket == inputSocketId) {
+                    incomingEdges.push_back(&edge);
                 }
             }
+
+            if (!incomingEdges.empty()) {
+                const Edge* edgeToUnplug = incomingEdges.back();
+                if (incomingEdges.size() > 1) {
+                    qreal bestDist = std::numeric_limits<qreal>::max();
+                    for (const Edge* candidate : incomingEdges) {
+                        const Node* from = findNode(candidate->fromNode);
+                        if (!from) continue;
+                        const QPainterPath path = nodegraphscene::buildEdgePath(
+                            socketPositionById(*from, true, candidate->fromSocket),
+                            socketPositionById(node, false, candidate->toSocket));
+                        for (qreal t = 0.5; t <= 1.0; t += 0.05) {
+                            const qreal d = QLineF(path.pointAtPercent(t), graph).length();
+                            if (d < bestDist) {
+                                bestDist = d;
+                                edgeToUnplug = candidate;
+                            }
+                        }
+                    }
+                }
+
+                interactionNodeId = edgeToUnplug->fromNode;
+                interactionSocketId = edgeToUnplug->fromSocket;
+                connectionFromOutput = true;
+                unpluggedEdgeId = edgeToUnplug->id;
+                unpluggedOriginalToNode = edgeToUnplug->toNode;
+                unpluggedOriginalToSocket = edgeToUnplug->toSocket;
+            } else {
+                interactionNodeId = node.id;
+                interactionSocketId = inputSocketId;
+                connectionFromOutput = false;
+            }
         }
-        interaction = Interaction::Connect;
-        interactionNodeId = node.id;
-        interactionSocketId = (output ? node.outputs : node.inputs)[socketIndex].id;
-        connectionFromOutput = output;
-        connectionEnd = event->position();
         updateHover(graphPosition(event->position()));
     } else {
         const nodegraphscene::NodeHitRegion region = nodegraphscene::hitRegionAt(graph - QPointF(node.x, node.y));
@@ -719,6 +802,9 @@ void NodeGraphCanvasItem::mouseMoveEvent(QMouseEvent* event) {
         updateHover(graphPosition(event->position()));
     } else if (interaction == Interaction::BoxSelect) {
         selectionEnd = graphPosition(event->position());
+    } else if (interaction == Interaction::EdgeCut) {
+        cutEnd = graphPosition(event->position());
+        updateCutEdges();
     } else {
         updateHover(graphPosition(event->position()));
     }
@@ -745,6 +831,7 @@ void NodeGraphCanvasItem::finishConnection(const QPointF& position) {
             if (node.id == source->id) continue;
             bool alreadyConnected = false;
             for (const Edge& edge : edges) {
+                if (edge.id == unpluggedEdgeId) continue;
                 const bool sameDirection = connectionFromOutput &&
                     edge.fromNode == source->id && edge.fromSocket == interactionSocketId &&
                     edge.toNode == node.id && edge.toSocket == sockets[index].id;
@@ -759,7 +846,24 @@ void NodeGraphCanvasItem::finishConnection(const QPointF& position) {
             if (distance < best) { best = distance; targetNode = node.id; targetSocket = sockets[index].id; }
         }
     }
-    if (targetNode > 0 && graphModel) {
+    if (unpluggedEdgeId > 0 && graphModel) {
+        if (targetNode > 0) {
+            if (targetNode == unpluggedOriginalToNode && targetSocket == unpluggedOriginalToSocket) {
+                // Dropped back onto the original socket: keep connection intact
+            } else {
+                // Re-routed to a different compatible socket
+                graphModel->removeConnection(unpluggedEdgeId);
+                if (connectionFromOutput) graphModel->connectSockets(source->id, interactionSocketId, targetNode, targetSocket);
+                else graphModel->connectSockets(targetNode, targetSocket, source->id, interactionSocketId);
+            }
+        } else {
+            // Dropped in empty space: if user dragged away from original socket, disconnect it
+            const qreal dragDistance = QLineF(pressItemPosition, position).length();
+            if (dragDistance > 6.0) {
+                graphModel->removeConnection(unpluggedEdgeId);
+            }
+        }
+    } else if (targetNode > 0 && graphModel) {
         if (connectionFromOutput) graphModel->connectSockets(source->id, interactionSocketId, targetNode, targetSocket);
         else graphModel->connectSockets(targetNode, targetSocket, source->id, interactionSocketId);
     }
@@ -767,7 +871,17 @@ void NodeGraphCanvasItem::finishConnection(const QPointF& position) {
 
 void NodeGraphCanvasItem::mouseReleaseEvent(QMouseEvent* event) {
     if (!event) return;
-    if (interaction == Interaction::MoveNode) {
+    if (interaction == Interaction::EdgeCut) {
+        cutEnd = graphPosition(event->position());
+        updateCutEdges();
+        if (QLineF(pressItemPosition, event->position()).length() <= 6.0) {
+            const Node* node = findNode(nodeIndexAt(cutStart));
+            if (node) emit nodeMenuRequested(node->id);
+            else emit createMenuRequested(cutStart.x(), cutStart.y());
+        } else if (graphModel) {
+            for (int edgeId : cutEdgeIds) graphModel->removeConnection(edgeId);
+        }
+    } else if (interaction == Interaction::MoveNode) {
         for (const auto& selection : dragSelectionOrigins) {
             if (const Node* node = findNode(selection.first)) graphModel->moveNode(node->id, node->x, node->y);
         }
@@ -798,6 +912,10 @@ void NodeGraphCanvasItem::mouseReleaseEvent(QMouseEvent* event) {
     dragSelectionOrigins.clear();
     interactionNodeId = 0;
     interactionSocketId = 0;
+    unpluggedEdgeId = 0;
+    unpluggedOriginalToNode = 0;
+    unpluggedOriginalToSocket = 0;
+    cutEdgeIds.clear();
     requestRender();
     event->accept();
 }
@@ -813,6 +931,18 @@ void NodeGraphCanvasItem::wheelEvent(QWheelEvent* event) {
 
 void NodeGraphCanvasItem::keyPressEvent(QKeyEvent* event) {
     if (!event || !graphModel) return;
+    if (event->key() == Qt::Key_Escape && (interaction == Interaction::Connect || interaction == Interaction::EdgeCut)) {
+        interaction = Interaction::None;
+        interactionNodeId = 0;
+        interactionSocketId = 0;
+        unpluggedEdgeId = 0;
+        unpluggedOriginalToNode = 0;
+        unpluggedOriginalToSocket = 0;
+        cutEdgeIds.clear();
+        requestRender();
+        event->accept();
+        return;
+    }
     if (event->key() == Qt::Key_Delete) graphModel->removeSelectedNodes();
     else if (event->matches(QKeySequence::Copy)) graphModel->copySelectedNodes();
     else if (event->matches(QKeySequence::Paste)) graphModel->pasteCopiedNodes();
@@ -849,6 +979,7 @@ void NodeGraphCanvasItem::paint(QPainter* painter) {
 
     for (int edgeIndex = 0; edgeIndex < static_cast<int>(edges.size()); ++edgeIndex) {
         const Edge& edge = edges[edgeIndex];
+        if (edge.id == unpluggedEdgeId) continue;
         const Node* from = findNode(edge.fromNode);
         const Node* to = findNode(edge.toNode);
         if (!from || !to) continue;
@@ -864,10 +995,13 @@ void NodeGraphCanvasItem::paint(QPainter* painter) {
         if (!path.boundingRect().adjusted(-8.0, -8.0, 8.0, 8.0).intersects(visibleGraph)) {
             continue;
         }
-        QColor color = nodegraphscene::valueTypeColor(static_cast<NodeGraphValueType>(edge.valueType)).lighter(135);
+        const bool cut = std::find(cutEdgeIds.cbegin(), cutEdgeIds.cend(), edge.id) != cutEdgeIds.cend();
         const bool hovered = edgeIndex == hoveredEdgeIndex;
-        if (hovered) color = color.lighter(nodegraphscene::edgeHoverLightenFactor);
-        QPen pen(color, hovered ? nodegraphscene::edgeHoveredWidth : nodegraphscene::edgeDefaultWidth,
+        QColor color = cut
+            ? nodegraphscene::edgeCutColor()
+            : nodegraphscene::valueTypeColor(static_cast<NodeGraphValueType>(edge.valueType)).lighter(135);
+        if (hovered && !cut) color = color.lighter(nodegraphscene::edgeHoverLightenFactor);
+        QPen pen(color, hovered || cut ? nodegraphscene::edgeHoveredWidth : nodegraphscene::edgeDefaultWidth,
                  Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
         painter->setPen(pen);
         painter->setBrush(Qt::NoBrush);
@@ -938,6 +1072,13 @@ void NodeGraphCanvasItem::paint(QPainter* painter) {
         const QRectF titleBounds = metrics.boundingRect(title);
         const QPointF titlePosition = nodegraphscene::titlePosition(titleBounds);
         painter->drawText(QPointF(node.x + titlePosition.x(), node.y + titlePosition.y() + metrics.ascent()), title);
+    }
+
+    if (interaction == Interaction::EdgeCut) {
+        painter->setPen(QPen(nodegraphscene::edgeCutColor(), nodegraphscene::edgeCutWidth,
+                             Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        painter->setBrush(Qt::NoBrush);
+        painter->drawLine(cutStart, cutEnd);
     }
 }
 

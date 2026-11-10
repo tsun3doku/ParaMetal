@@ -325,7 +325,12 @@ PickedResult ModelSelection::pickAtPosition(int x, int y, uint32_t currentFrame)
         freeCmd("submitFail");
         return PickedResult();
     }
-    if (vkWaitForFences(vulkanDevice.getDevice(), 1, &copyFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
+    constexpr uint64_t copyWaitTimeoutNs = 10ull * 1000ull * 1000ull * 1000ull;
+    const VkResult copyWait = vkWaitForFences(
+        vulkanDevice.getDevice(), 1, &copyFence, VK_TRUE, copyWaitTimeoutNs);
+    if (copyWait != VK_SUCCESS) {
+        std::cerr << "ModelSelection: copy fence wait failed VkResult="
+                  << static_cast<int>(copyWait) << std::endl;
         vkDestroyFence(vulkanDevice.getDevice(), copyFence, nullptr);
         freeCmd("fenceWaitFail");
         return PickedResult();

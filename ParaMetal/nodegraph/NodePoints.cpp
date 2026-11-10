@@ -237,7 +237,6 @@ void NodePoints::execute(NodeKernelEval& eval) const {
         outputValue.dataType = outputSocket.contract.producedPayloadType;
 
         if (!payloadRegistry || outputValue.dataType != payloadtypes::Points || params.pointCount == 0) {
-            populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
 
@@ -261,7 +260,6 @@ void NodePoints::execute(NodeKernelEval& eval) const {
         payload.active = true;
         const uint64_t payloadKey = NodeSocketKey(eval.node.id, outputSocket.id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, eval.outputHashes);
-        populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 

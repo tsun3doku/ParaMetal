@@ -48,13 +48,10 @@ void HashNodeCache::combineSocket(
     HashDomain domain) {
     const std::size_t index = inputIndexOf(context.node, socketName);
     if (index >= context.node.inputs.size()) {
-        throw std::logic_error("Required hash socket is missing from node schema.");
+        HashBuilder::combine(hash, 0u);
+        return;
     }
-    const NodeDataBlock* block = firstPayload(context.inputs[index]);
-    if (!block) {
-        throw std::logic_error("Required hash socket has no evaluated payload.");
-    }
-    combineInput(hash, block, domain);
+    combineInput(hash, firstPayload(context.inputs[index]), domain);
 }
 
 void HashNodeCache::combineSocket(
@@ -64,13 +61,10 @@ void HashNodeCache::combineSocket(
     HashDomain domain) {
     const std::size_t index = inputIndexOf(context.node, socketType);
     if (index >= context.node.inputs.size()) {
-        throw std::logic_error("Required hash socket is missing from node schema.");
+        HashBuilder::combine(hash, 0u);
+        return;
     }
-    const NodeDataBlock* block = firstPayload(context.inputs[index]);
-    if (!block) {
-        throw std::logic_error("Required hash socket has no evaluated payload.");
-    }
-    combineInput(hash, block, domain);
+    combineInput(hash, firstPayload(context.inputs[index]), domain);
 }
 
 void HashNodeCache::combineOptionalSocket(
@@ -80,7 +74,8 @@ void HashNodeCache::combineOptionalSocket(
     HashDomain domain) {
     const std::size_t index = inputIndexOf(context.node, socketName);
     if (index >= context.node.inputs.size()) {
-        throw std::logic_error("Optional hash socket is missing from node schema.");
+        HashBuilder::combine(hash, 0u);
+        return;
     }
     combineInput(hash, firstPayload(context.inputs[index]), domain);
 }
@@ -92,7 +87,8 @@ void HashNodeCache::combineOptionalSocket(
     HashDomain domain) {
     const std::size_t index = inputIndexOf(context.node, socketType);
     if (index >= context.node.inputs.size()) {
-        throw std::logic_error("Optional hash socket is missing from node schema.");
+        HashBuilder::combine(hash, 0u);
+        return;
     }
     combineInput(hash, firstPayload(context.inputs[index]), domain);
 }
@@ -104,18 +100,10 @@ void HashNodeCache::combineSocketList(
     HashDomain domain) {
     const std::size_t index = inputIndexOf(context.node, socketName);
     if (index >= context.node.inputs.size()) {
-        throw std::logic_error("Required hash socket list is missing from node schema.");
+        HashBuilder::combine(hash, 0u);
+        return;
     }
-    const std::vector<const NodeDataBlock*>& inputs = context.inputs[index];
-    if (inputs.empty()) {
-        throw std::logic_error("Required hash socket list has no evaluated payloads.");
-    }
-    for (const NodeDataBlock* input : inputs) {
-        if (!input || input->payloadHandle.key == 0) {
-            throw std::logic_error("Required hash socket list contains an invalid evaluated payload.");
-        }
-    }
-    combineInputList(hash, inputs, domain);
+    combineInputList(hash, context.inputs[index], domain);
 }
 
 void HashNodeCache::combineSocketList(
@@ -125,18 +113,10 @@ void HashNodeCache::combineSocketList(
     HashDomain domain) {
     const std::size_t index = inputIndexOf(context.node, socketType);
     if (index >= context.node.inputs.size()) {
-        throw std::logic_error("Required hash socket list is missing from node schema.");
+        HashBuilder::combine(hash, 0u);
+        return;
     }
-    const std::vector<const NodeDataBlock*>& inputs = context.inputs[index];
-    if (inputs.empty()) {
-        throw std::logic_error("Required hash socket list has no evaluated payloads.");
-    }
-    for (const NodeDataBlock* input : inputs) {
-        if (!input || input->payloadHandle.key == 0) {
-            throw std::logic_error("Required hash socket list contains an invalid evaluated payload.");
-        }
-    }
-    combineInputList(hash, inputs, domain);
+    combineInputList(hash, context.inputs[index], domain);
 }
 
 void HashNodeCache::combineOptionalSocketList(

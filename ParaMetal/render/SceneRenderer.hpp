@@ -27,10 +27,11 @@ class GizmoRenderer;
 class NavigationGizmoRenderer;
 class ScreenTextRenderer;
 
+namespace render { class CFDOverlayRenderer; }
 namespace render { class HeatOverlayRenderer; }
 namespace render { class PointOverlayRenderer; }
 namespace render { class VoronoiOverlayRenderer; }
-namespace render { class HeatVolumeRenderer; }
+namespace render { class SimVolumeRenderer; }
 
 namespace render {
 class GeometryPass;
@@ -73,11 +74,16 @@ public:
     void updateDescriptorSets();
     IntrinsicRenderer* getIntrinsicRenderer() const;
     render::HeatOverlayRenderer* getHeatOverlayRenderer() const;
+    render::CFDOverlayRenderer* getCFDOverlayRenderer() const;
     render::PointOverlayRenderer* getPointOverlayRenderer() const;
     render::VoronoiOverlayRenderer* getVoronoiOverlayRenderer() const;
-    render::HeatVolumeRenderer* getHeatVolumeRenderer() const;
+    render::SimVolumeRenderer* getHeatVolumeRenderer() const;
     void setHeatPaletteRange(float minimum, float maximum);
     void setHeatPalette(int palette);
+    void setVelocityPaletteRange(float minimum, float maximum);
+    void setVelocityPalette(int palette);
+    bool isHeatPaletteVisible() const;
+    bool isVelocityPaletteVisible() const;
 
     void setTimingOverlayLines(const std::vector<std::string>& lines);
     void updateGrid(uint32_t frameIndex, const render::SceneView& sceneView, const glm::vec3& sceneExtent);
@@ -92,10 +98,8 @@ public:
 
     void cleanup();
     bool getGpuTimingStats(uint32_t frameIndex, GpuTimingStats& outStats) const;
-    bool tryGetGpuFrameTimeMs(uint32_t frameIndex, float& outGpuMs) const;
 
     VkDescriptorSetLayout getGbufferDescriptorSetLayout() const;
-    VkDescriptorSet getGeometryDescriptorSet(uint32_t frameIndex) const;
 
     bool isReady() const {
         return ready;
@@ -143,6 +147,7 @@ private:
     render::PickPass* pickPass = nullptr;
     render::BlendPass* blendPass = nullptr;
     std::unique_ptr<render::HeatOverlayRenderer> heatOverlayRenderer;
+    std::unique_ptr<render::CFDOverlayRenderer> cfdOverlayRenderer;
     std::unique_ptr<render::VoronoiOverlayRenderer> voronoiOverlayRenderer;
     std::unique_ptr<IntrinsicRenderer> intrinsicRenderer;
     std::unique_ptr<GizmoRenderer> gizmoRenderer;

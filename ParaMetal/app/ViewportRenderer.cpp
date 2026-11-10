@@ -98,18 +98,24 @@ void ViewportRenderer::synchronize(QQuickRhiItem* item) {
     }
 
     if (const NodeGraphState* graphState = mailbox.graphReplacement(runtimeFresh)) {
-        applyGraphReplacement(*graphState);
-        mailbox.graphReplacementApplied();
+        if (applyGraphReplacement(*graphState)) {
+            mailbox.graphReplacementApplied();
+        }
     } else {
+        bool deltasApplied = true;
         for (const NodeGraphDelta& delta : mailbox.graphDeltas()) {
             if (!runtime.applyGraphDelta(delta)) {
                 const NodeGraphState* cachedState = mailbox.graphReplacement(true);
                 Q_ASSERT(cachedState);
-                if (cachedState) applyGraphReplacement(*cachedState);
+                if (cachedState && !applyGraphReplacement(*cachedState)) {
+                    deltasApplied = false;
+                }
                 break;
             }
         }
-        mailbox.graphDeltasApplied();
+        if (deltasApplied) {
+            mailbox.graphDeltasApplied();
+        }
     }
 
     app::WireframeMode wireframeMode{};
@@ -187,6 +193,10 @@ void ViewportRenderer::synchronize(QQuickRhiItem* item) {
     if (mailbox.takeHeatPaletteRange(paletteMin, paletteMax, runtimeFresh)) runtime.setHeatPaletteRange(paletteMin, paletteMax);
     int palette = 0;
     if (mailbox.takeHeatPalette(palette, runtimeFresh)) runtime.setHeatPalette(palette);
+    float velocityMin = 0.0f, velocityMax = 1.0f;
+    if (mailbox.takeVelocityPaletteRange(velocityMin, velocityMax, runtimeFresh)) runtime.setVelocityPaletteRange(velocityMin, velocityMax);
+    int velocityPalette = 0;
+    if (mailbox.takeVelocityPalette(velocityPalette, runtimeFresh)) runtime.setVelocityPalette(velocityPalette);
     ProjectFile::Viewport viewportProjectState;
     if (mailbox.takeAppliedViewportProjectState(viewportProjectState)) {
         runtime.setBackgroundMode(viewportProjectState.backgroundMode);
@@ -270,6 +280,7 @@ void ViewportRenderer::render(QRhiCommandBuffer* commandBuffer) {
 
     runtime.processDeferredWork();
 
+
     NodeGraphNodeId nodeId{};
     std::vector<NodeGraphParamValue> parameters;
     while (runtime.takePendingNodeParameters(nodeId, parameters)) {
@@ -318,9 +329,12 @@ void ViewportRenderer::render(QRhiCommandBuffer* commandBuffer) {
     update();
 }
 
-void ViewportRenderer::applyGraphReplacement(const NodeGraphState& graphState) {
-    runtime.replaceGraphState(graphState);
+bool ViewportRenderer::applyGraphReplacement(const NodeGraphState& graphState) {
+    if (!runtime.replaceGraphState(graphState)) {
+        return false;
+    }
     notifier.resetNodeStatuses();
+    return true;
 }
 
 void ViewportRenderer::applySelection(int selectedNode) {
@@ -360,6 +374,12 @@ void ViewportRenderer::publishState() {
     if (paletteVisible != publishedHeatPaletteVisible) {
         publishedHeatPaletteVisible = paletteVisible;
         emit notifier.heatPaletteVisibilityChanged(paletteVisible);
+    }
+
+    const bool velocityPaletteVisible = runtime.isVelocityPaletteVisible();
+    if (velocityPaletteVisible != publishedVelocityPaletteVisible) {
+        publishedVelocityPaletteVisible = velocityPaletteVisible;
+        emit notifier.velocityPaletteVisibilityChanged(velocityPaletteVisible);
     }
 
     TimelineUiState timeline{};

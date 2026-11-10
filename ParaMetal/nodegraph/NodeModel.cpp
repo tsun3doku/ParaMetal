@@ -51,13 +51,11 @@ void NodeModel::execute(NodeKernelEval& eval) const {
         if (!payloadRegistry ||
             outputValue.dataType != payloadtypes::Geometry ||
             !hasGeometry) {
-            populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
 
         const uint64_t payloadKey = NodeSocketKey(eval.node.id, outputSocket.id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, geometry, eval.outputHashes);
-        populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 

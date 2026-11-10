@@ -8,6 +8,7 @@
 class NodeGraphController;
 class HeatSystemComputeController;
 class ExporterRegistry;
+namespace cfd { class CFDSystemComputeController; }
 
 struct ExportProductsReply {
     int nodeId = 0;
@@ -23,7 +24,8 @@ public:
     void requestExportProducts(int nodeId, uint64_t requestId, uint64_t graphRevision);
     void processPending(
         NodeGraphController* graph,
-        HeatSystemComputeController* heatController);
+        HeatSystemComputeController* heatController,
+        cfd::CFDSystemComputeController* cfdController);
     bool takeResult(
         int& outNodeId,
         bool& outSuccess,

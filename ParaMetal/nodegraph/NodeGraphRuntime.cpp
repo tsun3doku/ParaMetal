@@ -253,7 +253,6 @@ void NodeGraphRuntime::evaluateLiveNode(
             output = {};
             output.metadata = mergedMetadata;
             output.lineageNodeIds = mergedLineage;
-            populateMetadata(output, nullptr, nullptr);
         }
     }
 

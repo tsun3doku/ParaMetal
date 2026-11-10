@@ -46,44 +46,12 @@ void NodeGraphDisplay::addDisplayKeys(
         return;
     }
 
-    if (packages.findAny<ModelPackage>(socketKey)) {
+    // Packages declare the sockets their own view makes visible (upstream models,
+    // remeshes, domain products). NodeGraphDisplay only selects and collects them.
+    if (const std::vector<uint64_t>* dependencyKeys =
+            packages.displayDependencyKeysFor(socketKey)) {
         selectedKeys.insert(socketKey);
-        return;
-    }
-
-    if (const RemeshPackage* remeshPkg = packages.findAny<RemeshPackage>(socketKey)) {
-        selectedKeys.insert(socketKey);
-        if (remeshPkg->sourceModelProduct.isValid()) {
-            selectedKeys.insert(remeshPkg->sourceModelProduct.outputSocketKey);
-        }
-        return;
-    }
-
-    if (packages.findAny<PointPackage>(socketKey)) {
-        selectedKeys.insert(socketKey);
-        return;
-    }
-
-    if (const VoronoiPackage* voronoiPkg = packages.findAny<VoronoiPackage>(socketKey)) {
-        selectedKeys.insert(socketKey);
-        for (const ProductHandle& handle : voronoiPkg->globalRemeshProducts) {
-            selectedKeys.insert(handle.outputSocketKey);
-        }
-        for (const ProductHandle& handle : voronoiPkg->globalModelProducts) {
-            selectedKeys.insert(handle.outputSocketKey);
-        }
-        return;
-    }
-
-    if (const HeatPackage* heatPkg = packages.findAny<HeatPackage>(socketKey)) {
-        selectedKeys.insert(socketKey);
-        for (const HeatModelPackage& model : heatPkg->models) {
-            selectedKeys.insert(model.modelProduct.outputSocketKey);
-            selectedKeys.insert(model.remeshProduct.outputSocketKey);
-        }
-        if (heatPkg->domainVoronoiProduct.isValid()) {
-            selectedKeys.insert(heatPkg->domainVoronoiProduct.outputSocketKey);
-        }
+        selectedKeys.insert(dependencyKeys->begin(), dependencyKeys->end());
         return;
     }
 

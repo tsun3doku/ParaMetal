@@ -107,6 +107,12 @@ void ViewportMailbox::requestHeatPaletteRange(float minimum, float maximum) {
     heatPaletteRangeDirty = true;
 }
 void ViewportMailbox::requestHeatPalette(int palette) { requestedHeatPalette = palette; heatPaletteDirty = true; }
+void ViewportMailbox::requestVelocityPaletteRange(float minimum, float maximum) {
+    requestedVelocityPaletteMin = minimum;
+    requestedVelocityPaletteMax = maximum;
+    velocityPaletteRangeDirty = true;
+}
+void ViewportMailbox::requestVelocityPalette(int palette) { requestedVelocityPalette = palette; velocityPaletteDirty = true; }
 void ViewportMailbox::requestWorldUnit(int unit) { requestedWorldUnit = unit; worldUnitDirty = true; }
 
 void ViewportMailbox::applyViewportProjectState(const ProjectFile::Viewport& viewport) {
@@ -259,6 +265,14 @@ bool ViewportMailbox::takeHeatPaletteRange(float& minimum, float& maximum, bool 
 bool ViewportMailbox::takeHeatPalette(int& palette, bool force) {
     if (!heatPaletteDirty && !force) return false;
     palette = requestedHeatPalette; heatPaletteDirty = false; return true;
+}
+bool ViewportMailbox::takeVelocityPaletteRange(float& minimum, float& maximum, bool force) {
+    if (!velocityPaletteRangeDirty && !force) return false;
+    minimum = requestedVelocityPaletteMin; maximum = requestedVelocityPaletteMax; velocityPaletteRangeDirty = false; return true;
+}
+bool ViewportMailbox::takeVelocityPalette(int& palette, bool force) {
+    if (!velocityPaletteDirty && !force) return false;
+    palette = requestedVelocityPalette; velocityPaletteDirty = false; return true;
 }
 bool ViewportMailbox::takeWorldUnit(int& unit, bool force) {
     if (!worldUnitDirty && !force) return false;

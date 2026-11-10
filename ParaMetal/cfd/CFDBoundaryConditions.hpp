@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <glm/glm.hpp>
 
+#include "CFDGpuStructs.hpp"
+
 namespace cfd {
 
 enum class BoundaryType : uint8_t {
@@ -20,13 +22,20 @@ struct BoundaryCondition {
 using DomainBoundaryConditions =
     std::array<BoundaryCondition, 6>;
 
-struct BoundaryConditionGpu {
-    uint32_t type = 0;
-    glm::vec3 velocity{0.0f};
-};
-
 constexpr uint32_t DomainBoundaryCount = 6;
 constexpr uint32_t EmbeddedWallBoundary = 6;
+
+inline glm::vec3 getDomainBoxNormal(uint32_t domainFace) {
+    switch (domainFace) {
+        case 0: return {-1.0f,  0.0f,  0.0f};
+        case 1: return { 1.0f,  0.0f,  0.0f};
+        case 2: return { 0.0f, -1.0f,  0.0f};
+        case 3: return { 0.0f,  1.0f,  0.0f};
+        case 4: return { 0.0f,  0.0f, -1.0f};
+        case 5: return { 0.0f,  0.0f,  1.0f};
+        default: return {0.0f,  0.0f,  0.0f};
+    }
+}
 
 inline BoundaryConditionGpu toGpu(const BoundaryCondition& bc) {
     BoundaryConditionGpu g{};
@@ -44,6 +53,17 @@ inline DomainBoundaryConditions createDefaultDomainBoundaries(const glm::vec3& i
     b[3].type = BoundaryType::NoSlipWall;
     b[4].type = BoundaryType::NoSlipWall;
     b[5].type = BoundaryType::NoSlipWall;
+    return b;
+}
+
+inline DomainBoundaryConditions fromFlatArrays(
+    const uint32_t domainBoundaryTypes[DomainBoundaryCount],
+    const glm::vec3 domainBoundaryVelocities[DomainBoundaryCount]) {
+    DomainBoundaryConditions b{};
+    for (uint32_t i = 0; i < DomainBoundaryCount; ++i) {
+        b[i].type = static_cast<BoundaryType>(domainBoundaryTypes[i]);
+        b[i].velocity = domainBoundaryVelocities[i];
+    }
     return b;
 }
 

@@ -31,7 +31,6 @@ public slots:
     void setParameters(NodeGraphNodeId nodeId, const std::vector<NodeGraphParamValue>& parameters);
     void pasteFragment(const GraphPastePayload& payload);
     void executePython(const QString& source);
-    void activateTimeline();
     void requestGraphState();
     void loadGraphState(const NodeGraphState& state);
     void requestExport(int nodeId);

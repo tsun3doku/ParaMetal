@@ -263,10 +263,6 @@ struct HeatProduct {
 struct CFDProduct {
     uint32_t fluidNodeCount = 0;
 
-    VkBuffer velocityBuffer = VK_NULL_HANDLE;
-    VkDeviceSize velocityBufferSize = 0;
-    VkDeviceSize velocityBufferOffset = 0;
-
     VkBuffer faceFluxBuffer = VK_NULL_HANDLE;
     VkDeviceSize faceFluxBufferSize = 0;
     VkDeviceSize faceFluxBufferOffset = 0;
@@ -277,11 +273,14 @@ struct CFDProduct {
     VkDeviceSize boundaryFluxBufferOffset = 0;
     uint32_t boundaryFluxCount = 0;
 
+    VkBuffer streamlineVertexBuffer = VK_NULL_HANDLE;
+    VkDeviceSize streamlineVertexBufferOffset = 0;
+    uint32_t streamlineVertexCount = 0;
+
     HashValues hashes{};
 
     bool isValid() const {
         return fluidNodeCount != 0 &&
-            velocityBuffer != VK_NULL_HANDLE &&
             (faceFluxCount == 0 || faceFluxBuffer != VK_NULL_HANDLE) &&
             (boundaryFluxCount == 0 || boundaryFluxBuffer != VK_NULL_HANDLE);
     }

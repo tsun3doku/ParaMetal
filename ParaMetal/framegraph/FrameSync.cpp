@@ -1,7 +1,10 @@
 #include "FrameSync.hpp"
 #include "ComputePass.hpp"
 
+#include <chrono>
 #include <iostream>
+
+static constexpr uint64_t FrameFenceTimeoutNs = 5'000'000'000ull;
 
 bool FrameSync::initialize(VkDevice deviceHandle, uint32_t maxFramesInFlight) {
     shutdown();
@@ -45,43 +48,69 @@ void FrameSync::shutdown() {
     device = VK_NULL_HANDLE;
 }
 
-void FrameSync::prepareExternalFrame(uint32_t frameIndex) {
+VkResult FrameSync::prepareExternalFrame(uint32_t frameIndex) {
     if (frameCount == 0) {
-        return;
+        return VK_SUCCESS;
     }
 
     currentFrame = frameIndex % frameCount;
     if (device == VK_NULL_HANDLE || currentFrame >= frameSlots.size()) {
-        return;
+        return VK_SUCCESS;
     }
 
     FrameSlot& slot = frameSlots[currentFrame];
-    slot.computePresentedThisLap = false;
     if (slot.computeSubmittedThisLap) {
-        vkWaitForFences(device, 1, &slot.computeFence, VK_TRUE, UINT64_MAX);
+        const auto waitStart = std::chrono::steady_clock::now();
+        const VkResult waitResult =
+            vkWaitForFences(device, 1, &slot.computeFence, VK_TRUE, FrameFenceTimeoutNs);
+        if (waitResult != VK_SUCCESS) {
+            const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - waitStart).count();
+            std::cerr << "[FrameSync] frame fence wait failed: frame=" << currentFrame
+                      << " elapsedMs=" << elapsedMs
+                      << " VkResult=" << static_cast<int>(waitResult) << std::endl;
+            return waitResult;
+        }
         slot.computeSubmittedThisLap = false;
     }
+
+    return VK_SUCCESS;
 }
 
 bool FrameSync::wasComputePresentedThisLap() const {
     if (currentFrame >= frameSlots.size()) {
         return false;
     }
-    return frameSlots[currentFrame].computePresentedThisLap;
+    return frameSlots[currentFrame].computeSubmittedThisLap;
 }
 
-void FrameSync::waitForAllFrameFences() {
+bool FrameSync::waitForAllFrameFences(uint64_t timeoutNs) {
     if (device == VK_NULL_HANDLE || frameSlots.empty()) {
-        return;
+        return true;
     }
 
-    for (const FrameSlot& slot : frameSlots) {
-        // Skip unsignaled fences to avoid blocking indefinitely
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::nanoseconds(timeoutNs);
+    for (size_t index = 0; index < frameSlots.size(); ++index) {
+        const FrameSlot& slot = frameSlots[index];
         if (!slot.computeSubmittedThisLap) {
             continue;
         }
-        vkWaitForFences(device, 1, &slot.computeFence, VK_TRUE, UINT64_MAX);
+        const auto remaining = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            deadline - std::chrono::steady_clock::now()).count();
+        if (remaining <= 0) {
+            std::cerr << "[FrameSync] drain fence wait timed out before frame=" << index << std::endl;
+            return false;
+        }
+        const VkResult waitResult = vkWaitForFences(
+            device, 1, &slot.computeFence, VK_TRUE, static_cast<uint64_t>(remaining));
+        if (waitResult != VK_SUCCESS) {
+            std::cerr << "[FrameSync] drain fence wait failed: frame=" << index
+                      << " VkResult=" << static_cast<int>(waitResult) << std::endl;
+            return false;
+        }
     }
+
+    return true;
 }
 
 VkResult FrameSync::submitComputeBatch(
@@ -96,9 +125,18 @@ VkResult FrameSync::submitComputeBatch(
     }
 
     FrameSlot& slot = frameSlots[currentFrame];
-    slot.computeSubmittedThisLap = false;
+    if (slot.computeSubmittedThisLap) {
+        std::cerr << "[FrameSync] compute batch rejected: frame " << currentFrame
+                  << " already has an outstanding submission" << std::endl;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
 
-    vkResetFences(device, 1, &slot.computeFence);
+    const VkResult resetResult = vkResetFences(device, 1, &slot.computeFence);
+    if (resetResult != VK_SUCCESS) {
+        std::cerr << "[FrameSync] compute fence reset failed: frame=" << currentFrame
+                  << " VkResult=" << static_cast<int>(resetResult) << std::endl;
+        return resetResult;
+    }
 
     struct PerSubmitData {
         std::vector<VkSemaphore> waitSemaphores;
@@ -172,7 +210,6 @@ VkResult FrameSync::submitComputeBatch(
 
     if (computeResult == VK_SUCCESS) {
         slot.computeSubmittedThisLap = true;
-        slot.computePresentedThisLap = true;
     } else {
         std::cerr << "[SUBMIT] COMPUTE BATCH failed VkResult=" << static_cast<int>(computeResult)
                   << " frame=" << currentFrame << std::endl;

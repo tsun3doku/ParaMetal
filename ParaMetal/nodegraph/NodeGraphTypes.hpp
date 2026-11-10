@@ -23,7 +23,8 @@ enum class NodeGraphValueType : uint8_t {
     ScalarFloat,
     ScalarInt,
     ScalarBool,
-    Simulation
+    Simulation,
+    Boundary
 };
 
 enum class NodeGraphSocketDirection {

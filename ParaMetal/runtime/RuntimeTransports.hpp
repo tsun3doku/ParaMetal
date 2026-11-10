@@ -1,17 +1,5 @@
 #pragma once
 
-#include <functional>
-
-class ModelComputeController;
-class PointComputeRuntime;
-class RemeshController;
-class VoronoiSystemComputeController;
-class HeatSystemComputeController;
-class SimGraphRuntime;
-namespace cfd {
-class CFDSystemComputeController;
-}
-
 class RuntimeModelComputeTransport;
 class RuntimePointComputeTransport;
 class RuntimeRemeshComputeTransport;
@@ -23,8 +11,9 @@ class RuntimePointDisplayTransport;
 class RuntimeRemeshDisplayTransport;
 class RuntimeVoronoiDisplayTransport;
 class RuntimeHeatDisplayTransport;
+class RuntimeCFDDisplayTransport;
 
-struct RuntimeConnections {
+struct RuntimeTransports {
     RuntimeModelComputeTransport* modelComputeTransport = nullptr;
     RuntimePointComputeTransport* pointComputeTransport = nullptr;
     RuntimeRemeshComputeTransport* remeshComputeTransport = nullptr;
@@ -37,15 +26,5 @@ struct RuntimeConnections {
     RuntimeRemeshDisplayTransport* remeshDisplayTransport = nullptr;
     RuntimeVoronoiDisplayTransport* voronoiDisplayTransport = nullptr;
     RuntimeHeatDisplayTransport* heatDisplayTransport = nullptr;
-
-    ModelComputeController* modelComputeController = nullptr;
-    PointComputeRuntime* pointComputeRuntime = nullptr;
-    RemeshController* remeshController = nullptr;
-    VoronoiSystemComputeController* voronoiController = nullptr;
-    HeatSystemComputeController* heatController = nullptr;
-    cfd::CFDSystemComputeController* cfdController = nullptr;
-
-    SimGraphRuntime* simGraph = nullptr;
-
-    std::function<bool()> quiesceGpu;
+    RuntimeCFDDisplayTransport* cfdDisplayTransport = nullptr;
 };

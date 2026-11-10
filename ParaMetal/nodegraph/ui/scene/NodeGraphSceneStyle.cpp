@@ -31,6 +31,8 @@ QColor valueTypeColor(NodeGraphValueType valueType) {
         return QColor(233, 218, 104);
     case NodeGraphValueType::Simulation:
         return QColor(200, 115, 200);
+    case NodeGraphValueType::Boundary:
+        return QColor(74, 122, 240);
     }
 
     return QColor(164, 172, 186);
@@ -78,6 +80,10 @@ QColor socketBorderColor() {
 
 QColor dragPreviewColor() {
     return QColor(166, 206, 255);
+}
+
+QColor edgeCutColor() {
+    return QColor(235, 92, 84);
 }
 
 QColor simulationRingColor() {

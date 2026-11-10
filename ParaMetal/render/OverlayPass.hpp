@@ -2,6 +2,7 @@
 
 #include "framegraph/FramePass.hpp"
 #include "framegraph/FrameGraphTypes.hpp"
+#include "renderers/StreamlineRenderer.hpp"
 #include "util/Units.hpp"
 
 #include <glm/glm.hpp>
@@ -25,6 +26,7 @@ class OutlineRenderer;
 class VkFrameGraphRuntime;
 
 namespace render {
+class CFDOverlayRenderer;
 class HeatOverlayRenderer;
 class PointOverlayRenderer;
 class VoronoiOverlayRenderer;
@@ -42,6 +44,7 @@ public:
         UniformBufferManager& ubo,
         GeometryPass& geometry,
         HeatOverlayRenderer& heatOverlayRenderer,
+        CFDOverlayRenderer& cfdOverlayRenderer,
         VoronoiOverlayRenderer& voronoiOverlayRenderer,
         IntrinsicRenderer& intrinsicRenderer,
         GizmoRenderer& gizmoRenderer,
@@ -61,17 +64,17 @@ public:
     void record(const FrameContext& context, const SceneView& sceneView, const RenderFlags& flags, RenderServices& services) override;
     void destroy() override;
 
-    IntrinsicRenderer* getIntrinsicRenderer() const;
-    HeatOverlayRenderer* getHeatOverlayRenderer() const;
     PointOverlayRenderer* getPointOverlayRenderer() const;
-    VoronoiOverlayRenderer* getVoronoiOverlayRenderer() const;
     void setTimingOverlayLines(const std::vector<std::string>& lines);
     void updateGrid(uint32_t frameIndex, const SceneView& sceneView, const glm::vec3& sceneExtent);
     void setWorldUnit(units::LengthUnit unit);
+    void setVelocityPalette(uint32_t palette);
+    void setVelocityPaletteRange(float minimum, float maximum);
 
 private:
     GeometryPass& geometryPass;
     HeatOverlayRenderer& heatOverlayRenderer;
+    CFDOverlayRenderer& cfdOverlayRenderer;
     VoronoiOverlayRenderer& voronoiOverlayRenderer;
     IntrinsicRenderer& intrinsicRenderer;
     GizmoRenderer& gizmoRenderer;
@@ -92,6 +95,11 @@ private:
     std::unique_ptr<PointOverlayRenderer> pointOverlayRenderer;
     std::unique_ptr<TimingRenderer> timingOverlay;
     std::unique_ptr<GridRenderer> gridRenderer;
+    std::unique_ptr<StreamlineRenderer> streamlineRenderer;
+    std::vector<StreamlineRenderer::RenderBinding> streamlineBindings;
+    uint32_t velocityPalette = 0;
+    float velocityPaletteMinimum = 0.0f;
+    float velocityPaletteMaximum = 1.0f;
     bool ready = false;
 };
 

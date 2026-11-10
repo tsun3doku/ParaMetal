@@ -35,8 +35,8 @@ C:/VulkanSDK/1.3.283.0/Bin/glslc.exe isocontour.frag -o isocontour_frag.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe lighting.vert -o lighting_vert.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe lighting.frag -o lighting_frag.spv
 
-C:/VulkanSDK/1.3.283.0/Bin/glslc.exe heat_volume.vert -o heat_volume_vert.spv
-C:/VulkanSDK/1.3.283.0/Bin/glslc.exe heat_volume.frag -o heat_volume_frag.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe scalar_volume.vert -o scalar_volume_vert.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe scalar_volume.frag -o scalar_volume_frag.spv
 
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe blend.vert -o blend_vert.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe blend.frag -o blend_frag.spv
@@ -57,8 +57,11 @@ C:/VulkanSDK/1.3.283.0/Bin/glslc.exe pick_gizmo.frag -o pick_gizmo_frag.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe point_cloud.vert -o point_cloud_vert.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe point_cloud.frag -o point_cloud_frag.spv
 
-C:/VulkanSDK/1.3.283.0/Bin/glslc.exe vector_arrow.vert -o vector_arrow_vert.spv
-C:/VulkanSDK/1.3.283.0/Bin/glslc.exe vector_arrow.frag -o vector_arrow_frag.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe surface_vector.vert -o surface_vector_vert.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe surface_vector.frag -o surface_vector_frag.spv
+
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe streamline.vert -o streamline_vert.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe streamline.frag -o streamline_frag.spv
 
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe heat_box.vert -o heat_box_vert.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe heat_box.frag -o heat_box_frag.spv
@@ -72,6 +75,7 @@ slangc heat_isocontour.slang -target spirv -stage compute -entry main -o heat_is
 
 slangc heat_diffusion.slang -target spirv -o heat_diffusion_comp.spv
 slangc heat_fluid_volume.slang -target spirv -o heat_fluid_volume_comp.spv
+slangc cfd_streamlines.slang -target spirv -o cfd_streamlines_comp.spv
 
 slangc voronoi_geometry.slang -target spirv -o voronoi_geometry_comp.spv
 slangc voronoi_candidates.slang -target spirv -o voronoi_candidates_comp.spv

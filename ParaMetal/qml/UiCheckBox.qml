@@ -48,7 +48,6 @@ CheckBox {
             sourceSize.width: width
             sourceSize.height: height
             smooth: true
-            mipmap: true
             visible: control.checked
         }
     }

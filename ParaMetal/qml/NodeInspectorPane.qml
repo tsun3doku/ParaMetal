@@ -107,6 +107,7 @@ Item {
         case "fluid":
         case "heat_fluid": return heatFluidPanel
         case "heat_solve": return heatSolvePanel
+        case "boundary_conditions": return boundaryConditionsPanel
         case "serial_temperature": return serialTemperaturePanel
         case "heat_probe": return heatProbePanel
         case "points": return pointsPanel
@@ -338,26 +339,10 @@ Item {
             Column {
                 width: parent.width; spacing: root.theme.inspectorBoxSpacing
                 InspectorField { width: parent.width; theme: root.theme; label: qsTr("Initial Temperature (C)"); parameter: root.parameter(4); decimals: 2; onValueEdited: value => root.setValue(4, value) }
-                InspectorField { visible: root.parameter(8) !== null && root.parameter(8) !== undefined; width: parent.width; theme: root.theme; label: qsTr("Inlet Temperature (C)"); parameter: root.parameter(8); decimals: 2; onValueEdited: value => root.setValue(8, value) }
                 InspectorField { width: parent.width; theme: root.theme; label: qsTr("Density (kg/m³)"); parameter: root.parameter(1); decimals: 3; onValueEdited: value => root.setValue(1, value) }
                 InspectorField { width: parent.width; theme: root.theme; label: qsTr("Specific Heat (J/(kg·K))"); parameter: root.parameter(2); decimals: 1; onValueEdited: value => root.setValue(2, value) }
                 InspectorField { width: parent.width; theme: root.theme; label: qsTr("Conductivity (W/(m·K))"); parameter: root.parameter(3); decimals: 3; onValueEdited: value => root.setValue(3, value) }
                 InspectorField { width: parent.width; theme: root.theme; label: qsTr("Kinematic Viscosity (m²/s)"); parameter: root.parameter(9); decimals: 8; onValueEdited: value => root.setValue(9, value) }
-            }
-            Column {
-                visible: (root.parameter(5) !== null && root.parameter(5) !== undefined) ||
-                         (root.parameter(6) !== null && root.parameter(6) !== undefined) ||
-                         (root.parameter(7) !== null && root.parameter(7) !== undefined)
-                width: parent.width
-                spacing: root.theme.inspectorRowSpacing
-                Text { text: qsTr("Velocity (m/s)"); color: root.theme.headingText; font: root.theme.regularFont }
-                Column {
-                    width: parent.width
-                    spacing: root.theme.inspectorBoxSpacing
-                    InspectorField { width: parent.width; theme: root.theme; compact: true; label: "X"; parameter: root.parameter(5); decimals: 3; onValueEdited: value => root.setValue(5, value) }
-                    InspectorField { width: parent.width; theme: root.theme; compact: true; label: "Y"; parameter: root.parameter(6); decimals: 3; onValueEdited: value => root.setValue(6, value) }
-                    InspectorField { width: parent.width; theme: root.theme; compact: true; label: "Z"; parameter: root.parameter(7); decimals: 3; onValueEdited: value => root.setValue(7, value) }
-                }
             }
         }
     }
@@ -382,8 +367,7 @@ Item {
             }
             Column {
                 width: parent.width; spacing: root.theme.inspectorBoxSpacing
-                InspectorField { width: parent.width; theme: root.theme; editor: "slider"; label: qsTr("Thermal Contact Conductance"); parameter: root.parameter(6); minimum: 0; maximum: 100000; decimals: 0; onValueEdited: value => root.setValue(6, value) }
-            InspectorField { width: parent.width; theme: root.theme; editor: "slider"; label: qsTr("Simulation Duration (s)"); parameter: root.parameter(11); minimum: .1; maximum: 60; decimals: 1; onValueEdited: value => root.setValue(11, value) }
+                InspectorField { width: parent.width; theme: root.theme; editor: "slider"; label: qsTr("Simulation Duration (s)"); parameter: root.parameter(11); minimum: .1; maximum: 60; decimals: 1; onValueEdited: value => root.setValue(11, value) }
             InspectorField { width: parent.width; theme: root.theme; label: qsTr("Max PCG Iterations"); parameter: root.parameter(30); decimals: 0; onValueEdited: value => root.setValue(30, value) }
             InspectorField { width: parent.width; theme: root.theme; label: qsTr("PCG Tolerance"); parameter: root.parameter(31); decimals: 6; onValueEdited: value => root.setValue(31, value) }
             }
@@ -398,61 +382,63 @@ Item {
             InspectorField { visible: root.parameter(15) && root.parameter(15).value; width: parent.width; theme: root.theme; editor: "slider"; label: qsTr("Fluid Volume Opacity"); parameter: root.parameter(16); minimum: 0.01; maximum: 1.0; decimals: 2; onValueEdited: value => root.setValue(16, value) }
 
             Text {
-                text: qsTr("Domain Boundary Conditions")
-                color: root.theme.headingText
-                font: root.theme.regularFont
-                topPadding: 6
-            }
-
-            // -X Face
-            InspectorField { width: parent.width; theme: root.theme; editor: "combo"; label: qsTr("-X"); parameter: root.parameter(100); onValueEdited: value => root.setValue(100, value) }
-            InspectorField { visible: root.parameter(100) && (String(root.parameter(100).value) === "1" || String(root.parameter(100).value) === "Dirichlet"); width: parent.width; theme: root.theme; label: qsTr("  Temperature (C)"); parameter: root.parameter(101); decimals: 2; onValueEdited: value => root.setValue(101, value) }
-            InspectorField { visible: root.parameter(100) && (String(root.parameter(100).value) === "2" || String(root.parameter(100).value) === "Neumann"); width: parent.width; theme: root.theme; label: qsTr("  Heat Flux (W/m²)"); parameter: root.parameter(102); onValueEdited: value => root.setValue(102, value) }
-            InspectorField { visible: root.parameter(100) && (String(root.parameter(100).value) === "3" || String(root.parameter(100).value) === "Robin"); width: parent.width; theme: root.theme; label: qsTr("  Ambient Temp (C)"); parameter: root.parameter(101); decimals: 2; onValueEdited: value => root.setValue(101, value) }
-            InspectorField { visible: root.parameter(100) && (String(root.parameter(100).value) === "3" || String(root.parameter(100).value) === "Robin"); width: parent.width; theme: root.theme; label: qsTr("  HTC (W/(m²·K))"); parameter: root.parameter(103); onValueEdited: value => root.setValue(103, value) }
-
-            // +X Face
-            InspectorField { width: parent.width; theme: root.theme; editor: "combo"; label: qsTr("+X"); parameter: root.parameter(104); onValueEdited: value => root.setValue(104, value) }
-            InspectorField { visible: root.parameter(104) && (String(root.parameter(104).value) === "1" || String(root.parameter(104).value) === "Dirichlet"); width: parent.width; theme: root.theme; label: qsTr("  Temperature (C)"); parameter: root.parameter(105); decimals: 2; onValueEdited: value => root.setValue(105, value) }
-            InspectorField { visible: root.parameter(104) && (String(root.parameter(104).value) === "2" || String(root.parameter(104).value) === "Neumann"); width: parent.width; theme: root.theme; label: qsTr("  Heat Flux (W/m²)"); parameter: root.parameter(106); onValueEdited: value => root.setValue(106, value) }
-            InspectorField { visible: root.parameter(104) && (String(root.parameter(104).value) === "3" || String(root.parameter(104).value) === "Robin"); width: parent.width; theme: root.theme; label: qsTr("  Ambient Temp (C)"); parameter: root.parameter(105); decimals: 2; onValueEdited: value => root.setValue(105, value) }
-            InspectorField { visible: root.parameter(104) && (String(root.parameter(104).value) === "3" || String(root.parameter(104).value) === "Robin"); width: parent.width; theme: root.theme; label: qsTr("  HTC (W/(m²·K))"); parameter: root.parameter(107); onValueEdited: value => root.setValue(107, value) }
-
-            // -Y Face
-            InspectorField { width: parent.width; theme: root.theme; editor: "combo"; label: qsTr("-Y"); parameter: root.parameter(108); onValueEdited: value => root.setValue(108, value) }
-            InspectorField { visible: root.parameter(108) && (String(root.parameter(108).value) === "1" || String(root.parameter(108).value) === "Dirichlet"); width: parent.width; theme: root.theme; label: qsTr("  Temperature (C)"); parameter: root.parameter(109); decimals: 2; onValueEdited: value => root.setValue(109, value) }
-            InspectorField { visible: root.parameter(108) && (String(root.parameter(108).value) === "2" || String(root.parameter(108).value) === "Neumann"); width: parent.width; theme: root.theme; label: qsTr("  Heat Flux (W/m²)"); parameter: root.parameter(110); onValueEdited: value => root.setValue(110, value) }
-            InspectorField { visible: root.parameter(108) && (String(root.parameter(108).value) === "3" || String(root.parameter(108).value) === "Robin"); width: parent.width; theme: root.theme; label: qsTr("  Ambient Temp (C)"); parameter: root.parameter(109); decimals: 2; onValueEdited: value => root.setValue(109, value) }
-            InspectorField { visible: root.parameter(108) && (String(root.parameter(108).value) === "3" || String(root.parameter(108).value) === "Robin"); width: parent.width; theme: root.theme; label: qsTr("  HTC (W/(m²·K))"); parameter: root.parameter(111); onValueEdited: value => root.setValue(111, value) }
-
-            // +Y Face
-            InspectorField { width: parent.width; theme: root.theme; editor: "combo"; label: qsTr("+Y"); parameter: root.parameter(112); onValueEdited: value => root.setValue(112, value) }
-            InspectorField { visible: root.parameter(112) && (String(root.parameter(112).value) === "1" || String(root.parameter(112).value) === "Dirichlet"); width: parent.width; theme: root.theme; label: qsTr("  Temperature (C)"); parameter: root.parameter(113); decimals: 2; onValueEdited: value => root.setValue(113, value) }
-            InspectorField { visible: root.parameter(112) && (String(root.parameter(112).value) === "2" || String(root.parameter(112).value) === "Neumann"); width: parent.width; theme: root.theme; label: qsTr("  Heat Flux (W/m²)"); parameter: root.parameter(114); onValueEdited: value => root.setValue(114, value) }
-            InspectorField { visible: root.parameter(112) && (String(root.parameter(112).value) === "3" || String(root.parameter(112).value) === "Robin"); width: parent.width; theme: root.theme; label: qsTr("  Ambient Temp (C)"); parameter: root.parameter(113); decimals: 2; onValueEdited: value => root.setValue(113, value) }
-            InspectorField { visible: root.parameter(112) && (String(root.parameter(112).value) === "3" || String(root.parameter(112).value) === "Robin"); width: parent.width; theme: root.theme; label: qsTr("  HTC (W/(m²·K))"); parameter: root.parameter(115); onValueEdited: value => root.setValue(115, value) }
-
-            // -Z Face
-            InspectorField { width: parent.width; theme: root.theme; editor: "combo"; label: qsTr("-Z"); parameter: root.parameter(116); onValueEdited: value => root.setValue(116, value) }
-            InspectorField { visible: root.parameter(116) && (String(root.parameter(116).value) === "1" || String(root.parameter(116).value) === "Dirichlet"); width: parent.width; theme: root.theme; label: qsTr("  Temperature (C)"); parameter: root.parameter(117); decimals: 2; onValueEdited: value => root.setValue(117, value) }
-            InspectorField { visible: root.parameter(116) && (String(root.parameter(116).value) === "2" || String(root.parameter(116).value) === "Neumann"); width: parent.width; theme: root.theme; label: qsTr("  Heat Flux (W/m²)"); parameter: root.parameter(118); onValueEdited: value => root.setValue(118, value) }
-            InspectorField { visible: root.parameter(116) && (String(root.parameter(116).value) === "3" || String(root.parameter(116).value) === "Robin"); width: parent.width; theme: root.theme; label: qsTr("  Ambient Temp (C)"); parameter: root.parameter(117); decimals: 2; onValueEdited: value => root.setValue(117, value) }
-            InspectorField { visible: root.parameter(116) && (String(root.parameter(116).value) === "3" || String(root.parameter(116).value) === "Robin"); width: parent.width; theme: root.theme; label: qsTr("  HTC (W/(m²·K))"); parameter: root.parameter(119); onValueEdited: value => root.setValue(119, value) }
-
-            // +Z Face
-            InspectorField { width: parent.width; theme: root.theme; editor: "combo"; label: qsTr("+Z"); parameter: root.parameter(120); onValueEdited: value => root.setValue(120, value) }
-            InspectorField { visible: root.parameter(120) && (String(root.parameter(120).value) === "1" || String(root.parameter(120).value) === "Dirichlet"); width: parent.width; theme: root.theme; label: qsTr("  Temperature (C)"); parameter: root.parameter(121); decimals: 2; onValueEdited: value => root.setValue(121, value) }
-            InspectorField { visible: root.parameter(120) && (String(root.parameter(120).value) === "2" || String(root.parameter(120).value) === "Neumann"); width: parent.width; theme: root.theme; label: qsTr("  Heat Flux (W/m²)"); parameter: root.parameter(122); onValueEdited: value => root.setValue(122, value) }
-            InspectorField { visible: root.parameter(120) && (String(root.parameter(120).value) === "3" || String(root.parameter(120).value) === "Robin"); width: parent.width; theme: root.theme; label: qsTr("  Ambient Temp (C)"); parameter: root.parameter(121); decimals: 2; onValueEdited: value => root.setValue(121, value) }
-            InspectorField { visible: root.parameter(120) && (String(root.parameter(120).value) === "3" || String(root.parameter(120).value) === "Robin"); width: parent.width; theme: root.theme; label: qsTr("  HTC (W/(m²·K))"); parameter: root.parameter(123); onValueEdited: value => root.setValue(123, value) }
-
-            Text {
                 width: parent.width
                 visible: root.heatSolveErrorText !== ""
                 text: qsTr("Error: %1").arg(root.heatSolveErrorText)
                 color: "#ff7a7a"
                 font: root.theme.descriptionFont
                 wrapMode: Text.Wrap
+            }
+        }
+    }
+
+    Component {
+        id: boundaryConditionsPanel
+        Column {
+            width: panelLoader.width; spacing: root.theme.inspectorRowSpacing
+
+            Repeater {
+                model: [
+                    { title: "-X", base: 100 },
+                    { title: "+X", base: 110 },
+                    { title: "-Y", base: 120 },
+                    { title: "+Y", base: 130 },
+                    { title: "-Z", base: 140 },
+                    { title: "+Z", base: 150 }
+                ]
+
+                Column {
+                    id: faceColumn
+                    required property var modelData
+                    readonly property int firstParameterId: modelData.base
+                    readonly property string flow: root.parameter(firstParameterId) ? String(root.parameter(firstParameterId).value) : ""
+                    readonly property string thermal: root.parameter(firstParameterId + 4) ? String(root.parameter(firstParameterId + 4).value) : ""
+
+                    width: parent.width
+                    spacing: root.theme.inspectorBoxSpacing
+
+                    Text { text: faceColumn.modelData.title; color: root.theme.headingText; font: root.theme.regularFont; topPadding: 6 }
+                    InspectorField { width: parent.width; theme: root.theme; editor: "combo"; label: qsTr("Flow"); parameter: root.parameter(faceColumn.firstParameterId); onValueEdited: value => root.setValue(faceColumn.firstParameterId, value) }
+                    Column {
+                        visible: faceColumn.flow === "Velocity Inlet"
+                        width: parent.width
+                        spacing: root.theme.inspectorRowSpacing
+
+                        Text { text: qsTr("Velocity (m/s)"); color: root.theme.secondaryText; font: root.theme.regularFont }
+                        Column {
+                            width: parent.width
+                            spacing: root.theme.inspectorBoxSpacing
+                            InspectorField { width: parent.width; theme: root.theme; compact: true; label: "X"; parameter: root.parameter(faceColumn.firstParameterId + 1); decimals: 3; onValueEdited: value => root.setValue(faceColumn.firstParameterId + 1, value) }
+                            InspectorField { width: parent.width; theme: root.theme; compact: true; label: "Y"; parameter: root.parameter(faceColumn.firstParameterId + 2); decimals: 3; onValueEdited: value => root.setValue(faceColumn.firstParameterId + 2, value) }
+                            InspectorField { width: parent.width; theme: root.theme; compact: true; label: "Z"; parameter: root.parameter(faceColumn.firstParameterId + 3); decimals: 3; onValueEdited: value => root.setValue(faceColumn.firstParameterId + 3, value) }
+                        }
+                    }
+                    InspectorField { width: parent.width; theme: root.theme; editor: "combo"; label: qsTr("Thermal"); parameter: root.parameter(faceColumn.firstParameterId + 4); onValueEdited: value => root.setValue(faceColumn.firstParameterId + 4, value) }
+                    InspectorField { visible: faceColumn.thermal === "Dirichlet" || faceColumn.thermal === "Robin"; width: parent.width; theme: root.theme; label: faceColumn.thermal === "Robin" ? qsTr("Ambient Temp (C)") : qsTr("Temperature (C)"); parameter: root.parameter(faceColumn.firstParameterId + 5); decimals: 2; onValueEdited: value => root.setValue(faceColumn.firstParameterId + 5, value) }
+                    InspectorField { visible: faceColumn.thermal === "Neumann"; width: parent.width; theme: root.theme; label: qsTr("Heat Flux (W/m²)"); parameter: root.parameter(faceColumn.firstParameterId + 6); decimals: 2; onValueEdited: value => root.setValue(faceColumn.firstParameterId + 6, value) }
+                    InspectorField { visible: faceColumn.thermal === "Robin"; width: parent.width; theme: root.theme; label: qsTr("HTC (W/(m²·K))"); parameter: root.parameter(faceColumn.firstParameterId + 7); decimals: 2; onValueEdited: value => root.setValue(faceColumn.firstParameterId + 7, value) }
+                    InspectorField { visible: faceColumn.flow === "Velocity Inlet" || faceColumn.flow === "Pressure Outlet"; width: parent.width; theme: root.theme; label: qsTr("Inflow Temperature (C)"); parameter: root.parameter(faceColumn.firstParameterId + 8); decimals: 2; onValueEdited: value => root.setValue(faceColumn.firstParameterId + 8, value) }
+                }
             }
         }
     }

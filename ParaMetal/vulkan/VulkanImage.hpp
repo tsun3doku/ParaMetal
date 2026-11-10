@@ -28,4 +28,4 @@ VkResult createTextureImage16(VulkanDevice& vulkanDevice, MemoryAllocator& memor
 VkResult createTextureImageView(const VulkanDevice& vulkanDevice, VkImage textureImage, VkImageView& outImageView, uint32_t mipLevels = 1);
 VkResult createTextureSampler(const VulkanDevice& vulkanDevice, VkSampler& textureSampler);
 
-VkResult uploadR32FloatImage3D(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, CommandPool& commandPool, const float* data, const glm::ivec3& gridDim, VkImage& outImage, VkDeviceMemory& outMemory, VkImageView& outView);
+VkResult initializeR32FloatImage3D(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, CommandPool& commandPool, const glm::ivec3& gridDim, VkImageUsageFlags additionalUsage, float initialValue, VkImage& outImage, VkDeviceMemory& outMemory, VkImageView& outView);

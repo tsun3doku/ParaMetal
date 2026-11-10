@@ -446,7 +446,7 @@ bool HeatDomainRuntime::rebuildGlobalSolver(
 
         float inflowTemps[6];
         for (size_t i = 0; i < 6; ++i) {
-            inflowTemps[i] = domainBoundaries[i].temperatureC;
+            inflowTemps[i] = domainBoundaries[i].inflowTemperatureC;
         }
         if (!globalSolver->updateAdvectionStep(
             inflowTemps,
@@ -534,7 +534,7 @@ bool HeatDomainRuntime::updateGlobalAdvection(HeatFluidRuntime* fluidRuntime, fl
         waitGlobalSolveIdle();
         float inflowTemps[6];
         for (size_t i = 0; i < 6; ++i) {
-            inflowTemps[i] = domainBoundaries[i].temperatureC;
+            inflowTemps[i] = domainBoundaries[i].inflowTemperatureC;
         }
         if (!globalSolver->updateAdvectionStep(
             inflowTemps,

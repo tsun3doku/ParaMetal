@@ -51,7 +51,6 @@ void NodeGroup::execute(NodeKernelEval& eval) const {
         outputValue.dataType = outputSocket.contract.producedPayloadType;
 
         if (!payloadRegistry || outputValue.dataType != payloadtypes::Geometry) {
-            populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
 
@@ -59,7 +58,6 @@ void NodeGroup::execute(NodeKernelEval& eval) const {
             if (hasValidInput) {
                 outputValue.payloadHandle = inputMeshValue->payloadHandle;
             }
-            populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
 
@@ -67,7 +65,6 @@ void NodeGroup::execute(NodeKernelEval& eval) const {
         if (!payloadRegistry->resolveLocalToWorld(
                 inputMeshValue->payloadHandle,
                 updatedGeometry.localToWorld)) {
-            populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
         const bool changed = applyAssignment(updatedGeometry, sourceGroupName, targetGroupName);
@@ -77,7 +74,6 @@ void NodeGroup::execute(NodeKernelEval& eval) const {
         } else {
             outputValue.payloadHandle = inputMeshValue->payloadHandle;
         }
-        populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 

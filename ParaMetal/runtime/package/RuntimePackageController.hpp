@@ -1,6 +1,6 @@
 #pragma once
 
-#include "runtime/RuntimeConnections.hpp"
+#include "runtime/RuntimeTransports.hpp"
 #include "runtime/package/RuntimePackageManager.hpp"
 
 #include <memory>
@@ -12,7 +12,7 @@ struct NodeGraphNode;
 
 class RuntimePackageController {
 public:
-    explicit RuntimePackageController(const RuntimeConnections& connections);
+    explicit RuntimePackageController(const RuntimeTransports& transports);
     ~RuntimePackageController();
 
     void beginCompilation();
@@ -45,7 +45,7 @@ private:
     void removeStalePackages();
     void detachDisplayBindings(uint64_t socketKey);
 
-    RuntimeConnections connections{};
+    RuntimeTransports transports{};
     RuntimePackageManager packageManager{};
     std::unordered_set<uint64_t> processedSockets;
     std::unique_ptr<RuntimeProductManager> productManager;

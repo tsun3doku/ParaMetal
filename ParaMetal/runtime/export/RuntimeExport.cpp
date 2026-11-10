@@ -18,14 +18,15 @@ void RuntimeExport::requestExportProducts(int nodeId, uint64_t requestId, uint64
 
 void RuntimeExport::processPending(
     NodeGraphController* graph,
-    HeatSystemComputeController* heatController) {
+    HeatSystemComputeController* heatController,
+    cfd::CFDSystemComputeController* cfdController) {
     if (pendingNodeIds.empty() && pendingProductRequests.empty()) return;
     std::vector<int> requests = std::move(pendingNodeIds);
     pendingNodeIds.clear();
     std::vector<ProductRequest> catalogRequests = std::move(pendingProductRequests);
     pendingProductRequests.clear();
 
-    ExporterRegistry exporters(heatController);
+    ExporterRegistry exporters(heatController, cfdController);
     for (const ProductRequest& request : catalogRequests) {
         if (!graph || graph->runtimeCompilationPending()) {
             pendingProductRequests.push_back(request);

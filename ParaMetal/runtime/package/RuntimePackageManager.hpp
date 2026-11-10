@@ -80,6 +80,10 @@ public:
         return it != committed.end() ? &it->second : nullptr;
     }
 
+    // Socket keys that the package on socketKey makes visible in its own view.
+    // Null when no package is stored for the socket.
+    const std::vector<uint64_t>* displayDependencyKeysFor(uint64_t socketKey) const;
+
     const std::unordered_map<uint64_t, ModelPackage>& models() const { return modelPackages; }
     const std::unordered_map<uint64_t, PointPackage>& points() const { return pointPackages; }
     const std::unordered_map<uint64_t, RemeshPackage>& remeshes() const { return remeshPackages; }

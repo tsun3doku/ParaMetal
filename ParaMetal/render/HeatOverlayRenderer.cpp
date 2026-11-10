@@ -21,7 +21,7 @@ HeatOverlayRenderer::HeatOverlayRenderer(
       commandPool(commandPool),
       memoryAllocator(allocator),
       surfaceRenderer(std::make_unique<HeatSurfaceRenderer>(device, allocator, uniformBufferManager, commandPool)),
-      vectorArrowRenderer(std::make_unique<VectorArrowRenderer>(device, allocator, uniformBufferManager, commandPool)),
+      surfaceVectorRenderer(std::make_unique<SurfaceVectorRenderer>(device, allocator, uniformBufferManager, commandPool)),
       boxRenderer(std::make_unique<HeatBoxRenderer>(device, allocator, uniformBufferManager)),
       probeRenderer(std::make_unique<ProbeMarkerRenderer>(device, allocator, uniformBufferManager, commandPool)) {
 }
@@ -42,13 +42,13 @@ void HeatOverlayRenderer::initializeSurface(VkRenderPass renderPass, uint32_t su
 }
 
 void HeatOverlayRenderer::initializeOverlay(VkRenderPass renderPass, uint32_t overlaySubpass, uint32_t updatedMaxFramesInFlight) {
-    if ((!vectorArrowRenderer && !boxRenderer && !probeRenderer) || overlayInitialized) {
+    if ((!surfaceVectorRenderer && !boxRenderer && !probeRenderer) || overlayInitialized) {
         return;
     }
 
     maxFramesInFlight = updatedMaxFramesInFlight;
-    if (vectorArrowRenderer) {
-        vectorArrowRenderer->initialize(renderPass, overlaySubpass, maxFramesInFlight);
+    if (surfaceVectorRenderer) {
+        surfaceVectorRenderer->initialize(renderPass, overlaySubpass, maxFramesInFlight);
     }
     if (boxRenderer) {
         boxRenderer->initialize(renderPass, overlaySubpass, maxFramesInFlight);
@@ -82,16 +82,14 @@ void HeatOverlayRenderer::remove(uint64_t socketKey) {
 }
 
 void HeatOverlayRenderer::rebuildBindings() {
-    if (!surfaceRenderer || !vectorArrowRenderer) {
-        return;
-    }
-
     surfaceBindings.clear();
     fluxVectorBindings.clear();
     boxBindings.clear();
+    streamlineBindings.clear();
     probeBindings.clear();
 
     paletteVisible = false;
+    cfdVelocityPaletteVisible = false;
     bool anyIsocontours = false;
     float isocontourSpacingC = 0.0f;
 
@@ -100,6 +98,10 @@ void HeatOverlayRenderer::rebuildBindings() {
 
         if (config.showHeatPalette) {
             paletteVisible = true;
+        }
+
+        if (config.showCfdVelocityPalette) {
+            cfdVelocityPaletteVisible = true;
         }
 
         if (config.showIsocontours) {
@@ -162,7 +164,7 @@ void HeatOverlayRenderer::rebuildBindings() {
                     index < config.modelSurfacePointCounts.size() &&
                     config.modelSurfaceGradientBuffers[index] != VK_NULL_HANDLE &&
                     config.modelSurfacePointCounts[index] != 0) {
-                    VectorArrowRenderer::VectorRenderBinding vectorBinding{};
+                    SurfaceVectorRenderer::RenderBinding vectorBinding{};
                     vectorBinding.bindingKey = config.modelRuntimeIds[index];
                     vectorBinding.surfaceBuffer = config.modelSurfaceBuffers[index];
                     vectorBinding.surfaceBufferOffset = config.modelSurfaceBufferOffsets[index];
@@ -183,6 +185,18 @@ void HeatOverlayRenderer::rebuildBindings() {
             boxBinding.corners = config.globalDomainCorners;
 
             boxBindings.push_back(boxBinding);
+        }
+
+        if (config.showCfdStreamlines &&
+            config.cfdStreamlineVertexBuffer != VK_NULL_HANDLE &&
+            config.cfdStreamlineVertexCount != 0) {
+            StreamlineRenderer::RenderBinding streamlineBinding{};
+            streamlineBinding.bindingKey = socketKey;
+            streamlineBinding.vertexBuffer = config.cfdStreamlineVertexBuffer;
+            streamlineBinding.vertexBufferOffset = config.cfdStreamlineVertexBufferOffset;
+            streamlineBinding.vertexCount = config.cfdStreamlineVertexCount;
+
+            streamlineBindings.push_back(streamlineBinding);
         }
 
         for (size_t i = 0; i < config.probePositions.size(); ++i) {
@@ -266,8 +280,8 @@ void HeatOverlayRenderer::renderOverlay(
         return;
     }
 
-    if (vectorArrowRenderer) {
-        vectorArrowRenderer->render(commandBuffer, frameIndex, fluxVectorBindings);
+    if (surfaceVectorRenderer) {
+        surfaceVectorRenderer->render(commandBuffer, frameIndex, fluxVectorBindings);
     }
     if (probeRenderer) {
         probeRenderer->render(commandBuffer, frameIndex, extent, viewProj, probeBindings);
@@ -282,6 +296,7 @@ void HeatOverlayRenderer::cleanup() {
     surfaceBindings.clear();
     fluxVectorBindings.clear();
     boxBindings.clear();
+    streamlineBindings.clear();
     probeBindings.clear();
     maxFramesInFlight = 0;
     surfaceInitialized = false;
@@ -289,8 +304,8 @@ void HeatOverlayRenderer::cleanup() {
     if (surfaceRenderer) {
         surfaceRenderer->cleanup();
     }
-    if (vectorArrowRenderer) {
-        vectorArrowRenderer->cleanup();
+    if (surfaceVectorRenderer) {
+        surfaceVectorRenderer->cleanup();
     }
     if (boxRenderer) {
         boxRenderer->cleanup();

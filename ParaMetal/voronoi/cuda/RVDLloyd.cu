@@ -27,11 +27,8 @@ __global__ void updateLloydSeedsKernel(
   const float4 seed = seeds[cell];
   const glm::dvec3 seedPosition(seed.x, seed.y, seed.z);
   const double4 rawBaseMoment = baseMoments[cell];
-  const double baseVolume =
-      (rawBaseMoment.w / 6.0) * invBaseVolumeScale;
-  const glm::dvec3 baseMoment =
-      (glm::dvec3(rawBaseMoment.x, rawBaseMoment.y, rawBaseMoment.z) / 6.0) *
-      invBaseMomentScale;
+  const double baseVolume = (rawBaseMoment.w / 6.0) * invBaseVolumeScale;
+  const glm::dvec3 baseMoment = (glm::dvec3(rawBaseMoment.x, rawBaseMoment.y, rawBaseMoment.z) / 6.0) * invBaseMomentScale;
   if (!(baseVolume > minVolumeThreshold) || !isfinite(baseVolume)) {
     outSeeds[cell] = seed;
     return;
@@ -44,10 +41,8 @@ __global__ void updateLloydSeedsKernel(
     return;
   }
 
-  const glm::dvec3 moved =
-      seedPosition + double(damping) * (centroid - seedPosition);
-  outSeeds[cell] = make_float4(
-      float(moved.x), float(moved.y), float(moved.z), 0.0f);
+  const glm::dvec3 moved = seedPosition + double(damping) * (centroid - seedPosition);
+  outSeeds[cell] = make_float4(float(moved.x), float(moved.y), float(moved.z), 0.0f);
 }
 
 } // namespace
@@ -84,10 +79,8 @@ bool updateLloydSeeds(
   const double nominalCellSize = double(
       baseDomain.nominalCellSize > 0.0f ? baseDomain.nominalCellSize
                                         : input.nominalCellSize);
-  const double nominalVolume =
-      nominalCellSize * nominalCellSize * nominalCellSize;
-  const double minVolumeThreshold =
-      double(config.lloydVolumeThresholdFraction) * nominalVolume;
+  const double nominalVolume = nominalCellSize * nominalCellSize * nominalCellSize;
+  const double minVolumeThreshold = double(config.lloydVolumeThresholdFraction) * nominalVolume;
 
   cudaUtils::CudaBuffer<float4> outSeeds;
   if (!outSeeds.allocate(seedCount)) return false;

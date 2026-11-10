@@ -46,8 +46,6 @@ void NodeTransform::execute(NodeKernelEval& eval) const {
             outputValue.payloadHandle = payloadRegistry->store(payloadKey, transform, eval.outputHashes);
         }
     }
-
-    populateMetadata(outputValue, nullptr, payloadRegistry);
 }
 
 HashValues NodeTransform::computeOutputHashes(const NodeKernelHash& hash) const {

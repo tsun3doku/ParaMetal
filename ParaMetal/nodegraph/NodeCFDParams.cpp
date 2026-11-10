@@ -14,14 +14,10 @@ CFDNodeParams readCFDNodeParams(const NodeGraphNode& node) {
     params.initialVelocity.z = static_cast<float>(NodeParamUtils::readFloatParam(node, nodegraphparams::cfd::VelocityZ, 0.0));
     params.pressureIterations = NodeParamUtils::readFloatParam(node, nodegraphparams::cfd::PressureIterations, 200.0);
     params.pressureTolerance = NodeParamUtils::readFloatParam(node, nodegraphparams::cfd::PressureTolerance, 1e-4);
-
-    for (uint32_t face = 0; face < 6; ++face) {
-        const int typeInt = NodeParamUtils::readEnumParam(node, nodegraphparams::cfd::domainBoundaryTypeParam(face), static_cast<int>(CFDData::BoundaryType::NoSlipWall));
-        params.boundaries[face].type = static_cast<CFDData::BoundaryType>(typeInt);
-        params.boundaries[face].velocity.x = static_cast<float>(NodeParamUtils::readFloatParam(node, nodegraphparams::cfd::domainBoundaryVelocityXParam(face), 0.0));
-        params.boundaries[face].velocity.y = static_cast<float>(NodeParamUtils::readFloatParam(node, nodegraphparams::cfd::domainBoundaryVelocityYParam(face), 0.0));
-        params.boundaries[face].velocity.z = static_cast<float>(NodeParamUtils::readFloatParam(node, nodegraphparams::cfd::domainBoundaryVelocityZParam(face), 0.0));
-    }
+    params.simulationDuration = NodeParamUtils::readFloatParam(node, nodegraphparams::cfd::Duration, 10.0);
+    params.preview.showStreamlines = NodeParamUtils::readBoolParam(node, nodegraphparams::cfd::ShowStreamlines, false);
+    params.preview.showDomainBox = NodeParamUtils::readBoolParam(node, nodegraphparams::cfd::ShowDomainBox, false);
+    params.preview.showVelocityPalette = NodeParamUtils::readBoolParam(node, nodegraphparams::cfd::ShowVelocityPalette, false);
 
     return params;
 }
@@ -35,22 +31,11 @@ bool writeCFDNodeParams(NodeGraphEditor& editor, NodeGraphNodeId nodeId, const C
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::cfd::VelocityY, NodeGraphParamType::Float, static_cast<double>(params.initialVelocity.y)}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::cfd::VelocityZ, NodeGraphParamType::Float, static_cast<double>(params.initialVelocity.z)}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::cfd::PressureIterations, NodeGraphParamType::Int, params.pressureIterations}) &&
-        editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::cfd::PressureTolerance, NodeGraphParamType::Float, params.pressureTolerance});
+        editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::cfd::PressureTolerance, NodeGraphParamType::Float, params.pressureTolerance}) &&
+        editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::cfd::Duration, NodeGraphParamType::Float, params.simulationDuration}) &&
+        editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::cfd::ShowStreamlines, NodeGraphParamType::Bool, 0.0, 0, params.preview.showStreamlines}) &&
+        editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::cfd::ShowDomainBox, NodeGraphParamType::Bool, 0.0, 0, params.preview.showDomainBox}) &&
+        editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::cfd::ShowVelocityPalette, NodeGraphParamType::Bool, 0.0, 0, params.preview.showVelocityPalette});
 
-    if (!baseOk) {
-        return false;
-    }
-
-    for (uint32_t face = 0; face < 6; ++face) {
-        const bool faceOk =
-            editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::cfd::domainBoundaryTypeParam(face), NodeGraphParamType::Enum, 0.0, static_cast<int64_t>(params.boundaries[face].type), false}) &&
-            editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::cfd::domainBoundaryVelocityXParam(face), NodeGraphParamType::Float, static_cast<double>(params.boundaries[face].velocity.x)}) &&
-            editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::cfd::domainBoundaryVelocityYParam(face), NodeGraphParamType::Float, static_cast<double>(params.boundaries[face].velocity.y)}) &&
-            editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::cfd::domainBoundaryVelocityZParam(face), NodeGraphParamType::Float, static_cast<double>(params.boundaries[face].velocity.z)});
-        if (!faceOk) {
-            return false;
-        }
-    }
-
-    return true;
+    return baseOk;
 }

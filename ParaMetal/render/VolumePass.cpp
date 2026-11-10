@@ -34,7 +34,7 @@ void VolumePass::create() {
     ready = false;
     destroy();
 
-    heatVolumeRenderer = std::make_unique<HeatVolumeRenderer>(
+    heatVolumeRenderer = std::make_unique<SimVolumeRenderer>(
         vulkanDevice, memoryAllocator, uniformBufferManager, commandPool);
 
     if (!heatVolumeRenderer || !heatVolumeRenderer->initialize(

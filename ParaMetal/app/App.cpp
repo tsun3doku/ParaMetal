@@ -151,12 +151,12 @@ void App::connectUi(ViewportItem& viewport, GraphHost& graphHost) {
                      &viewport, &ViewportItem::requestHeatPalette);
     QObject::connect(uiModel.heatPalette(), &HeatPaletteUiModel::rangeRequested,
                      &viewport, &ViewportItem::requestHeatPaletteRange);
+    QObject::connect(uiModel.velocityPalette(), &VelocityPaletteUiModel::paletteRequested,
+                     &viewport, &ViewportItem::requestVelocityPalette);
+    QObject::connect(uiModel.velocityPalette(), &VelocityPaletteUiModel::rangeRequested,
+                     &viewport, &ViewportItem::requestVelocityPaletteRange);
     QObject::connect(uiModel.timeline(), &TimelineUiModel::playingRequested,
                      &viewport, &ViewportItem::requestTimelinePlaying);
-    QObject::connect(uiModel.timeline(), &TimelineUiModel::playingRequested,
-                     &graphHost, [&graphHost](bool playing) {
-                         if (playing) graphHost.activateTimeline();
-                     }, Qt::QueuedConnection);
     QObject::connect(uiModel.timeline(), &TimelineUiModel::resetRequested,
                      &viewport, &ViewportItem::requestTimelineReset);
     QObject::connect(uiModel.timeline(), &TimelineUiModel::scrubRequested,
@@ -208,6 +208,8 @@ void App::connectRuntime(GraphHost& graphHost) {
                      uiModel.viewport(), &ViewportUiModel::applyState, Qt::QueuedConnection);
     QObject::connect(&runtimeNotifier, &RuntimeNotifier::heatPaletteVisibilityChanged,
                      uiModel.heatPalette(), &HeatPaletteUiModel::applyVisibility, Qt::QueuedConnection);
+    QObject::connect(&runtimeNotifier, &RuntimeNotifier::velocityPaletteVisibilityChanged,
+                     uiModel.velocityPalette(), &VelocityPaletteUiModel::applyVisibility, Qt::QueuedConnection);
     QObject::connect(&runtimeNotifier, &RuntimeNotifier::timelineStateChanged,
                      uiModel.timeline(), &TimelineUiModel::applyState, Qt::QueuedConnection);
     QObject::connect(&runtimeNotifier, &RuntimeNotifier::graphSelectionChanged,

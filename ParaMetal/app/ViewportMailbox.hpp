@@ -46,6 +46,8 @@ public:
     void requestSelection(int nodeId);
     void requestHeatPaletteRange(float minimum, float maximum);
     void requestHeatPalette(int palette);
+    void requestVelocityPaletteRange(float minimum, float maximum);
+    void requestVelocityPalette(int palette);
     void requestWorldUnit(int unit);
     void requestProbePicking(int nodeId, int probeIndex = 0);
     void requestExport(int nodeId);
@@ -74,6 +76,8 @@ public:
     bool takeSelection(int& nodeId, bool force = false);
     bool takeHeatPaletteRange(float& minimum, float& maximum, bool force = false);
     bool takeHeatPalette(int& palette, bool force = false);
+    bool takeVelocityPaletteRange(float& minimum, float& maximum, bool force = false);
+    bool takeVelocityPalette(int& palette, bool force = false);
     bool takeWorldUnit(int& unit, bool force = false);
     bool takeAppliedViewportProjectState(ProjectFile::Viewport& viewport);
     bool takeCurrentViewportProjectState();
@@ -131,6 +135,11 @@ private:
     bool heatPaletteRangeDirty = false;
     int requestedHeatPalette = 0;
     bool heatPaletteDirty = false;
+    float requestedVelocityPaletteMin = 0.0f;
+    float requestedVelocityPaletteMax = 1.0f;
+    bool velocityPaletteRangeDirty = false;
+    int requestedVelocityPalette = 0;
+    bool velocityPaletteDirty = false;
     int requestedWorldUnit = static_cast<int>(units::defaultLengthUnit());
     bool worldUnitDirty = false;
 

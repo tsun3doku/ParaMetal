@@ -95,8 +95,7 @@ public:
     RVDInput effectiveInput = input;
     effectiveInput.seeds = &relaxedSeeds;
 
-    const double lloydConvergenceTolerance =
-        double(effectiveInput.nominalCellSize) * 1e-4;
+    const double lloydConvergenceTolerance = double(effectiveInput.nominalCellSize) * 1e-4;
     for (uint32_t iteration = 0; iteration < config.lloydIterations; ++iteration) {
       if (iteration > 0 &&
           !effectiveInput.seedSpatialIndex->buildSpatialIndex(relaxedSeeds)) {

@@ -61,7 +61,6 @@ void NodeVoronoi::execute(NodeKernelEval& eval) const {
         outputValue.dataType = outputSocket.contract.producedPayloadType;
 
         if (!payloadRegistry || outputValue.dataType != payloadtypes::Voronoi) {
-            populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
 
@@ -79,7 +78,6 @@ void NodeVoronoi::execute(NodeKernelEval& eval) const {
         voronoiData.active = active;
         const uint64_t payloadKey = NodeSocketKey(eval.node.id, eval.node.outputs[outputIndex].id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, voronoiData, eval.outputHashes);
-        populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 

@@ -94,9 +94,9 @@ public:
         const uint32_t types[6],
         const float temperaturesC[6],
         const float heatFluxes[6],
-        const float heatTransferCoefficients[6]);
+        const float heatTransferCoefficients[6],
+        const float inflowTemperaturesC[6]);
     void setDomainBoundaryConditions(const heat::DomainBoundaryConditions& boundaries);
-    const heat::DomainBoundaryConditions& getDomainBoundaryConditions() const { return domainBoundaries; }
     void setGlobalSolverParameters(uint32_t maxIterations, float convergenceTolerance) {
         domainRuntime.setGlobalSolverParameters(maxIterations, convergenceTolerance);
     }
@@ -154,6 +154,7 @@ private:
 
     uint32_t computeTimelineFrameCount() const;
     uint32_t computeHistoryFrameCapacity() const { return computeTimelineFrameCount() + 1; }
+    bool fluidVolumeReady() const;
     void failInitialization(const char* stage);
     bool rebuildGlobalThermalDomain();
     float getInitialTemperatureC(uint32_t runtimeModelId) const;

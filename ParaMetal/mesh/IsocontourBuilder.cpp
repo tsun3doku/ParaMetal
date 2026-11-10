@@ -43,12 +43,12 @@ struct Segment {
 
 } // namespace
 
-std::vector<IsocontourPolyline> IsocontourBuilder::build(
+std::vector<mesh::Polyline> IsocontourBuilder::build(
     const std::vector<glm::vec3>& positions,
     const std::vector<uint32_t>& triangleIndices,
     const std::vector<float>& scalarValues,
     const std::vector<float>& isoValues) {
-    std::vector<IsocontourPolyline> result;
+    std::vector<mesh::Polyline> result;
     if (positions.empty() || positions.size() != scalarValues.size() ||
         triangleIndices.size() < 3 || triangleIndices.size() % 3 != 0) {
         return result;
@@ -144,8 +144,7 @@ std::vector<IsocontourPolyline> IsocontourBuilder::build(
 
         std::vector<uint8_t> segmentVisited(segments.size(), 0);
         auto trace = [&](uint32_t startNode, uint32_t firstSegment) {
-            IsocontourPolyline line;
-            line.isoValue = level;
+            mesh::Polyline line;
             line.points.push_back(crossingPositions[startNode]);
 
             uint32_t node = startNode;
@@ -180,14 +179,14 @@ std::vector<IsocontourPolyline> IsocontourBuilder::build(
             if (incident[node].size() == 2) continue;
             for (uint32_t segment : incident[node]) {
                 if (segmentVisited[segment]) continue;
-                IsocontourPolyline line = trace(node, segment);
+                mesh::Polyline line = trace(node, segment);
                 if (line.points.size() >= 2) result.push_back(std::move(line));
             }
         }
 
         for (uint32_t segment = 0; segment < segments.size(); ++segment) {
             if (segmentVisited[segment]) continue;
-            IsocontourPolyline line = trace(segments[segment].a, segment);
+            mesh::Polyline line = trace(segments[segment].a, segment);
             if (line.points.size() >= 3 ||
                 (line.closed && line.points.size() >= 2)) {
                 result.push_back(std::move(line));

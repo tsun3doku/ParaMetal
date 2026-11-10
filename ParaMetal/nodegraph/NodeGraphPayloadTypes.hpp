@@ -8,6 +8,7 @@
 #include "domain/SerialTemperatureData.hpp"
 #include "domain/HeatProbeData.hpp"
 #include "domain/CFDData.hpp"
+#include "domain/BoundaryData.hpp"
 
 #include <cstdint>
 
@@ -23,4 +24,5 @@ namespace payloadtypes {
     extern uint8_t SerialTemperature;
     extern uint8_t CFD;
     extern uint8_t HeatProbe;
+    extern uint8_t Boundary;
 }

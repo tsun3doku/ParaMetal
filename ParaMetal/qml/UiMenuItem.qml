@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Effects
 
 MenuItem {
     id: control
@@ -64,26 +63,22 @@ MenuItem {
     arrow: Item {
         x: control.mirrored ? control.leftPadding : control.width - width - control.rightPadding
         y: Math.round(control.topPadding + (control.availableHeight - height) / 2)
-        width: 8
-        height: 8
+        width: 12
+        height: 12
         visible: control.subMenu !== null
 
         Image {
             anchors.fill: parent
-            source: "../textures/icons/Playback/Next_frame/128w/Artboard 1.png"
-            sourceSize.width: 32
-            sourceSize.height: 32
+            source: "../textures/icons/Overlays/arrow/128w/Artboard 1.png"
+            sourceSize.width: 12
+            sourceSize.height: 12
+            smooth: true
+            mipmap: true
             fillMode: Image.PreserveAspectFit
-            mirror: control.mirrored
-            opacity: control.enabled ? 1.0 : 0.4
-            layer.enabled: true
-            layer.effect: MultiEffect {
-                colorization: 1.0
-                colorizationColor: control.enabled
-                    ? ((control.highlighted || (control.subMenu && control.subMenu.visible))
-                        ? control.theme.headingText : control.theme.menuText)
-                    : control.theme.menuDisabledText
-            }
+            rotation: control.mirrored ? 90 : -90
+            opacity: control.enabled
+                ? ((control.highlighted || (control.subMenu && control.subMenu.visible)) ? 1.0 : 0.85)
+                : 0.35
         }
     }
 

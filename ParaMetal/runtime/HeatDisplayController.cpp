@@ -1,7 +1,7 @@
 #include "HeatDisplayController.hpp"
 
 #include "render/HeatOverlayRenderer.hpp"
-#include "renderers/HeatVolumeRenderer.hpp"
+#include "renderers/SimVolumeRenderer.hpp"
 
 #include <iostream>
 
@@ -9,7 +9,7 @@ void HeatDisplayController::setOverlayRenderer(render::HeatOverlayRenderer* upda
     overlayRenderer = updatedOverlayRenderer;
 }
 
-void HeatDisplayController::setVolumeRenderer(render::HeatVolumeRenderer* updatedVolumeRenderer) {
+void HeatDisplayController::setVolumeRenderer(render::SimVolumeRenderer* updatedVolumeRenderer) {
     volumeRenderer = updatedVolumeRenderer;
 }
 

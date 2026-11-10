@@ -172,6 +172,18 @@ void HashProduct::seal(PointProduct& p) {
     p.hashes.display = hash;
 }
 
+void HashProduct::seal(CFDProduct& p, uint64_t geometryHash, uint64_t simulationHash) {
+    uint64_t displayHash = HashBuilder::start();
+    combineVkBuffer(displayHash, p.streamlineVertexBuffer);
+    HashBuilder::combine(displayHash, static_cast<uint64_t>(p.streamlineVertexBufferOffset));
+    HashBuilder::combine(displayHash, static_cast<uint64_t>(p.streamlineVertexCount));
+
+    p.hashes.full = simulationHash;
+    p.hashes.geometry = geometryHash;
+    p.hashes.simulation = simulationHash;
+    p.hashes.display = displayHash;
+}
+
 void HashProduct::seal(HeatProduct& p) {
     uint64_t hash = HashBuilder::start();
     HashBuilder::combinePodVector(hash, p.modelRuntimeModelIds);

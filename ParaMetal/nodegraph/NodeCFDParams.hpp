@@ -1,12 +1,16 @@
 #pragma once
 
 #include "NodeGraphTypes.hpp"
-#include "domain/CFDData.hpp"
-#include <array>
 #include <glm/glm.hpp>
 
 class NodeGraphEditor;
 struct NodeGraphNode;
+
+struct CFDPreviewSettings {
+    bool showStreamlines = false;
+    bool showDomainBox = false;
+    bool showVelocityPalette = false;
+};
 
 struct CFDNodeParams {
     bool enabled = true;
@@ -15,8 +19,8 @@ struct CFDNodeParams {
     glm::vec3 initialVelocity{0.0f};
     double pressureIterations = 200.0;
     double pressureTolerance = 1e-4;
-
-    std::array<CFDData::BoundaryCondition, 6> boundaries{};
+    double simulationDuration = 10.0;
+    CFDPreviewSettings preview{};
 };
 
 CFDNodeParams readCFDNodeParams(const NodeGraphNode& node);

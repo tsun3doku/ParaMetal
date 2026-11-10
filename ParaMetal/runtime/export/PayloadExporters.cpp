@@ -4,6 +4,8 @@
 #include "LineWriter.hpp"
 #include "MeshWriter.hpp"
 #include "PointWriter.hpp"
+#include "cfd/CFDSystem.hpp"
+#include "cfd/CFDSystemComputeController.hpp"
 #include "domain/GeometryData.hpp"
 #include "domain/HeatData.hpp"
 #include "domain/PointData.hpp"
@@ -249,7 +251,7 @@ public:
         }
         if (heatModelKey == 0) return {false, "Selected Heat Model no longer belongs to Ember", 0};
         const uint64_t heatSocketKey = NodeSocketKey(output.nodeId, output.socketId).value;
-        std::vector<IsocontourPolyline> lines;
+        std::vector<mesh::Polyline> lines;
         std::string error;
         if (!ExportService::buildHeatContours(
                 heatSocketKey, heatModelKey, heat->isocontourSpacingC, true,
@@ -262,9 +264,54 @@ private:
     HeatSystemComputeController* heatController = nullptr;
 };
 
+class StreamlineExporter final : public PayloadExporter {
+public:
+    explicit StreamlineExporter(cfd::CFDSystemComputeController* controller) : cfdController(controller) {}
+    uint8_t payloadType() const noexcept override { return payloadtypes::CFD; }
+    void appendProducts(const ExportOutput& output, const NodeGraphController&,
+                       std::vector<ExportProduct>& out) const override {
+        const std::string error = evaluationError(output);
+        const uint64_t socketKey = NodeSocketKey(output.nodeId, output.socketId).value;
+        const cfd::CFDSystem* system = cfdController ? cfdController->getSystem(socketKey) : nullptr;
+        ExportProduct p{};
+        p.key = {output.nodeId, output.socketId, {}};
+        p.labelNodeId = output.nodeId;
+        p.typeName = "streamline";
+        p.supportedFormats = lineFormats;
+        p.defaultFormat = ExportFormat::OBJ;
+        p.available = error.empty() && hasValue(output) && system &&
+            system->streamlineVertexBuffer() != VK_NULL_HANDLE &&
+            system->streamlineVertexCount() > 0;
+        if (!p.available) {
+            p.unavailableReason = !error.empty() ? error
+                : !hasValue(output) ? "CFD payload is unavailable"
+                : !system ? "CFD runtime is unavailable"
+                : "CFD streamlines are unavailable";
+        }
+        out.push_back(std::move(p));
+    }
+    ExportResult writeProduct(const ExportOutput& output, const ExportProductKey&,
+                              ExportFormat format, const std::string& path,
+                              const NodeGraphController&) const override {
+        if (format != ExportFormat::OBJ) return {false, "CFD streamlines support OBJ only", 0};
+        if (!cfdController) return {false, "CFD runtime is unavailable", 0};
+        const uint64_t socketKey = NodeSocketKey(output.nodeId, output.socketId).value;
+        cfd::CFDSystem* system = cfdController->getSystem(socketKey);
+        if (!system) return {false, "CFD runtime is unavailable", 0};
+        std::vector<mesh::Polyline> polylines;
+        std::string error;
+        if (!system->readStreamlinePolylines(polylines, error)) return {false, error, 0};
+        return LineWriter::writeOBJ(path, polylines);
+    }
+private:
+    cfd::CFDSystemComputeController* cfdController = nullptr;
+};
+
 } // namespace
 
-ExporterRegistry::ExporterRegistry(HeatSystemComputeController* heatController) {
+ExporterRegistry::ExporterRegistry(
+    HeatSystemComputeController* heatController,
+    cfd::CFDSystemComputeController* cfdController) {
     auto add = [this](std::unique_ptr<PayloadExporter> exporter) {
         const uint8_t type = exporter->payloadType();
         exporters.emplace(type, std::move(exporter));
@@ -273,6 +320,7 @@ ExporterRegistry::ExporterRegistry(HeatSystemComputeController* heatController) 
     add(std::make_unique<RemeshExporter>());
     add(std::make_unique<PointExporter>());
     add(std::make_unique<HeatContourExporter>(heatController));
+    add(std::make_unique<StreamlineExporter>(cfdController));
 }
 
 const PayloadExporter* ExporterRegistry::find(uint8_t payloadType) const {

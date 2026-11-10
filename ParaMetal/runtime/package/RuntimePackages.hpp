@@ -24,6 +24,7 @@
 struct ModelPackage {
     HashValues hashes{};
     ProductHandle productHandle{};
+    std::vector<uint64_t> displayDependencyKeys;
     NodeDataHandle geometryHandle{};
     GeometryData sourceGeometry;
     std::array<float, 16> localToWorld{
@@ -53,6 +54,7 @@ struct RemeshPackage {
 
     HashValues hashes{};
     ProductHandle productHandle{};
+    std::vector<uint64_t> displayDependencyKeys;
     GeometryData sourceGeometry;
     int iterations = 1;
     float minAngleDegrees = 20.0f;
@@ -87,6 +89,7 @@ struct VoronoiPackage {
 
     HashValues hashes{};
     ProductHandle productHandle{};
+    std::vector<uint64_t> displayDependencyKeys;
     VoronoiData authored;
     NodeDataHandle voronoiHandle{};
     DisplaySettings display{};
@@ -112,6 +115,7 @@ struct VoronoiPackage {
 struct PointPackage {
     HashValues hashes{};
     ProductHandle productHandle{};
+    std::vector<uint64_t> displayDependencyKeys;
     NodeDataHandle pointsPayloadHandle{};
     std::vector<glm::vec4> positions;
     glm::vec3 domainMinimum{0.0f};
@@ -168,12 +172,14 @@ struct HeatPackage {
         float isocontourSpacingC = 10.0f;
 
         bool anyVisible() const {
-            return showHeatOverlay || showFluxVectors || showHeatPalette || showIsocontours || showDomainBox || showFluidVolume;
+            return showHeatOverlay || showFluxVectors || showHeatPalette || showIsocontours ||
+                showDomainBox || showFluidVolume;
         }
     };
 
     HashValues hashes{};
     ProductHandle productHandle{};
+    std::vector<uint64_t> displayDependencyKeys;
     HeatData authored;
     NodeDataHandle heatHandle{};
     units::LengthUnit worldUnit = units::defaultLengthUnit();
@@ -204,6 +210,14 @@ struct HeatPackage {
     };
     float domainBoundaryHeatFluxes[6] = {};
     float domainBoundaryHeatTransferCoefficients[6] = {};
+    float domainBoundaryInflowTemperaturesC[6] = {
+        FluidData{}.initialTemperatureC,
+        FluidData{}.initialTemperatureC,
+        FluidData{}.initialTemperatureC,
+        FluidData{}.initialTemperatureC,
+        FluidData{}.initialTemperatureC,
+        FluidData{}.initialTemperatureC
+    };
 
     uint64_t computeHash() const { return hashes.simulation; }
     uint64_t displayHash() const { return hashes.display; }
@@ -211,11 +225,24 @@ struct HeatPackage {
 };
 
 struct CFDPackage {
+    struct DisplaySettings {
+        bool showStreamlines = false;
+        bool showDomainBox = false;
+        bool showVelocityPalette = false;
+
+        bool anyVisible() const {
+            return showStreamlines || showDomainBox || showVelocityPalette;
+        }
+    };
+
     HashValues hashes{};
     ProductHandle productHandle{};
+    std::vector<uint64_t> displayDependencyKeys;
 
     ProductHandle domainVoronoiProduct{};
     NodeDataHandle domainVoronoiHandle{};
+    NodeDataHandle fluidHandle{};
+    NodeDataHandle boundaryHandle{};
 
     FluidData fluid{};
     glm::vec3 initialVelocity{0.0f};
@@ -227,9 +254,14 @@ struct CFDPackage {
     float targetCourant = 0.5f;
     int pressureIterations = 0;
     float pressureTolerance = 0.0f;
+    float simulationDuration = 10.0f;
     bool active = true;
 
+    float canonicalToWorldScale = 1.0f;
+    DisplaySettings display{};
+
     uint64_t computeHash() const { return hashes.simulation; }
+    uint64_t displayHash() const { return hashes.display; }
     bool hasValidProduct() const { return productHandle.isValid(); }
 };
 

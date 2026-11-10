@@ -284,6 +284,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="runtime\ModelComputeController.cpp" />
     <ClCompile Include="runtime\ModelDisplayController.cpp" />
     <ClCompile Include="runtime\HeatDisplayController.cpp" />
+    <ClCompile Include="runtime\CFDDisplayController.cpp" />
     <ClCompile Include="runtime\RemeshDisplayController.cpp" />
     <ClCompile Include="runtime\RemeshController.cpp" />
     <ClCompile Include="runtime\RemeshSystem.cpp" />
@@ -309,7 +310,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="runtime\RuntimeController.cpp" />
     <ClCompile Include="runtime\TimelineController.cpp" />
     <ClCompile Include="runtime\TimelineRuntime.cpp" />
-    <ClCompile Include="runtime\RuntimeInput.cpp" />
+    <ClCompile Include="runtime\ViewportEditController.cpp" />
     <ClCompile Include="runtime\RuntimeRenderController.cpp" />
     <ClCompile Include="simgraph\SimGraphRuntime.cpp" />
     <ClCompile Include="runtime\RuntimeSystems.cpp" />
@@ -320,6 +321,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="cfd\CFDRuntime.cpp" />
     <ClCompile Include="cfd\CFDProjectionSolver.cpp" />
     <ClCompile Include="cfd\CFDSystem.cpp" />
+    <ClCompile Include="cfd\CFDStreamlineStage.cpp" />
     <ClCompile Include="cfd\CFDSystemComputeController.cpp" />
     <CudaCompile Include="heat\cuda\HeatGlobalSolver.cu" />
     <CudaCompile Include="heat\cuda\HeatGlobalSolverKernels.cu" />
@@ -361,6 +363,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="util\GlyphText.cpp" />
     <ClCompile Include="render\SceneRenderer.cpp" />
     <ClCompile Include="render\HeatOverlayRenderer.cpp" />
+    <ClCompile Include="render\CFDOverlayRenderer.cpp" />
     <ClCompile Include="render\PointOverlayRenderer.cpp" />
     <ClCompile Include="render\VoronoiOverlayRenderer.cpp" />
     <ClCompile Include="render\GeometryPass.cpp" />
@@ -370,7 +373,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="render\OverlayPass.cpp" />
     <ClCompile Include="render\PickPass.cpp" />
     <ClCompile Include="render\BlendPass.cpp" />
-    <ClCompile Include="renderers\HeatVolumeRenderer.cpp" />
+    <ClCompile Include="renderers\SimVolumeRenderer.cpp" />
     <ClCompile Include="mesh\\remesher\\GeodesicTracer.cpp" />
     <ClCompile Include="scene\GizmoController.cpp" />
     <ClCompile Include="scene\NavigationGizmoController.cpp" />
@@ -385,7 +388,8 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="mesh\\remesher\\HalfEdgeMesh.cpp" />
     <ClCompile Include="renderers\HeatSurfaceRenderer.cpp" />
     <ClCompile Include="mesh\IsocontourBuilder.cpp" />
-    <ClCompile Include="renderers\VectorArrowRenderer.cpp" />
+    <ClCompile Include="renderers\SurfaceVectorRenderer.cpp" />
+    <ClCompile Include="renderers\StreamlineRenderer.cpp" />
     <ClCompile Include="renderers\HeatBoxRenderer.cpp" />
     <ClCompile Include="renderers\ProbeMarkerRenderer.cpp" />
     <ClCompile Include="heat\HeatModelRuntime.cpp" />
@@ -403,6 +407,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="heat\HeatDomainRuntime.cpp" />
     <ClCompile Include="heat\HeatPlaybackRuntime.cpp" />
     <ClCompile Include="heat\HeatSystemPlayback.cpp" />
+    <ClCompile Include="cfd\CFDSystemPlayback.cpp" />
     <ClCompile Include="heat\HeatSystemSurfaceStage.cpp" />
     <ClCompile Include="scene\tinyexr_impl.cpp" />
     <ClCompile Include="scene\IBLSystem.cpp" />
@@ -455,6 +460,8 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="nodegraph\NodeHeatSolveParams.cpp" />
     <ClCompile Include="nodegraph\NodeCFD.cpp" />
     <ClCompile Include="nodegraph\NodeCFDParams.cpp" />
+    <ClCompile Include="nodegraph\NodeBoundaryConditions.cpp" />
+    <ClCompile Include="nodegraph\NodeBoundaryConditionsParams.cpp" />
     <ClCompile Include="nodegraph\NodeHeatMaterialPresets.cpp" />
     <ClCompile Include="nodegraph\NodeParamUtils.cpp" />
     <ClCompile Include="nodegraph\NodeGraphDisplay.cpp" />
@@ -489,6 +496,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="app\ViewportTarget.cpp" />
     <ClCompile Include="app\ViewportUiModel.cpp" />
     <ClCompile Include="app\HeatPaletteUiModel.cpp" />
+    <ClCompile Include="app\VelocityPaletteUiModel.cpp" />
     <ClCompile Include="app\TimelineUiModel.cpp" />
     <ClCompile Include="app\ConsoleUiModel.cpp" />
     <ClCompile Include="app\NodeGraphUiModel.cpp" />
@@ -592,8 +600,10 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <None Include="shaders\point_cloud.vert" />
     <None Include="shaders\timing_overlay.frag" />
     <None Include="shaders\timing_overlay.vert" />
-    <None Include="shaders\vector_arrow.frag" />
-    <None Include="shaders\vector_arrow.vert" />
+    <None Include="shaders\surface_vector.frag" />
+    <None Include="shaders\surface_vector.vert" />
+    <None Include="shaders\streamline.frag" />
+    <None Include="shaders\streamline.vert" />
     <None Include="shaders\probe_marker.vert" />
     <None Include="shaders\probe_marker.frag" />
     <None Include="shaders\probe_marker_vert.spv" />
@@ -612,6 +622,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="app\ViewportTarget.hpp" />
     <QtMoc Include="app\ViewportUiModel.hpp" />
     <QtMoc Include="app\HeatPaletteUiModel.hpp" />
+    <QtMoc Include="app\VelocityPaletteUiModel.hpp" />
     <QtMoc Include="app\TimelineUiModel.hpp" />
     <QtMoc Include="app\ConsoleUiModel.hpp" />
     <QtMoc Include="app\NodeGraphUiModel.hpp" />
@@ -627,11 +638,13 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="heat\cuda\HeatGlobalSolverKernels.cuh" />
     <ClInclude Include="cfd\cuda\CFDSolverKernels.cuh" />
     <ClInclude Include="cfd\CFDBoundaryConditions.hpp" />
+    <ClInclude Include="cfd\CFDGpuStructs.hpp" />
     <ClInclude Include="cuda\CudaExternalBuffer.hpp" />
     <ClInclude Include="cuda\CudaPcg.cuh" />
     <ClInclude Include="domain\GeometryData.hpp" />
     <ClInclude Include="domain\HeatData.hpp" />
     <ClInclude Include="domain\HeatModelData.hpp" />
+    <ClInclude Include="domain\BoundaryData.hpp" />
     <ClInclude Include="domain\FluidData.hpp" />
     <ClInclude Include="domain\PointData.hpp" />
     <ClInclude Include="domain\RemeshData.hpp" />
@@ -642,6 +655,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="heat\HeatFluidRuntime.hpp" />
     <ClInclude Include="heat\HeatFluidVolumeStage.hpp" />
     <ClInclude Include="heat\HeatSystemPlayback.hpp" />
+    <ClInclude Include="cfd\CFDSystemPlayback.hpp" />
     <ClInclude Include="nodegraph\NodeGraphCoreTypes.hpp" />
     <ClInclude Include="nodegraph\NodeGraphPayloadTypes.hpp" />
     <ClInclude Include="nodegraph\NodeGraphNodeState.hpp" />
@@ -653,6 +667,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="nodegraph\NodePayloadRegistry.hpp" />
     <ClInclude Include="py\PyGraphTypes.hpp" />
     <ClInclude Include="runtime\HeatDisplayController.hpp" />
+    <ClInclude Include="runtime\CFDDisplayController.hpp" />
     <ClInclude Include="runtime\RuntimeHeatComputeTransport.hpp" />
     <ClInclude Include="runtime\RuntimeCFDComputeTransport.hpp" />
     <ClInclude Include="serial\SerialPort.hpp" />
@@ -662,6 +677,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="domain\HeatProbeData.hpp" />
     <ClInclude Include="domain\CFDData.hpp" />
     <ClInclude Include="runtime\RuntimeHeatDisplayTransport.hpp" />
+    <ClInclude Include="runtime\RuntimeCFDDisplayTransport.hpp" />
     <ClInclude Include="runtime\RemeshController.hpp" />
     <ClInclude Include="runtime\RemeshSystem.hpp" />
     <ClInclude Include="runtime\ModelComputeController.hpp" />
@@ -699,7 +715,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="runtime\ComputeContext.hpp" />
     <ClInclude Include="runtime\NodeGraphContext.hpp" />
     <ClInclude Include="runtime\RenderContext.hpp" />
-    <ClInclude Include="runtime\RuntimeConnections.hpp" />
+    <ClInclude Include="runtime\RuntimeTransports.hpp" />
     <ClInclude Include="runtime\package\RuntimePackageCompiler.hpp" />
     <ClInclude Include="runtime\package\RuntimePackageController.hpp" />
     <ClInclude Include="runtime\package\passes\ValidationPass.hpp" />
@@ -710,7 +726,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="runtime\RuntimeController.hpp" />
     <ClInclude Include="runtime\TimelineController.hpp" />
     <ClInclude Include="runtime\TimelineRuntime.hpp" />
-    <ClInclude Include="runtime\RuntimeInput.hpp" />
+    <ClInclude Include="runtime\ViewportEditController.hpp" />
     <ClInclude Include="runtime\RuntimeRenderController.hpp" />
     <ClInclude Include="simgraph\SimGraphRuntime.hpp" /><ClInclude Include="simgraph\SimNode.hpp" /><ClInclude Include="simgraph\SimConnection.hpp" />
     <ClInclude Include="runtime\RuntimeSystems.hpp" />
@@ -732,6 +748,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="util\GlyphText.hpp" />
     <ClInclude Include="render\SceneRenderer.hpp" />
     <ClInclude Include="render\HeatOverlayRenderer.hpp" />
+    <ClInclude Include="render\CFDOverlayRenderer.hpp" />
     <ClInclude Include="render\GeometryPass.hpp" />
     <ClInclude Include="render\SurfacePass.hpp" />
     <ClInclude Include="render\LightingPass.hpp" />
@@ -739,7 +756,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="render\OverlayPass.hpp" />
     <ClInclude Include="render\PickPass.hpp" />
     <ClInclude Include="render\BlendPass.hpp" />
-    <ClInclude Include="renderers\HeatVolumeRenderer.hpp" />
+    <ClInclude Include="renderers\SimVolumeRenderer.hpp" />
     <ClInclude Include="mesh\\remesher\\GeodesicTracer.hpp" />
     <ClInclude Include="util\GeometryUtils.hpp" />
     <ClInclude Include="scene\GizmoController.hpp" />
@@ -756,7 +773,9 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="mesh\\remesher\\HalfEdgeMesh.hpp" />
     <ClInclude Include="renderers\HeatSurfaceRenderer.hpp" />
     <ClInclude Include="mesh\IsocontourBuilder.hpp" />
-    <ClInclude Include="renderers\VectorArrowRenderer.hpp" />
+    <ClInclude Include="mesh\Polyline.hpp" />
+    <ClInclude Include="renderers\SurfaceVectorRenderer.hpp" />
+    <ClInclude Include="renderers\StreamlineRenderer.hpp" />
     <ClInclude Include="renderers\HeatBoxRenderer.hpp" />
     <ClInclude Include="renderers\ProbeMarkerRenderer.hpp" />
     <ClInclude Include="voronoi\VoronoiSystemBuildStage.hpp" />
@@ -776,6 +795,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="cfd\CFDProjectionSolver.hpp" />
     <ClInclude Include="cfd\CFDRuntime.hpp" />
     <ClInclude Include="cfd\CFDSystem.hpp" />
+    <ClInclude Include="cfd\CFDStreamlineStage.hpp" />
     <ClInclude Include="cfd\CFDSystemComputeController.hpp" />
     <ClInclude Include="heat\HeatPlaybackRuntime.hpp" />
     <ClInclude Include="heat\HeatSystemSurfaceStage.hpp" />
@@ -836,6 +856,8 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="nodegraph\NodeHeatSolveParams.hpp" />
     <ClInclude Include="nodegraph\NodeCFD.hpp" />
     <ClInclude Include="nodegraph\NodeCFDParams.hpp" />
+    <ClInclude Include="nodegraph\NodeBoundaryConditions.hpp" />
+    <ClInclude Include="nodegraph\NodeBoundaryConditionsParams.hpp" />
     <ClInclude Include="nodegraph\NodeHeatMaterialPresets.hpp" />
     <ClInclude Include="nodegraph\NodeParamUtils.hpp" />
     <ClInclude Include="nodegraph\NodeGraphDisplay.hpp" />

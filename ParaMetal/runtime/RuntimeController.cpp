@@ -5,6 +5,8 @@
 #include "RenderContext.hpp"
 #include "SceneContext.hpp"
 #include "VulkanCoreContext.hpp"
+#include "ViewportEditController.hpp"
+#include "app/RawMouseInput.hpp"
 #include "heat/HeatSystemComputeController.hpp"
 #include "nodegraph/NodeGraphController.hpp"
 #include "nodegraph/NodeGraphRegistry.hpp"
@@ -18,6 +20,7 @@
 #include "scene/MarkerInteractionController.hpp"
 #include "scene/SceneController.hpp"
 #include "vulkan/ModelRegistry.hpp"
+
 
 RuntimeController::RuntimeController() = default;
 
@@ -49,6 +52,8 @@ bool RuntimeController::initialize(
     this->nodeGraph = &nodeGraph;
     this->scene = &scene;
     this->interaction = &interaction;
+    this->windowRuntimeState = &windowRuntimeState;
+    this->rawMouseInput = rawMouseInput;
 
     sceneControllerState = std::make_unique<SceneController>(
         *scene.modelRegistry(),
@@ -61,14 +66,11 @@ bool RuntimeController::initialize(
         return false;
     }
 
-    runtimeInput = std::make_unique<RuntimeInput>(
-        windowRuntimeState,
-        *inputControllerState,
+    viewportEdits = std::make_unique<ViewportEditController>(
         interaction,
         *nodeGraph.nodeGraphController(),
         *sceneControllerState,
-        *scene.modelRegistry(),
-        rawMouseInput);
+        *scene.modelRegistry());
     runtimeRenderController = std::make_unique<RuntimeRenderController>(
         *render.runtime());
 
@@ -104,7 +106,7 @@ bool RuntimeController::initializeInputPipeline(WindowRuntimeState& windowRuntim
 
 void RuntimeController::shutdown() {
     runtimeRenderController.reset();
-    runtimeInput.reset();
+    viewportEdits.reset();
     sceneControllerState.reset();
     inputControllerState.reset();
     render = nullptr;
@@ -112,6 +114,9 @@ void RuntimeController::shutdown() {
     nodeGraph = nullptr;
     scene = nullptr;
     interaction = nullptr;
+    windowRuntimeState = nullptr;
+    rawMouseInput = nullptr;
+    rawDragActive = false;
     initialized = false;
 }
 
@@ -146,11 +151,13 @@ void RuntimeController::tick(
     uint32_t frameIndex,
     const app::RenderSettings& renderSettings,
     const SimTickContext& simContext) {
-    if (!runtimeRenderController || !runtimeInput || !render || !compute || !nodeGraph || !scene) {
+    if (!runtimeRenderController || !viewportEdits || !render || !compute || !nodeGraph || !scene) {
         return;
     }
 
-    runtimeInput->tick();
+    dispatchInputEvents();
+    updateRawMouseDrag();
+    viewportEdits->tick();
 
     if (render->runtime() && interaction) {
         const auto& markerCtrl = interaction->markerInteractionController();
@@ -194,16 +201,88 @@ void RuntimeController::tick(
         renderSettings);
 }
 
+void RuntimeController::dispatchInputEvents() {
+    if (windowRuntimeState == nullptr || !inputControllerState) {
+        return;
+    }
+
+    std::vector<WindowInputEvent> inputEvents;
+    windowRuntimeState->consumeInputEvents(inputEvents);
+    for (const WindowInputEvent& inputEvent : inputEvents) {
+        switch (inputEvent.type) {
+        case WindowInputEventType::Scroll:
+            inputControllerState->handleScrollInput(inputEvent.yOffset);
+            break;
+        case WindowInputEventType::Key:
+            inputControllerState->handleKeyInput(static_cast<Qt::Key>(inputEvent.key), inputEvent.pressed, inputEvent.ctrlPressed);
+            break;
+        case WindowInputEventType::MousePress:
+            inputControllerState->handleMouseButton(
+                inputEvent.button,
+                inputEvent.x,
+                inputEvent.y,
+                inputEvent.shiftPressed);
+            break;
+        case WindowInputEventType::MouseRelease:
+            inputControllerState->handleMouseRelease(
+                inputEvent.button,
+                inputEvent.x,
+                inputEvent.y);
+            break;
+        case WindowInputEventType::MouseMove:
+            inputControllerState->handleMouseMove(
+                inputEvent.x,
+                inputEvent.y);
+            break;
+        }
+    }
+}
+
+void RuntimeController::updateRawMouseDrag() {
+    if (windowRuntimeState == nullptr || rawMouseInput == nullptr ||
+        !rawMouseInput->isInitialized() || !inputControllerState) {
+        return;
+    }
+
+    const bool middlePressed = windowRuntimeState->middleButtonPressed.load(std::memory_order_acquire);
+    const bool shiftPressed = windowRuntimeState->shiftPressed.load(std::memory_order_acquire);
+
+    if (!middlePressed) {
+        rawDragActive = false;
+        return;
+    }
+    if (!rawDragActive) {
+        rawDragActive = true;
+        RawMouseInput::Sample stale[64];
+        while (rawMouseInput->drain(stale, 64) > 0) {
+        }
+        return;
+    }
+
+    float dx = 0.0f;
+    float dy = 0.0f;
+    RawMouseInput::Sample samples[128];
+    size_t count = 0;
+    do {
+        count = rawMouseInput->drain(samples, 128);
+        for (size_t i = 0; i < count; ++i) {
+            dx += samples[i].dx;
+            dy += samples[i].dy;
+        }
+    } while (count == 128);
+    inputControllerState->processRawDrag(shiftPressed, dx, dy);
+}
+
 std::vector<ViewportCommand> RuntimeController::takePendingViewportCommands() {
-    if (!runtimeInput) {
+    if (!inputControllerState) {
         return {};
     }
-    return runtimeInput->takePendingViewportCommands();
+    return inputControllerState->takePendingViewportCommands();
 }
 
 bool RuntimeController::takePendingNodeParameters(
     NodeGraphNodeId& outNodeId,
     std::vector<NodeGraphParamValue>& outParameters) {
-    return runtimeInput &&
-        runtimeInput->takePendingNodeParameters(outNodeId, outParameters);
+    return viewportEdits &&
+        viewportEdits->takePendingNodeParameters(outNodeId, outParameters);
 }

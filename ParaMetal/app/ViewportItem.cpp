@@ -60,6 +60,8 @@ void ViewportItem::requestTimelineRange(uint32_t frameCount, float fps) { mailbo
 void ViewportItem::requestSelection(int nodeId) { mailbox.requestSelection(nodeId); update(); }
 void ViewportItem::requestHeatPaletteRange(float minimum, float maximum) { mailbox.requestHeatPaletteRange(minimum, maximum); update(); }
 void ViewportItem::requestHeatPalette(int palette) { mailbox.requestHeatPalette(palette); update(); }
+void ViewportItem::requestVelocityPaletteRange(float minimum, float maximum) { mailbox.requestVelocityPaletteRange(minimum, maximum); update(); }
+void ViewportItem::requestVelocityPalette(int palette) { mailbox.requestVelocityPalette(palette); update(); }
 void ViewportItem::applyViewportProjectState(const ProjectFile::Viewport& viewport) {
     mailbox.applyViewportProjectState(viewport);
     update();

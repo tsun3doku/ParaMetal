@@ -14,10 +14,7 @@ glm::dvec3 seedPosition(const RVDInput &input, uint32_t cell) {
   return glm::dvec3(seed.x, seed.y, seed.z);
 }
 
-glm::dvec3 worldFirstMoment(
-    const glm::dvec3 &seed,
-    double volume,
-    const glm::dvec3 &relativeMoment) {
+glm::dvec3 worldFirstMoment(const glm::dvec3 &seed, double volume, const glm::dvec3 &relativeMoment) {
   return seed * volume + relativeMoment;
 }
 
@@ -32,8 +29,7 @@ uint32_t materialSlot(
 }
 
 bool finiteMoment(const glm::dvec3 &moment) {
-  return std::isfinite(moment.x) && std::isfinite(moment.y) &&
-         std::isfinite(moment.z);
+  return std::isfinite(moment.x) && std::isfinite(moment.y) && std::isfinite(moment.z);
 }
 
 void compensatedAdd(double value, double &sum, double &compensation) {
@@ -43,10 +39,7 @@ void compensatedAdd(double value, double &sum, double &compensation) {
   sum = next;
 }
 
-void compensatedAdd(
-    const glm::dvec3 &value,
-    glm::dvec3 &sum,
-    glm::dvec3 &compensation) {
+void compensatedAdd(const glm::dvec3 &value, glm::dvec3 &sum, glm::dvec3 &compensation) {
   const glm::dvec3 adjusted = value - compensation;
   const glm::dvec3 next = sum + adjusted;
   compensation = (next - sum) - adjusted;
@@ -71,8 +64,7 @@ bool validatePartitionedSolidAreas(
   std::vector<std::vector<double>> restrictedAreas(models.size());
   for (size_t model = 0; model < models.size(); ++model) {
     restrictedAreas[model].resize(totalPlanes);
-    if (!models[model].devRestrictedPlaneAreas.download(
-            restrictedAreas[model].data(), totalPlanes)) {
+    if (!models[model].devRestrictedPlaneAreas.download(restrictedAreas[model].data(), totalPlanes)) {
       return false;
     }
   }
@@ -98,8 +90,7 @@ bool validatePartitionedSolidAreas(
         for (uint32_t regionId = regionBegin; regionId < regionEnd;
              ++regionId) {
           const FaceRegion &region = faceRegions[regionId];
-          const uint32_t material =
-              side == 0 ? region.materialA : region.materialB;
+          const uint32_t material = side == 0 ? region.materialA : region.materialB;
           if (material != materialId) continue;
           partitionSolid += region.measure.area;
         }
@@ -140,8 +131,7 @@ bool buildFragmentsAndFaces(
   const uint32_t cellCount = baseDomain.count;
   const uint32_t modelCount = uint32_t(models.size());
   const size_t phaseCount = size_t(modelCount) + 1;
-  if (cellCount != 0 &&
-      phaseCount > std::numeric_limits<size_t>::max() / cellCount) {
+  if (cellCount != 0 && phaseCount > std::numeric_limits<size_t>::max() / cellCount) {
     return false;
   }
 
@@ -194,8 +184,7 @@ bool buildFragmentsAndFaces(
     }
 
     std::vector<double4> restrictedMoments(cellCount);
-    if (!models[model].devMoments.download(
-            restrictedMoments.data(), cellCount)) {
+    if (!models[model].devMoments.download(restrictedMoments.data(), cellCount)) {
       std::cerr << "[RVDTopology] failed to download restricted moments modelId="
                 << models[model].runtimeModelId << std::endl;
       return false;

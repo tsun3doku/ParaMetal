@@ -6,8 +6,8 @@
 #include <memory>
 #include <vector>
 
-#include "RuntimeInput.hpp"
 #include "RuntimeRenderController.hpp"
+#include "nodegraph/NodeGraphTypes.hpp"
 #include "scene/InputController.hpp"
 
 class ComputeContext;
@@ -16,6 +16,8 @@ class NodeGraphContext;
 class RawMouseInput;
 class RenderContext;
 class SceneContext;
+class SceneController;
+class ViewportEditController;
 class VulkanCoreContext;
 struct SimTickContext;
 struct WindowRuntimeState;
@@ -45,9 +47,11 @@ public:
 
 private:
     bool initializeInputPipeline(WindowRuntimeState& windowRuntimeState);
+    void dispatchInputEvents();
+    void updateRawMouseDrag();
     void simulateFrame(bool allowSimulation, const SimTickContext& simContext);
 
-    std::unique_ptr<RuntimeInput> runtimeInput;
+    std::unique_ptr<ViewportEditController> viewportEdits;
     std::unique_ptr<InputController> inputControllerState;
     std::unique_ptr<SceneController> sceneControllerState;
     std::unique_ptr<RuntimeRenderController> runtimeRenderController;
@@ -56,5 +60,8 @@ private:
     NodeGraphContext* nodeGraph = nullptr;
     SceneContext* scene = nullptr;
     InteractionContext* interaction = nullptr;
+    WindowRuntimeState* windowRuntimeState = nullptr;
+    RawMouseInput* rawMouseInput = nullptr;
+    bool rawDragActive = false;
     bool initialized = false;
 };

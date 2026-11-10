@@ -79,6 +79,7 @@ bool RuntimeCFDComputeTransport::tryBuildConfig(
     outConfig.targetCourant = package.targetCourant;
     outConfig.pressureIterations = package.pressureIterations;
     outConfig.pressureTolerance = package.pressureTolerance;
+    outConfig.simulationDuration = package.simulationDuration;
     outConfig.computeHash = package.hashes.simulation;
     outConfig.geometryHash = domainProduct->hashes.geometry;
 
@@ -129,6 +130,26 @@ bool RuntimeCFDComputeTransport::tryBuildConfig(
         boundaryFace.domainFace = domainProduct->boundaryFaceDomainFaces[bfId];
         globalDomain.boundaryFaces.push_back(boundaryFace);
     }
+
+    globalDomain.instanceFragmentCounts = domainProduct->instanceFragmentCounts;
+    globalDomain.seedPositions.reserve(domainProduct->globalSeedPositions.size());
+    for (const glm::vec4& position : domainProduct->globalSeedPositions) {
+        globalDomain.seedPositions.push_back(glm::vec3(position));
+    }
+    globalDomain.cellFragmentOffsets = domainProduct->cellFragmentOffsets;
+    globalDomain.cellFragments = domainProduct->cellFragments;
+    globalDomain.domainMin = domainProduct->globalDomainCorners[0];
+    globalDomain.domainMax = domainProduct->globalDomainCorners[0];
+    for (const glm::vec3& corner : domainProduct->globalDomainCorners) {
+        globalDomain.domainMin = glm::min(globalDomain.domainMin, corner);
+        globalDomain.domainMax = glm::max(globalDomain.domainMax, corner);
+    }
+    globalDomain.volumeGridMin = domainProduct->globalVolumeGridMin;
+    globalDomain.volumeGridDim = domainProduct->globalVolumeGridDim;
+    globalDomain.volumeGridCellSize = domainProduct->globalVolumeGridCellSize;
+    globalDomain.nominalCellSize = domainProduct->nominalCellSize;
+    globalDomain.seedIdGridBuffer = domainProduct->globalSeedIdGridBuffer;
+    globalDomain.seedIdGridBufferOffset = domainProduct->globalSeedIdGridBufferOffset;
 
     outConfig.domain = &globalDomain;
     return true;

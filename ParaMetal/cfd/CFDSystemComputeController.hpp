@@ -22,6 +22,7 @@ public:
         float targetCourant = 0.5f;
         int pressureIterations = 0;
         float pressureTolerance = 0.0f;
+        float simulationDuration = 10.0f;
         uint64_t computeHash = 0;
         uint64_t geometryHash = 0;
     };
@@ -30,6 +31,7 @@ public:
 
     CFDSystemComputeController(
         VulkanDevice& device,
+        MemoryAllocator& allocator,
         CommandPool& cmdPool,
         uint32_t maxFramesInFlight);
     ~CFDSystemComputeController();
@@ -66,6 +68,7 @@ private:
     const Config* getBuildConfig(uint64_t socketKey) const;
 
     VulkanDevice& vulkanDevice;
+    MemoryAllocator& memoryAllocator;
     CommandPool& commandPool;
     uint32_t maxFramesInFlight;
 

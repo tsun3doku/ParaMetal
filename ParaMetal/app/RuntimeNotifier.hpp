@@ -167,6 +167,7 @@ public:
 signals:
     void viewportStateChanged(const ViewportUiState& state);
     void heatPaletteVisibilityChanged(bool visible);
+    void velocityPaletteVisibilityChanged(bool visible);
     void timelineStateChanged(const TimelineUiState& state);
     void heatSolveStatusChanged(bool active, bool paused);
     void heatSolveErrorChanged(const QString& error);

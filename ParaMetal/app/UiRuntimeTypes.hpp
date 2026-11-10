@@ -47,6 +47,16 @@ struct HeatPaletteUiState {
     double y = -1.0;
 };
 
+struct VelocityPaletteUiState {
+    bool visible = false;
+    int paletteId = 0;
+    int units = 0;
+    double minimum = 0.0;
+    double maximum = 1.0;
+    double x = -1.0;
+    double y = -1.0;
+};
+
 struct TimelineUiState {
     bool playing = false;
     uint32_t currentFrame = 0;

@@ -35,6 +35,8 @@ public slots:
     void requestSelection(int nodeId);
     void requestHeatPaletteRange(float minimum, float maximum);
     void requestHeatPalette(int palette);
+    void requestVelocityPaletteRange(float minimum, float maximum);
+    void requestVelocityPalette(int palette);
     void requestWorldUnit(int unit);
     void requestProbePicking(int nodeId, int probeIndex = 0);
     void requestExport(int nodeId);

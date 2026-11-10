@@ -69,8 +69,12 @@ bool VoronoiSystemBuildStage::buildGlobalDomain(VoronoiRuntime& runtime) {
         boundsMax = glm::max(boundsMax, corner);
     }
     const glm::vec3 extent = boundsMax - boundsMin;
+    if (!(extent.x > 0.0f) || !(extent.y > 0.0f) || !(extent.z > 0.0f) ||
+        !std::isfinite(extent.x) || !std::isfinite(extent.y) || !std::isfinite(extent.z)) {
+        std::cerr << "[VoronoiBuild] Global domain bounds are degenerate" << std::endl;
+        return false;
+    }
     const float longestExtent = std::max(std::max(extent.x, extent.y), extent.z);
-    if (!(longestExtent > 0.0f) || !std::isfinite(longestExtent)) return false;
     const int resolution = runtime.getVoxelResolution();
     if (resolution < 2) return false;
     const float spacing = longestExtent / static_cast<float>(resolution - 1);
@@ -260,7 +264,16 @@ bool VoronoiSystemBuildStage::buildGlobalDomain(VoronoiRuntime& runtime) {
     globalVolumeGridCellSize = spacing;
     globalSeedPositions =
         result.seedPositions.empty() ? seeds : result.seedPositions;
-    globalDomainCorners = corners;
+    // RVD builds the physical domain from the AABB of the authored corners;
+    // publish that same box so consumers describe the simulated domain.
+    std::array<glm::vec3, 8> aabbCorners{};
+    for (uint32_t corner = 0; corner < 8; ++corner) {
+        aabbCorners[corner] = glm::vec3(
+            (corner & 1u) ? boundsMax.x : boundsMin.x,
+            (corner & 2u) ? boundsMax.y : boundsMin.y,
+            (corner & 4u) ? boundsMax.z : boundsMin.z);
+    }
+    globalDomainCorners = aabbCorners;
     runtime.setSeedPositions(globalSeedPositions, corners);
 
     return true;

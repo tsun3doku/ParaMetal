@@ -34,7 +34,7 @@ public:
             }
 
             HeatDisplayController::Config config{};
-            if (!tryBuildConfig(socketKey, package, config)) {
+            if (!tryBuildConfig(socketKey, package, registry, config)) {
                 controller->remove(socketKey);
                 continue;
             }
@@ -80,6 +80,7 @@ private:
     bool tryBuildConfig(
         uint64_t socketKey,
         const HeatPackage& package,
+        const RuntimePackageManager& registry,
         HeatDisplayController::Config& outConfig) const {
         if (!controller || !products || socketKey == 0) {
             return false;
@@ -150,6 +151,23 @@ private:
                 outConfig.globalVolumeGridCellSize = voronoi->globalVolumeGridCellSize;
                 HashBuilder::combine(productDisplayHash, voronoi->hashes.geometry);
                 HashBuilder::combine(productDisplayHash, voronoi->hashes.display);
+            }
+        }
+
+        const CFDPackage* cfdPackage = package.cfdProduct.isValid()
+            ? registry.findAny<CFDPackage>(package.cfdProduct.outputSocketKey)
+            : nullptr;
+        if (cfdPackage &&
+            isSamePublication(cfdPackage->productHandle, package.cfdProduct) &&
+            products->isCurrent<CFDProduct>(package.cfdProduct)) {
+            const CFDProduct* cfdProduct = products->resolve<CFDProduct>(package.cfdProduct);
+            if (cfdProduct && cfdProduct->isValid()) {
+                outConfig.showCfdStreamlines = cfdPackage->display.showStreamlines;
+                outConfig.showCfdVelocityPalette = cfdPackage->display.showVelocityPalette;
+                outConfig.cfdStreamlineVertexBuffer = cfdProduct->streamlineVertexBuffer;
+                outConfig.cfdStreamlineVertexBufferOffset = cfdProduct->streamlineVertexBufferOffset;
+                outConfig.cfdStreamlineVertexCount = cfdProduct->streamlineVertexCount;
+                HashBuilder::combine(productDisplayHash, cfdProduct->hashes.display);
             }
         }
 

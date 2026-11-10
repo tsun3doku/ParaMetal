@@ -35,7 +35,6 @@ void NodeHeatModel::execute(NodeKernelEval& eval) const {
         outputValue.dataType = outputSocket.contract.producedPayloadType;
 
         if (!payloadRegistry || outputValue.dataType != payloadtypes::HeatModel || meshHandle.key == 0) {
-            populateMetadata(outputValue, nullptr, payloadRegistry);
             continue;
         }
 
@@ -50,7 +49,6 @@ void NodeHeatModel::execute(NodeKernelEval& eval) const {
         payload.prescribedTemperatureC = static_cast<float>(params.prescribedTemperatureC);
         const uint64_t payloadKey = NodeSocketKey(eval.node.id, outputSocket.id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, eval.outputHashes);
-        populateMetadata(outputValue, nullptr, payloadRegistry);
     }
 }
 

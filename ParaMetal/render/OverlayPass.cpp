@@ -2,6 +2,7 @@
 
 #include <array>
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <iostream>
 #include <vector>
@@ -9,6 +10,7 @@
 #include "framegraph/FrameGraphPasses.hpp"
 #include "GeometryPass.hpp"
 #include "HeatOverlayRenderer.hpp"
+#include "CFDOverlayRenderer.hpp"
 #include "PointOverlayRenderer.hpp"
 #include "VoronoiOverlayRenderer.hpp"
 #include "scene/GizmoController.hpp"
@@ -40,6 +42,7 @@ OverlayPass::OverlayPass(
     UniformBufferManager& ubo,
     GeometryPass& geometry,
     HeatOverlayRenderer& heatOverlayRenderer,
+    CFDOverlayRenderer& cfdOverlayRenderer,
     VoronoiOverlayRenderer& voronoiOverlayRenderer,
     IntrinsicRenderer& intrinsicRenderer,
     GizmoRenderer& gizmo,
@@ -52,6 +55,7 @@ OverlayPass::OverlayPass(
     framegraph::ResourceId depthMsaaId)
     : geometryPass(geometry),
       heatOverlayRenderer(heatOverlayRenderer),
+      cfdOverlayRenderer(cfdOverlayRenderer),
       voronoiOverlayRenderer(voronoiOverlayRenderer),
       intrinsicRenderer(intrinsicRenderer),
       gizmoRenderer(gizmo),
@@ -99,7 +103,17 @@ void OverlayPass::create() {
     }
 
     heatOverlayRenderer.initializeOverlay(frameGraphRuntime.getRenderPass(), framegraph::toIndex(passId), maxFramesInFlight);
+    cfdOverlayRenderer.initialize(frameGraphRuntime.getRenderPass(), framegraph::toIndex(passId), maxFramesInFlight);
     voronoiOverlayRenderer.initializeOverlay(frameGraphRuntime.getRenderPass(), framegraph::toIndex(passId), maxFramesInFlight);
+
+    streamlineRenderer = std::make_unique<StreamlineRenderer>(
+        vulkanDevice, memoryAllocator, uniformBufferManager, renderCommandPool);
+    if (!streamlineRenderer) {
+        std::cerr << "[OverlayPass] Failed to create streamline renderer" << std::endl;
+        destroy();
+        return;
+    }
+    streamlineRenderer->initialize(frameGraphRuntime.getRenderPass(), framegraph::toIndex(passId), maxFramesInFlight);
 
     pointOverlayRenderer = std::make_unique<PointOverlayRenderer>(vulkanDevice, uniformBufferManager);
     if (!pointOverlayRenderer) {
@@ -158,16 +172,16 @@ void OverlayPass::setWorldUnit(units::LengthUnit unit) {
     if (gridRenderer) gridRenderer->setWorldUnit(unit);
 }
 
-IntrinsicRenderer* OverlayPass::getIntrinsicRenderer() const {
-    return &intrinsicRenderer;
+void OverlayPass::setVelocityPalette(uint32_t palette) {
+    velocityPalette = palette;
 }
 
-HeatOverlayRenderer* OverlayPass::getHeatOverlayRenderer() const {
-    return &heatOverlayRenderer;
-}
-
-VoronoiOverlayRenderer* OverlayPass::getVoronoiOverlayRenderer() const {
-    return &voronoiOverlayRenderer;
+void OverlayPass::setVelocityPaletteRange(float minimum, float maximum) {
+    if (!(std::isfinite(minimum) && std::isfinite(maximum) && maximum > minimum)) {
+        return;
+    }
+    velocityPaletteMinimum = minimum;
+    velocityPaletteMaximum = maximum;
 }
 
 PointOverlayRenderer* OverlayPass::getPointOverlayRenderer() const {
@@ -190,6 +204,21 @@ void OverlayPass::record(const FrameContext& context, const SceneView& view, con
     screenTextRenderer.beginFrame(currentFrame);
     const VkExtent2D extent = context.extent;
     heatOverlayRenderer.renderOverlay(commandBuffer, currentFrame, extent, view.proj * view.view);
+    cfdOverlayRenderer.renderOverlay(commandBuffer, currentFrame);
+    if (streamlineRenderer) {
+        streamlineBindings.clear();
+        const auto& heatLines = heatOverlayRenderer.getStreamlineBindings();
+        const auto& cfdLines = cfdOverlayRenderer.getStreamlineBindings();
+        streamlineBindings.reserve(heatLines.size() + cfdLines.size());
+        streamlineBindings.insert(streamlineBindings.end(), heatLines.begin(), heatLines.end());
+        streamlineBindings.insert(streamlineBindings.end(), cfdLines.begin(), cfdLines.end());
+        for (auto& binding : streamlineBindings) {
+            binding.palette = velocityPalette;
+            binding.minSpeed = velocityPaletteMinimum;
+            binding.maxSpeed = velocityPaletteMaximum;
+        }
+        streamlineRenderer->render(commandBuffer, currentFrame, streamlineBindings);
+    }
     voronoiOverlayRenderer.renderPoints(commandBuffer, currentFrame, extent);
     if (pointOverlayRenderer) {
         pointOverlayRenderer->render(commandBuffer, currentFrame, extent);
@@ -243,7 +272,7 @@ void OverlayPass::record(const FrameContext& context, const SceneView& view, con
         }
     }
 
-    if (timingOverlay) {
+    if (flags.drawTimingOverlay && timingOverlay) {
         timingOverlay->render(commandBuffer, currentFrame, extent);
     }
 
@@ -288,6 +317,11 @@ void OverlayPass::destroy() {
         gridRenderer->cleanup();
         gridRenderer.reset();
     }
+    if (streamlineRenderer) {
+        streamlineRenderer->cleanup();
+        streamlineRenderer.reset();
+    }
+    streamlineBindings.clear();
 }
 
 } // namespace render

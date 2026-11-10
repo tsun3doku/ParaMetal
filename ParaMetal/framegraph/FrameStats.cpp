@@ -75,6 +75,16 @@ void FrameStats::notePresentedFrame() {
 
 void FrameStats::setSimStepTotal(uint64_t total) {
     const auto now = std::chrono::high_resolution_clock::now();
+
+    if (simCount > 0) {
+        const uint32_t previousIndex = (simWriteIndex + HistorySize - 1) % HistorySize;
+        if (total < simSamples[previousIndex].total) {
+            simWriteIndex = 0;
+            simCount = 0;
+            simFpsValue.store(0.0f, std::memory_order_relaxed);
+        }
+    }
+
     simSamples[simWriteIndex] = { now, total };
     simWriteIndex = (simWriteIndex + 1) % HistorySize;
     if (simCount < HistorySize) {

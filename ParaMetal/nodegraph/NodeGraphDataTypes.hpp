@@ -9,9 +9,6 @@
 #include <unordered_map>
 #include <vector>
 
-class NodeGraphTypeRegistry;
-class NodePayloadRegistry;
-
 struct NodeDataBlock {
     uint8_t dataType = 0;
     NodeDataHandle payloadHandle{};
@@ -23,5 +20,3 @@ struct NodeDataBlock {
     std::unordered_map<std::string, std::string> metadata;
     std::vector<NodeGraphNodeId> lineageNodeIds;
 };
-
-void populateMetadata(NodeDataBlock& dataBlock, const NodeGraphTypeRegistry* typeRegistry = nullptr, const NodePayloadRegistry* payloadRegistry = nullptr);

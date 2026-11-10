@@ -184,7 +184,7 @@ bool ExportService::buildHeatContours(
     uint64_t heatSocketKey, uint64_t heatModelKey, float spacingC, bool applyTransform,
     HeatSystemComputeController& heatController,
     const std::vector<std::vector<float>>* temperaturesByModel,
-    std::vector<IsocontourPolyline>& out,
+    std::vector<mesh::Polyline>& out,
     std::string& outError) {
     out.clear();
     outError.clear();
@@ -267,7 +267,7 @@ bool ExportService::buildHeatContours(
     out = IsocontourBuilder::build(positions, triangles, temperatures, levels);
     if (applyTransform) {
         const glm::mat4 transform = toMat4(transformIt->second);
-        for (IsocontourPolyline& line : out)
+        for (mesh::Polyline& line : out)
             for (glm::vec3& point : line.points) point = glm::vec3(transform * glm::vec4(point, 1.0f));
     }
     return true;

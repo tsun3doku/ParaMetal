@@ -17,6 +17,7 @@
 #include "voronoi/VoronoiGpuStructs.hpp"
 #include "voronoi/GlobalDomainTopology.hpp"
 #include "serial/SerialTemperatureRuntime.hpp"
+#include "domain/FluidData.hpp"
 #include "domain/HeatProbeData.hpp"
 
 class VulkanDevice;
@@ -52,6 +53,14 @@ public:
         };
         float domainBoundaryHeatFluxes[6] = {};
         float domainBoundaryHeatTransferCoefficients[6] = {};
+        float domainBoundaryInflowTemperaturesC[6] = {
+            FluidData{}.initialTemperatureC,
+            FluidData{}.initialTemperatureC,
+            FluidData{}.initialTemperatureC,
+            FluidData{}.initialTemperatureC,
+            FluidData{}.initialTemperatureC,
+            FluidData{}.initialTemperatureC
+        };
         uint32_t solverMaxIterations = 0;
         float solverConvergenceTolerance = 0.0f;
         std::vector<std::vector<glm::vec3>> modelSurfacePositions;

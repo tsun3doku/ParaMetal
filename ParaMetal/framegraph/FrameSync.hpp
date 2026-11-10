@@ -6,27 +6,22 @@
 #include <vector>
 struct FrameComputeSubmission;
 
-// Owns compute frame slots and coordinates compute-to-graphics sync transitions
 class FrameSync {
 public:
     bool initialize(VkDevice device, uint32_t maxFramesInFlight);
     void shutdown();
 
-    void prepareExternalFrame(uint32_t frameIndex);
-    // Whether a compute batch was submitted on this slot lap for graphics dependencies
+    VkResult prepareExternalFrame(uint32_t frameIndex);
     bool wasComputePresentedThisLap() const;
 
-    void waitForAllFrameFences();
+    bool waitForAllFrameFences(uint64_t timeoutNs);
 
-    VkResult submitComputeBatch(
-        VkQueue computeQueue,
-        const std::vector<FrameComputeSubmission>& submissions);
+    VkResult submitComputeBatch(VkQueue computeQueue, const std::vector<FrameComputeSubmission>& submissions);
 
 private:
     struct FrameSlot {
         VkFence computeFence = VK_NULL_HANDLE;
         bool computeSubmittedThisLap = false;
-        bool computePresentedThisLap = false;
     };
 
     VkDevice device = VK_NULL_HANDLE;

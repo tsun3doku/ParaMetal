@@ -156,8 +156,12 @@ void VoronoiCandidateCompute::dispatch(uint32_t faceCount, uint32_t seedCount) {
         vkFreeCommandBuffers(vulkanDevice.getDevice(), commandPool.getHandle(), 1, &cmd);
         return;
     }
-    if (vkWaitForFences(vulkanDevice.getDevice(), 1, &fence, VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
-        std::cerr << "VoronoiCandidateCompute: Failed while waiting for fence" << std::endl;
+    constexpr uint64_t fenceWaitTimeoutNs = 10ull * 1000ull * 1000ull * 1000ull;
+    const VkResult fenceWait = vkWaitForFences(
+        vulkanDevice.getDevice(), 1, &fence, VK_TRUE, fenceWaitTimeoutNs);
+    if (fenceWait != VK_SUCCESS) {
+        std::cerr << "VoronoiCandidateCompute: Failed while waiting for fence VkResult="
+                  << static_cast<int>(fenceWait) << std::endl;
         return;
     }
 

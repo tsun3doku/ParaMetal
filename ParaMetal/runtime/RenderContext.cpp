@@ -65,10 +65,12 @@ bool RenderContext::initialize(VulkanCoreContext& core, SceneContext& scene, Fra
     remeshDisplayControllerState = std::make_unique<RemeshDisplayController>();
     voronoiDisplayControllerState = std::make_unique<VoronoiDisplayController>();
     heatDisplayControllerState = std::make_unique<HeatDisplayController>();
+    cfdDisplayControllerState = std::make_unique<CFDDisplayController>();
 
     voronoiDisplayControllerState->setOverlayRenderer(renderRuntime->getSceneRenderer().getVoronoiOverlayRenderer());
     heatDisplayControllerState->setOverlayRenderer(renderRuntime->getSceneRenderer().getHeatOverlayRenderer());
     heatDisplayControllerState->setVolumeRenderer(renderRuntime->getSceneRenderer().getHeatVolumeRenderer());
+    cfdDisplayControllerState->setOverlayRenderer(renderRuntime->getSceneRenderer().getCFDOverlayRenderer());
     pointDisplayControllerState->setOverlayRenderer(renderRuntime->getSceneRenderer().getPointOverlayRenderer());
     modelDisplayControllerState->setModelRegistry(modelRegistry);
     remeshDisplayControllerState->setIntrinsicRenderer(renderRuntime->getSceneRenderer().getIntrinsicRenderer());
@@ -83,6 +85,7 @@ void RenderContext::shutdown() {
     pointDisplayControllerState.reset();
     voronoiDisplayControllerState.reset();
     heatDisplayControllerState.reset();
+    cfdDisplayControllerState.reset();
 
     if (renderRuntime) {
         renderRuntime->cleanup();
@@ -107,6 +110,7 @@ NodeGraphDisplayControllers RenderContext::displayControllers() {
         *pointDisplayControllerState,
         *remeshDisplayControllerState,
         *heatDisplayControllerState,
+        *cfdDisplayControllerState,
         *voronoiDisplayControllerState};
 }
 

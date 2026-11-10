@@ -1,4 +1,4 @@
-#include "HeatVolumeRenderer.hpp"
+#include "SimVolumeRenderer.hpp"
 
 #include <algorithm>
 #include <iostream>
@@ -15,7 +15,7 @@
 
 namespace render {
 
-HeatVolumeRenderer::HeatVolumeRenderer(
+SimVolumeRenderer::SimVolumeRenderer(
     VulkanDevice& device,
     MemoryAllocator& allocator,
     UniformBufferManager& uniformBufferManager,
@@ -26,11 +26,11 @@ HeatVolumeRenderer::HeatVolumeRenderer(
       commandPool(commandPool) {
 }
 
-HeatVolumeRenderer::~HeatVolumeRenderer() {
+SimVolumeRenderer::~SimVolumeRenderer() {
     cleanup();
 }
 
-bool HeatVolumeRenderer::initialize(VkRenderPass renderPass, uint32_t subpass, uint32_t updatedMaxFramesInFlight) {
+bool SimVolumeRenderer::initialize(VkRenderPass renderPass, uint32_t subpass, uint32_t updatedMaxFramesInFlight) {
     if (initialized) {
         cleanup();
     }
@@ -38,30 +38,30 @@ bool HeatVolumeRenderer::initialize(VkRenderPass renderPass, uint32_t subpass, u
     maxFramesInFlight = updatedMaxFramesInFlight;
 
     if (!createPaletteTextures()) {
-        std::cerr << "[HeatVolumeRenderer] Failed to create palette textures." << std::endl;
+        std::cerr << "[SimVolumeRenderer] Failed to create palette textures." << std::endl;
         return false;
     }
 
     if (!createDescriptorSetLayout()) {
-        std::cerr << "[HeatVolumeRenderer] Failed to create descriptor set layout." << std::endl;
+        std::cerr << "[SimVolumeRenderer] Failed to create descriptor set layout." << std::endl;
         destroyPaletteTextures();
         return false;
     }
 
     if (!createDescriptorPool(maxFramesInFlight)) {
-        std::cerr << "[HeatVolumeRenderer] Failed to create descriptor pool." << std::endl;
+        std::cerr << "[SimVolumeRenderer] Failed to create descriptor pool." << std::endl;
         cleanup();
         return false;
     }
 
     if (!createDescriptorSets(maxFramesInFlight)) {
-        std::cerr << "[HeatVolumeRenderer] Failed to create descriptor sets." << std::endl;
+        std::cerr << "[SimVolumeRenderer] Failed to create descriptor sets." << std::endl;
         cleanup();
         return false;
     }
 
     if (!createPipeline(renderPass, subpass)) {
-        std::cerr << "[HeatVolumeRenderer] Failed to create graphics pipeline." << std::endl;
+        std::cerr << "[SimVolumeRenderer] Failed to create graphics pipeline." << std::endl;
         cleanup();
         return false;
     }
@@ -70,7 +70,7 @@ bool HeatVolumeRenderer::initialize(VkRenderPass renderPass, uint32_t subpass, u
     return true;
 }
 
-void HeatVolumeRenderer::cleanup() {
+void SimVolumeRenderer::cleanup() {
     VkDevice device = vulkanDevice.getDevice();
 
     if (pipeline != VK_NULL_HANDLE) {
@@ -102,7 +102,7 @@ void HeatVolumeRenderer::cleanup() {
     initialized = false;
 }
 
-bool HeatVolumeRenderer::createPaletteTextures() {
+bool SimVolumeRenderer::createPaletteTextures() {
     if (createTextureImage16(vulkanDevice, memoryAllocator, commandPool, "textures/palettes/inferno.png", infernoImage, infernoMemory) != VK_SUCCESS ||
         createTextureImage16(vulkanDevice, memoryAllocator, commandPool, "textures/palettes/viridis.png", viridisImage, viridisMemory) != VK_SUCCESS ||
         createTextureImage16(vulkanDevice, memoryAllocator, commandPool, "textures/palettes/inferno2.png", inferno2Image, inferno2Memory) != VK_SUCCESS ||
@@ -118,7 +118,7 @@ bool HeatVolumeRenderer::createPaletteTextures() {
     return true;
 }
 
-void HeatVolumeRenderer::destroyPaletteTextures() {
+void SimVolumeRenderer::destroyPaletteTextures() {
     VkDevice device = vulkanDevice.getDevice();
     if (paletteSampler != VK_NULL_HANDLE) vkDestroySampler(device, paletteSampler, nullptr);
     if (infernoView != VK_NULL_HANDLE) vkDestroyImageView(device, infernoView, nullptr);
@@ -139,7 +139,7 @@ void HeatVolumeRenderer::destroyPaletteTextures() {
     infernoMemory = viridisMemory = inferno2Memory = parulaMemory = VK_NULL_HANDLE;
 }
 
-bool HeatVolumeRenderer::createDescriptorSetLayout() {
+bool SimVolumeRenderer::createDescriptorSetLayout() {
     std::array<VkDescriptorSetLayoutBinding, 6> bindings{};
 
     // Binding 0: Camera UBO
@@ -170,7 +170,7 @@ bool HeatVolumeRenderer::createDescriptorSetLayout() {
     return vkCreateDescriptorSetLayout(vulkanDevice.getDevice(), &layoutInfo, nullptr, &descriptorSetLayout) == VK_SUCCESS;
 }
 
-bool HeatVolumeRenderer::createDescriptorPool(uint32_t count) {
+bool SimVolumeRenderer::createDescriptorPool(uint32_t count) {
     const uint32_t setCount = std::max(count, 256u);
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -192,7 +192,7 @@ bool HeatVolumeRenderer::createDescriptorPool(uint32_t count) {
     return true;
 }
 
-VkDescriptorSet HeatVolumeRenderer::allocateDescriptorSet() {
+VkDescriptorSet SimVolumeRenderer::allocateDescriptorSet() {
     if (descriptorPools.empty() && !createDescriptorPool(256)) {
         return VK_NULL_HANDLE;
     }
@@ -217,7 +217,7 @@ VkDescriptorSet HeatVolumeRenderer::allocateDescriptorSet() {
     return set;
 }
 
-bool HeatVolumeRenderer::createDescriptorSets(uint32_t count) {
+bool SimVolumeRenderer::createDescriptorSets(uint32_t count) {
     if (descriptorPools.empty() && !createDescriptorPool(count)) {
         return false;
     }
@@ -234,7 +234,7 @@ bool HeatVolumeRenderer::createDescriptorSets(uint32_t count) {
     return true;
 }
 
-void HeatVolumeRenderer::writeDescriptorSet(
+void SimVolumeRenderer::writeDescriptorSet(
     VkDescriptorSet set,
     uint32_t frameIndex,
     bool includeVolume) {
@@ -302,7 +302,7 @@ void HeatVolumeRenderer::writeDescriptorSet(
         vulkanDevice.getDevice(), writeCount, writes.data(), 0, nullptr);
 }
 
-void HeatVolumeRenderer::updateStaticDescriptorSets() {
+void SimVolumeRenderer::updateStaticDescriptorSets() {
     if (descriptorSets.empty() || descriptorSetLayout == VK_NULL_HANDLE) {
         return;
     }
@@ -311,7 +311,7 @@ void HeatVolumeRenderer::updateStaticDescriptorSets() {
     }
 }
 
-void HeatVolumeRenderer::updateVolumeDescriptorSets() {
+void SimVolumeRenderer::updateVolumeDescriptorSets() {
     if (descriptorSetLayout == VK_NULL_HANDLE ||
         volumeImageView == VK_NULL_HANDLE || volumeSampler == VK_NULL_HANDLE) {
         return;
@@ -337,7 +337,7 @@ void HeatVolumeRenderer::updateVolumeDescriptorSets() {
     }
 }
 
-void HeatVolumeRenderer::setVolumeTexture(
+void SimVolumeRenderer::setVolumeTexture(
     VkImageView view,
     VkSampler sampler,
     const glm::vec3& gridMin,
@@ -357,12 +357,12 @@ void HeatVolumeRenderer::setVolumeTexture(
     }
 }
 
-bool HeatVolumeRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpass) {
+bool SimVolumeRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpass) {
     std::vector<char> vertShaderCode;
     std::vector<char> fragShaderCode;
-    if (!readFile("shaders/heat_volume_vert.spv", vertShaderCode) ||
-        !readFile("shaders/heat_volume_frag.spv", fragShaderCode)) {
-        std::cerr << "[HeatVolumeRenderer] Failed to read shader files." << std::endl;
+    if (!readFile("shaders/scalar_volume_vert.spv", vertShaderCode) ||
+        !readFile("shaders/scalar_volume_frag.spv", fragShaderCode)) {
+        std::cerr << "[SimVolumeRenderer] Failed to read shader files." << std::endl;
         return false;
     }
 
@@ -372,7 +372,7 @@ bool HeatVolumeRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpas
         createShaderModule(vulkanDevice, fragShaderCode, fragShaderModule) != VK_SUCCESS) {
         if (vertShaderModule != VK_NULL_HANDLE) vkDestroyShaderModule(vulkanDevice.getDevice(), vertShaderModule, nullptr);
         if (fragShaderModule != VK_NULL_HANDLE) vkDestroyShaderModule(vulkanDevice.getDevice(), fragShaderModule, nullptr);
-        std::cerr << "[HeatVolumeRenderer] Failed to create shader modules." << std::endl;
+        std::cerr << "[SimVolumeRenderer] Failed to create shader modules." << std::endl;
         return false;
     }
 
@@ -481,7 +481,7 @@ bool HeatVolumeRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpas
     return result == VK_SUCCESS;
 }
 
-void HeatVolumeRenderer::setVolumeTexture(VkImageView view, VkSampler sampler) {
+void SimVolumeRenderer::setVolumeTexture(VkImageView view, VkSampler sampler) {
     volumeImageView = view;
     volumeSampler = sampler;
 
@@ -490,7 +490,7 @@ void HeatVolumeRenderer::setVolumeTexture(VkImageView view, VkSampler sampler) {
     }
 }
 
-void HeatVolumeRenderer::setVolumeGrid(const glm::vec3& gridMin, const glm::ivec3& gridDim, float cellSize) {
+void SimVolumeRenderer::setVolumeGrid(const glm::vec3& gridMin, const glm::ivec3& gridDim, float cellSize) {
     volumeGridMin = gridMin;
     volumeGridDim = gridDim;
     volumeCellSize = cellSize;
@@ -506,7 +506,7 @@ void HeatVolumeRenderer::setVolumeGrid(const glm::vec3& gridMin, const glm::ivec
     }
 }
 
-void HeatVolumeRenderer::setVolumeDomain(const std::array<glm::vec3, 8>& corners) {
+void SimVolumeRenderer::setVolumeDomain(const std::array<glm::vec3, 8>& corners) {
     const glm::vec3 origin = corners[0];
     const glm::vec3 axisX = corners[1] - origin;
     const glm::vec3 axisY = corners[2] - origin;
@@ -527,7 +527,7 @@ void HeatVolumeRenderer::setVolumeDomain(const std::array<glm::vec3, 8>& corners
     }
 }
 
-void HeatVolumeRenderer::render(VkCommandBuffer cmd, uint32_t frameIndex) {
+void SimVolumeRenderer::render(VkCommandBuffer cmd, uint32_t frameIndex) {
     if (!initialized ||
         !enabled ||
         pipeline == VK_NULL_HANDLE ||
@@ -548,8 +548,8 @@ void HeatVolumeRenderer::render(VkCommandBuffer cmd, uint32_t frameIndex) {
     push.cellSize = volumeCellSize;
     push.gridDim = volumeGridDim;
     push.opacity = opacity;
-    push.minTemperature = minTemperature;
-    push.maxTemperature = maxTemperature;
+    push.minValue = minValue;
+    push.maxValue = maxValue;
     push.palette = palette;
 
     vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(VolumePushConstants), &push);

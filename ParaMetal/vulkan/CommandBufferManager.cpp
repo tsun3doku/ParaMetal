@@ -1,4 +1,5 @@
 #include "CommandBufferManager.hpp"
+#include <chrono>
 #include <stdexcept>
 #include <iostream>
 
@@ -96,13 +97,29 @@ bool CommandPool::endCommands(VkCommandBuffer commandBuffer) {
         return false;
     }
 
-    const VkResult waitResult = vkWaitForFences(vulkanDevice.getDevice(), 1, &fence, VK_TRUE, UINT64_MAX);
+    constexpr uint64_t oneShotWaitTimeoutNs = 10ull * 1000ull * 1000ull * 1000ull;
+    const auto waitStart = std::chrono::steady_clock::now();
+    const VkResult waitResult = vkWaitForFences(
+        vulkanDevice.getDevice(), 1, &fence, VK_TRUE, oneShotWaitTimeoutNs);
+    const auto waitedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - waitStart).count();
+    if (waitResult == VK_TIMEOUT) {
+        std::cerr << "[CommandPool] One-shot GPU wait timed out after " << waitedMs
+                  << " ms from: " << debugName
+                  << "; leaving command buffer/fence allocated because GPU completion was not proven."
+                  << std::endl;
+        return false;
+    }
     if (waitResult != VK_SUCCESS) {
         std::cerr << "[CommandPool] Failed waiting for one-shot command buffer from: " << debugName
                   << " VkResult=" << static_cast<int>(waitResult)
                   << "; leaving command buffer/fence allocated because GPU completion was not proven."
                   << std::endl;
         return false;
+    }
+    if (waitedMs > 1000) {
+        std::cerr << "[CommandPool] Slow one-shot GPU wait " << waitedMs
+                  << " ms from: " << debugName << std::endl;
     }
 
     vkDestroyFence(vulkanDevice.getDevice(), fence, nullptr);

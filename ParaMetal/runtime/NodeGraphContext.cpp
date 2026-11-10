@@ -2,13 +2,11 @@
 
 #include "ComputeContext.hpp"
 #include "VulkanCoreContext.hpp"
-#include "cuda/CudaVulkanDevice.hpp"
 
-#include <cuda_runtime.h>
 #include "nodegraph/NodeGraphController.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
 #include "runtime/RuntimeCFDComputeTransport.hpp"
-#include "runtime/RuntimeConnections.hpp"
+#include "runtime/RuntimeCFDDisplayTransport.hpp"
 #include "runtime/RuntimeHeatComputeTransport.hpp"
 #include "runtime/RuntimeHeatDisplayTransport.hpp"
 #include "runtime/RuntimeModelComputeTransport.hpp"
@@ -18,6 +16,7 @@
 #include "runtime/RuntimeProductManager.hpp"
 #include "runtime/RuntimeRemeshComputeTransport.hpp"
 #include "runtime/RuntimeRemeshDisplayTransport.hpp"
+#include "runtime/RuntimeTransports.hpp"
 #include "runtime/RuntimeVoronoiComputeTransport.hpp"
 #include "runtime/RuntimeVoronoiDisplayTransport.hpp"
 
@@ -59,6 +58,7 @@ bool NodeGraphContext::initialize(
     runtimeVoronoiComputeTransportState = std::make_unique<RuntimeVoronoiComputeTransport>();
     runtimeHeatComputeTransportState = std::make_unique<RuntimeHeatComputeTransport>();
     runtimeHeatDisplayTransportState = std::make_unique<RuntimeHeatDisplayTransport>();
+    runtimeCFDDisplayTransportState = std::make_unique<RuntimeCFDDisplayTransport>();
     runtimeCFDComputeTransportState = std::make_unique<RuntimeCFDComputeTransport>();
 
     runtimeModelComputeTransportState->setController(compute.modelComputeController());
@@ -73,45 +73,24 @@ bool NodeGraphContext::initialize(
     runtimeRemeshDisplayTransportState->setController(&displayControllers.remesh);
     runtimeVoronoiDisplayTransportState->setController(&displayControllers.voronoi);
     runtimeHeatDisplayTransportState->setController(&displayControllers.heat);
+    runtimeCFDDisplayTransportState->setController(&displayControllers.cfd);
 
-    RuntimeConnections runtimeConnections{};
-    runtimeConnections.modelComputeTransport = runtimeModelComputeTransportState.get();
-    runtimeConnections.pointComputeTransport = runtimePointComputeTransportState.get();
-    runtimeConnections.remeshComputeTransport = runtimeRemeshTransportState.get();
-    runtimeConnections.voronoiComputeTransport = runtimeVoronoiComputeTransportState.get();
-    runtimeConnections.heatComputeTransport = runtimeHeatComputeTransportState.get();
-    runtimeConnections.cfdComputeTransport = runtimeCFDComputeTransportState.get();
-    runtimeConnections.modelDisplayTransport = runtimeModelDisplayTransportState.get();
-    runtimeConnections.pointDisplayTransport = runtimePointDisplayTransportState.get();
-    runtimeConnections.remeshDisplayTransport = runtimeRemeshDisplayTransportState.get();
-    runtimeConnections.voronoiDisplayTransport = runtimeVoronoiDisplayTransportState.get();
-    runtimeConnections.heatDisplayTransport = runtimeHeatDisplayTransportState.get();
-    runtimeConnections.modelComputeController = compute.modelComputeController();
-    runtimeConnections.pointComputeRuntime = compute.pointComputeRuntime();
-    runtimeConnections.remeshController = compute.remeshController();
-    runtimeConnections.voronoiController = compute.voronoiSystemComputeController();
-    runtimeConnections.heatController = compute.heatSystemComputeController();
-    runtimeConnections.cfdController = compute.cfdSystemComputeController();
-    runtimeConnections.simGraph = compute.simGraphRuntime();
-    runtimeConnections.quiesceGpu = [&core]() {
-        bool synchronized = true;
-        const VkDevice device = core.device().getDevice();
-        if (device != VK_NULL_HANDLE && vkDeviceWaitIdle(device) != VK_SUCCESS) {
-            synchronized = false;
-        }
-        const int cudaDevice = cudaVulkan::findDevice(core.device().getPhysicalDevice());
-        if (cudaDevice >= 0) {
-            const cudaError_t setDeviceResult = cudaSetDevice(cudaDevice);
-            if (setDeviceResult != cudaSuccess || cudaDeviceSynchronize() != cudaSuccess) {
-                synchronized = false;
-            }
-        } else if (cudaVulkan::deviceWasFound()) {
-            synchronized = false;
-        }
-        return synchronized;
-    };
+    RuntimeTransports transports{};
+    transports.modelComputeTransport = runtimeModelComputeTransportState.get();
+    transports.pointComputeTransport = runtimePointComputeTransportState.get();
+    transports.remeshComputeTransport = runtimeRemeshTransportState.get();
+    transports.voronoiComputeTransport = runtimeVoronoiComputeTransportState.get();
+    transports.heatComputeTransport = runtimeHeatComputeTransportState.get();
+    transports.cfdComputeTransport = runtimeCFDComputeTransportState.get();
+    transports.modelDisplayTransport = runtimeModelDisplayTransportState.get();
+    transports.pointDisplayTransport = runtimePointDisplayTransportState.get();
+    transports.remeshDisplayTransport = runtimeRemeshDisplayTransportState.get();
+    transports.voronoiDisplayTransport = runtimeVoronoiDisplayTransportState.get();
+    transports.heatDisplayTransport = runtimeHeatDisplayTransportState.get();
+    transports.cfdDisplayTransport = runtimeCFDDisplayTransportState.get();
+
     nodeGraphControllerState = std::make_unique<NodeGraphController>(
-        *payloadRegistryState, runtimeConnections);
+        *payloadRegistryState, compute, transports);
 
     initialized = true;
     return true;
@@ -129,6 +108,7 @@ void NodeGraphContext::shutdown() {
     runtimePointComputeTransportState.reset();
     runtimeHeatComputeTransportState.reset();
     runtimeHeatDisplayTransportState.reset();
+    runtimeCFDDisplayTransportState.reset();
     runtimeCFDComputeTransportState.reset();
     runtimeVoronoiDisplayTransportState.reset();
     runtimeVoronoiComputeTransportState.reset();

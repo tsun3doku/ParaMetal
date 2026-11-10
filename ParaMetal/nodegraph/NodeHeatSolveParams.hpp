@@ -28,18 +28,6 @@ struct HeatSolveNodeParams {
     float solverConvergenceTolerance = 3e-3f;  // 0 = keep heat solver default
     float isocontourSpacingC = 10.0f;
     HeatPreviewSettings preview{};
-
-    uint32_t domainBoundaryTypes[6] = {};
-    float domainBoundaryTemperaturesC[6] = {
-        HeatSimDefaults::ambientTemperatureC,
-        HeatSimDefaults::ambientTemperatureC,
-        HeatSimDefaults::ambientTemperatureC,
-        HeatSimDefaults::ambientTemperatureC,
-        HeatSimDefaults::ambientTemperatureC,
-        HeatSimDefaults::ambientTemperatureC
-    };
-    float domainBoundaryHeatFluxes[6] = {};
-    float domainBoundaryHeatTransferCoefficients[6] = {};
 };
 
 HeatSolveNodeParams readHeatSolveNodeParams(const NodeGraphNode& node);

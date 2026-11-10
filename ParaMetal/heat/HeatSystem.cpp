@@ -211,7 +211,8 @@ void HeatSystem::setDomainBoundaryConditions(const heat::DomainBoundaryCondition
         }
         if (domainBoundaries[i].temperatureC != boundaries[i].temperatureC ||
             domainBoundaries[i].heatFlux != boundaries[i].heatFlux ||
-            domainBoundaries[i].htc != boundaries[i].htc) {
+            domainBoundaries[i].htc != boundaries[i].htc ||
+            domainBoundaries[i].inflowTemperatureC != boundaries[i].inflowTemperatureC) {
             valuesChanged = true;
         }
     }
@@ -233,8 +234,9 @@ void HeatSystem::setDomainBoundaryConditions(
     const uint32_t types[6],
     const float temperaturesC[6],
     const float heatFluxes[6],
-    const float heatTransferCoefficients[6]) {
-    setDomainBoundaryConditions(heat::fromFlatArrays(types, temperaturesC, heatFluxes, heatTransferCoefficients));
+    const float heatTransferCoefficients[6],
+    const float inflowTemperaturesC[6]) {
+    setDomainBoundaryConditions(heat::fromFlatArrays(types, temperaturesC, heatFluxes, heatTransferCoefficients, inflowTemperaturesC));
 }
 
 uint32_t HeatSystem::computeTimelineFrameCount() const {
@@ -333,6 +335,13 @@ void HeatSystem::setGlobalVoronoiInput(
     voronoiConfigDirty = true;
 }
 
+bool HeatSystem::fluidVolumeReady() const {
+    return fluidVolumeStage && fluidVolumeStage->isValid() &&
+        domainRuntime.isGlobalDomain() &&
+        fluidRuntime && fluidRuntime->getNodeCount() > 0 &&
+        domainRuntime.getGlobalDomain().seedIdGridBuffer != VK_NULL_HANDLE;
+}
+
 void HeatSystem::update(const SimTickContext& context) {
     const float deltaTime = std::min(context.deltaSeconds, 1.0f / TimelineFPS);
 
@@ -347,8 +356,6 @@ void HeatSystem::update(const SimTickContext& context) {
     domainRuntime.resetAdvectionStagingCopySchedule();
     domainRuntime.setAdvectionConnected(boundInputConnectionId != 0);
 
-    bool newSolveCompleted = false;
-
     if (domainRuntime.isGlobalDomain()) {
         bool completedDestinationIsA = false;
         if (domainRuntime.pollGlobalSolve(completedDestinationIsA)) {
@@ -360,7 +367,6 @@ void HeatSystem::update(const SimTickContext& context) {
             } else {
                 temperatureBufferAIsCurrent = completedDestinationIsA;
                 physicsStepCompletedThisFrame = true;
-                newSolveCompleted = true;
                 ++completedSteps;
                 updateHeatProbes();
             }
@@ -423,16 +429,15 @@ void HeatSystem::update(const SimTickContext& context) {
 
     computeWorkPendingThisFrame = getSimNodeState() != SimNodeState::Inactive &&
         isSubmissionReady() &&
-        (newSolveCompleted ||
-         physicsStepCompletedThisFrame ||
+        (physicsStepCompletedThisFrame ||
          solveLaunched ||
          domainRuntime.advectionStagingCopyScheduled() ||
          needsInitialCapture ||
          surfaceDataDirty ||
-         fluidVolumeDirty);
+         (fluidVolumeDirty && fluidVolumeReady()));
 
     if (computeWorkPendingThisFrame) {
-        domainRuntime.prepareGlobalRenderSynchronization(newSolveCompleted);
+        domainRuntime.prepareGlobalRenderSynchronization(physicsStepCompletedThisFrame);
     }
 }
 
@@ -1234,31 +1239,29 @@ void HeatSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t r
             surfaceDataDirty = false;
         }
 
-        if (fluidVolumeDirty && fluidVolumeStage && fluidVolumeStage->isValid() && domainRuntime.isGlobalDomain() && fluidRuntime && fluidRuntime->getNodeCount() > 0) {
+        if (fluidVolumeDirty && fluidVolumeReady()) {
             const auto& domain = domainRuntime.getGlobalDomain();
-            if (domain.seedIdGridBuffer != VK_NULL_HANDLE) {
-                VkBuffer sourceBuf = VK_NULL_HANDLE;
-                VkDeviceSize sourceOff = 0;
-                if (replayFromHistory && fluidRuntime->getPlayback() && fluidRuntime->getPlayback()->getHistoryBuffer() != VK_NULL_HANDLE) {
-                    auto* playback = fluidRuntime->getPlayback();
-                    sourceBuf = playback->getHistoryBuffer();
-                    sourceOff = playback->getHistoryBufferOffset() + static_cast<VkDeviceSize>(displayFrame) * playback->getFrameStride();
-                } else {
-                    sourceBuf = currentIsB ? fluidRuntime->getTempBufferB() : fluidRuntime->getTempBufferA();
-                    sourceOff = 0;
-                    domainRuntime.noteTemperatureReader(temperatureBufferAIsCurrent);
-                }
+            VkBuffer sourceBuf = VK_NULL_HANDLE;
+            VkDeviceSize sourceOff = 0;
+            if (replayFromHistory && fluidRuntime->getPlayback() && fluidRuntime->getPlayback()->getHistoryBuffer() != VK_NULL_HANDLE) {
+                auto* playback = fluidRuntime->getPlayback();
+                sourceBuf = playback->getHistoryBuffer();
+                sourceOff = playback->getHistoryBufferOffset() + static_cast<VkDeviceSize>(displayFrame) * playback->getFrameStride();
+            } else {
+                sourceBuf = currentIsB ? fluidRuntime->getTempBufferB() : fluidRuntime->getTempBufferA();
+                sourceOff = 0;
+                domainRuntime.noteTemperatureReader(temperatureBufferAIsCurrent);
+            }
 
-                if (sourceBuf != VK_NULL_HANDLE) {
-                    fluidVolumeStage->recordCompute(
-                        commandBuffer,
-                        renderFrameSlot,
-                        domain.seedIdGridBuffer,
-                        domain.seedIdGridBufferOffset,
-                        sourceBuf,
-                        sourceOff);
-                    fluidVolumeDirty = false;
-                }
+            if (sourceBuf != VK_NULL_HANDLE) {
+                fluidVolumeStage->recordCompute(
+                    commandBuffer,
+                    renderFrameSlot,
+                    domain.seedIdGridBuffer,
+                    domain.seedIdGridBufferOffset,
+                    sourceBuf,
+                    sourceOff);
+                fluidVolumeDirty = false;
             }
         }
     }
@@ -1781,6 +1784,14 @@ void HeatSystem::updateHeatProbes() {
 void HeatSystem::cleanup() {
     releaseGmlsBuffers();
     probeRuntimes.clear();
+    if (!computeCommandBuffers.empty()) {
+        vkFreeCommandBuffers(
+            vulkanDevice.getDevice(),
+            renderCommandPool.getHandle(),
+            static_cast<uint32_t>(computeCommandBuffers.size()),
+            computeCommandBuffers.data());
+        computeCommandBuffers.clear();
+    }
     if (fluidVolumeStage) {
         fluidVolumeStage->cleanup();
         fluidVolumeStage.reset();

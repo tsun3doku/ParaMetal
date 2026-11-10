@@ -26,7 +26,6 @@ void NodeHeatProbe::execute(NodeKernelEval& eval) const {
     } else {
         output.dataType = payloadtypes::Heat;
     }
-    populateMetadata(output, nullptr, eval.runtime.payloadRegistry);
 }
 
 HashValues NodeHeatProbe::computeOutputHashes(const NodeKernelHash& hash) const {

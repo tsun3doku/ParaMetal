@@ -57,6 +57,9 @@ public:
 
     void waitForIdle();
 
+    bool buildMomentumSubcycleGraph(float targetCourant);
+    void destroyMomentumSubcycleGraph();
+
     void setPressureSolverParameters(int maxIterations, float tolerance);
 
     int getCudaDevice() const { return cudaDevice; }
@@ -69,8 +72,8 @@ private:
     void computeAndReduceOutflowRate(cudaStream_t stream);
     void clearTopology();
     void releaseTopologyBuffers();
-    bool buildMomentumSubcycleGraph(float targetCourant);
-    void destroyMomentumSubcycleGraph();
+
+    static constexpr uint32_t MaxMomentumSubsteps = 1024;
 
     int cudaDevice = -1;
     void* flowStreamHandle = nullptr; 

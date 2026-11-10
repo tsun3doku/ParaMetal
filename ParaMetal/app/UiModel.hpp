@@ -2,6 +2,7 @@
 
 #include "ViewportUiModel.hpp"
 #include "HeatPaletteUiModel.hpp"
+#include "VelocityPaletteUiModel.hpp"
 #include "TimelineUiModel.hpp"
 #include "ConsoleUiModel.hpp"
 #include "NodeGraphUiModel.hpp"
@@ -14,6 +15,7 @@ class UiModel final : public QObject {
     Q_OBJECT
     Q_PROPERTY(ViewportUiModel* viewport READ viewport CONSTANT)
     Q_PROPERTY(HeatPaletteUiModel* heatPalette READ heatPalette CONSTANT)
+    Q_PROPERTY(VelocityPaletteUiModel* velocityPalette READ velocityPalette CONSTANT)
     Q_PROPERTY(TimelineUiModel* timeline READ timeline CONSTANT)
     Q_PROPERTY(NodeGraphUiModel* nodeGraph READ nodeGraph CONSTANT)
     Q_PROPERTY(ConsoleUiModel* console READ console CONSTANT)
@@ -24,6 +26,7 @@ public:
 
     ViewportUiModel* viewport() { return &viewportModel; }
     HeatPaletteUiModel* heatPalette() { return &heatPaletteModel; }
+    VelocityPaletteUiModel* velocityPalette() { return &velocityPaletteModel; }
     TimelineUiModel* timeline() { return &timelineModel; }
     NodeGraphUiModel* nodeGraph() { return &graphModel; }
     ConsoleUiModel* console() { return &consoleModel; }
@@ -49,6 +52,7 @@ signals:
 private:
     ViewportUiModel viewportModel;
     HeatPaletteUiModel heatPaletteModel;
+    VelocityPaletteUiModel velocityPaletteModel;
     TimelineUiModel timelineModel;
     NodeGraphUiModel graphModel;
     ConsoleUiModel consoleModel;

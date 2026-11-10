@@ -3,6 +3,7 @@
 #include <memory>
 
 class ComputeContext;
+class CFDDisplayController;
 class HeatDisplayController;
 class ModelDisplayController;
 class NodeGraphController;
@@ -10,6 +11,7 @@ class NodePayloadRegistry;
 class PointDisplayController;
 class RemeshDisplayController;
 class RuntimeCFDComputeTransport;
+class RuntimeCFDDisplayTransport;
 class RuntimeHeatComputeTransport;
 class RuntimeHeatDisplayTransport;
 class RuntimeModelComputeTransport;
@@ -28,6 +30,7 @@ struct NodeGraphDisplayControllers {
     PointDisplayController& point;
     RemeshDisplayController& remesh;
     HeatDisplayController& heat;
+    CFDDisplayController& cfd;
     VoronoiDisplayController& voronoi;
 };
 
@@ -55,6 +58,7 @@ private:
     std::unique_ptr<RuntimeVoronoiDisplayTransport> runtimeVoronoiDisplayTransportState;
     std::unique_ptr<RuntimeHeatComputeTransport> runtimeHeatComputeTransportState;
     std::unique_ptr<RuntimeHeatDisplayTransport> runtimeHeatDisplayTransportState;
+    std::unique_ptr<RuntimeCFDDisplayTransport> runtimeCFDDisplayTransportState;
     std::unique_ptr<RuntimeCFDComputeTransport> runtimeCFDComputeTransportState;
     std::unique_ptr<NodeGraphController> nodeGraphControllerState;
     bool initialized = false;

@@ -78,6 +78,7 @@ private:
 
     int findNodeIndex(uint64_t socketKey) const;
     bool hasPublication(const SimNode& node) const;
+    uint64_t simulationStepTotal() const;
     bool rebuildGraph();
     void bindIncomingConnections(size_t nodeIndex);
     SimTickResult recordAndSubmit(uint32_t renderFrameSlot);

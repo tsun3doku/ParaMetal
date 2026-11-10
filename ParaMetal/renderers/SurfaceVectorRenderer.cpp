@@ -1,4 +1,4 @@
-#include "VectorArrowRenderer.hpp"
+#include "SurfaceVectorRenderer.hpp"
 
 #include "util/Structs.hpp"
 #include "util/file_utils.h"
@@ -12,9 +12,8 @@
 #include <array>
 #include <cstring>
 #include <iostream>
-#include <unordered_set>
 
-VectorArrowRenderer::VectorArrowRenderer(
+SurfaceVectorRenderer::SurfaceVectorRenderer(
     VulkanDevice& device,
     MemoryAllocator& allocator,
     UniformBufferManager& uboManager,
@@ -25,11 +24,11 @@ VectorArrowRenderer::VectorArrowRenderer(
       commandPool(commandPool) {
 }
 
-VectorArrowRenderer::~VectorArrowRenderer() {
+SurfaceVectorRenderer::~SurfaceVectorRenderer() {
     cleanup();
 }
 
-void VectorArrowRenderer::initialize(VkRenderPass renderPass, uint32_t subpass, uint32_t maxFramesInFlight) {
+void SurfaceVectorRenderer::initialize(VkRenderPass renderPass, uint32_t subpass, uint32_t maxFramesInFlight) {
     if (initialized) {
         cleanup();
     }
@@ -45,13 +44,12 @@ void VectorArrowRenderer::initialize(VkRenderPass renderPass, uint32_t subpass, 
     initialized = true;
 }
 
-bool VectorArrowRenderer::createArrowGeometry() {
-    const std::array<glm::vec3, 10> vertices = {
-        glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f, 0.0f, 0.0f),
-        glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.78f, 0.08f, 0.0f),
-        glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.78f, -0.08f, 0.0f),
-        glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.78f, 0.0f, 0.08f),
-        glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.78f, 0.0f, -0.08f),
+bool SurfaceVectorRenderer::createArrowGeometry() {
+    // Filled arrow in the surface tangent plane: x along the vector, y across.
+    const std::array<glm::vec2, 9> vertices = {
+        glm::vec2(0.00f, -0.025f), glm::vec2(0.72f, -0.025f), glm::vec2(0.72f, 0.025f),
+        glm::vec2(0.00f, -0.025f), glm::vec2(0.72f, 0.025f), glm::vec2(0.00f, 0.025f),
+        glm::vec2(0.70f, -0.10f), glm::vec2(1.00f, 0.00f), glm::vec2(0.70f, 0.10f),
     };
 
     vertexCount = static_cast<uint32_t>(vertices.size());
@@ -61,7 +59,7 @@ bool VectorArrowRenderer::createArrowGeometry() {
         memoryAllocator,
         commandPool,
         vertices.data(),
-        sizeof(glm::vec3) * vertices.size(),
+        sizeof(glm::vec2) * vertices.size(),
         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
         alignment,
         vertexBuffer,
@@ -71,7 +69,7 @@ bool VectorArrowRenderer::createArrowGeometry() {
     return true;
 }
 
-bool VectorArrowRenderer::createDescriptorSetLayout() {
+bool SurfaceVectorRenderer::createDescriptorSetLayout() {
     std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
 
     bindings[0].binding = 0;
@@ -95,14 +93,14 @@ bool VectorArrowRenderer::createDescriptorSetLayout() {
     layoutInfo.pBindings = bindings.data();
 
     if (vkCreateDescriptorSetLayout(vulkanDevice.getDevice(), &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
-        std::cerr << "VectorArrowRenderer: Failed to create descriptor set layout" << std::endl;
+        std::cerr << "SurfaceVectorRenderer: Failed to create descriptor set layout" << std::endl;
         return false;
     }
 
     return true;
 }
 
-bool VectorArrowRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
+bool SurfaceVectorRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
     const uint32_t maxVectorFields = 64;
 
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
@@ -120,7 +118,7 @@ bool VectorArrowRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
     descriptorPools.resize(maxFramesInFlight, VK_NULL_HANDLE);
     for (uint32_t i = 0; i < maxFramesInFlight; ++i) {
         if (vkCreateDescriptorPool(vulkanDevice.getDevice(), &poolInfo, nullptr, &descriptorPools[i]) != VK_SUCCESS) {
-            std::cerr << "VectorArrowRenderer: Failed to create descriptor pool " << i << std::endl;
+            std::cerr << "SurfaceVectorRenderer: Failed to create descriptor pool " << i << std::endl;
             return false;
         }
     }
@@ -128,7 +126,7 @@ bool VectorArrowRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
     return true;
 }
 
-VkDescriptorSet VectorArrowRenderer::allocateDescriptorSet(VkDescriptorPool pool) {
+VkDescriptorSet SurfaceVectorRenderer::allocateDescriptorSet(VkDescriptorPool pool) {
     VkDescriptorSetLayout layouts[] = { descriptorSetLayout };
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -140,14 +138,14 @@ VkDescriptorSet VectorArrowRenderer::allocateDescriptorSet(VkDescriptorPool pool
     if (vkAllocateDescriptorSets(vulkanDevice.getDevice(), &allocInfo, &set) != VK_SUCCESS) {
         static bool loggedOnce = false;
         if (!loggedOnce) {
-            std::cerr << "VectorArrowRenderer: Descriptor pool exhaustion / failed to allocate descriptor set." << std::endl;
+            std::cerr << "SurfaceVectorRenderer: Descriptor pool exhaustion / failed to allocate descriptor set." << std::endl;
             loggedOnce = true;
         }
     }
     return set;
 }
 
-void VectorArrowRenderer::updateDescriptorSet(VkDescriptorSet set, uint32_t frameIndex, const VectorRenderBinding& binding) {
+void SurfaceVectorRenderer::updateDescriptorSet(VkDescriptorSet set, uint32_t frameIndex, const RenderBinding& binding) {
     VkDescriptorBufferInfo surfaceInfo{};
     surfaceInfo.buffer = binding.surfaceBuffer;
     surfaceInfo.offset = binding.surfaceBufferOffset;
@@ -188,12 +186,12 @@ void VectorArrowRenderer::updateDescriptorSet(VkDescriptorSet set, uint32_t fram
     vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
-bool VectorArrowRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpass) {
+bool SurfaceVectorRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpass) {
     std::vector<char> vertShaderCode;
     std::vector<char> fragShaderCode;
-    if (!readFile("shaders/vector_arrow_vert.spv", vertShaderCode) ||
-        !readFile("shaders/vector_arrow_frag.spv", fragShaderCode)) {
-        std::cerr << "VectorArrowRenderer: Failed to read shader files" << std::endl;
+    if (!readFile("shaders/surface_vector_vert.spv", vertShaderCode) ||
+        !readFile("shaders/surface_vector_frag.spv", fragShaderCode)) {
+        std::cerr << "SurfaceVectorRenderer: Failed to read shader files" << std::endl;
         return false;
     }
 
@@ -207,7 +205,7 @@ bool VectorArrowRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpa
         if (fragShaderModule != VK_NULL_HANDLE) {
             vkDestroyShaderModule(vulkanDevice.getDevice(), fragShaderModule, nullptr);
         }
-        std::cerr << "VectorArrowRenderer: Failed to create shader modules" << std::endl;
+        std::cerr << "SurfaceVectorRenderer: Failed to create shader modules" << std::endl;
         return false;
     }
 
@@ -227,13 +225,13 @@ bool VectorArrowRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpa
 
     VkVertexInputBindingDescription bindingDescription{};
     bindingDescription.binding = 0;
-    bindingDescription.stride = sizeof(glm::vec3);
+    bindingDescription.stride = sizeof(glm::vec2);
     bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     VkVertexInputAttributeDescription attributeDescription{};
     attributeDescription.binding = 0;
     attributeDescription.location = 0;
-    attributeDescription.format = VK_FORMAT_R32G32B32_SFLOAT;
+    attributeDescription.format = VK_FORMAT_R32G32_SFLOAT;
     attributeDescription.offset = 0;
 
     vertexInput.vertexBindingDescriptionCount = 1;
@@ -243,7 +241,7 @@ bool VectorArrowRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpa
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     inputAssembly.primitiveRestartEnable = VK_FALSE;
 
     VkPipelineViewportStateCreateInfo viewportState{};
@@ -313,7 +311,7 @@ bool VectorArrowRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpa
     if (vkCreatePipelineLayout(vulkanDevice.getDevice(), &layoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
         vkDestroyShaderModule(vulkanDevice.getDevice(), vertShaderModule, nullptr);
         vkDestroyShaderModule(vulkanDevice.getDevice(), fragShaderModule, nullptr);
-        std::cerr << "VectorArrowRenderer: Failed to create pipeline layout" << std::endl;
+        std::cerr << "SurfaceVectorRenderer: Failed to create pipeline layout" << std::endl;
         return false;
     }
 
@@ -338,7 +336,7 @@ bool VectorArrowRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpa
         pipelineLayout = VK_NULL_HANDLE;
         vkDestroyShaderModule(vulkanDevice.getDevice(), vertShaderModule, nullptr);
         vkDestroyShaderModule(vulkanDevice.getDevice(), fragShaderModule, nullptr);
-        std::cerr << "VectorArrowRenderer: Failed to create graphics pipeline" << std::endl;
+        std::cerr << "SurfaceVectorRenderer: Failed to create graphics pipeline" << std::endl;
         return false;
     }
 
@@ -347,10 +345,10 @@ bool VectorArrowRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpa
     return true;
 }
 
-void VectorArrowRenderer::render(
+void SurfaceVectorRenderer::render(
     VkCommandBuffer commandBuffer,
     uint32_t frameIndex,
-    const std::vector<VectorRenderBinding>& vectors) {
+    const std::vector<RenderBinding>& vectors) {
     if (!initialized ||
         pipeline == VK_NULL_HANDLE ||
         pipelineLayout == VK_NULL_HANDLE ||
@@ -368,7 +366,7 @@ void VectorArrowRenderer::render(
     VkDeviceSize vertexOffsets[] = { vertexBufferOffset };
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, vertexOffsets);
 
-    for (const VectorRenderBinding& vector : vectors) {
+    for (const RenderBinding& vector : vectors) {
         if (vector.bindingKey == 0) {
             continue;
         }
@@ -407,7 +405,7 @@ void VectorArrowRenderer::render(
     }
 }
 
-void VectorArrowRenderer::cleanup() {
+void SurfaceVectorRenderer::cleanup() {
     VkDevice device = vulkanDevice.getDevice();
 
     if (pipeline != VK_NULL_HANDLE) {
@@ -429,6 +427,8 @@ void VectorArrowRenderer::cleanup() {
         descriptorSetLayout = VK_NULL_HANDLE;
     }
     freeBuffer(memoryAllocator, vertexBuffer, vertexBufferOffset);
+    vertexBuffer = VK_NULL_HANDLE;
+    vertexBufferOffset = 0;
 
     vertexCount = 0;
     initialized = false;

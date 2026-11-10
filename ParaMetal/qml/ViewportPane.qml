@@ -6,6 +6,7 @@ Rectangle {
     required property QtObject theme
     required property QtObject bridge
     required property QtObject heatPalette
+    required property QtObject velocityPalette
     color: theme.windowBackground
     border.width: 1
     border.color: theme.subtleBorder
@@ -20,6 +21,12 @@ Rectangle {
     TemperaturePalette {
         theme: root.theme
         heatPalette: root.heatPalette
+        z: 10
+    }
+
+    VelocityPalette {
+        theme: root.theme
+        velocityPalette: root.velocityPalette
         z: 10
     }
 

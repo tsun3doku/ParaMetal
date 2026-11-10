@@ -13,7 +13,7 @@ class CommandPool;
 
 namespace render {
 
-class HeatVolumeRenderer {
+class SimVolumeRenderer {
 public:
     struct VolumePushConstants {
         glm::mat4 worldToDomain{1.0f};
@@ -21,13 +21,13 @@ public:
         float cellSize = 0.0f;
         glm::ivec3 gridDim{0};
         float opacity = 0.25f;
-        float minTemperature = 0.0f;
-        float maxTemperature = 100.0f;
+        float minValue = 0.0f;
+        float maxValue = 100.0f;
         uint32_t palette = 0;
     };
 
-    HeatVolumeRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, CommandPool& commandPool);
-    ~HeatVolumeRenderer();
+    SimVolumeRenderer(VulkanDevice& device, MemoryAllocator& allocator, UniformBufferManager& uniformBufferManager, CommandPool& commandPool);
+    ~SimVolumeRenderer();
 
     bool initialize(VkRenderPass renderPass, uint32_t subpass, uint32_t maxFramesInFlight);
     void cleanup();
@@ -41,7 +41,7 @@ public:
     void setPalette(uint32_t pal) { palette = pal < 4 ? pal : 0; }
     uint32_t getPalette() const { return palette; }
 
-    void setRange(float minTemp, float maxTemp) { minTemperature = minTemp; maxTemperature = maxTemp; }
+    void setRange(float minValue, float maxValue) { this->minValue = minValue; this->maxValue = maxValue; }
 
     void setVolumeTexture(VkImageView view, VkSampler sampler, const glm::vec3& gridMin, const glm::ivec3& gridDim, float cellSize);
     void setVolumeTexture(VkImageView view, VkSampler sampler);
@@ -101,8 +101,8 @@ private:
     bool enabled = false;
     float opacity = 0.25f;
     uint32_t palette = 0;
-    float minTemperature = 0.0f;
-    float maxTemperature = 100.0f;
+    float minValue = 0.0f;
+    float maxValue = 100.0f;
 
     uint32_t maxFramesInFlight = 0;
     bool initialized = false;

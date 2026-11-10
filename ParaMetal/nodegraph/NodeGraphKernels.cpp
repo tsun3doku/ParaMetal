@@ -16,6 +16,7 @@
 #include "NodeSerialTemperature.hpp"
 #include "NodeHeatProbe.hpp"
 #include "NodeCFD.hpp"
+#include "NodeBoundaryConditions.hpp"
 
 #include <utility>
 
@@ -73,6 +74,7 @@ void NodeGraphKernels::registerDefaultKernels() {
     registerKernel(std::make_unique<NodeSerialTemperature>());
     registerKernel(std::make_unique<NodeHeatProbe>());
     registerKernel(std::make_unique<NodeCFD>());
+    registerKernel(std::make_unique<NodeBoundaryConditions>());
 }
 
 void NodeGraphKernels::registerKernel(std::unique_ptr<NodeKernel> kernel) {

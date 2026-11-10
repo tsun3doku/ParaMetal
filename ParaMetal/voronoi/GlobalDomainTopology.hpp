@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <glm/glm.hpp>
@@ -59,6 +60,8 @@ struct GlobalDomain {
     std::vector<glm::vec3> seedPositions;
     std::vector<uint32_t> cellFragmentOffsets;
     std::vector<uint32_t> cellFragments;
+    glm::vec3 domainMin{0.0f, 0.0f, 0.0f}; // AABB of the authored domain corners
+    glm::vec3 domainMax{0.0f, 0.0f, 0.0f};
     glm::vec3 volumeGridMin{0.0f, 0.0f, 0.0f};
     glm::ivec3 volumeGridDim{0, 0, 0};
     float volumeGridCellSize = 0.0f;
@@ -71,6 +74,9 @@ struct GlobalDomain {
             cellFragmentOffsets.size() == seedPositions.size() + 1 &&
             (!cellFragmentOffsets.empty() &&
              cellFragmentOffsets.back() == cellFragments.size()) &&
+            std::isfinite(domainMin.x) && std::isfinite(domainMin.y) && std::isfinite(domainMin.z) &&
+            std::isfinite(domainMax.x) && std::isfinite(domainMax.y) && std::isfinite(domainMax.z) &&
+            domainMax.x > domainMin.x && domainMax.y > domainMin.y && domainMax.z > domainMin.z &&
             nominalCellSize > 0.0f &&
             volumeGridDim.x > 0 && volumeGridDim.y > 0 && volumeGridDim.z > 0 &&
             volumeGridCellSize > 0.0f;
