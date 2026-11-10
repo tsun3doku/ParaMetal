@@ -337,7 +337,7 @@ bool CFDSolver::buildMomentumSubcycleGraph(float targetCourant) {
     cudaGraphNode_t prev = nullptr;
     if (fluidkernels::appendMomentumOutflowRate(
             graph, prev, fluidNodeCount, faceCount, boundaryFaceCount,
-            d_faces.get(), d_boundaryFaces.get(), d_faceFlux.get(), d_boundaryFlux.get(),
+            d_faceTopology.get(), d_boundaryFaces.get(), d_faceFlux.get(), d_boundaryFlux.get(),
             d_cellVolumes.get(), d_outflowRates.get(), d_maxOutflowRate.get(), d_subcycleInvalid.get()) != cudaSuccess) {
         cudaGraphDestroy(graph);
         destroyMomentumSubcycleGraph();
@@ -364,7 +364,7 @@ bool CFDSolver::buildMomentumSubcycleGraph(float targetCourant) {
     cudaGraphNode_t body = nullptr;
     if (fluidkernels::appendMomentumSubcycleBody(
             loop.body, body, fluidNodeCount, faceCount, boundaryFaceCount,
-            d_faces.get(), d_boundaryFaces.get(), d_boundaryConditions.get(),
+            d_faceTopology.get(), d_boundaryFaces.get(), d_boundaryConditions.get(),
             d_faceFlux.get(), d_boundaryFlux.get(), d_cellVolumes.get(), d_cellViscousWeight.get(),
             d_kinematicViscosity.get(), d_momentumAccum.get(), d_velocity.get(), d_velocityStar.get(),
             d_subcycleTimestep.get()) != cudaSuccess ||
@@ -460,7 +460,7 @@ bool CFDSolver::initializeVelocity(const glm::vec3& initialVelocity) {
 
     if (!projectionSolver.projectVelocity(
             fluidNodeCount, faceCount, boundaryFaceCount,
-            d_faces.get(), d_boundaryFaces.get(),
+            d_faceTopology.get(), d_faceFluxVectors.get(), d_boundaryFaces.get(),
             d_boundaryConditions.get(),
             d_cellVolumes.get(),
             d_faceFlux.get(), d_boundaryFlux.get(),
@@ -599,7 +599,7 @@ CFDSolver::StepOutcome CFDSolver::stepCfd(
 
     if (!projectionSolver.projectVelocity(
             fluidNodeCount, faceCount, boundaryFaceCount,
-            d_faces.get(), d_boundaryFaces.get(),
+            d_faceTopology.get(), d_faceFluxVectors.get(), d_boundaryFaces.get(),
             d_boundaryConditions.get(),
             d_cellVolumes.get(),
             d_faceFlux.get(), d_boundaryFlux.get(),

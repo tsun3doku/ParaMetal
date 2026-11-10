@@ -8,13 +8,13 @@ namespace {
 
 __global__ void buildPressureRhsFacesKernel(
     uint32_t faceCount,
-    const CFDFaceGpu* __restrict__ faces,
+    const FaceTopology* __restrict__ faces,
     const float* __restrict__ faceFlux,
     float* __restrict__ pressureRhs) {
     const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= faceCount) return;
 
-    const CFDFaceGpu face = faces[idx];
+    const FaceTopology face = faces[idx];
     const float phi = faceFlux[idx];
 
     atomicAdd(&pressureRhs[face.cellA], -phi);
@@ -35,13 +35,13 @@ __global__ void buildPressureRhsBoundaryKernel(
 
 __global__ void correctFaceFluxesKernel(
     uint32_t faceCount,
-    const CFDFaceGpu* __restrict__ faces,
+    const FaceTopology* __restrict__ faces,
     const float* __restrict__ psi,
     float* __restrict__ faceFlux) {
     const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= faceCount) return;
 
-    const CFDFaceGpu face = faces[idx];
+    const FaceTopology face = faces[idx];
     const float psiA = psi[face.cellA];
     const float psiB = psi[face.cellB];
 
@@ -66,14 +66,14 @@ __global__ void correctBoundaryFluxesKernel(
 
 __global__ void computeOutflowFacesKernel(
     uint32_t faceCount,
-    const CFDFaceGpu* __restrict__ faces,
+    const FaceTopology* __restrict__ faces,
     const float* __restrict__ faceFlux,
     float* __restrict__ outflowRates,
     uint32_t* __restrict__ invalid) {
     const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= faceCount) return;
 
-    const CFDFaceGpu face = faces[idx];
+    const FaceTopology face = faces[idx];
     const float phi = faceFlux[idx];
 
     if (!isfinite(phi)) {
@@ -150,7 +150,7 @@ __global__ void initializeVelocityKernel(
 
 __global__ void momentumInternalFacesKernel(
     uint32_t faceCount,
-    const CFDFaceGpu* __restrict__ faces,
+    const FaceTopology* __restrict__ faces,
     const float* __restrict__ faceFlux,
     const glm::vec4* __restrict__ velocity,
     const float* __restrict__ kinematicViscosity,
@@ -158,7 +158,7 @@ __global__ void momentumInternalFacesKernel(
     const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= faceCount) return;
 
-    const CFDFaceGpu face = faces[idx];
+    const FaceTopology face = faces[idx];
     const float phi = faceFlux[idx];
     const glm::vec3 uA = glm::vec3(velocity[face.cellA]);
     const glm::vec3 uB = glm::vec3(velocity[face.cellB]);
@@ -245,17 +245,19 @@ __global__ void applyMomentumPredictorKernel(
 
 __global__ void provisionalInternalFluxKernel(
     uint32_t faceCount,
-    const CFDFaceGpu* __restrict__ faces,
+    const FaceTopology* __restrict__ faces,
+    const FaceFluxVectors* __restrict__ fluxVectors,
     const glm::vec3* __restrict__ velocityStar,
     float* __restrict__ faceFlux) {
     const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= faceCount) return;
 
-    const CFDFaceGpu face = faces[idx];
+    const FaceTopology face = faces[idx];
+    const FaceFluxVectors vectors = fluxVectors[idx];
     const glm::vec3 uA = velocityStar[face.cellA];
     const glm::vec3 uB = velocityStar[face.cellB];
 
-    faceFlux[idx] = glm::dot(uA, face.fluxVectorA) + glm::dot(uB, face.fluxVectorB);
+    faceFlux[idx] = glm::dot(uA, vectors.fluxVectorA) + glm::dot(uB, vectors.fluxVectorB);
 }
 
 __global__ void provisionalBoundaryFluxKernel(
@@ -281,17 +283,19 @@ __global__ void provisionalBoundaryFluxKernel(
 
 __global__ void accumulateFacePressureImpulseKernel(
     uint32_t faceCount,
-    const CFDFaceGpu* __restrict__ faces,
+    const FaceTopology* __restrict__ faces,
+    const FaceFluxVectors* __restrict__ fluxVectors,
     const float* __restrict__ psi,
     glm::vec3* __restrict__ pressureImpulse) {
     const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= faceCount) return;
 
-    const CFDFaceGpu face = faces[idx];
+    const FaceTopology face = faces[idx];
+    const FaceFluxVectors vectors = fluxVectors[idx];
     // difference-based pressure gradient
     const float dp = psi[face.cellB] - psi[face.cellA];
-    const glm::vec3 impulseA = dp * face.fluxVectorB;
-    const glm::vec3 impulseB = dp * face.fluxVectorA;
+    const glm::vec3 impulseA = dp * vectors.fluxVectorB;
+    const glm::vec3 impulseB = dp * vectors.fluxVectorA;
 
     atomicAdd(&pressureImpulse[face.cellA].x, impulseA.x);
     atomicAdd(&pressureImpulse[face.cellA].y, impulseA.y);
@@ -346,7 +350,7 @@ void launchBuildPressureRhs(
     uint32_t cellCount,
     uint32_t faceCount,
     uint32_t boundaryFaceCount,
-    const CFDFaceGpu* d_faces,
+    const FaceTopology* d_faces,
     const CFDBoundaryFaceGpu* d_boundaryFaces,
     const float* d_faceFlux,
     const float* d_boundaryFlux,
@@ -371,7 +375,7 @@ void launchBuildPressureRhs(
 
 void launchCorrectFluxes(
     uint32_t faceCount,
-    const CFDFaceGpu* d_faces,
+    const FaceTopology* d_faces,
     const float* d_psi,
     float* d_faceFlux,
     cudaStream_t stream) {
@@ -400,7 +404,7 @@ void launchComputeOutflowRate(
     uint32_t cellCount,
     uint32_t faceCount,
     uint32_t boundaryFaceCount,
-    const CFDFaceGpu* d_faces,
+    const FaceTopology* d_faces,
     const CFDBoundaryFaceGpu* d_boundaryFaces,
     const float* d_faceFlux,
     const float* d_boundaryFlux,
@@ -453,17 +457,18 @@ void launchInitializeVelocity(
 void launchProvisionalFlux(
     uint32_t faceCount,
     uint32_t boundaryFaceCount,
-    const CFDFaceGpu* d_faces,
+    const FaceTopology* d_faces,
+    const FaceFluxVectors* d_fluxVectors,
     const CFDBoundaryFaceGpu* d_boundaryFaces,
     const BoundaryConditionGpu* d_boundaryConditions,
     const glm::vec3* d_velocityStar,
     float* d_faceFlux,
     float* d_boundaryFlux,
     cudaStream_t stream) {
-    if (faceCount > 0 && d_faces && d_velocityStar && d_faceFlux) {
+    if (faceCount > 0 && d_faces && d_fluxVectors && d_velocityStar && d_faceFlux) {
         const uint32_t blocks = (faceCount + BlockSize - 1) / BlockSize;
         provisionalInternalFluxKernel<<<blocks, BlockSize, 0, stream>>>(
-            faceCount, d_faces, d_velocityStar, d_faceFlux);
+            faceCount, d_faces, d_fluxVectors, d_velocityStar, d_faceFlux);
     }
 
     if (boundaryFaceCount > 0 && d_boundaryFaces && d_boundaryConditions && d_velocityStar && d_boundaryFlux) {
@@ -477,7 +482,8 @@ void launchCorrectVelocity(
     uint32_t cellCount,
     uint32_t faceCount,
     uint32_t boundaryFaceCount,
-    const CFDFaceGpu* d_faces,
+    const FaceTopology* d_faces,
+    const FaceFluxVectors* d_fluxVectors,
     const CFDBoundaryFaceGpu* d_boundaryFaces,
     const BoundaryConditionGpu* d_boundaryConditions,
     const float* d_cellVolumes,
@@ -490,10 +496,10 @@ void launchCorrectVelocity(
 
     cudaMemsetAsync(d_pressureImpulse, 0, cellCount * sizeof(glm::vec3), stream);
 
-    if (faceCount > 0 && d_faces) {
+    if (faceCount > 0 && d_faces && d_fluxVectors) {
         const uint32_t blocks = (faceCount + BlockSize - 1) / BlockSize;
         accumulateFacePressureImpulseKernel<<<blocks, BlockSize, 0, stream>>>(
-            faceCount, d_faces, d_psi, d_pressureImpulse);
+            faceCount, d_faces, d_fluxVectors, d_psi, d_pressureImpulse);
     }
 
     if (boundaryFaceCount > 0 && d_boundaryFaces && d_boundaryConditions) {
@@ -588,7 +594,7 @@ cudaError_t appendMomentumOutflowRate(
     uint32_t cellCount,
     uint32_t faceCount,
     uint32_t boundaryFaceCount,
-    const CFDFaceGpu* d_faces,
+    const FaceTopology* d_faces,
     const CFDBoundaryFaceGpu* d_boundaryFaces,
     const float* d_faceFlux,
     const float* d_boundaryFlux,
@@ -629,7 +635,7 @@ cudaError_t appendMomentumSubcycleBody(
     uint32_t cellCount,
     uint32_t faceCount,
     uint32_t boundaryFaceCount,
-    const CFDFaceGpu* d_faces,
+    const FaceTopology* d_faces,
     const CFDBoundaryFaceGpu* d_boundaryFaces,
     const BoundaryConditionGpu* d_boundaryConditions,
     const float* d_faceFlux,

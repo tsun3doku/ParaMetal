@@ -338,7 +338,8 @@ bool CFDProjectionSolver::projectVelocity(
     uint32_t inCellCount,
     uint32_t faceCount,
     uint32_t boundaryFaceCount,
-    const CFDFaceGpu* d_faces,
+    const FaceTopology* d_faces,
+    const FaceFluxVectors* d_fluxVectors,
     const CFDBoundaryFaceGpu* d_boundaryFaces,
     const BoundaryConditionGpu* d_boundaryConditions,
     const float* d_cellVolumes,
@@ -358,7 +359,7 @@ bool CFDProjectionSolver::projectVelocity(
     // provisional face fluxes phi* from velocityStar
     fluidkernels::launchProvisionalFlux(
         faceCount, boundaryFaceCount,
-        d_faces, d_boundaryFaces,
+        d_faces, d_fluxVectors, d_boundaryFaces,
         d_boundaryConditions,
         d_velocityStar,
         d_faceFlux, d_boundaryFlux,
@@ -416,7 +417,7 @@ bool CFDProjectionSolver::projectVelocity(
     // direct velocity correction: u^{n+1} = u* - impulse / V_cell
     fluidkernels::launchCorrectVelocity(
         inCellCount, faceCount, boundaryFaceCount,
-        d_faces, d_boundaryFaces,
+        d_faces, d_fluxVectors, d_boundaryFaces,
         d_boundaryConditions,
         d_cellVolumes,
         d_psi.get(),
