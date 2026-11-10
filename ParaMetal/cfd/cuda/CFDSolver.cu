@@ -119,7 +119,6 @@ void CFDSolver::releaseTopologyBuffers() {
     d_faceFlux.reset();
     d_boundaryFlux.reset();
     d_outflowRates.reset();
-    d_cflPacked.reset();
     d_boundaryConditions.reset();
 }
 
@@ -207,7 +206,6 @@ bool CFDSolver::buildTopology(
         !d_momentumAccum.allocate(fluidNodeCount) ||
         !d_cellViscousWeight.allocate(fluidNodeCount) ||
         !d_outflowRates.allocate(fluidNodeCount) ||
-        !d_cflPacked.allocate(1) ||
         !d_boundaryConditions.allocate(7)) {
         clearTopology();
         return false;
@@ -361,7 +359,7 @@ bool CFDSolver::buildMomentumSubcycleGraph(float targetCourant) {
             d_faces.get(), d_boundaryFaces.get(), d_boundaryConditions.get(),
             d_faceFlux.get(), d_boundaryFlux.get(), d_cellVolumes.get(), d_cellViscousWeight.get(),
             d_kinematicViscosity.get(), d_momentumAccum.get(), d_velocity.get(), d_velocityStar.get(),
-            d_subcycleTimestep.get(), d_subcycleIteration.get()) != cudaSuccess ||
+            d_subcycleTimestep.get()) != cudaSuccess ||
         cudaSubcycle::endSubcycleLoop(loop.body, body, handle, schedule) != cudaSuccess) {
         cudaGraphDestroy(graph);
         destroyMomentumSubcycleGraph();
@@ -388,22 +386,6 @@ void CFDSolver::destroyMomentumSubcycleGraph() {
 
 void CFDSolver::setPressureSolverParameters(int maxIterations, float tolerance) {
     projectionSolver.setPressureSolverParameters(maxIterations, tolerance);
-}
-
-void CFDSolver::computeAndReduceOutflowRate(cudaStream_t stream) {
-    if (fluidNodeCount == 0) return;
-
-    fluidkernels::launchComputeOutflowRate(
-        fluidNodeCount, faceCount, boundaryFaceCount,
-        d_faces.get(), d_boundaryFaces.get(),
-        d_faceFlux.get(), d_boundaryFlux.get(),
-        d_cellVolumes.get(), d_outflowRates.get(), stream);
-
-    if (!cudaUtils::cudaCheck(cudaMemsetAsync(d_cflPacked.get(), 0, sizeof(unsigned long long), stream), "zero d_cflPacked")) {
-        return;
-    }
-    fluidkernels::launchCflArgmax(
-        fluidNodeCount, d_outflowRates.get(), d_cflPacked.get(), stream);
 }
 
 bool CFDSolver::setBoundaryConditions(const DomainBoundaryConditions& conditions) {
@@ -497,8 +479,6 @@ bool CFDSolver::initializeVelocity(const glm::vec3& initialVelocity) {
         }
         fluidkernels::publishFineBoundaryFluxes(boundaryFaceCount, d_boundaryGlobalIndex.get(), d_boundaryFlux.get(), externalCanonicalBoundaryFlux, projectionSolver.getPublishGate(), stream);
     }
-
-    computeAndReduceOutflowRate(stream);
 
     if (!cudaUtils::cudaCheck(cudaStreamSynchronize(stream), "sync initializeVelocity")) {
         return false;
@@ -622,8 +602,6 @@ CFDSolver::StepOutcome CFDSolver::stepCfd(
         failed = true;
         return StepOutcome::Failed;
     }
-
-    computeAndReduceOutflowRate(stream);
 
     if (externalVelocity && fluidNodeCount > 0) {
         fluidkernels::publishVelocity(fluidNodeCount, d_velocity.get(), externalVelocity, projectionSolver.getPublishGate(), stream);

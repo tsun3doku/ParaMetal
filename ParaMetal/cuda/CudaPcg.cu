@@ -133,15 +133,17 @@ static __device__ __forceinline__ void spmvRowsGridStride(
             if constexpr (AccumulatePAp) localPAp += weight[row] * sum;
         }
     }
-    if (lane == 0) sharedPAp[subwarp] = localPAp;
-    __syncthreads();
-    if (AccumulatePAp && threadIdx.x == 0) {
-        const uint32_t subwarpsPerBlock = blockDim.x / SubwarpSize;
-        float totalPAp = 0.0f;
-        for (uint32_t i = 0; i < subwarpsPerBlock; ++i) {
-            totalPAp += sharedPAp[i];
+    if constexpr (AccumulatePAp) {
+        if (lane == 0) sharedPAp[subwarp] = localPAp;
+        __syncthreads();
+        if (threadIdx.x == 0) {
+            const uint32_t subwarpsPerBlock = blockDim.x / SubwarpSize;
+            float totalPAp = 0.0f;
+            for (uint32_t i = 0; i < subwarpsPerBlock; ++i) {
+                totalPAp += sharedPAp[i];
+            }
+            atomicAdd(&status->pAp, totalPAp);
         }
-        atomicAdd(&status->pAp, totalPAp);
     }
 }
 

@@ -69,7 +69,6 @@ public:
     void cleanup();
 
 private:
-    void computeAndReduceOutflowRate(cudaStream_t stream);
     void clearTopology();
     void releaseTopologyBuffers();
 
@@ -107,7 +106,6 @@ private:
     cudaUtils::CudaBuffer<uint32_t> d_boundaryGlobalIndex;
 
     cudaUtils::CudaBuffer<float> d_outflowRates;
-    cudaUtils::CudaBuffer<unsigned long long> d_cflPacked;
 
     cudaGraphExec_t momentumExec = nullptr;
     float builtTargetCourant = 0.0f;

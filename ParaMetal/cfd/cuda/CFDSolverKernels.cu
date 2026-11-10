@@ -222,7 +222,7 @@ __global__ void applyMomentumPredictorKernel(
     uint32_t cellCount,
     const float* __restrict__ cellVolumes,
     const float* __restrict__ cellViscousWeights,
-    const glm::vec4* __restrict__ velocity,
+    glm::vec4* __restrict__ velocity,
     const glm::vec3* __restrict__ momentumAccum,
     glm::vec3* __restrict__ velocityStar,
     const float* __restrict__ kinematicViscosity,
@@ -237,8 +237,10 @@ __global__ void applyMomentumPredictorKernel(
     const float invEffVol = (effVol > 0.0f) ? (1.0f / effVol) : 0.0f;
     const glm::vec3 uOld = glm::vec3(velocity[idx]);
     const glm::vec3 net = momentumAccum[idx];
+    const glm::vec3 uNew = uOld + (dt * invEffVol) * net;
 
-    velocityStar[idx] = uOld + (dt * invEffVol) * net;
+    velocityStar[idx] = uNew;
+    velocity[idx] = glm::vec4(uNew, 0.0f);
 }
 
 __global__ void provisionalInternalFluxKernel(
@@ -424,43 +426,6 @@ void launchComputeOutflowRate(
     const uint32_t blocks = (cellCount + BlockSize - 1) / BlockSize;
     finalizeOutflowRateKernel<<<blocks, BlockSize, 0, stream>>>(
         cellCount, d_cellVolumes, d_outflowRates, nullptr);
-}
-
-__global__ void argmaxOutflowRateKernel(
-    uint32_t cellCount,
-    const float* __restrict__ rates,
-    unsigned long long* __restrict__ packedMax) {
-    const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= cellCount) return;
-
-    const float rate = rates[idx];
-    if (!(rate > 0.0f)) return;
-
-    const unsigned long long packed =
-        (static_cast<unsigned long long>(__float_as_uint(rate)) << 32) | static_cast<unsigned long long>(idx);
-    atomicMax(packedMax, packed);
-}
-
-__global__ void advanceVelocityKernel(
-    uint32_t cellCount,
-    const glm::vec3* __restrict__ velocityStar,
-    glm::vec4* __restrict__ velocity,
-    const cudaSubcycle::SubcycleTimestep* __restrict__ timestep,
-    const uint32_t* __restrict__ iteration) {
-    if (*iteration + 1u >= timestep->count) return;
-    const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= cellCount) return;
-    velocity[idx] = glm::vec4(velocityStar[idx], 0.0f);
-}
-
-void launchCflArgmax(
-    uint32_t cellCount,
-    const float* d_outflowRates,
-    unsigned long long* d_packedMax,
-    cudaStream_t stream) {
-    if (cellCount == 0 || !d_outflowRates || !d_packedMax) return;
-    const uint32_t blocks = (cellCount + BlockSize - 1) / BlockSize;
-    argmaxOutflowRateKernel<<<blocks, BlockSize, 0, stream>>>(cellCount, d_outflowRates, d_packedMax);
 }
 
 void launchZeroMasked(
@@ -675,8 +640,7 @@ cudaError_t appendMomentumSubcycleBody(
     glm::vec3* d_momentumAccum,
     glm::vec4* d_velocity,
     glm::vec3* d_velocityStar,
-    const cudaSubcycle::SubcycleTimestep* d_timestep,
-    const uint32_t* d_iteration) {
+    const cudaSubcycle::SubcycleTimestep* d_timestep) {
     using cudaGraphBuilder::appendKernel;
     using cudaGraphBuilder::appendMemset;
 
@@ -693,11 +657,8 @@ cudaError_t appendMomentumSubcycleBody(
             boundaryFaceCount, d_boundaryFaces, d_boundaryConditions, d_boundaryFlux, d_velocity, d_kinematicViscosity, d_momentumAccum);
         if (result != cudaSuccess) return result;
     }
-    result = appendKernel(body, prev, (void*)applyMomentumPredictorKernel, dim3((cellCount + BlockSize - 1) / BlockSize), dim3(BlockSize),
+    return appendKernel(body, prev, (void*)applyMomentumPredictorKernel, dim3((cellCount + BlockSize - 1) / BlockSize), dim3(BlockSize),
         cellCount, d_cellVolumes, d_cellViscousWeight, d_velocity, d_momentumAccum, d_velocityStar, d_kinematicViscosity, d_timestep);
-    if (result != cudaSuccess) return result;
-    return appendKernel(body, prev, (void*)advanceVelocityKernel, dim3((cellCount + BlockSize - 1) / BlockSize), dim3(BlockSize),
-        cellCount, d_velocityStar, d_velocity, d_timestep, d_iteration);
 }
 
 } // namespace cfd::fluidkernels

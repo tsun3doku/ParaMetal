@@ -11,12 +11,6 @@ namespace cfd::fluidkernels {
 
 constexpr uint32_t BlockSize = 256;
 
-void launchCflArgmax(
-    uint32_t cellCount,
-    const float* d_outflowRates,
-    unsigned long long* d_packedMax,
-    cudaStream_t stream);
-
 void launchBuildPressureRhs(
     uint32_t cellCount,
     uint32_t faceCount,
@@ -148,7 +142,6 @@ cudaError_t appendMomentumSubcycleBody(
     glm::vec3* d_momentumAccum,
     glm::vec4* d_velocity,
     glm::vec3* d_velocityStar,
-    const cudaSubcycle::SubcycleTimestep* d_timestep,
-    const uint32_t* d_iteration);
+    const cudaSubcycle::SubcycleTimestep* d_timestep);
 
 } // namespace cfd::fluidkernels
