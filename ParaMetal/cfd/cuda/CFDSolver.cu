@@ -99,7 +99,7 @@ void CFDSolver::clearTopology() {
 
     releaseTopologyBuffers();
 
-    hostFaces.clear();
+    hostFaceTopology.clear();
     hostBoundaryFaces.clear();
     hostCellVolumes.clear();
     component.clear();
@@ -112,7 +112,6 @@ void CFDSolver::releaseTopologyBuffers() {
     d_cellVolumes.reset();
     d_velocity.reset();
     d_velocityStar.reset();
-    d_faces.reset();
     d_faceTopology.reset();
     d_faceFluxVectors.reset();
     d_boundaryFaces.reset();
@@ -187,15 +186,14 @@ bool CFDSolver::buildTopology(
     }
 
     fluidNodeCount = topology.fluidNodeCount;
-    faceCount = static_cast<uint32_t>(topology.faces.size());
+    faceCount = static_cast<uint32_t>(topology.faceTopology.size());
     boundaryFaceCount = static_cast<uint32_t>(topology.boundaryFaces.size());
 
     if (fluidNodeCount == 0) {
         return true;
     }
 
-    this->hostFaces = std::move(topology.faces);
-    std::vector<FaceTopology> hostFaceTopology = std::move(topology.faceTopology);
+    this->hostFaceTopology = std::move(topology.faceTopology);
     std::vector<FaceFluxVectors> hostFaceFluxVectors = std::move(topology.faceFluxVectors);
     this->hostBoundaryFaces = std::move(topology.boundaryFaces);
     this->hostCellVolumes = std::move(topology.cellVolumes);
@@ -216,8 +214,7 @@ bool CFDSolver::buildTopology(
     }
 
     if (faceCount > 0) {
-        if (!d_faces.allocate(faceCount) ||
-            !d_faceTopology.allocate(faceCount) ||
+        if (!d_faceTopology.allocate(faceCount) ||
             !d_faceFluxVectors.allocate(faceCount) ||
             !d_faceGlobalIndex.allocate(faceCount) ||
             !d_faceFlux.allocate(faceCount)) {
@@ -261,8 +258,7 @@ bool CFDSolver::buildTopology(
     }
 
     if (faceCount > 0) {
-        if (!d_faces.uploadAsync(this->hostFaces.data(), faceCount, stream) ||
-            !d_faceTopology.uploadAsync(hostFaceTopology.data(), faceCount, stream) ||
+        if (!d_faceTopology.uploadAsync(this->hostFaceTopology.data(), faceCount, stream) ||
             !d_faceFluxVectors.uploadAsync(hostFaceFluxVectors.data(), faceCount, stream) ||
             !d_faceGlobalIndex.uploadAsync(topology.faceGlobalIndex.data(), faceCount, stream) ||
             !cudaUtils::cudaCheck(cudaMemsetAsync(d_faceFlux.get(), 0, faceCount * sizeof(float), stream), "zero d_faceFlux")) {
@@ -287,7 +283,7 @@ bool CFDSolver::buildTopology(
         return false;
     }
 
-    if (!projectionSolver.build(fluidNodeCount, this->hostFaces, this->hostBoundaryFaces, fullBcs, this->component, this->componentCount, this->hostCellVolumes, flowStreamHandle)) {
+    if (!projectionSolver.build(fluidNodeCount, this->hostFaceTopology, this->hostBoundaryFaces, fullBcs, this->component, this->componentCount, this->hostCellVolumes, flowStreamHandle)) {
         std::cerr << "[CFDSolver] buildTopology FAILED: projectionSolver.build failed\n";
         clearTopology();
         return false;
@@ -299,7 +295,7 @@ bool CFDSolver::buildTopology(
 bool CFDSolver::buildMomentumViscousWeights(const std::array<BoundaryCondition, 7>& bcs) {
     if (fluidNodeCount == 0) return true;
     std::vector<float> diagWeights(fluidNodeCount, 0.0f);
-    for (const auto& cf : hostFaces) {
+    for (const auto& cf : hostFaceTopology) {
         if (cf.cellA < fluidNodeCount && cf.cellB < fluidNodeCount && cf.cellA != cf.cellB) {
             diagWeights[cf.cellA] += cf.projectionWeight;
             diagWeights[cf.cellB] += cf.projectionWeight;
@@ -416,13 +412,13 @@ bool CFDSolver::setBoundaryConditions(const DomainBoundaryConditions& conditions
         }
     }
 
-    if (typeChanged && fluidNodeCount > 0 && !hostFaces.empty()) {
+    if (typeChanged && fluidNodeCount > 0 && !hostFaceTopology.empty()) {
         auto fullBcs = toFullBoundaryArray(boundaryConditions);
         if (!buildMomentumViscousWeights(fullBcs)) {
             std::cerr << "[CFDSolver] setBoundaryConditions: buildMomentumViscousWeights failed\n";
             return false;
         }
-        if (!projectionSolver.build(fluidNodeCount, hostFaces, hostBoundaryFaces, fullBcs, component, componentCount, hostCellVolumes, flowStreamHandle)) {
+        if (!projectionSolver.build(fluidNodeCount, hostFaceTopology, hostBoundaryFaces, fullBcs, component, componentCount, hostCellVolumes, flowStreamHandle)) {
             std::cerr << "[CFDSolver] setBoundaryConditions: projectionSolver.build failed\n";
             return false;
         }

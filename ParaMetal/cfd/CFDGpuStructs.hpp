@@ -6,15 +6,6 @@
 
 namespace cfd {
 
-struct CFDFaceGpu {
-    uint32_t cellA = 0;
-    uint32_t cellB = 0;
-    glm::vec3 fluxVectorA{0.0f};
-    glm::vec3 fluxVectorB{0.0f};
-    float projectionWeight = 0.0f; // sum of constituent projection weights
-};
-static_assert(sizeof(CFDFaceGpu) == 36, "CFDFaceGpu must match GPU stride");
-
 struct FaceTopology {
     uint32_t cellA = 0;
     uint32_t cellB = 0;

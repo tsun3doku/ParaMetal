@@ -31,7 +31,7 @@ bool CFDProjectionSolver::initialize(int inCudaDevice) {
 
 bool CFDProjectionSolver::build(
     uint32_t inCellCount,
-    const std::vector<CFDFaceGpu>& faces,
+    const std::vector<FaceTopology>& faces,
     const std::vector<CFDBoundaryFaceGpu>& boundaryFaces,
     const std::array<BoundaryCondition, 7>& boundaryConditions,
     const std::vector<uint32_t>& component,

@@ -98,7 +98,6 @@ private:
     cudaUtils::CudaBuffer<float> d_faceFlux;
     cudaUtils::CudaBuffer<float> d_boundaryFlux;
 
-    cudaUtils::CudaBuffer<CFDFaceGpu> d_faces;
     cudaUtils::CudaBuffer<FaceTopology> d_faceTopology;
     cudaUtils::CudaBuffer<FaceFluxVectors> d_faceFluxVectors;
     cudaUtils::CudaBuffer<CFDBoundaryFaceGpu> d_boundaryFaces;
@@ -136,7 +135,7 @@ private:
     DomainBoundaryConditions boundaryConditions = createDefaultDomainBoundaries();
     cudaUtils::CudaBuffer<BoundaryConditionGpu> d_boundaryConditions;
 
-    std::vector<CFDFaceGpu> hostFaces;
+    std::vector<FaceTopology> hostFaceTopology;
     std::vector<CFDBoundaryFaceGpu> hostBoundaryFaces;
     std::vector<float> hostCellVolumes;
 };
