@@ -37,10 +37,11 @@ bool CFDSolver::initialize(VulkanDevice& vulkanDevice) {
     }
     flowStreamHandle = reinterpret_cast<void*>(stream);
 
-    if (!cudaUtils::cudaCheck(cudaEventCreate(&stepStartEvent), "create stepStartEvent") ||
-        !cudaUtils::cudaCheck(cudaEventCreate(&stepEndEvent), "create stepEndEvent")) {
-        cleanup();
-        return false;
+    for (cudaUtils::CudaEvent& marker : phaseMarkers) {
+        if (!marker.create()) {
+            cleanup();
+            return false;
+        }
     }
 
     if (!projectionSolver.initialize(cudaDevice)) {
@@ -58,12 +59,14 @@ bool CFDSolver::bindOutput(
     float* inCanonicalFaceFlux,
     uint32_t inCanonicalFaceCount,
     float* inCanonicalBoundaryFlux,
-    uint32_t inCanonicalBoundaryFaceCount) {
+    uint32_t inCanonicalBoundaryFaceCount,
+    glm::vec4* velocityGradients) {
     externalVelocity = velocityVec4;
     externalCanonicalFaceFlux = inCanonicalFaceFlux;
     externalCanonicalFaceCount = inCanonicalFaceCount;
     externalCanonicalBoundaryFlux = inCanonicalBoundaryFlux;
     externalCanonicalBoundaryFaceCount = inCanonicalBoundaryFaceCount;
+    externalVelocityGradients = velocityGradients;
     return true;
 }
 
@@ -78,15 +81,18 @@ bool CFDSolver::bindReleaseSemaphore(cudaExternalSemaphore_t semaphore) {
 }
 
 void CFDSolver::clearTopology() {
-    projectionSolver.cleanup();
     destroyMomentumSubcycleGraph();
+    projectionSolver.cleanup();
+    reconstruction.reset();
 
     d_maxOutflowRate.reset();
+    d_mergedViscousWeight.reset();
     d_subcycleInvalid.reset();
     d_subcycleIteration.reset();
     d_subcycleTimestep.reset();
     d_macroDt.reset();
     d_kinematicViscosity.reset();
+    d_referenceVelocity.reset();
     if (pinnedSubcycleTimestep != nullptr) {
         cudaFreeHost(pinnedSubcycleTimestep);
         pinnedSubcycleTimestep = nullptr;
@@ -96,12 +102,14 @@ void CFDSolver::clearTopology() {
     faceCount = 0;
     boundaryFaceCount = 0;
     failed = false;
+    stepIndex = 0;
 
     releaseTopologyBuffers();
 
     hostFaceTopology.clear();
     hostBoundaryFaces.clear();
     hostCellVolumes.clear();
+    hostCellCentroids.clear();
     component.clear();
     componentCount = 0;
 }
@@ -111,6 +119,8 @@ void CFDSolver::releaseTopologyBuffers() {
     d_cellViscousWeight.reset();
     d_cellVolumes.reset();
     d_velocity.reset();
+    d_rkStageA.reset();
+    d_rkStageB.reset();
     d_velocityStar.reset();
     d_faceTopology.reset();
     d_faceFluxVectors.reset();
@@ -120,7 +130,10 @@ void CFDSolver::releaseTopologyBuffers() {
     d_faceFlux.reset();
     d_boundaryFlux.reset();
     d_outflowRates.reset();
+    d_viscousMergeTarget.reset(); d_viscousMergeVolume.reset();
+    d_viscousAccum.reset(); d_mergedViscousAccum.reset();
     d_boundaryConditions.reset();
+    d_stageStamps.reset();
 }
 
 void CFDSolver::cleanup() {
@@ -130,14 +143,10 @@ void CFDSolver::cleanup() {
 
     clearTopology();
 
-    if (stepStartEvent != nullptr) {
-        cudaEventDestroy(stepStartEvent);
-        stepStartEvent = nullptr;
+    for (cudaUtils::CudaEvent& marker : phaseMarkers) {
+        marker.reset();
     }
-    if (stepEndEvent != nullptr) {
-        cudaEventDestroy(stepEndEvent);
-        stepEndEvent = nullptr;
-    }
+    phaseMarkersRecorded = false;
     lastStepGpuMs = 0.0f;
 
     if (flowStreamHandle != nullptr) {
@@ -147,6 +156,7 @@ void CFDSolver::cleanup() {
     }
 
     externalVelocity = nullptr;
+    externalVelocityGradients = nullptr;
     externalCanonicalFaceFlux = nullptr;
     externalCanonicalFaceCount = 0;
     externalCanonicalBoundaryFlux = nullptr;
@@ -165,9 +175,7 @@ void CFDSolver::waitForIdle() {
 }
 
 bool CFDSolver::buildTopology(
-    const std::vector<topology::Fragment>& fragments,
-    const std::vector<topology::Face>& faces,
-    const std::vector<topology::BoundaryFace>& boundaryFaces,
+    const topology::GlobalDomain& domain,
     const std::vector<uint32_t>& globalFragmentToFluidNode,
     const std::vector<uint32_t>& fluidNodeToGlobalFragment) {
     if (!initialized || cudaDevice < 0) {
@@ -179,7 +187,7 @@ bool CFDSolver::buildTopology(
     cudaSetDevice(cudaDevice);
 
     CFDTopology topology;
-    if (!buildCFDTopology(fragments, faces, boundaryFaces, globalFragmentToFluidNode, fluidNodeToGlobalFragment, topology)) {
+    if (!buildCFDTopology(domain, globalFragmentToFluidNode, fluidNodeToGlobalFragment, topology)) {
         std::cerr << "[CFDSolver] buildTopology FAILED: buildCFDTopology failed\n";
         clearTopology();
         return false;
@@ -193,22 +201,69 @@ bool CFDSolver::buildTopology(
         return true;
     }
 
+    cudaStream_t stream = reinterpret_cast<cudaStream_t>(flowStreamHandle);
+    if (!reconstruction.build(domain, globalFragmentToFluidNode,
+                              fluidNodeToGlobalFragment, topology, stream)) {
+        std::cerr << "[CFDSolver] buildTopology FAILED: CFD reconstruction build failed\n";
+        clearTopology();
+        return false;
+    }
+
     this->hostFaceTopology = std::move(topology.faceTopology);
     std::vector<FaceFluxVectors> hostFaceFluxVectors = std::move(topology.faceFluxVectors);
     this->hostBoundaryFaces = std::move(topology.boundaryFaces);
     this->hostCellVolumes = std::move(topology.cellVolumes);
+    this->hostCellCentroids = std::move(topology.cellCentroids);
     this->component = std::move(topology.component);
     this->componentCount = topology.componentCount;
 
-    cudaStream_t stream = reinterpret_cast<cudaStream_t>(flowStreamHandle);
+    std::vector<uint32_t> mergeTarget(fluidNodeCount);
+    std::vector<float> mergeVolume = this->hostCellVolumes;
+    std::vector<float> medianWork = this->hostCellVolumes;
+    const size_t medianIndex = medianWork.size() / 2u;
+    std::nth_element(medianWork.begin(), medianWork.begin() + medianIndex, medianWork.end());
+    const float mergeThreshold = medianWork.empty() ? 0.0f : 0.05f * medianWork[medianIndex];
+    for (uint32_t i = 0; i < fluidNodeCount; ++i) mergeTarget[i] = i;
+    std::vector<uint32_t> bestMergeNeighbor(fluidNodeCount, UINT32_MAX);
+    std::vector<float> bestMergeWeight(fluidNodeCount, -1.0f);
+    for (const FaceTopology& face : this->hostFaceTopology) {
+        const uint32_t a = face.cellA, b = face.cellB;
+        if (a >= fluidNodeCount || b >= fluidNodeCount || !std::isfinite(face.projectionWeight)) continue;
+        if (mergeVolume[a] < mergeThreshold && mergeVolume[b] >= mergeThreshold &&
+            face.projectionWeight > bestMergeWeight[a]) {
+            bestMergeNeighbor[a] = b;
+            bestMergeWeight[a] = face.projectionWeight;
+        }
+        if (mergeVolume[b] < mergeThreshold && mergeVolume[a] >= mergeThreshold &&
+            face.projectionWeight > bestMergeWeight[b]) {
+            bestMergeNeighbor[b] = a;
+            bestMergeWeight[b] = face.projectionWeight;
+        }
+    }
+    for (uint32_t cell = 0; cell < fluidNodeCount; ++cell) {
+        if (bestMergeNeighbor[cell] != UINT32_MAX) mergeTarget[cell] = bestMergeNeighbor[cell];
+    }
+    for (uint32_t cell = 0; cell < fluidNodeCount; ++cell) {
+        if (mergeTarget[cell] != cell) mergeVolume[mergeTarget[cell]] += mergeVolume[cell];
+    }
 
     if (!d_cellVolumes.allocate(fluidNodeCount) ||
         !d_velocity.allocate(fluidNodeCount) ||
+        !d_rkStageA.allocate(fluidNodeCount) ||
+        !d_rkStageB.allocate(fluidNodeCount) ||
         !d_velocityStar.allocate(fluidNodeCount) ||
         !d_momentumAccum.allocate(fluidNodeCount) ||
+        !d_viscousAccum.allocate(fluidNodeCount) || !d_mergedViscousAccum.allocate(fluidNodeCount) ||
+        !d_viscousMergeTarget.allocate(fluidNodeCount) || !d_viscousMergeVolume.allocate(fluidNodeCount) ||
         !d_cellViscousWeight.allocate(fluidNodeCount) ||
         !d_outflowRates.allocate(fluidNodeCount) ||
+        !d_mergedViscousWeight.allocate(fluidNodeCount) ||
         !d_boundaryConditions.allocate(7)) {
+        clearTopology();
+        return false;
+    }
+    if (!d_viscousMergeTarget.upload(mergeTarget.data(), fluidNodeCount) ||
+        !d_viscousMergeVolume.upload(mergeVolume.data(), fluidNodeCount)) {
         clearTopology();
         return false;
     }
@@ -237,7 +292,9 @@ bool CFDSolver::buildTopology(
         !d_subcycleIteration.allocate(1) ||
         !d_subcycleTimestep.allocate(1) ||
         !d_macroDt.allocate(1) ||
-        !d_kinematicViscosity.allocate(1)) {
+        !d_kinematicViscosity.allocate(1) ||
+        !d_referenceVelocity.allocate(1) ||
+        !d_stageStamps.allocate(StageStampCount)) {
         clearTopology();
         return false;
     }
@@ -311,7 +368,11 @@ bool CFDSolver::buildMomentumViscousWeights(const std::array<BoundaryCondition, 
             }
         }
     }
-    return d_cellViscousWeight.upload(diagWeights.data(), fluidNodeCount);
+    if (!d_cellViscousWeight.upload(diagWeights.data(), fluidNodeCount)) return false;
+    fluidkernels::launchAggregateViscousWeights(
+        fluidNodeCount, d_cellViscousWeight.get(), d_viscousMergeTarget.get(),
+        d_mergedViscousWeight.get(), reinterpret_cast<cudaStream_t>(flowStreamHandle));
+    return cudaUtils::cudaCheck(cudaGetLastError(), "aggregate merged viscous weights");
 }
 
 bool CFDSolver::buildMomentumSubcycleGraph(float targetCourant) {
@@ -321,7 +382,8 @@ bool CFDSolver::buildMomentumSubcycleGraph(float targetCourant) {
     destroyMomentumSubcycleGraph();
 
     const float zero = 0.0f;
-    if (!d_macroDt.upload(&zero, 1) || !d_kinematicViscosity.upload(&zero, 1)) {
+    if (!d_macroDt.upload(&zero, 1) || !d_kinematicViscosity.upload(&zero, 1) ||
+        !d_referenceVelocity.upload(&referenceVelocity, 1)) {
         return false;
     }
 
@@ -334,7 +396,9 @@ bool CFDSolver::buildMomentumSubcycleGraph(float targetCourant) {
     if (fluidkernels::appendMomentumOutflowRate(
             graph, prev, fluidNodeCount, faceCount, boundaryFaceCount,
             d_faceTopology.get(), d_boundaryFaces.get(), d_faceFlux.get(), d_boundaryFlux.get(),
-            d_cellVolumes.get(), d_outflowRates.get(), d_maxOutflowRate.get(), d_subcycleInvalid.get()) != cudaSuccess) {
+            d_cellVolumes.get(), d_viscousMergeTarget.get(),
+            d_viscousMergeVolume.get(), d_mergedViscousWeight.get(), d_kinematicViscosity.get(), targetCourant,
+            d_outflowRates.get(), d_maxOutflowRate.get(), d_subcycleInvalid.get()) != cudaSuccess) {
         cudaGraphDestroy(graph);
         destroyMomentumSubcycleGraph();
         return false;
@@ -361,9 +425,13 @@ bool CFDSolver::buildMomentumSubcycleGraph(float targetCourant) {
     if (fluidkernels::appendMomentumSubcycleBody(
             loop.body, body, fluidNodeCount, faceCount, boundaryFaceCount,
             d_faceTopology.get(), d_boundaryFaces.get(), d_boundaryConditions.get(),
-            d_faceFlux.get(), d_boundaryFlux.get(), d_cellVolumes.get(), d_cellViscousWeight.get(),
-            d_kinematicViscosity.get(), d_momentumAccum.get(), d_velocity.get(), d_velocityStar.get(),
-            d_subcycleTimestep.get()) != cudaSuccess ||
+            d_faceFlux.get(), d_boundaryFlux.get(), d_cellVolumes.get(),
+            d_kinematicViscosity.get(), d_referenceVelocity.get(),
+            d_momentumAccum.get(),
+            d_viscousAccum.get(), d_mergedViscousAccum.get(), d_viscousMergeTarget.get(), d_viscousMergeVolume.get(),
+            d_velocity.get(), d_rkStageA.get(), d_rkStageB.get(), d_velocityStar.get(),
+            d_subcycleTimestep.get(), &reconstruction,
+            d_stageStamps.get()) != cudaSuccess ||
         cudaSubcycle::endSubcycleLoop(loop.body, body, handle, schedule) != cudaSuccess) {
         cudaGraphDestroy(graph);
         destroyMomentumSubcycleGraph();
@@ -413,6 +481,7 @@ bool CFDSolver::setBoundaryConditions(const DomainBoundaryConditions& conditions
     }
 
     if (typeChanged && fluidNodeCount > 0 && !hostFaceTopology.empty()) {
+        waitForIdle();
         auto fullBcs = toFullBoundaryArray(boundaryConditions);
         if (!buildMomentumViscousWeights(fullBcs)) {
             std::cerr << "[CFDSolver] setBoundaryConditions: buildMomentumViscousWeights failed\n";
@@ -441,8 +510,7 @@ bool CFDSolver::initializeVelocity(const glm::vec3& initialVelocity) {
 
     failed = false;
 
-    // Reinitialization discards the previous step's plan; otherwise the first
-    // step of the new run rejects that stale plan and fails again.
+    // Reinitialization discards stale subcycle plan before next run
     if (pinnedSubcycleTimestep != nullptr) {
         *pinnedSubcycleTimestep = cudaSubcycle::SubcycleTimestep{};
         pinnedSubcycleTimestep->status = cudaSubcycle::SubcycleStatus::Ok;
@@ -469,6 +537,14 @@ bool CFDSolver::initializeVelocity(const glm::vec3& initialVelocity) {
 
     if (externalVelocity && fluidNodeCount > 0) {
         fluidkernels::publishVelocity(fluidNodeCount, d_velocity.get(), externalVelocity, projectionSolver.getPublishGate(), stream);
+    }
+    if (externalVelocityGradients && fluidNodeCount > 0) {
+        fluidkernels::launchReconstructVelocityGradients(
+            fluidNodeCount, faceCount, boundaryFaceCount,
+            d_faceTopology.get(), d_faceFluxVectors.get(),
+            d_boundaryFaces.get(), d_boundaryConditions.get(),
+            d_cellVolumes.get(), d_velocity.get(),
+            externalVelocityGradients, stream);
     }
 
     if (externalCanonicalFaceFlux && externalCanonicalFaceCount > 0) {
@@ -550,15 +626,29 @@ CFDSolver::StepOutcome CFDSolver::stepCfd(
     cudaSetDevice(cudaDevice);
     cudaStream_t stream = reinterpret_cast<cudaStream_t>(flowStreamHandle);
 
-    if (stepEndEvent != nullptr && cudaEventQuery(stepEndEvent) == cudaSuccess) {
-        float elapsedMs = 0.0f;
-        if (cudaEventElapsedTime(&elapsedMs, stepStartEvent, stepEndEvent) == cudaSuccess && elapsedMs > 0.0f) {
-            lastStepGpuMs = elapsedMs;
+    if (phaseMarkersRecorded) {
+        const cudaError_t markerQuery = cudaEventQuery(phaseMarkers[PhaseMarkerCount - 1].handle());
+        if (markerQuery == cudaSuccess) {
+            phaseMarkersRecorded = false;
+            float waitMs = 0.0f;
+            float momentumMs = 0.0f;
+            float projectionMs = 0.0f;
+            float publishMs = 0.0f;
+            float totalMs = 0.0f;
+            phaseMarkers[1].elapsedSince(phaseMarkers[0], waitMs);
+            phaseMarkers[2].elapsedSince(phaseMarkers[1], momentumMs);
+            phaseMarkers[3].elapsedSince(phaseMarkers[2], projectionMs);
+            phaseMarkers[4].elapsedSince(phaseMarkers[3], publishMs);
+            phaseMarkers[4].elapsedSince(phaseMarkers[0], totalMs);
+            if (totalMs > 0.0f) {
+                lastStepGpuMs = totalMs;
+            }
+        } else if (markerQuery != cudaErrorNotReady) {
+            (void)cudaGetLastError();
+            phaseMarkersRecorded = false;
         }
     }
-    if (stepStartEvent) {
-        cudaEventRecord(stepStartEvent, stream);
-    }
+    phaseMarkers[0].record(stream);
 
     if (releaseSemaphore != nullptr && releaseWaitValue > 0) {
         cudaExternalSemaphoreWaitParams waitParams{};
@@ -570,6 +660,7 @@ CFDSolver::StepOutcome CFDSolver::stepCfd(
             return StepOutcome::Failed;
         }
     }
+    phaseMarkers[1].record(stream);
 
     if (momentumExec == nullptr || !(targetCourant == builtTargetCourant)) {
         std::cerr << "[CFDSolver] momentum subcycle graph was not prepared for this step" << std::endl;
@@ -578,7 +669,8 @@ CFDSolver::StepOutcome CFDSolver::stepCfd(
     }
 
     if (!d_macroDt.uploadAsync(&macroDt, 1, stream) ||
-        !d_kinematicViscosity.uploadAsync(&kinematicViscosity, 1, stream)) {
+        !d_kinematicViscosity.uploadAsync(&kinematicViscosity, 1, stream) ||
+        !d_referenceVelocity.uploadAsync(&referenceVelocity, 1, stream)) {
         failed = true;
         return StepOutcome::Failed;
     }
@@ -592,6 +684,7 @@ CFDSolver::StepOutcome CFDSolver::stepCfd(
         failed = true;
         return StepOutcome::Failed;
     }
+    phaseMarkers[2].record(stream);
 
     if (!projectionSolver.projectVelocity(
             fluidNodeCount, faceCount, boundaryFaceCount,
@@ -600,15 +693,25 @@ CFDSolver::StepOutcome CFDSolver::stepCfd(
             d_cellVolumes.get(),
             d_faceFlux.get(), d_boundaryFlux.get(),
             d_velocityStar.get(), d_velocity.get(),
-            reinterpret_cast<const uint32_t*>(&d_subcycleTimestep.get()->status),
+            reinterpret_cast<uint32_t*>(&d_subcycleTimestep.get()->status),
             flowStreamHandle)) {
         std::cerr << "[CFDSolver] stepCfd: projectionSolver.projectVelocity failed (single projection)\n";
+        cudaStreamSynchronize(stream);
         failed = true;
         return StepOutcome::Failed;
     }
+    phaseMarkers[3].record(stream);
 
     if (externalVelocity && fluidNodeCount > 0) {
         fluidkernels::publishVelocity(fluidNodeCount, d_velocity.get(), externalVelocity, projectionSolver.getPublishGate(), stream);
+    }
+    if (externalVelocityGradients && fluidNodeCount > 0) {
+        fluidkernels::launchReconstructVelocityGradients(
+            fluidNodeCount, faceCount, boundaryFaceCount,
+            d_faceTopology.get(), d_faceFluxVectors.get(),
+            d_boundaryFaces.get(), d_boundaryConditions.get(),
+            d_cellVolumes.get(), d_velocity.get(),
+            externalVelocityGradients, stream);
     }
 
     if (externalCanonicalFaceFlux && externalCanonicalFaceCount > 0) {
@@ -629,11 +732,26 @@ CFDSolver::StepOutcome CFDSolver::stepCfd(
         }
     }
 
-    if (stepEndEvent) {
-        cudaEventRecord(stepEndEvent, stream);
-    }
+    phaseMarkers[4].record(stream);
+    phaseMarkersRecorded = true;
+    ++stepIndex;
 
     return StepOutcome::Enqueued;
+}
+
+bool CFDSolver::reconstructVelocityGradients(glm::vec4* externalGradients, cudaStream_t inStream) {
+    if (!initialized || fluidNodeCount == 0 || !externalGradients) {
+        return false;
+    }
+    cudaStream_t stream = inStream ? inStream : reinterpret_cast<cudaStream_t>(flowStreamHandle);
+    cudaSetDevice(cudaDevice);
+    fluidkernels::launchReconstructVelocityGradients(
+        fluidNodeCount, faceCount, boundaryFaceCount,
+        d_faceTopology.get(), d_faceFluxVectors.get(),
+        d_boundaryFaces.get(), d_boundaryConditions.get(),
+        d_cellVolumes.get(), d_velocity.get(),
+        externalGradients, stream);
+    return true;
 }
 
 } // namespace cfd

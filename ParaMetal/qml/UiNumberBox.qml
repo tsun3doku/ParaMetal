@@ -91,7 +91,7 @@ Rectangle {
     }
 
     implicitWidth: 120
-    implicitHeight: 28
+    implicitHeight: 22
     radius: 3
     clip: true
 

@@ -23,7 +23,6 @@ ComputeApplyResult RuntimeVoronoiComputeTransport::apply(
     }
 
     VoronoiSystemComputeController::Config config{};
-    config.cellSize = package.authored.cellSize;
     config.voxelResolution = package.authored.voxelResolution;
     config.lloydIterations = package.authored.lloydIterations;
     config.lloydVolumeThreshold = package.authored.lloydVolumeThreshold;
@@ -38,7 +37,6 @@ ComputeApplyResult RuntimeVoronoiComputeTransport::apply(
     config.globalRemeshTriangleIndices.reserve(package.globalRemeshProducts.size());
     config.globalRemeshSurfacePositions.reserve(package.globalRemeshProducts.size());
     config.globalRemeshSurfaceTriangleIndices.reserve(package.globalRemeshProducts.size());
-    config.globalRemeshWorldToModel.reserve(package.globalRemeshProducts.size());
     for (size_t i = 0; i < package.globalRemeshProducts.size(); ++i) {
         if (!products->isCurrent<RemeshProduct>(package.globalRemeshProducts[i])) {
             return ComputeApplyResult::Failed;
@@ -63,7 +61,6 @@ ComputeApplyResult RuntimeVoronoiComputeTransport::apply(
         config.globalRemeshTriangleIndices.push_back(remeshProduct->geometryTriangleIndices);
         config.globalRemeshSurfacePositions.push_back(std::move(surfacePositions));
         config.globalRemeshSurfaceTriangleIndices.push_back(remeshProduct->surfaceTriangleIndices);
-        config.globalRemeshWorldToModel.push_back(toMatrixArray(glm::inverse(transform)));
     }
 
     config.computeHash = computeHash;

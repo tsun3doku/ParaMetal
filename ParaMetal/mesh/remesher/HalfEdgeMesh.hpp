@@ -51,6 +51,16 @@ public:
 		uint32_t diagBack		= INVALID_INDEX;
 	};
 
+	struct TriangleSplit {
+		uint32_t newV			= INVALID_INDEX;
+		uint32_t heV0ToNewV		= INVALID_INDEX;
+		uint32_t heV1ToNewV		= INVALID_INDEX;
+		uint32_t heV2ToNewV		= INVALID_INDEX;
+		uint32_t heNewVToV0		= INVALID_INDEX;
+		uint32_t heNewVToV1		= INVALID_INDEX;
+		uint32_t heNewVToV2		= INVALID_INDEX;
+	};
+
 	struct Triangle2D {
 		glm::dvec2 vertices[3]	= { glm::dvec2(0,0), glm::dvec2(0,0), glm::dvec2(0,0) };
 		uint32_t indices[3]		= { 0,0,0 };
@@ -87,18 +97,20 @@ public:
 	bool isManifold() const;
 
 	// Delaunay
-	bool flipEdge(uint32_t edgeIdx);
-	bool isFlippableEdge(uint32_t edgeIdx) const;
+	bool flipEdge(uint32_t edgeIdx, const std::array<glm::dvec2,4>* precheckedPositions = nullptr);
+	bool isFlippableEdge(uint32_t edgeIdx, std::array<glm::dvec2,4>* outPositions = nullptr) const;
+	bool isFixedEdge(uint32_t edgeIdx) const;
 	bool isDelaunayEdge(uint32_t heIdx) const;
 	int makeDelaunay(std::vector<uint32_t>* flippedEdges = nullptr);
 	int makeDelaunayLocal(const std::vector<uint32_t>& seedEdges, std::vector<uint32_t>* flippedEdges = nullptr);
 	
 	// Refinement
 	uint32_t addIntrinsicVertex();
-	uint32_t splitTriangleIntrinsic(uint32_t faceIdx, double r0, double r1, double r2);
+	TriangleSplit splitTriangleIntrinsic(uint32_t faceIdx, double r0, double r1, double r2);
 	uint32_t insertVertexAlongEdge(uint32_t edgeIdx);
 	uint32_t connectVertices(uint32_t heA, uint32_t heB);
 	Split splitEdgeTopo(uint32_t edgeIdx, double t);
+	uint32_t removeVertex(uint32_t vertexIdx);
 
 	std::vector<uint32_t> getVertexHalfEdges(uint32_t vertexIdx) const;
 	std::vector<uint32_t> getVertexFaces(uint32_t vertexIdx) const;

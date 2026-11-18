@@ -157,8 +157,9 @@ bool KNNNeighbors::Implementation::setupDevice(int ordinal) {
 }
 
 void KNNNeighbors::Implementation::cleanup() {
-  if (cudaDeviceOrdinal >= 0)
+  if (cudaDeviceOrdinal >= 0) {
     cudaSetDevice(cudaDeviceOrdinal);
+  }
   seeds.reset();
   neighbors.reset();
   distanceHeap.reset();
@@ -168,8 +169,9 @@ void KNNNeighbors::Implementation::cleanup() {
   cellOffsetDistances.reset();
   prefixBuffer.reset();
   searchFailure.reset();
-  if (stream)
+  if (stream) {
     cudaStreamDestroy(stream);
+  }
   stream = nullptr;
   cudaDeviceOrdinal = -1;
   initialized = false;

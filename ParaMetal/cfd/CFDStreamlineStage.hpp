@@ -11,10 +11,6 @@ class VulkanDevice;
 class MemoryAllocator;
 class CommandPool;
 
-// Integrates streamlines through the velocity frame currently published for
-// display. Seeds are the centroids of VelocityInlet boundary faces; the stage
-// owns the seed buffer, the seed-to-fluid-node lookup, and the line vertex
-// buffer it writes.
 class CFDStreamlineStage {
 public:
     static constexpr uint32_t MaxSegmentsPerLine = 256;
@@ -29,7 +25,11 @@ public:
     bool initialize(
         const topology::GlobalDomain& domain,
         const std::vector<glm::vec4>& seeds,
-        const std::vector<uint32_t>& globalFragmentToFluidNode);
+        VkBuffer seedToFluidNodeBuffer,
+        VkDeviceSize seedToFluidNodeBufferOffset,
+        uint32_t seedToFluidNodeCount,
+        VkBuffer centroidBuffer,
+        VkDeviceSize centroidBufferOffset);
     void cleanup();
 
     void recordCompute(
@@ -39,6 +39,8 @@ public:
         VkDeviceSize fluidSeedGridOffset,
         VkBuffer velocityBuffer,
         VkDeviceSize velocityBufferOffset,
+        VkBuffer gradientsBuffer,
+        VkDeviceSize gradientsBufferOffset,
         uint32_t fluidNodeCount,
         float stepLength);
 
@@ -48,14 +50,12 @@ public:
     bool isValid() const {
         return ready &&
             outputBuffer != VK_NULL_HANDLE &&
-            seedToFluidNodeBuffer != VK_NULL_HANDLE;
+            seedToFluidNodeBuffer != VK_NULL_HANDLE &&
+            centroidsBuffer != VK_NULL_HANDLE;
     }
 
 private:
     bool createPipeline();
-    bool updateSeedToFluidNode(
-        const topology::GlobalDomain& domain,
-        const std::vector<uint32_t>& globalFragmentToFluidNode);
     bool createOutputBuffer(uint32_t seeds);
 
     VulkanDevice& vulkanDevice;
@@ -75,6 +75,9 @@ private:
     VkDeviceSize seedToFluidNodeBufferOffset = 0;
     uint32_t seedToFluidNodeCount = 0;
     uint32_t seedCount = 0;
+
+    VkBuffer centroidsBuffer = VK_NULL_HANDLE;
+    VkDeviceSize centroidsBufferOffset = 0;
 
     VkBuffer outputBuffer = VK_NULL_HANDLE;
     VkDeviceSize outputOffset = 0;

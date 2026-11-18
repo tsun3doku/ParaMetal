@@ -25,7 +25,7 @@ struct SubcycleTimestep {
 // Device kernels and graph helpers visible only in CUDA compilation units
 #if defined(__CUDACC__)
 
-// Computes subcycle count and timestep with double-precision ceiling for CFL thresholds
+// Computes subcycle count and timestep from the combined stability rate
 static __global__ void finalizeSubcycleTimestepKernel(
     const float* __restrict__ maxRate,
     const uint32_t* __restrict__ invalidFlag,
@@ -54,7 +54,7 @@ static __global__ void finalizeSubcycleTimestepKernel(
         return;
     }
 
-    const double required = ceil(static_cast<double>(rate) * static_cast<double>(dtMacro) / static_cast<double>(targetCfl));
+    const double required = ceil(static_cast<double>(rate) * static_cast<double>(dtMacro));
     if (!isfinite(required) || required > static_cast<double>(maxCount)) {
         ts.status = SubcycleStatus::CflOverflow;
         *out = ts;

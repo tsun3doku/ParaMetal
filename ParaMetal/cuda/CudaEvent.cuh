@@ -51,6 +51,8 @@ public:
         return cudaCheck(cudaEventDestroy(oldEvent), "destroy CUDA event");
     }
 
+    cudaEvent_t handle() const { return event; }
+
 private:
     cudaEvent_t event = nullptr;
 };

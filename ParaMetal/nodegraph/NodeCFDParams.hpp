@@ -3,13 +3,16 @@
 #include "NodeGraphTypes.hpp"
 #include <glm/glm.hpp>
 
-class NodeGraphEditor;
 struct NodeGraphNode;
 
 struct CFDPreviewSettings {
     bool showStreamlines = false;
     bool showDomainBox = false;
     bool showVelocityPalette = false;
+    bool showSlice = false;
+    int sliceAxis = 0;
+    double slicePosition = 0.5;
+    bool showSliceWireframe = false;
 };
 
 struct CFDNodeParams {
@@ -24,4 +27,3 @@ struct CFDNodeParams {
 };
 
 CFDNodeParams readCFDNodeParams(const NodeGraphNode& node);
-bool writeCFDNodeParams(NodeGraphEditor& editor, NodeGraphNodeId nodeId, const CFDNodeParams& params);

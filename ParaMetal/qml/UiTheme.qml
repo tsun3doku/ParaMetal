@@ -56,7 +56,7 @@ QtObject {
     }
 
     // Inspector Layout Metrics (Blender-aligned)
-    readonly property int inspectorRowSpacing: 6
+    readonly property int inspectorRowSpacing: 3
     readonly property int inspectorBoxSpacing: 1
     readonly property int inspectorLabelSpacing: 6
     readonly property int inspectorGroupSpacing: 10

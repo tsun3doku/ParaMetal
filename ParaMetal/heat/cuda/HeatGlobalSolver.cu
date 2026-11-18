@@ -4,6 +4,7 @@
 #include "HeatGlobalSolverKernels.cuh"
 #include "../../cuda/CudaBuffer.cuh"
 #include "../../cuda/CudaCheck.cuh"
+#include "../../cuda/GpuTimer.cuh"
 #include "../../cuda/CudaPcg.cuh"
 #include "../../cuda/CudaGraphBuilder.cuh"
 #include "../../cuda/CudaExternalBuffer.hpp"
@@ -61,8 +62,7 @@ public:
         if (cudaDevice < 0 || !cudaUtils::cudaCheck(cudaSetDevice(cudaDevice), "cudaSetDevice")) return false;
 
         if (!cudaUtils::cudaCheck(cudaStreamCreateWithFlags(&solveStream, cudaStreamNonBlocking), "create solveStream") ||
-            !cudaUtils::cudaCheck(cudaEventCreate(&solveStartEvent), "create solveStartEvent") ||
-            !cudaUtils::cudaCheck(cudaEventCreate(&solveEndEvent), "create solveEndEvent")) {
+            !solveTimer.create()) {
             cleanup();
             return false;
         }
@@ -425,18 +425,19 @@ public:
 
     bool launch(
         bool sourceIsA,
-        uint64_t destinationVulkanReleaseValue,
-        uint64_t cudaReadyValue) {
+        uint64_t releaseValue,
+        uint64_t cudaReadyValue,
+        bool runAdvection) {
         if (!initialized) return false;
         cudaSetDevice(cudaDevice);
 
-        if (solveStartEvent) {
-            cudaEventRecord(solveStartEvent, solveStream);
+        if (solveStream) {
+            solveTimer.begin(solveStream);
         }
 
-            if (destinationVulkanReleaseValue > 0) {
+            if (releaseValue > 0) {
             cudaExternalSemaphoreWaitParams waitParams{};
-            waitParams.params.fence.value = destinationVulkanReleaseValue;
+            waitParams.params.fence.value = releaseValue;
             if (!cudaUtils::cudaCheck(cudaWaitExternalSemaphoresAsync(&vulkanReleaseSemaphore, &waitParams, 1, solveStream), "wait Vulkan release")) {
                 return false;
             }
@@ -455,7 +456,8 @@ public:
                 d_cellState.get());
         }
 
-            if (advectionExec) {
+        lastSolveRanAdvection = runAdvection && advectionExec != nullptr;
+        if (lastSolveRanAdvection) {
             if (!cudaUtils::cudaCheck(cudaGraphLaunch(advectionExec, solveStream), "launch advection graph")) {
                 return false;
             }
@@ -483,7 +485,7 @@ public:
             }
         }
 
-            if (advectionFaceCount > 0 && d_advectionTimestep.get() && pinnedAdvectionTimestep &&
+            if (lastSolveRanAdvection && d_advectionTimestep.get() && pinnedAdvectionTimestep &&
             !d_advectionTimestep.downloadAsync(pinnedAdvectionTimestep, 1, solveStream)) {
             return false;
         }
@@ -491,27 +493,26 @@ public:
             return false;
         }
 
-            if (solveEndEvent) {
-            cudaEventRecord(solveEndEvent, solveStream);
+            if (solveStream) {
+            solveTimer.end(solveStream);
         }
 
         return true;
     }
 
         SolvePollResult poll() const {
-            const cudaError_t status = cudaEventQuery(solveEndEvent);
-            if (status == cudaSuccess) {
-                float elapsedMs = 0.0f;
-                if (cudaEventElapsedTime(&elapsedMs, solveStartEvent, solveEndEvent) == cudaSuccess) {
-                    lastSolveMs = double(elapsedMs);
-                }
+            float elapsedMs = 0.0f;
+            switch (solveTimer.pollElapsed(elapsedMs)) {
+            case cudaUtils::GpuTimerStatus::Ready:
+                lastSolveMs = double(elapsedMs);
                 return SolvePollResult::Complete;
-            }
-            if (status == cudaErrorNotReady) {
+            case cudaUtils::GpuTimerStatus::Pending:
                 return SolvePollResult::Pending;
+            case cudaUtils::GpuTimerStatus::NotAvailable:
+            case cudaUtils::GpuTimerStatus::Failed:
+                break;
             }
-            std::cerr << "[HeatGlobalSolver] async solve failed: "
-                      << cudaGetErrorString(status) << std::endl;
+            std::cerr << "[HeatGlobalSolver] async solve timing failed" << std::endl;
             return SolvePollResult::Failed;
         }
 
@@ -522,7 +523,7 @@ public:
     }
 
     bool hasSolveFailed() {
-            if (advectionFaceCount > 0 && d_advectionTimestep.get() && pinnedAdvectionTimestep) {
+            if (lastSolveRanAdvection && d_advectionTimestep.get() && pinnedAdvectionTimestep) {
             const cudaSubcycle::SubcycleTimestep& timestep = *pinnedAdvectionTimestep;
             if (timestep.status != cudaSubcycle::SubcycleStatus::Ok) {
                 std::cerr << "[HeatGlobalSolver] advection step rejected: status="
@@ -584,8 +585,7 @@ public:
         }
         waitIdle();
         destroyGraphs();
-        if (solveStartEvent) { cudaEventDestroy(solveStartEvent); solveStartEvent = nullptr; }
-        if (solveEndEvent) { cudaEventDestroy(solveEndEvent); solveEndEvent = nullptr; }
+        solveTimer.reset();
         if (pinnedPcgStatus) { cudaFreeHost(pinnedPcgStatus); pinnedPcgStatus = nullptr; }
         if (pinnedAdvectionTimestep) { cudaFreeHost(pinnedAdvectionTimestep); pinnedAdvectionTimestep = nullptr; }
         if (solveStream) { cudaStreamDestroy(solveStream); solveStream = nullptr; }
@@ -771,6 +771,7 @@ private:
 
     void disableAdvection() {
         if (advectionExec) { cudaGraphExecDestroy(advectionExec); advectionExec = nullptr; }
+        lastSolveRanAdvection = false;
         advectionFaceCount = 0;
         advectionBoundaryFaceCount = 0;
         d_advectionFaceFlux = nullptr;
@@ -894,8 +895,7 @@ private:
     VkDevice device = VK_NULL_HANDLE;
     int cudaDevice = -1;
     cudaStream_t solveStream = nullptr;
-    cudaEvent_t solveStartEvent = nullptr;
-    cudaEvent_t solveEndEvent = nullptr;
+    mutable cudaUtils::GpuTimer solveTimer;
     mutable double lastSolveMs = 0.0;
     cudaSubcycle::SubcycleTimestep* pinnedAdvectionTimestep = nullptr;
     cudaPcg::PcgStatus* pinnedPcgStatus = nullptr;
@@ -913,6 +913,7 @@ private:
     cudaGraphExec_t postExecBToA = nullptr;
 
     cudaGraphExec_t advectionExec = nullptr;
+    bool lastSolveRanAdvection = false;
 
     cudaUtils::CudaBuffer<int> d_rowOffsets;
     cudaUtils::CudaBuffer<int> d_columnIndices;
@@ -991,10 +992,11 @@ bool HeatGlobalSolver::initialize(
 
 bool HeatGlobalSolver::launch(
     bool sourceIsA,
-    uint64_t destinationVulkanReleaseValue,
-    uint64_t cudaReadyValue) {
+    uint64_t releaseValue,
+    uint64_t cudaReadyValue,
+    bool runAdvection) {
     return implementation->launch(
-        sourceIsA, destinationVulkanReleaseValue, cudaReadyValue);
+        sourceIsA, releaseValue, cudaReadyValue, runAdvection);
 }
 
 HeatGlobalSolver::SolvePollResult HeatGlobalSolver::poll() const {

@@ -9,7 +9,6 @@
 
 namespace voronoi {
 
-// emit thermal couplings between opposing CAD regions
 bool buildContactCouplings(
     const std::vector<SurfaceRegion> &regions,
     const RVDResult &rvd,

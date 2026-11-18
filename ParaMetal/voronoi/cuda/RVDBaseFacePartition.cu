@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <type_traits>
 #include <vector>
 
@@ -48,6 +49,7 @@ struct FacePolygon {
   uint32_t count;
   FacePoint2 vertices[MaxFaceVertices];
   uint32_t sourceVertexId[MaxFaceVertices];
+  uint32_t localIndex[MaxFaceVertices];
 };
 
 __device__ inline FacePoint2 faceAdd(FacePoint2 a, FacePoint2 b) { return {a.x + b.x, a.y + b.y}; }
@@ -87,10 +89,44 @@ __device__ inline bool facePolygonIntegral(const FacePolygon &p, double3 o, doub
   return isfinite(area) && isfinite(moment.x) && isfinite(moment.y) && isfinite(moment.z);
 }
 
+__device__ inline bool faceMeasureBaseLoop(
+    uint32_t faceId, const uint32_t *offsets, const double3 *vertices,
+    const FacePolygon &boundary, double3 normal, BaseFaceMeasure &out) {
+  if (boundary.count < 3) return false;
+  const uint32_t begin = offsets[faceId];
+  const double3 reference = vertices[begin + boundary.localIndex[0]];
+  double3 areaVector = make_double3(0.0, 0.0, 0.0);
+  double3 relativeMoment = make_double3(0.0, 0.0, 0.0);
+  double absoluteArea = 0.0;
+  for (uint32_t i = 0; i < boundary.count; ++i) {
+    const uint32_t current = begin + boundary.localIndex[i];
+    const uint32_t next = begin + boundary.localIndex[(i + 1) % boundary.count];
+    const double3 a = sub3(vertices[current], reference);
+    const double3 b = sub3(vertices[next], reference);
+    const double3 spanned = cross3(a, b);
+    const double projected = dot3(spanned, normal);
+    areaVector = add3(areaVector, mul3(spanned, 0.5));
+    relativeMoment = add3(relativeMoment, mul3(add3(a, b), projected / 6.0));
+    absoluteArea += fabs(projected) * 0.5;
+  }
+  const double area = dot3(areaVector, normal);
+  if (!(area > 0.0) || !isfinite(area)) return false;
+  const double3 moment = add3(mul3(reference, area), relativeMoment);
+  if (!isfinite(moment.x) || !isfinite(moment.y) || !isfinite(moment.z)) return false;
+  out = BaseFaceMeasure{};
+  out.area = area;
+  out.areaError = 256.0 * DBL_EPSILON * absoluteArea;
+  out.moment = moment;
+  out.normal = normal;
+  out.valid = 1u;
+  return true;
+}
+
 __device__ inline void faceReverse(FacePolygon &p) {
   for (uint32_t i = 0, j = p.count - 1; i < j; ++i, --j) {
     const FacePoint2 t = p.vertices[i]; p.vertices[i] = p.vertices[j]; p.vertices[j] = t;
     const uint32_t id = p.sourceVertexId[i]; p.sourceVertexId[i] = p.sourceVertexId[j]; p.sourceVertexId[j] = id;
+    const uint32_t local = p.localIndex[i]; p.localIndex[i] = p.localIndex[j]; p.localIndex[j] = local;
   }
 }
 
@@ -120,20 +156,24 @@ __device__ inline bool faceSetupPolygon(
   center.x /= count; center.y /= count;
   double vertexAngle[MaxFaceVertices];
   for (uint32_t i = 0; i < count; ++i) {
+    polygon.localIndex[i] = i;
     vertexAngle[i] = atan2(polygon.vertices[i].y - center.y, polygon.vertices[i].x - center.x);
   }
   for (uint32_t i = 1; i < count; ++i) {
     const FacePoint2 p = polygon.vertices[i];
     const uint32_t sId = polygon.sourceVertexId[i];
+    const uint32_t lId = polygon.localIndex[i];
     const double key = vertexAngle[i];
     uint32_t j = i;
     while (j > 0 && vertexAngle[j - 1] > key) {
       polygon.vertices[j] = polygon.vertices[j - 1];
       polygon.sourceVertexId[j] = polygon.sourceVertexId[j - 1];
+      polygon.localIndex[j] = polygon.localIndex[j - 1];
       vertexAngle[j] = vertexAngle[j - 1];
       --j;
     }
-    polygon.vertices[j] = p; polygon.sourceVertexId[j] = sId; vertexAngle[j] = key;
+    polygon.vertices[j] = p; polygon.sourceVertexId[j] = sId;
+    polygon.localIndex[j] = lId; vertexAngle[j] = key;
   }
   extent = hypot(bboxMax.x - bboxMin.x, hypot(bboxMax.y - bboxMin.y, bboxMax.z - bboxMin.z));
   if (!isfinite(extent) || !(extent > 0.0)) return false;
@@ -145,7 +185,9 @@ __device__ inline bool faceSetupPolygon(
     const FacePoint2 prev = uniqueCount > 0 ? polygon.vertices[uniqueCount - 1] : p;
     if (uniqueCount == 0 || hypot(p.x - prev.x, p.y - prev.y) > vertexTolerance) {
       polygon.vertices[uniqueCount] = p;
-      polygon.sourceVertexId[uniqueCount++] = polygon.sourceVertexId[i];
+      polygon.sourceVertexId[uniqueCount] = polygon.sourceVertexId[i];
+      polygon.localIndex[uniqueCount] = polygon.localIndex[i];
+      ++uniqueCount;
     }
   }
   if (uniqueCount > 1 &&
@@ -233,6 +275,9 @@ struct FaceOverlayWorkspace {
   uint32_t segmentCapacity = 0, splitSegmentCapacity = 0, pointCapacity = 0, edgeCapacity = 0;
   uint32_t cycleCapacity = 0, cyclePointCapacity = 0, groupCapacity = 0, splitCapacity = 0;
   uint32_t segmentCount = 0, edgeCount = 0, cycleCount = 0, cyclePointCount = 0, groupCount = 0;
+  uint32_t wholeFace = 0;
+  uint32_t boundaryCount = 0;
+  double3 origin{}, u{}, v{};
 };
 
 __device__ inline bool faceClipSegmentToConvex(FacePoint2 &a, FacePoint2 &b,
@@ -316,39 +361,67 @@ __device__ inline bool facePointInPolygon(FacePoint2 p, const FacePoint2 *polygo
 __device__ inline void faceComputeCycleAreaAndMoment(
     const FacePoint2 *points, uint32_t count, double &area, double &roundoff,
     FacePoint2 &moment) {
+  const FacePoint2 origin = points[0];
   double twiceArea = 0.0, absolute = 0.0;
-  moment = FacePoint2{0.0, 0.0};
+  FacePoint2 relativeMoment{0.0, 0.0};
   for (uint32_t i = 0; i < count; ++i) {
-    const FacePoint2 &a = points[i], &b = points[(i + 1) % count];
+    const FacePoint2 a = faceSub(points[i], origin);
+    const FacePoint2 b = faceSub(points[(i + 1) % count], origin);
     const double c = faceCross(a, b);
     twiceArea += c;
     absolute += fabs(c);
-    moment.x += (a.x + b.x) * c / 6.0;
-    moment.y += (a.y + b.y) * c / 6.0;
+    relativeMoment.x += (a.x + b.x) * c / 6.0;
+    relativeMoment.y += (a.y + b.y) * c / 6.0;
   }
   area = 0.5 * twiceArea;
   roundoff = 128.0 * DBL_EPSILON * absolute;
+  moment = FacePoint2{origin.x * area + relativeMoment.x,
+                      origin.y * area + relativeMoment.y};
 }
 
-__device__ inline bool faceSegmentIntersection(const Segment &s0, const Segment &s1,
-                                               FacePoint2 &out, double eps) {
+__device__ inline int faceSegmentIntersection(const Segment &s0, const Segment &s1,
+                                              FacePoint2 &out, double eps) {
   const FacePoint2 d0 = faceSub(s0.b, s0.a), d1 = faceSub(s1.b, s1.a);
+  const auto sideA0 = orient2dFilteredDouble(
+      make_double2(s0.a.x, s0.a.y), make_double2(s0.b.x, s0.b.y),
+      make_double2(s1.a.x, s1.a.y));
+  const auto sideA1 = orient2dFilteredDouble(
+      make_double2(s0.a.x, s0.a.y), make_double2(s0.b.x, s0.b.y),
+      make_double2(s1.b.x, s1.b.y));
+  const auto sideB0 = orient2dFilteredDouble(
+      make_double2(s1.a.x, s1.a.y), make_double2(s1.b.x, s1.b.y),
+      make_double2(s0.a.x, s0.a.y));
+  const auto sideB1 = orient2dFilteredDouble(
+      make_double2(s1.a.x, s1.a.y), make_double2(s1.b.x, s1.b.y),
+      make_double2(s0.b.x, s0.b.y));
+  const bool crossesA =
+      (sideA0.sign < 0 && sideA1.sign > 0) ||
+      (sideA0.sign > 0 && sideA1.sign < 0);
+  const bool crossesB =
+      (sideB0.sign < 0 && sideB1.sign > 0) ||
+      (sideB0.sign > 0 && sideB1.sign < 0);
+
+  // Endpoint touches and collinear overlaps are split by the endpoint pass
+  // below; only a strict crossing needs a constructed intersection point.
+  if (!crossesA || !crossesB) return 0;
+
   const auto denom = orient2dFilteredDouble(
       make_double2(0.0, 0.0), make_double2(d0.x, d0.y), make_double2(d1.x, d1.y));
-  if (denom.sign == 0 || denom.value == 0.0) return false;
-
-  const auto tOrient = orient2dFilteredDouble(
-      make_double2(s1.a.x, s1.a.y), make_double2(s1.b.x, s1.b.y), make_double2(s0.a.x, s0.a.y));
-  const auto uOrient = orient2dFilteredDouble(
-      make_double2(s0.a.x, s0.a.y), make_double2(s0.b.x, s0.b.y), make_double2(s1.a.x, s1.a.y));
-  const double t = tOrient.value / denom.value, u = -uOrient.value / denom.value;
+  if (denom.sign == 0 || denom.value == 0.0 ||
+      sideB0.value == 0.0 || sideA0.value == 0.0 ||
+      !isfinite(denom.value) || !isfinite(sideB0.value) ||
+      !isfinite(sideA0.value)) {
+    return -1;
+  }
+  const double t = sideB0.value / denom.value;
+  const double u = -sideA0.value / denom.value;
   const double len0 = hypot(d0.x, d0.y), len1 = hypot(d1.x, d1.y);
   if (t < -eps / fmax(len0, 1.0e-300) || t > 1.0 + eps / fmax(len0, 1.0e-300) ||
       u < -eps / fmax(len1, 1.0e-300) || u > 1.0 + eps / fmax(len1, 1.0e-300)) {
-    return false;
+    return -1;
   }
-  out = faceAdd(s0.a, faceMul(d0, t));
-  return true;
+  out = faceAdd(s0.a, faceMul(d0, fmin(1.0, fmax(0.0, t))));
+  return 1;
 }
 
 __device__ inline FaceCanonicalKey faceIntersectionKey(uint32_t segmentA, uint32_t segmentB) {
@@ -377,7 +450,9 @@ __device__ inline int faceSplitSegments(
       const FacePoint2 otherDir = faceSub(input[j].b, input[j].a);
       const double otherSqLen = faceDot(otherDir, otherDir);
       FacePoint2 p;
-      if (faceSegmentIntersection(input[i], input[j], p, eps) && sqLen > 0.0) {
+      const int intersection = faceSegmentIntersection(input[i], input[j], p, eps);
+      if (intersection < 0) return -2;
+      if (intersection > 0 && sqLen > 0.0) {
         const double t = faceDot(faceSub(p, input[i].a), d) / sqLen;
         if (t >= -tEps && t <= 1.0 + tEps) {
           if (paramCount >= int(work.splitCapacity)) return -1;
@@ -601,10 +676,13 @@ __device__ inline uint32_t faceClassifyRegion(
     const float3 sampleF = make_float3(float(sample3.x), float(sample3.y), float(sample3.z));
     if (!aabbContainsOrIntersects(sampleF, view.boundsMin, view.boundsMax)) continue;
 
-    const double winding = cudaGeometry::computeWinding(
-        view.triangles, view.nodes, view.parents, view.root, view.moments, sample3, sampleF);
-    if (!isfinite(winding) || fabs(fabs(winding) - 0.5) < 0.01) return AmbiguousOwnership;
-    if (fabs(winding) > 0.5) {
+    const uint32_t classification = cudaGeometry::classifyPoint(
+        view.triangles, view.nodes, view.root, sample3);
+    if (classification == cudaGeometry::PointOnSurface ||
+        classification == cudaGeometry::PointUnresolved) {
+      return AmbiguousOwnership;
+    }
+    if (classification == cudaGeometry::PointInside) {
       if (materialA != InvalidId || materialB != InvalidId) return OverlappingModels;
       materialA = materialB = runtimeModelId;
       break;
@@ -704,6 +782,7 @@ __device__ inline uint32_t faceBuildOverlay(
   Segment *split = work.splitSegments;
   int *splitSource = work.splitSources;
   const int splitCount = faceSplitSegments(work, split, splitSource, eps);
+  if (splitCount == -2) return UnresolvedIntersection;
   if (splitCount < 0) return TooManySegments;
 
   const int pointCount = faceBuildPoints(boundary, split, splitSource, int(boundaryCount), splitCount, work, eps);
@@ -928,9 +1007,10 @@ const char *facePartitionErrorName(uint32_t code) {
   static const char *const names[] = {
       "FacePartitionSuccess", "InvalidFacePolygon", "TooManyRegions", "AmbiguousOwnership",
       "OverlappingModels", "AreaConservation", "MomentConservation", "PassMismatch",
-      "UnresolvedRegion", "TooManySegments", "EmptyFacePartition", "MaterialInconsistency"
+      "UnresolvedRegion", "TooManySegments", "EmptyFacePartition", "MaterialInconsistency",
+      "UnresolvedIntersection"
   };
-  return code <= MaterialInconsistency ? names[code] : "Unknown";
+  return code <= UnresolvedIntersection ? names[code] : "Unknown";
 }
 
 struct FacePartitionInput {
@@ -972,9 +1052,12 @@ __device__ inline uint32_t classifyUncutFaceSlot(
 }
 
 __device__ inline uint32_t classifyAndEmitUncutFace(
-    uint32_t faceId, const FacePartitionInput &input, FaceRegion &outRegion) {
+    uint32_t faceId, const FacePartitionInput &input,
+    const BaseFaceMeasure &canonicalMeasure, FaceRegion &outRegion) {
   const BaseFaceMeasure base = input.baseMeasures[faceId];
   if (!base.valid || !(base.area > 0.0) || !isfinite(base.area)) return InvalidFacePolygon;
+  if (!canonicalMeasure.valid || !(canonicalMeasure.area > 0.0) ||
+      !isfinite(canonicalMeasure.area)) return InvalidFacePolygon;
 
   const BaseFace &baseFace = input.baseFaces[faceId];
   const double tolerance = fmax(input.facetFloor, fabs(base.area) * 1e-6);
@@ -989,7 +1072,7 @@ __device__ inline uint32_t classifyAndEmitUncutFace(
   }
 
   outRegion = FaceRegion{};
-  outRegion.measure = base;
+  outRegion.measure = canonicalMeasure;
   outRegion.measure.normal = normalize3(base.normal);
   outRegion.measure.valid = 1u;
   outRegion.materialA = materialA;
@@ -1001,6 +1084,7 @@ __device__ inline uint32_t partitionFaceArrangement(
     uint32_t faceId, const FacePartitionInput &input, FaceOverlayWorkspace &work) {
   work.segmentCount = work.edgeCount = work.cycleCount =
       work.cyclePointCount = work.groupCount = 0;
+  work.wholeFace = 0;
 
   const BaseFace &baseFace = input.baseFaces[faceId];
   const BaseFaceMeasure base = input.baseMeasures[faceId];
@@ -1013,18 +1097,30 @@ __device__ inline uint32_t partitionFaceArrangement(
                         normal, scale)) {
     return InvalidFacePolygon;
   }
+  work.origin = origin;
+  work.u = u;
+  work.v = v;
 
   uint32_t boundaryCount = 0;
   const uint32_t segmentError = faceCollectRestrictedSegments(
       baseFace, boundary, origin, u, v, scale, input.modelSegments,
       input.modelSegmentOffsets, input.modelCount, boundaryCount, work);
   if (segmentError) return segmentError;
+  work.boundaryCount = boundaryCount;
 
   if (work.segmentCount == boundaryCount) {
     if (work.groupCapacity == 0) return TooManyRegions;
-    const uint32_t err = classifyAndEmitUncutFace(faceId, input, work.groups[0]);
+    BaseFaceMeasure canonicalMeasure{};
+    if (!faceMeasureBaseLoop(faceId, input.faceVertexOffsets,
+                             input.faceVertices, boundary, normal,
+                             canonicalMeasure)) {
+      return InvalidFacePolygon;
+    }
+    const uint32_t err =
+        classifyAndEmitUncutFace(faceId, input, canonicalMeasure, work.groups[0]);
     if (err) return err;
     work.groupCount = 1;
+    work.wholeFace = 1;
     return FacePartitionSuccess;
   }
 
@@ -1058,22 +1154,36 @@ __global__ void countFaceInputSegmentsKernel(
   outCadCounts[faceId] = cadCount;
 }
 
+__global__ void classifyCutFacesKernel(
+    uint32_t faceCount, const uint32_t *cadSegmentCounts,
+    const uint32_t *faceVertexOffsets, uint32_t *outCutFlags,
+    uint32_t *outUncutLoopCounts) {
+  const uint32_t faceId = blockIdx.x * blockDim.x + threadIdx.x;
+  if (faceId >= faceCount) return;
+  const bool cut = cadSegmentCounts[faceId] > 0;
+  outCutFlags[faceId] = cut ? 1u : 0u;
+  outUncutLoopCounts[faceId] =
+      cut ? 0u : faceVertexOffsets[faceId + 1] - faceVertexOffsets[faceId];
+}
+
+__global__ void compactCutFaceIndicesKernel(
+    uint32_t faceCount, const uint32_t *cadSegmentCounts,
+    const uint32_t *cutFaceOffsets, uint32_t *outCutFaceIndices) {
+  const uint32_t faceId = blockIdx.x * blockDim.x + threadIdx.x;
+  if (faceId >= faceCount || cadSegmentCounts[faceId] == 0) return;
+  outCutFaceIndices[cutFaceOffsets[faceId]] = faceId;
+}
+
+__global__ void gatherCutFaceKeysKernel(
+    uint32_t cutFaceCount, const uint32_t *cutFaceIndices,
+    const uint32_t *segmentCounts, uint32_t *outKeys) {
+  const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx < cutFaceCount) outKeys[idx] = segmentCounts[cutFaceIndices[idx]];
+}
+
 __global__ void setAllRegionCountsToOneKernel(uint32_t faceCount, uint32_t *regionCounts) {
   const uint32_t faceId = blockIdx.x * blockDim.x + threadIdx.x;
   if (faceId < faceCount) regionCounts[faceId] = 1;
-}
-
-__global__ void emitUncutFacesKernel(
-    uint32_t faceCount, const uint32_t *cadSegmentCounts,
-    FacePartitionInput input, const uint32_t *regionOffsets,
-    FaceRegion *regions, RvdPackedError *packedError) {
-  const uint32_t faceId = blockIdx.x * blockDim.x + threadIdx.x;
-  if (faceId >= faceCount || cadSegmentCounts[faceId] > 0) return;
-
-  FaceRegion region{};
-  const uint32_t err = classifyAndEmitUncutFace(faceId, input, region);
-  if (err) { rvdReportError(packedError, err, faceId); return; }
-  regions[regionOffsets[faceId]] = region;
 }
 
 __global__ void buildFaceArrangementKernel(
@@ -1110,6 +1220,150 @@ __global__ void scatterCutFaceRegionsKernel(
   const uint32_t count = regionOffsets[faceId + 1] - dst;
   const FaceRegion *src = cutFaceEmittedRegions + idx * maxRegionsPerFace;
   for (uint32_t i = 0; i < count; ++i) regions[dst + i] = src[i];
+}
+
+struct FaceLoopExport {
+  const uint32_t *faceVertexOffsets = nullptr;
+  const double3 *faceVertices = nullptr;
+  const uint32_t *faceVertexIds = nullptr;
+  const BaseFaceMeasure *baseMeasures = nullptr;
+  const uint32_t *uncutVertexBase = nullptr;
+  uint32_t *uncutLoopVertexCounts = nullptr;
+  double3 *uncutVertices = nullptr;
+  const uint32_t *cutVertexBase = nullptr;
+  const uint32_t *cutLoopBase = nullptr;
+  uint32_t *cutLoopVertexCounts = nullptr;
+  double3 *cutVertices = nullptr;
+};
+
+__device__ inline bool faceLoopBoundary(
+    uint32_t faceId, const FaceLoopExport &out, FacePolygon &boundary,
+    double3 &origin, double3 &u, double3 &v, double3 &normal) {
+  double scale = 0.0;
+  return faceSetupPolygon(faceId, out.faceVertexOffsets, out.faceVertices,
+                          out.faceVertexIds, out.baseMeasures[faceId],
+                          boundary, origin, u, v, normal, scale);
+}
+
+__device__ inline uint32_t faceEmitBaseLoop(
+    uint32_t faceId, const FaceLoopExport &out, const FacePolygon &boundary,
+    double3 *dst) {
+  const uint32_t begin = out.faceVertexOffsets[faceId];
+  for (uint32_t i = 0; i < boundary.count; ++i) {
+    dst[i] = out.faceVertices[begin + boundary.localIndex[i]];
+  }
+  return boundary.count;
+}
+
+__device__ inline uint32_t faceEmitCycleLoop(
+    const FaceOverlayWorkspace &work, uint32_t cycle, double3 *dst) {
+  const Cycle &loop = work.cycles[cycle];
+  const FacePoint2 *points = work.cyclePoints + loop.firstPoint;
+  for (uint32_t i = 0; i < loop.pointCount; ++i) {
+    dst[i] = add3(work.origin, add3(mul3(work.u, points[i].x), mul3(work.v, points[i].y)));
+  }
+  return loop.pointCount;
+}
+
+__global__ void emitUncutFacesAndLoopsKernel(
+    uint32_t faceCount, const uint32_t *cadSegmentCounts,
+    FacePartitionInput input, FaceLoopExport out,
+    const uint32_t *regionOffsets, FaceRegion *regions,
+    RvdPackedError *packedError) {
+  const uint32_t faceId = blockIdx.x * blockDim.x + threadIdx.x;
+  if (faceId >= faceCount || cadSegmentCounts[faceId] > 0) return;
+
+  FacePolygon boundary{};
+  double3 origin, u, v, normal;
+  if (!faceLoopBoundary(faceId, out, boundary, origin, u, v, normal)) {
+    rvdReportError(packedError, InvalidFacePolygon, faceId);
+    return;
+  }
+  BaseFaceMeasure canonicalMeasure{};
+  if (!faceMeasureBaseLoop(faceId, out.faceVertexOffsets, out.faceVertices,
+                           boundary, normal, canonicalMeasure)) {
+    rvdReportError(packedError, InvalidFacePolygon, faceId);
+    return;
+  }
+  FaceRegion region{};
+  const uint32_t err =
+      classifyAndEmitUncutFace(faceId, input, canonicalMeasure, region);
+  if (err) { rvdReportError(packedError, err, faceId); return; }
+  regions[regionOffsets[faceId]] = region;
+  out.uncutLoopVertexCounts[faceId] = faceEmitBaseLoop(
+      faceId, out, boundary, out.uncutVertices + out.uncutVertexBase[faceId]);
+}
+
+__global__ void countCutFaceLoopsKernel(
+    uint32_t batchStart, uint32_t batchEnd, const uint32_t *cutFaceIndices,
+    const FaceOverlayWorkspace *workspaces, uint32_t *outVertexCounts,
+    uint32_t *outRegionLoopCounts) {
+  const uint32_t local = blockIdx.x * blockDim.x + threadIdx.x;
+  const uint32_t idx = batchStart + local;
+  if (idx >= batchEnd) return;
+  const FaceOverlayWorkspace &work = workspaces[local];
+  uint32_t *regionCountDst = outRegionLoopCounts + local * MaxRegionsPerCutFace;
+  for (uint32_t region = 0; region < MaxRegionsPerCutFace; ++region) regionCountDst[region] = 0;
+
+  if (work.wholeFace) {
+    regionCountDst[0] = 1;
+    outVertexCounts[local] = work.boundaryCount;
+    return;
+  }
+
+  uint32_t vertexCount = 0, region = 0;
+  for (uint32_t cycle = 0; cycle < work.cycleCount; ++cycle) {
+    if (work.cycles[cycle].area < 0.0) continue;
+    uint32_t loopCount = 1;
+    vertexCount += work.cycles[cycle].pointCount;
+    for (uint32_t hole = 0; hole < work.cycleCount; ++hole) {
+      if (work.cycles[hole].area >= 0.0 ||
+          work.cycles[hole].parent != int(cycle)) continue;
+      vertexCount += work.cycles[hole].pointCount;
+      ++loopCount;
+    }
+    regionCountDst[region++] = loopCount;
+  }
+  outVertexCounts[local] = vertexCount;
+}
+
+__global__ void emitCutFaceLoopsKernel(
+    uint32_t batchStart, uint32_t batchEnd, const uint32_t *cutFaceIndices,
+    const FaceOverlayWorkspace *workspaces, FaceLoopExport out,
+    RvdPackedError *packedError) {
+  const uint32_t local = blockIdx.x * blockDim.x + threadIdx.x;
+  const uint32_t idx = batchStart + local;
+  if (idx >= batchEnd) return;
+  const uint32_t faceId = cutFaceIndices[idx];
+  const FaceOverlayWorkspace &work = workspaces[local];
+
+  double3 *vertexDst = out.cutVertices + out.cutVertexBase[local];
+  uint32_t *loopCountDst = out.cutLoopVertexCounts + out.cutLoopBase[local];
+
+  if (work.wholeFace) {
+    FacePolygon boundary{};
+    double3 origin, u, v, normal;
+    if (!faceLoopBoundary(faceId, out, boundary, origin, u, v, normal) ||
+        boundary.count != work.boundaryCount) {
+      rvdReportError(packedError, InvalidFacePolygon, faceId);
+      return;
+    }
+    loopCountDst[0] = faceEmitBaseLoop(faceId, out, boundary, vertexDst);
+    return;
+  }
+
+  uint32_t vertexOffset = 0, loop = 0;
+  for (uint32_t cycle = 0; cycle < work.cycleCount; ++cycle) {
+    if (work.cycles[cycle].area < 0.0) continue;
+    vertexOffset += faceEmitCycleLoop(work, cycle, vertexDst + vertexOffset);
+    loopCountDst[loop++] = work.cycles[cycle].pointCount;
+    for (uint32_t hole = 0; hole < work.cycleCount; ++hole) {
+      if (work.cycles[hole].area >= 0.0 ||
+          work.cycles[hole].parent != int(cycle)) continue;
+      vertexOffset += faceEmitCycleLoop(work, hole, vertexDst + vertexOffset);
+      loopCountDst[loop++] = work.cycles[hole].pointCount;
+    }
+  }
 }
 
 struct FaceArrangementCapacities {
@@ -1161,11 +1415,37 @@ struct FacePartitionBuffers {
   cudaUtils::CudaBuffer<uint32_t> regionCounts;
   cudaUtils::CudaBuffer<uint32_t> cadSegmentCounts;
   cudaUtils::CudaBuffer<uint32_t> cutFaceIndices;
+  cudaUtils::CudaBuffer<uint32_t> cutFaceKeys;
   cudaUtils::CudaBuffer<FaceRegion> cutFaceEmittedRegions;
   cudaUtils::CudaBuffer<RvdPackedError> packedError;
   cudaUtils::CudaBuffer<FaceOverlayWorkspace> workspaces;
   cudaUtils::CudaBuffer<uint8_t> arena;
   std::vector<FaceOverlayWorkspace> hostWorkspaces;
+
+  cudaUtils::CudaBuffer<double3> uncutVertices;
+  cudaUtils::CudaBuffer<uint32_t> uncutLoopVertexCounts;
+  cudaUtils::CudaBuffer<uint32_t> uncutVertexBase;
+  std::vector<uint32_t> hostUncutLoopCounts;
+  std::vector<double3> hostUncutVertices;
+
+  cudaUtils::CudaBuffer<uint32_t> cutVertexCounts;
+  cudaUtils::CudaBuffer<uint32_t> cutRegionLoopCounts;
+  cudaUtils::CudaBuffer<uint32_t> cutVertexBase;
+  cudaUtils::CudaBuffer<uint32_t> cutLoopBase;
+  cudaUtils::CudaBuffer<uint32_t> cutLoopVertexCounts;
+  cudaUtils::CudaBuffer<double3> cutVertices;
+  std::vector<uint32_t> hostCutVertexCounts;
+  std::vector<uint32_t> hostCutRegionLoopCounts;
+  std::vector<uint32_t> hostCutLoopVertexCounts;
+  std::vector<double3> hostCutVertices;
+};
+
+struct FaceLoopHostExport {
+  std::vector<uint32_t> cutVertexBase;
+  std::vector<uint32_t> cutLoopBase;
+  std::vector<uint32_t> cutRegionLoopCounts;
+  std::vector<uint32_t> cutLoopVertexCounts;
+  std::vector<double3> cutVertices;
 };
 
 bool finishPartitionPass(const cudaUtils::CudaBuffer<RvdPackedError> &packedError, cudaStream_t stream) {
@@ -1181,18 +1461,21 @@ bool finishPartitionPass(const cudaUtils::CudaBuffer<RvdPackedError> &packedErro
 
 bool runArrangementPass(
     uint32_t cutFaceCount, const FacePartitionInput &input,
-    const std::vector<uint32_t> &hostCutFaceIndices,
-    const std::vector<uint32_t> &inputSegmentCounts, FacePartitionBuffers &buffers,
-    cudaStream_t stream) {
+    FacePartitionBuffers &buffers, FaceLoopHostExport &loops, cudaStream_t stream) {
+  loops.cutVertexBase.assign(size_t(cutFaceCount) + 1, 0u);
+  loops.cutLoopBase.assign(size_t(cutFaceCount) + 1, 0u);
+  loops.cutRegionLoopCounts.assign(size_t(cutFaceCount) * MaxRegionsPerCutFace, 0u);
+  loops.cutLoopVertexCounts.clear();
+  loops.cutVertices.clear();
   if (cutFaceCount == 0) return true;
 
   const uint32_t batchSize = std::min(cutFaceCount, OverlayBatchSize);
   for (uint32_t start = 0; start < cutFaceCount; start += batchSize) {
     const uint32_t count = std::min(batchSize, cutFaceCount - start);
     uint32_t maxInputSegments = 0;
-    for (uint32_t i = 0; i < count; ++i) {
-      const uint32_t fid = hostCutFaceIndices[start + i];
-      maxInputSegments = std::max(maxInputSegments, inputSegmentCounts[fid]);
+    if (!rvdHost::readAt(maxInputSegments, buffers.cutFaceKeys.get(), start + count - 1, stream,
+                         "read batch segment max")) {
+      return false;
     }
     const FaceArrangementCapacities capacities = makeFaceArrangementCapacities(maxInputSegments);
     FaceOverlayWorkspace dummy{};
@@ -1210,9 +1493,133 @@ bool runArrangementPass(
         start, start + count, buffers.cutFaceIndices.get(), input,
         buffers.regionCounts.get(), buffers.cutFaceEmittedRegions.get(),
         MaxRegionsPerCutFace, buffers.workspaces.get(), buffers.packedError.get());
+    if (!rvdHost::checkLaunch("launch buildFaceArrangementKernel")) return false;
 
-    if (!rvdHost::checkLaunch("launch buildFaceArrangementKernel") ||
-        !rvdHost::synchronize(stream, "synchronize arrangement batch")) return false;
+    if (!buffers.cutVertexCounts.ensureCapacity(count) ||
+        !buffers.cutRegionLoopCounts.ensureCapacity(size_t(count) * MaxRegionsPerCutFace) ||
+        !buffers.cutVertexBase.ensureCapacity(count) ||
+        !buffers.cutLoopBase.ensureCapacity(count)) {
+      return false;
+    }
+    countCutFaceLoopsKernel<<<
+        rvdHost::blockCount(count, OverlayBlockSize), OverlayBlockSize, 0, stream>>>(
+        start, start + count, buffers.cutFaceIndices.get(), buffers.workspaces.get(),
+        buffers.cutVertexCounts.get(), buffers.cutRegionLoopCounts.get());
+    if (!rvdHost::checkLaunch("launch countCutFaceLoopsKernel")) return false;
+
+    buffers.hostCutVertexCounts.resize(count);
+    buffers.hostCutRegionLoopCounts.resize(size_t(count) * MaxRegionsPerCutFace);
+    RvdPackedError hostError = 0;
+    if (!buffers.cutVertexCounts.downloadAsync(
+            buffers.hostCutVertexCounts.data(), count, stream) ||
+        !buffers.cutRegionLoopCounts.downloadAsync(
+            buffers.hostCutRegionLoopCounts.data(),
+            size_t(count) * MaxRegionsPerCutFace, stream) ||
+        !buffers.packedError.downloadAsync(&hostError, 1, stream) ||
+        !rvdHost::synchronize(stream, "download cut face loop counts")) {
+      return false;
+    }
+    if (hostError != 0) {
+      std::cerr << "[RVD-FacePartition] "
+                << facePartitionErrorName(rvdErrorCode(hostError))
+                << " face=" << rvdErrorId(hostError) << std::endl;
+      return false;
+    }
+
+    std::vector<uint32_t> hostVertexBase(count);
+    std::vector<uint32_t> hostLoopBase(count);
+    uint32_t batchVertexTotal = 0, batchLoopTotal = 0;
+    for (uint32_t i = 0; i < count; ++i) {
+      const uint32_t face = start + i;
+      hostVertexBase[i] = batchVertexTotal;
+      hostLoopBase[i] = batchLoopTotal;
+      uint32_t faceLoops = 0;
+      for (uint32_t region = 0; region < MaxRegionsPerCutFace; ++region) {
+        const uint32_t regionLoops =
+            buffers.hostCutRegionLoopCounts[size_t(i) * MaxRegionsPerCutFace + region];
+        loops.cutRegionLoopCounts[size_t(face) * MaxRegionsPerCutFace + region] = regionLoops;
+        faceLoops += regionLoops;
+      }
+      if (buffers.hostCutVertexCounts[i] == 0 || faceLoops == 0) {
+        uint32_t failingFace = InvalidId;
+        if (!rvdHost::readAt(failingFace, buffers.cutFaceIndices.get(), face, stream,
+                             "read failing cut face")) {
+          return false;
+        }
+        std::cerr << "[RVD-FacePartition] empty loop export face="
+                  << failingFace << std::endl;
+        return false;
+      }
+      const uint32_t vertexLimit = capacities.cyclePoints;
+      const uint32_t loopLimit = capacities.cycles;
+      if (buffers.hostCutVertexCounts[i] > vertexLimit || faceLoops > loopLimit) {
+        uint32_t failingFace = InvalidId;
+        if (!rvdHost::readAt(failingFace, buffers.cutFaceIndices.get(), face, stream,
+                             "read failing cut face")) {
+          return false;
+        }
+        std::cerr << "[RVD-FacePartition] loop export exceeds workspace face="
+                  << failingFace << " vertices="
+                  << buffers.hostCutVertexCounts[i] << '/' << vertexLimit
+                  << " loops=" << faceLoops << '/' << loopLimit << std::endl;
+        return false;
+      }
+      batchLoopTotal += faceLoops;
+      batchVertexTotal += buffers.hostCutVertexCounts[i];
+      loops.cutVertexBase[face + 1] = loops.cutVertexBase[face] + buffers.hostCutVertexCounts[i];
+      loops.cutLoopBase[face + 1] = loops.cutLoopBase[face] + faceLoops;
+    }
+
+    if (!buffers.cutVertices.ensureCapacity(batchVertexTotal) ||
+        !buffers.cutLoopVertexCounts.ensureCapacity(batchLoopTotal) ||
+        !buffers.cutVertexBase.uploadAsync(hostVertexBase.data(), count, stream) ||
+        !buffers.cutLoopBase.uploadAsync(hostLoopBase.data(), count, stream)) {
+      return false;
+    }
+
+    FaceLoopExport loopExport{};
+    loopExport.faceVertexOffsets = input.faceVertexOffsets;
+    loopExport.faceVertices = input.faceVertices;
+    loopExport.faceVertexIds = input.faceVertexIds;
+    loopExport.baseMeasures = input.baseMeasures;
+    loopExport.cutVertexBase = buffers.cutVertexBase.get();
+    loopExport.cutLoopBase = buffers.cutLoopBase.get();
+    loopExport.cutLoopVertexCounts = buffers.cutLoopVertexCounts.get();
+    loopExport.cutVertices = buffers.cutVertices.get();
+
+    emitCutFaceLoopsKernel<<<
+        rvdHost::blockCount(count, OverlayBlockSize), OverlayBlockSize, 0, stream>>>(
+        start, start + count, buffers.cutFaceIndices.get(),
+        buffers.workspaces.get(), loopExport, buffers.packedError.get());
+    if (!rvdHost::checkLaunch("launch emitCutFaceLoopsKernel")) return false;
+
+    buffers.hostCutVertices.resize(batchVertexTotal);
+    buffers.hostCutLoopVertexCounts.resize(batchLoopTotal);
+    hostError = 0;
+    if ((batchVertexTotal > 0 &&
+         !buffers.cutVertices.downloadAsync(
+             buffers.hostCutVertices.data(), batchVertexTotal, stream)) ||
+        (batchLoopTotal > 0 &&
+         !buffers.cutLoopVertexCounts.downloadAsync(
+             buffers.hostCutLoopVertexCounts.data(), batchLoopTotal, stream)) ||
+        !buffers.packedError.downloadAsync(&hostError, 1, stream) ||
+        !rvdHost::synchronize(stream, "download cut face loops")) {
+      return false;
+    }
+    if (hostError != 0) {
+      std::cerr << "[RVD-FacePartition] "
+                << facePartitionErrorName(rvdErrorCode(hostError))
+                << " face=" << rvdErrorId(hostError) << std::endl;
+      return false;
+    }
+    loops.cutVertices.insert(
+        loops.cutVertices.end(),
+        buffers.hostCutVertices.begin(),
+        buffers.hostCutVertices.begin() + batchVertexTotal);
+    loops.cutLoopVertexCounts.insert(
+        loops.cutLoopVertexCounts.end(),
+        buffers.hostCutLoopVertexCounts.begin(),
+        buffers.hostCutLoopVertexCounts.begin() + batchLoopTotal);
   }
 
   return finishPartitionPass(buffers.packedError, stream);
@@ -1264,7 +1671,7 @@ FacePartitionInput makePartitionInput(
 }
 
 bool allocatePartitionBuffers(
-    uint32_t faceCount, uint32_t cutFaceCount, uint32_t peakBatchInputSegments,
+    uint32_t faceCount, uint32_t cutFaceCount,
     BaseFaceTopology &faceTopology, cudaStream_t stream, FacePartitionBuffers &buffers) {
   const uint32_t batchCap = std::min(std::max(cutFaceCount, 1u), OverlayBatchSize);
   if (!buffers.regionCounts.allocate(size_t(faceCount) + 1) ||
@@ -1274,13 +1681,6 @@ bool allocatePartitionBuffers(
   if (cutFaceCount > 0 &&
       !buffers.cutFaceEmittedRegions.allocate(size_t(cutFaceCount) * MaxRegionsPerCutFace)) return false;
   buffers.hostWorkspaces.resize(batchCap);
-
-  if (cutFaceCount > 0 && peakBatchInputSegments > 0) {
-    const FaceArrangementCapacities peakCapacities = makeFaceArrangementCapacities(peakBatchInputSegments);
-    FaceOverlayWorkspace dummy{};
-    const size_t bytesPerWorkspace = bindFaceOverlayWorkspace(peakCapacities, dummy, nullptr);
-    if (!buffers.arena.ensureCapacity(batchCap * bytesPerWorkspace)) return false;
-  }
   return rvdHost::zero(buffers.packedError.get(), sizeof(RvdPackedError), stream, "clear face partition error") &&
          rvdHost::zero(buffers.regionCounts.get() + faceCount, sizeof(uint32_t), stream, "clear face count tail");
 }
@@ -1297,6 +1697,9 @@ bool buildFacePartitionsGPU(
   if (faceCount == 0) {
     faceTopology.devRegionOffsets.reset();
     faceTopology.devRegions.reset();
+    faceTopology.hostFaceLoopOffsets.assign(1, 0u);
+    faceTopology.hostLoopVertexOffsets.assign(1, 0u);
+    faceTopology.hostLoopVertices.clear();
     return true;
   }
 
@@ -1322,43 +1725,90 @@ bool buildFacePartitionsGPU(
       input.modelCount, faceCount, inputSegmentCounts.get(), buffers.cadSegmentCounts.get());
   if (!rvdHost::checkLaunch("launch countFaceInputSegmentsKernel")) return false;
 
-  std::vector<uint32_t> hostInputSegmentCounts(faceCount);
-  std::vector<uint32_t> hostCadCounts(faceCount);
-  if (!inputSegmentCounts.downloadAsync(hostInputSegmentCounts.data(), faceCount, stream) ||
-      !buffers.cadSegmentCounts.downloadAsync(hostCadCounts.data(), faceCount, stream) ||
-      !rvdHost::synchronize(stream, "synchronize face input segment counts")) {
+  cudaUtils::CudaBuffer<uint32_t> cutFlags, cutFaceOffsets, uncutLoopCounts;
+  cudaUtils::CudaBuffer<uint8_t> sizingScratch;
+  if (!cutFlags.allocate(faceCount) || !cutFaceOffsets.allocate(faceCount) ||
+      !uncutLoopCounts.allocate(faceCount) || !buffers.uncutVertexBase.allocate(faceCount)) {
+    return false;
+  }
+  classifyCutFacesKernel<<<
+      rvdHost::blockCount(faceCount, CountBlockSize), CountBlockSize, 0, stream>>>(
+      faceCount, buffers.cadSegmentCounts.get(), input.faceVertexOffsets,
+      cutFlags.get(), uncutLoopCounts.get());
+  if (!rvdHost::checkLaunch("launch classifyCutFacesKernel")) return false;
+
+  uint32_t cutFaceCount = 0;
+  if (!rvdHost::exclusiveSum(
+          cutFlags.get(), cutFaceOffsets.get(), int(faceCount), sizingScratch, stream) ||
+      !rvdHost::readLastExclusiveScanTotal(
+          cutFlags.get(), cutFaceOffsets.get(), faceCount, stream, cutFaceCount,
+          "read cut face count")) {
     return false;
   }
 
-  std::vector<uint32_t> hostCutFaceIndices;
-  hostCutFaceIndices.reserve(faceCount / 8);
-  uint32_t peakBatchInputSegments = 0;
-  for (uint32_t i = 0; i < faceCount; ++i) {
-    if (hostCadCounts[i] > 0) {
-      hostCutFaceIndices.push_back(i);
-      peakBatchInputSegments = std::max(peakBatchInputSegments, hostInputSegmentCounts[i]);
-    }
-  }
-  const uint32_t cutFaceCount = uint32_t(hostCutFaceIndices.size());
   if (cutFaceCount > 0) {
-    std::sort(hostCutFaceIndices.begin(), hostCutFaceIndices.end(),
-              [&](uint32_t a, uint32_t b) {
-                return hostInputSegmentCounts[a] < hostInputSegmentCounts[b];
-              });
+    cudaUtils::CudaBuffer<uint32_t> unsortedKeys, unsortedIndices;
     if (!buffers.cutFaceIndices.allocate(cutFaceCount) ||
-        !buffers.cutFaceIndices.uploadAsync(hostCutFaceIndices.data(), cutFaceCount, stream)) {
+        !buffers.cutFaceKeys.allocate(cutFaceCount) ||
+        !unsortedKeys.allocate(cutFaceCount) ||
+        !unsortedIndices.allocate(cutFaceCount)) {
+      return false;
+    }
+    compactCutFaceIndicesKernel<<<
+        rvdHost::blockCount(faceCount, CountBlockSize), CountBlockSize, 0, stream>>>(
+        faceCount, buffers.cadSegmentCounts.get(), cutFaceOffsets.get(),
+        unsortedIndices.get());
+    if (!rvdHost::checkLaunch("launch compactCutFaceIndicesKernel")) return false;
+    gatherCutFaceKeysKernel<<<
+        rvdHost::blockCount(cutFaceCount, CountBlockSize), CountBlockSize, 0, stream>>>(
+        cutFaceCount, unsortedIndices.get(), inputSegmentCounts.get(), unsortedKeys.get());
+    if (!rvdHost::checkLaunch("launch gatherCutFaceKeysKernel")) return false;
+    if (!rvdHost::sortPairs(
+            unsortedKeys.get(), buffers.cutFaceKeys.get(), unsortedIndices.get(),
+            buffers.cutFaceIndices.get(), int(cutFaceCount), sizingScratch, stream)) {
       return false;
     }
   }
 
-  if (!allocatePartitionBuffers(faceCount, cutFaceCount, peakBatchInputSegments, faceTopology, stream, buffers)) return false;
+  if (size_t(cutFaceCount) * MaxRegionsPerCutFace > std::numeric_limits<uint32_t>::max()) {
+    std::cerr << "[RVD-FacePartition] face loop export exceeds 32-bit indexing" << std::endl;
+    return false;
+  }
+
+  uint32_t uncutVertexCount = 0;
+  if (!rvdHost::exclusiveSum(
+          uncutLoopCounts.get(), buffers.uncutVertexBase.get(), int(faceCount),
+          sizingScratch, stream) ||
+      !rvdHost::readLastExclusiveScanTotal(
+          uncutLoopCounts.get(), buffers.uncutVertexBase.get(), faceCount, stream,
+          uncutVertexCount, "read uncut vertex count")) {
+    return false;
+  }
+
+  if (!buffers.uncutVertices.allocate(uncutVertexCount) ||
+      !buffers.uncutLoopVertexCounts.allocate(faceCount) ||
+      !rvdHost::zero(buffers.uncutLoopVertexCounts.get(), sizeof(uint32_t) * faceCount, stream, "clear uncut loop counts")) {
+    return false;
+  }
+
+  FaceLoopExport loopExport{};
+  loopExport.faceVertexOffsets = input.faceVertexOffsets;
+  loopExport.faceVertices = input.faceVertices;
+  loopExport.faceVertexIds = input.faceVertexIds;
+  loopExport.baseMeasures = input.baseMeasures;
+  loopExport.uncutVertexBase = buffers.uncutVertexBase.get();
+  loopExport.uncutLoopVertexCounts = buffers.uncutLoopVertexCounts.get();
+  loopExport.uncutVertices = buffers.uncutVertices.get();
+
+  if (!allocatePartitionBuffers(faceCount, cutFaceCount, faceTopology, stream, buffers)) return false;
 
   constexpr uint32_t BlockSize = 256;
   setAllRegionCountsToOneKernel<<<rvdHost::blockCount(faceCount, BlockSize), BlockSize, 0, stream>>>(
       faceCount, buffers.regionCounts.get());
   if (!rvdHost::checkLaunch("launch setAllRegionCountsToOneKernel")) return false;
 
-  if (!runArrangementPass(cutFaceCount, input, hostCutFaceIndices, hostInputSegmentCounts, buffers, stream)) return false;
+  FaceLoopHostExport cutLoops;
+  if (!runArrangementPass(cutFaceCount, input, buffers, cutLoops, stream)) return false;
 
   cudaUtils::CudaBuffer<uint8_t> scanScratch;
   if (!rvdHost::exclusiveSum(buffers.regionCounts.get(), faceTopology.devRegionOffsets.get(), int(faceCount + 1), scanScratch, stream)) return false;
@@ -1367,11 +1817,11 @@ bool buildFacePartitionsGPU(
   if (!rvdHost::readAt(totalRegions, faceTopology.devRegionOffsets.get(), faceCount, stream, "read face region count")) return false;
   if (totalRegions == 0 || !faceTopology.devRegions.allocate(totalRegions)) return false;
 
-  emitUncutFacesKernel<<<rvdHost::blockCount(faceCount, BlockSize), BlockSize, 0, stream>>>(
-      faceCount, buffers.cadSegmentCounts.get(), input,
+  emitUncutFacesAndLoopsKernel<<<rvdHost::blockCount(faceCount, BlockSize), BlockSize, 0, stream>>>(
+      faceCount, buffers.cadSegmentCounts.get(), input, loopExport,
       faceTopology.devRegionOffsets.get(), faceTopology.devRegions.get(),
       buffers.packedError.get());
-  if (!rvdHost::checkLaunch("launch emitUncutFacesKernel")) return false;
+  if (!rvdHost::checkLaunch("launch emitUncutFacesAndLoopsKernel")) return false;
 
   if (cutFaceCount > 0) {
     scatterCutFaceRegionsKernel<<<
@@ -1381,7 +1831,96 @@ bool buildFacePartitionsGPU(
         faceTopology.devRegions.get());
     if (!rvdHost::checkLaunch("launch scatterCutFaceRegionsKernel")) return false;
   }
-  return finishPartitionPass(buffers.packedError, stream);
+  if (!finishPartitionPass(buffers.packedError, stream)) return false;
+
+  std::vector<uint32_t> hostRegionOffsets(size_t(faceCount) + 1);
+  std::vector<uint32_t> hostUncutVertexBase(faceCount);
+  std::vector<uint32_t> hostCutFaceIndices(cutFaceCount);
+  buffers.hostUncutLoopCounts.resize(faceCount);
+  buffers.hostUncutVertices.resize(uncutVertexCount);
+  if (!faceTopology.devRegionOffsets.downloadAsync(hostRegionOffsets.data(), faceCount + 1, stream) ||
+      !buffers.uncutLoopVertexCounts.downloadAsync(
+          buffers.hostUncutLoopCounts.data(), faceCount, stream) ||
+      !buffers.uncutVertexBase.downloadAsync(hostUncutVertexBase.data(), faceCount, stream) ||
+      (uncutVertexCount > 0 &&
+       !buffers.uncutVertices.downloadAsync(
+           buffers.hostUncutVertices.data(), uncutVertexCount, stream)) ||
+      (cutFaceCount > 0 &&
+       !buffers.cutFaceIndices.downloadAsync(
+           hostCutFaceIndices.data(), cutFaceCount, stream)) ||
+      !rvdHost::synchronize(stream, "synchronize face loop export")) {
+    return false;
+  }
+  if (hostRegionOffsets[faceCount] != totalRegions) return false;
+
+  std::vector<uint32_t> hostCutIndexOfFace(faceCount, InvalidId);
+  for (uint32_t idx = 0; idx < cutFaceCount; ++idx) {
+    hostCutIndexOfFace[hostCutFaceIndices[idx]] = idx;
+  }
+
+  uint64_t loopTotal = 0, loopVertexTotal = 0;
+  for (uint32_t face = 0; face < faceCount; ++face) {
+    const uint32_t idx = hostCutIndexOfFace[face];
+    if (idx == InvalidId) {
+      ++loopTotal;
+      loopVertexTotal += buffers.hostUncutLoopCounts[face];
+      continue;
+    }
+    for (uint32_t region = hostRegionOffsets[face]; region < hostRegionOffsets[face + 1]; ++region) {
+      loopTotal += cutLoops.cutRegionLoopCounts[
+          size_t(idx) * MaxRegionsPerCutFace + (region - hostRegionOffsets[face])];
+    }
+    loopVertexTotal += cutLoops.cutVertexBase[idx + 1] - cutLoops.cutVertexBase[idx];
+  }
+  if (loopTotal > std::numeric_limits<uint32_t>::max() ||
+      loopVertexTotal > std::numeric_limits<uint32_t>::max()) {
+    std::cerr << "[RVD-FacePartition] face loop export exceeds 32-bit indexing" << std::endl;
+    return false;
+  }
+
+  std::vector<uint32_t> hostFaceLoopOffsets(size_t(totalRegions) + 1, 0);
+  std::vector<uint32_t> hostLoopVertexOffsets(size_t(loopTotal) + 1, 0);
+  std::vector<glm::dvec3> hostLoopVertices;
+  hostLoopVertices.reserve(size_t(loopVertexTotal));
+
+  uint32_t loopCursor = 0, vertexCursor = 0;
+  for (uint32_t face = 0; face < faceCount; ++face) {
+    const uint32_t regionBegin = hostRegionOffsets[face];
+    const uint32_t regionEnd = hostRegionOffsets[face + 1];
+    const uint32_t idx = hostCutIndexOfFace[face];
+    uint32_t faceLoop = 0, faceVertexCursor = 0;
+    for (uint32_t region = regionBegin; region < regionEnd; ++region) {
+      hostFaceLoopOffsets[region] = loopCursor;
+      const uint32_t loopCount = idx == InvalidId
+          ? 1u
+          : cutLoops.cutRegionLoopCounts[
+                size_t(idx) * MaxRegionsPerCutFace + (region - regionBegin)];
+      for (uint32_t l = 0; l < loopCount; ++l, ++loopCursor) {
+        uint32_t count = 0;
+        const double3 *source = nullptr;
+        if (idx == InvalidId) {
+          count = buffers.hostUncutLoopCounts[face];
+          source = buffers.hostUncutVertices.data() + hostUncutVertexBase[face];
+        } else {
+          count = cutLoops.cutLoopVertexCounts[cutLoops.cutLoopBase[idx] + faceLoop];
+          source = cutLoops.cutVertices.data() + cutLoops.cutVertexBase[idx] + faceVertexCursor;
+          faceVertexCursor += count;
+          ++faceLoop;
+        }
+        hostLoopVertexOffsets[loopCursor + 1] = vertexCursor + count;
+        for (uint32_t vertex = 0; vertex < count; ++vertex) {
+          hostLoopVertices.emplace_back(source[vertex].x, source[vertex].y, source[vertex].z);
+        }
+        vertexCursor += count;
+      }
+    }
+  }
+  hostFaceLoopOffsets[totalRegions] = loopCursor;
+
+  faceTopology.hostFaceLoopOffsets = std::move(hostFaceLoopOffsets);
+  faceTopology.hostLoopVertexOffsets = std::move(hostLoopVertexOffsets);
+  faceTopology.hostLoopVertices = std::move(hostLoopVertices);
+  return true;
 }
 
 } // namespace voronoi

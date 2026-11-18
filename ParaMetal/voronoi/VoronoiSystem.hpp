@@ -30,10 +30,9 @@ public:
         const std::vector<std::vector<uint32_t>>& triangleIndices,
         const std::vector<std::vector<glm::vec3>>& surfacePositions,
         const std::vector<std::vector<uint32_t>>& surfaceTriangleIndices,
-        const std::vector<std::array<float, 16>>& worldToModel,
         float volumePadding);
     void clearGeometry();
-    void setParams(float cellSize, int voxelResolution);
+    void setParams(int voxelResolution);
     void setLloydParams(int iterations, float volumeThreshold, float damping);
     void setContactRange(float range);
     bool ensureConfigured();

@@ -96,10 +96,18 @@
     <ClCompile Include="runtime\package\RuntimePackageCompiler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="runtime\package\RuntimePackageController.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="runtime\package\RuntimePackageManager.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="runtime\package\passes\ValidationPass.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="runtime\package\passes\CoordinatePass.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="runtime\package\RuntimePackageController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime\package\RuntimePackageManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime\package\passes\ValidationPass.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime\package\passes\CoordinatePass.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="runtime\ModelComputeController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -301,6 +309,9 @@
     <ClCompile Include="scene\MarkerInteractionController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="scene\DomainFaceInteractionController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="interaction\InteractionContext.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -361,15 +372,13 @@
     <ClCompile Include="renderers\PointRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="voronoi\LloydCompute.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="cfd\CFDRuntime.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="cfd\CFDProjectionSolver.cpp">
       <Filter>Source Files</Filter>
-    </ClCompile>    <ClCompile Include="cfd\CFDSystem.cpp">
+    </ClCompile>
+    <ClCompile Include="cfd\CFDSystem.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="cfd\CFDStreamlineStage.cpp">
@@ -391,6 +400,9 @@
       <Filter>Source Files</Filter>
     </CudaCompile>
     <CudaCompile Include="cfd\cuda\CFDSolverKernels.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
+    <CudaCompile Include="cfd\cuda\CFDReconstruction.cu">
       <Filter>Source Files</Filter>
     </CudaCompile>
     <CudaCompile Include="cuda\CudaExternalBuffer.cu">
@@ -465,9 +477,6 @@
     <ClCompile Include="mesh\IsocontourBuilder.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="renderers\VectorArrowRenderer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="renderers\HeatBoxRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -477,13 +486,16 @@
     <ClCompile Include="renderers\StreamlineRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="renderers\CFDSliceRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="cfd\CFDSliceGeometry.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="util\GlyphText.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="nodegraph\NodeGraphNodeState.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="nodegraph\NodeGraphSave.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="nodegraph\NodeGraphController.cpp">
@@ -696,9 +708,6 @@
     <ClCompile Include="nodegraph\NodeGraphInit.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="py\PyBridge.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="py\PyGraphBindings.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -759,6 +768,9 @@
     <ClCompile Include="app\VelocityPaletteUiModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="app\BoundaryFaceUiModel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="app\TimelineUiModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -781,6 +793,42 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="app\ViewportMailbox.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="cfd\CFDTopology.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="renderers\SurfaceVectorRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="project\ProjectFile.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="nodegraph\NodeMergeParams.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="nodegraph\NodeHeatProbe.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="nodegraph\NodeHeatProbeParams.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\GraphHost.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="project\ProjectController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\GraphThread.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\ViewportRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="vem\VEMDiffusion.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="vem\VEMMeshBuilder.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -905,12 +953,6 @@
     <None Include="shaders\timing_overlay.vert">
       <Filter>Shaders</Filter>
     </None>
-    <None Include="shaders\vector_arrow.frag">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="shaders\vector_arrow.vert">
-      <Filter>Shaders</Filter>
-    </None>
     <None Include="shaders\grid_label.frag">
       <Filter>Shaders</Filter>
     </None>
@@ -936,9 +978,6 @@
       <Filter>Shaders</Filter>
     </None>
     <None Include="shaders\heat_surface_temp.slang">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="shaders\voronoi_candidates_intrinsic.slang">
       <Filter>Shaders</Filter>
     </None>
     <None Include="qml\UiMenu.qml">
@@ -1003,6 +1042,66 @@
     </None>
     <None Include="qml\ViewportSettingsControl.qml">
       <Filter>Source Files</Filter>
+    </None>
+    <None Include="shaders\surface_vector.frag" />
+    <None Include="shaders\surface_vector.vert" />
+    <None Include="shaders\streamline.frag" />
+    <None Include="shaders\streamline.vert" />
+    <None Include="shaders\probe_marker.vert" />
+    <None Include="shaders\probe_marker.frag" />
+    <None Include="shaders\probe_marker_vert.spv" />
+    <None Include="shaders\probe_marker_frag.spv" />
+    <None Include="shaders\voronoi_candidates.slang" />
+    <None Include="shaders\cfd_field.slang">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\cfd_slice_mesh_fill.slang">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\cfd_slice_mesh_wire.slang">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\cfd_streamlines.slang">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\heat_box.frag">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\heat_box.vert">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\heat_box_face.frag">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\heat_box_face.vert">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\heat_fluid_volume.slang">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\intrinsic_common.frag">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\intrinsic_common.vert">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\palette_lut.slang">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\scalar_volume.frag">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\scalar_volume.vert">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\streamline.slang">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\viewport_blit.frag">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\viewport_blit.vert">
+      <Filter>Shaders</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
@@ -1078,13 +1177,21 @@
     <ClInclude Include="render\RenderRuntime.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="runtime\RuntimeTransports.hpp"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="runtime\RuntimeTransports.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="runtime\package\RuntimePackageCompiler.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="runtime\package\RuntimePackageController.hpp"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="runtime\package\passes\ValidationPass.hpp"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="runtime\package\passes\CoordinatePass.hpp"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="runtime\package\RuntimePackageController.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\package\passes\ValidationPass.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\package\passes\CoordinatePass.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="runtime\package\RuntimePackages.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1109,7 +1216,15 @@
     <ClInclude Include="runtime\RuntimeRenderController.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="simgraph\SimGraphRuntime.hpp"><Filter>Header Files</Filter></ClInclude><ClInclude Include="simgraph\SimNode.hpp"><Filter>Header Files</Filter></ClInclude><ClInclude Include="simgraph\SimConnection.hpp"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="simgraph\SimGraphRuntime.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="simgraph\SimNode.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="simgraph\SimConnection.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="runtime\ComputeContext.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1215,9 +1330,6 @@
     <ClInclude Include="voronoi\VoronoiSystemComputeController.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="voronoi\LloydCompute.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="vulkan\MemoryAllocator.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1287,6 +1399,9 @@
     <ClInclude Include="scene\MarkerInteractionController.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="scene\DomainFaceInteractionController.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="interaction\IViewportInteraction.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1308,13 +1423,7 @@
     <ClInclude Include="mesh\\remesher\\SupportingHalfedge.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="voronoi\VoronoiStageContext.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="voronoi\VoronoiSystemBuildStage.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="voronoi\VoronoiDomain.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="voronoi\VoronoiConfig.hpp">
@@ -1404,7 +1513,13 @@
     <ClInclude Include="cuda\CudaEvent.cuh">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="cuda\GpuTimer.cuh">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="cuda\Triangle.cuh">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="cuda\GeometryMoments.cuh">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="cuda\VoxelGrid.cuh">
@@ -1458,9 +1573,6 @@
     <ClInclude Include="mesh\Polyline.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="renderers\VectorArrowRenderer.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="renderers\HeatBoxRenderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1470,10 +1582,10 @@
     <ClInclude Include="renderers\StreamlineRenderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="util\GlyphText.hpp">
+    <ClInclude Include="renderers\CFDSliceRenderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="nodegraph\NodeGraphSave.hpp">
+    <ClInclude Include="util\GlyphText.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\NodeGraphController.hpp">
@@ -1683,6 +1795,9 @@
     <ClInclude Include="cfd\cuda\CFDSolverKernels.cuh">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="cfd\CFDReconstruction.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="cuda\CudaExternalBuffer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1798,9 +1913,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\NodeGraphInit.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="py\PyBridge.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="py\PyInterpreter.hpp">
@@ -2013,6 +2125,67 @@
     <ClInclude Include="heat\HeatBoundaryConditions.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="app\GraphThread.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="app\UiRuntimeTypes.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="domain\HeatProbeData.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vem\VEMMeshBuilder.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\VulkanCoreContext.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\SceneContext.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\RenderContext.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="renderers\SurfaceVectorRenderer.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="cfd\CFDTopology.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="cfd\CFDSliceGeometry.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="project\ProjectFile.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nodegraph\NodeMergeParams.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nodegraph\NodeHeatProbe.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nodegraph\NodeHeatProbeParams.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="cuda\CudaVulkanDevice.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="cuda\CudaMath.cuh" />
+    <ClInclude Include="cuda\DomainMoments.cuh" />
+    <ClInclude Include="voronoi\cuda\RVDBaseCells.cuh" />
+    <ClInclude Include="voronoi\cuda\RVDRestriction.cuh" />
+    <ClInclude Include="voronoi\cuda\RVDContact.cuh" />
+    <ClInclude Include="voronoi\cuda\RVDPredicates.cuh" />
+    <ClInclude Include="voronoi\cuda\ConvexCell.cuh" />
+    <ClInclude Include="app\ViewportRenderer.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vem\VEMGeometry.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vem\VEMDiffusion.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="app\ViewportUiModel.hpp">
@@ -2022,6 +2195,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="app\VelocityPaletteUiModel.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="app\BoundaryFaceUiModel.hpp">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="app\TimelineUiModel.hpp">
@@ -2045,10 +2221,27 @@
     <ClInclude Include="app\ViewportMailbox.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <QtMoc Include="app\RuntimeNotifier.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="app\GraphHost.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="project\ProjectController.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="resources\ParaMetal.rc">
       <Filter>Resource Files</Filter>
     </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="cuda\DomainMoments.cu" />
+    <CudaCompile Include="voronoi\cuda\RVDBaseCells.cu" />
+    <CudaCompile Include="voronoi\cuda\RVDBaseFaceTopology.cu" />
+    <CudaCompile Include="voronoi\cuda\RVDRestriction.cu" />
+    <CudaCompile Include="voronoi\cuda\RVDBaseFacePartition.cu" />
+    <CudaCompile Include="voronoi\cuda\RVDContact.cu" />
   </ItemGroup>
 </Project>

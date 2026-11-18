@@ -182,7 +182,7 @@ Item {
             anchors.top: parent.top
             anchors.rightMargin: 24
             anchors.topMargin: 20
-            text: "v1.7.0"
+            text: "v1.8.0"
             color: root.theme.welcomeSubtext
             font.family: root.theme.fontFamily
             font.pixelSize: root.theme.consoleFontSize

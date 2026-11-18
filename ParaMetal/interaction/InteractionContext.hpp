@@ -9,6 +9,7 @@ class ModelRegistry;
 struct WindowRuntimeState;
 class NavigationGizmoController;
 class MarkerInteractionController;
+class DomainFaceInteractionController;
 class GizmoController;
 class IViewportInteraction;
 
@@ -30,6 +31,9 @@ public:
     MarkerInteractionController& markerInteractionController();
     const MarkerInteractionController& markerInteractionController() const;
 
+    DomainFaceInteractionController& domainFaceInteractionController();
+    const DomainFaceInteractionController& domainFaceInteractionController() const;
+
     GizmoController& gizmoController();
     const GizmoController& gizmoController() const;
 
@@ -48,9 +52,12 @@ public:
     void cancelProbePicking();
     bool isProbePickingActive() const;
 
+    void setBoundaryFaceEditing(int nodeId, bool armed);
+
 private:
     std::unique_ptr<NavigationGizmoController> navigationGizmo;
     std::unique_ptr<MarkerInteractionController> markerInteraction;
+    std::unique_ptr<DomainFaceInteractionController> domainFace;
     std::unique_ptr<GizmoController> gizmo;
 
     std::vector<IViewportInteraction*> interactionStack;

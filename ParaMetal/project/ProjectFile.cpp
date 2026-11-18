@@ -208,6 +208,7 @@ bool ProjectFile::valueTypeFromString(const QString& text, NodeGraphValueType& o
     else if (text == "ScalarInt") outValue = NodeGraphValueType::ScalarInt;
     else if (text == "ScalarBool") outValue = NodeGraphValueType::ScalarBool;
     else if (text == "Simulation") outValue = NodeGraphValueType::Simulation;
+    else if (text == "Boundary") outValue = NodeGraphValueType::Boundary;
     else return false;
     return true;
 }

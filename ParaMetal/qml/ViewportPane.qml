@@ -7,6 +7,8 @@ Rectangle {
     required property QtObject bridge
     required property QtObject heatPalette
     required property QtObject velocityPalette
+    required property QtObject graphModel
+    required property QtObject boundaryFace
     color: theme.windowBackground
     border.width: 1
     border.color: theme.subtleBorder
@@ -27,6 +29,13 @@ Rectangle {
     VelocityPalette {
         theme: root.theme
         velocityPalette: root.velocityPalette
+        z: 10
+    }
+
+    BoundaryFacePanel {
+        theme: root.theme
+        boundaryFace: root.boundaryFace
+        graphModel: root.graphModel
         z: 10
     }
 

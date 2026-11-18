@@ -257,6 +257,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
       <CudaRuntime>Shared</CudaRuntime>
       <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>-std=c++17 --expt-relaxed-constexpr %(AdditionalOptions)</AdditionalOptions>
+      <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</GPUDebugInfo>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -327,10 +328,12 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <CudaCompile Include="heat\cuda\HeatGlobalSolverKernels.cu" />
     <CudaCompile Include="cfd\cuda\CFDSolver.cu" />
     <CudaCompile Include="cfd\cuda\CFDSolverKernels.cu" />
+    <CudaCompile Include="cfd\cuda\CFDReconstruction.cu" />
     <CudaCompile Include="cuda\CudaExternalBuffer.cu" />
     <CudaCompile Include="cuda\CudaVulkanDevice.cu" />
     <CudaCompile Include="cuda\CudaPcg.cu" />
     <CudaCompile Include="cuda\VoxelGrid.cu" />
+    <CudaCompile Include="cuda\DomainMoments.cu" />
     <CudaCompile Include="voronoi\cuda\RVD.cu">
       <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</GPUDebugInfo>
     </CudaCompile>
@@ -378,6 +381,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="scene\GizmoController.cpp" />
     <ClCompile Include="scene\NavigationGizmoController.cpp" />
     <ClCompile Include="scene\MarkerInteractionController.cpp" />
+    <ClCompile Include="scene\DomainFaceInteractionController.cpp" />
     <ClCompile Include="interaction\InteractionContext.cpp" />
     <ClCompile Include="renderers\GizmoRenderer.cpp" />
     <ClCompile Include="renderers\NavigationGizmoRenderer.cpp" />
@@ -390,6 +394,8 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="mesh\IsocontourBuilder.cpp" />
     <ClCompile Include="renderers\SurfaceVectorRenderer.cpp" />
     <ClCompile Include="renderers\StreamlineRenderer.cpp" />
+    <ClCompile Include="renderers\CFDSliceRenderer.cpp" />
+    <ClCompile Include="cfd\CFDSliceGeometry.cpp" />
     <ClCompile Include="renderers\HeatBoxRenderer.cpp" />
     <ClCompile Include="renderers\ProbeMarkerRenderer.cpp" />
     <ClCompile Include="heat\HeatModelRuntime.cpp" />
@@ -397,6 +403,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="heat\HeatFluidRuntime.cpp" />
     <ClCompile Include="heat\HeatFluidVolumeStage.cpp" />
     <ClCompile Include="voronoi\VoronoiSystemBuildStage.cpp" />
+    <ClCompile Include="voronoi\GlobalDomainTopology.cpp" />
     <ClCompile Include="voronoi\VoronoiNodeIndex.cpp" />
     <ClCompile Include="heat\HeatSystemPresets.cpp" />
     <ClCompile Include="heat\HeatSystemComputeController.cpp" />
@@ -497,6 +504,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="app\ViewportUiModel.cpp" />
     <ClCompile Include="app\HeatPaletteUiModel.cpp" />
     <ClCompile Include="app\VelocityPaletteUiModel.cpp" />
+    <ClCompile Include="app\BoundaryFaceUiModel.cpp" />
     <ClCompile Include="app\TimelineUiModel.cpp" />
     <ClCompile Include="app\ConsoleUiModel.cpp" />
     <ClCompile Include="app\NodeGraphUiModel.cpp" />
@@ -558,6 +566,10 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <None Include="qml\ViewportSettingsControl.qml" />
     <None Include="shaders\blend.frag" />
     <None Include="shaders\blend.vert" />
+    <None Include="shaders\cfd_field.slang" />
+    <None Include="shaders\cfd_slice_mesh_fill.slang" />
+    <None Include="shaders\cfd_slice_mesh_wire.slang" />
+    <None Include="shaders\cfd_streamlines.slang" />
     <None Include="shaders\gbuffer.frag" />
     <None Include="shaders\gbuffer.vert" />
     <None Include="shaders\gizmo.frag" />
@@ -566,6 +578,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <None Include="shaders\navigation_gizmo.vert" />
     <None Include="shaders\navigation_gizmo_frag.spv" />
     <None Include="shaders\navigation_gizmo_vert.spv" />
+    <None Include="shaders\palette_lut.slang" />
     <None Include="shaders\pick_gizmo.frag" />
     <None Include="shaders\pick_model.frag" />
     <None Include="shaders\pick_model.vert" />
@@ -573,12 +586,19 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <None Include="shaders\grid.vert" />
     <None Include="shaders\grid_label.frag" />
     <None Include="shaders\grid_label.vert" />
+    <None Include="shaders\heat_box.frag" />
+    <None Include="shaders\heat_box.vert" />
+    <None Include="shaders\heat_box_face.frag" />
+    <None Include="shaders\heat_box_face.vert" />
     <None Include="shaders\heat_buffer.frag" />
+    <None Include="shaders\heat_fluid_volume.slang" />
     <None Include="shaders\heat_source.frag" />
     <None Include="shaders\heat_source.vert" />
     <None Include="shaders\heat_surface_gradient.slang" />
     <None Include="shaders\heat_surface_temp.slang" />
     <None Include="shaders\heat_tetra.comp" />
+    <None Include="shaders\intrinsic_common.frag" />
+    <None Include="shaders\intrinsic_common.vert" />
     <None Include="shaders\intrinsic_normals.frag" />
     <None Include="shaders\intrinsic_normals.geom" />
     <None Include="shaders\intrinsic_normals.vert" />
@@ -598,16 +618,21 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <None Include="shaders\outline.vert" />
     <None Include="shaders\point_cloud.frag" />
     <None Include="shaders\point_cloud.vert" />
+    <None Include="shaders\scalar_volume.frag" />
+    <None Include="shaders\scalar_volume.vert" />
     <None Include="shaders\timing_overlay.frag" />
     <None Include="shaders\timing_overlay.vert" />
     <None Include="shaders\surface_vector.frag" />
     <None Include="shaders\surface_vector.vert" />
+    <None Include="shaders\streamline.slang" />
     <None Include="shaders\streamline.frag" />
     <None Include="shaders\streamline.vert" />
     <None Include="shaders\probe_marker.vert" />
     <None Include="shaders\probe_marker.frag" />
     <None Include="shaders\probe_marker_vert.spv" />
     <None Include="shaders\probe_marker_frag.spv" />
+    <None Include="shaders\viewport_blit.frag" />
+    <None Include="shaders\viewport_blit.vert" />
     <None Include="shaders\voronoi_candidates.slang" />
     <None Include="shaders\voronoi_surface.frag" />
     <None Include="shaders\voronoi_surface.geom" />
@@ -623,6 +648,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <QtMoc Include="app\ViewportUiModel.hpp" />
     <QtMoc Include="app\HeatPaletteUiModel.hpp" />
     <QtMoc Include="app\VelocityPaletteUiModel.hpp" />
+    <QtMoc Include="app\BoundaryFaceUiModel.hpp" />
     <QtMoc Include="app\TimelineUiModel.hpp" />
     <QtMoc Include="app\ConsoleUiModel.hpp" />
     <QtMoc Include="app\NodeGraphUiModel.hpp" />
@@ -728,7 +754,9 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="runtime\TimelineRuntime.hpp" />
     <ClInclude Include="runtime\ViewportEditController.hpp" />
     <ClInclude Include="runtime\RuntimeRenderController.hpp" />
-    <ClInclude Include="simgraph\SimGraphRuntime.hpp" /><ClInclude Include="simgraph\SimNode.hpp" /><ClInclude Include="simgraph\SimConnection.hpp" />
+    <ClInclude Include="simgraph\SimGraphRuntime.hpp" />
+    <ClInclude Include="simgraph\SimNode.hpp" />
+    <ClInclude Include="simgraph\SimConnection.hpp" />
     <ClInclude Include="runtime\RuntimeSystems.hpp" />
     <ClInclude Include="runtime\RuntimeInterfaces.hpp" />
     <ClInclude Include="render\WindowRuntimeState.hpp" />
@@ -762,6 +790,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="scene\GizmoController.hpp" />
     <ClInclude Include="scene\NavigationGizmoController.hpp" />
     <ClInclude Include="scene\MarkerInteractionController.hpp" />
+    <ClInclude Include="scene\DomainFaceInteractionController.hpp" />
     <ClInclude Include="interaction\IViewportInteraction.hpp" />
     <ClInclude Include="interaction\InteractionContext.hpp" />
     <ClInclude Include="renderers\GizmoRenderer.hpp" />
@@ -776,6 +805,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="mesh\Polyline.hpp" />
     <ClInclude Include="renderers\SurfaceVectorRenderer.hpp" />
     <ClInclude Include="renderers\StreamlineRenderer.hpp" />
+    <ClInclude Include="renderers\CFDSliceRenderer.hpp" />
     <ClInclude Include="renderers\HeatBoxRenderer.hpp" />
     <ClInclude Include="renderers\ProbeMarkerRenderer.hpp" />
     <ClInclude Include="voronoi\VoronoiSystemBuildStage.hpp" />
@@ -791,6 +821,8 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="voronoi\VoronoiSystemComputeController.hpp" />
     <ClInclude Include="heat\HeatDomainRuntime.hpp" />
     <ClInclude Include="cfd\CFDTopology.hpp" />
+    <ClInclude Include="cfd\CFDSliceGeometry.hpp" />
+    <ClInclude Include="cfd\CFDReconstruction.hpp" />
     <ClInclude Include="cfd\CFDSolver.hpp" />
     <ClInclude Include="cfd\CFDProjectionSolver.hpp" />
     <ClInclude Include="cfd\CFDRuntime.hpp" />
@@ -873,7 +905,10 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="cuda\CudaCheck.cuh" />
     <ClInclude Include="cuda\CudaBuffer.cuh" />
     <ClInclude Include="cuda\CudaMath.cuh" />
+    <ClInclude Include="cuda\GeometryMoments.cuh" />
+    <ClInclude Include="cuda\DomainMoments.cuh" />
     <ClInclude Include="cuda\CudaEvent.cuh" />
+    <ClInclude Include="cuda\GpuTimer.cuh" />
     <ClInclude Include="cuda\Triangle.cuh" />
     <ClInclude Include="cuda\VoxelGrid.cuh" />
     <ClInclude Include="voronoi\cuda\RVD.hpp" />
@@ -885,7 +920,6 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="voronoi\cuda\RVDSurfacePartition.hpp" />
     <ClInclude Include="voronoi\cuda\RVDFragments.cuh" />
     <ClInclude Include="voronoi\cuda\RVDAgglomeration.cuh" />
-
     <ClInclude Include="voronoi\cuda\RVDBaseFacePartition.cuh" />
     <ClInclude Include="voronoi\cuda\RVDPredicates.cuh" />
     <ClInclude Include="voronoi\cuda\RVDModelGeometry.cuh" />

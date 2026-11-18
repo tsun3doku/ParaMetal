@@ -95,7 +95,7 @@ public:
         const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& models,
         HeatFluidRuntime* fluidRuntime,
         float fixedTimeStep);
-    bool updateGlobalAdvection(HeatFluidRuntime* fluidRuntime, float fixedTimeStep);
+    bool updateGlobalAdvection(float fixedTimeStep);
     bool launchGlobalSolve(bool sourceIsA);
     bool pollGlobalSolve(bool& completedDestinationIsA);
     bool isGlobalSolveInFlight() const { return globalSolveInFlight; }
@@ -125,6 +125,7 @@ public:
     const AdvectionInput& getAdvectionInput() const { return advectionInput; }
 
 private:
+    bool advectionActive() const;
     bool extractVEMInputs(
         const std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>>& models,
         HeatFluidRuntime* fluidRuntime,

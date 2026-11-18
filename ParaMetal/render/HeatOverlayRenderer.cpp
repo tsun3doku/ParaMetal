@@ -85,11 +85,9 @@ void HeatOverlayRenderer::rebuildBindings() {
     surfaceBindings.clear();
     fluxVectorBindings.clear();
     boxBindings.clear();
-    streamlineBindings.clear();
     probeBindings.clear();
 
     paletteVisible = false;
-    cfdVelocityPaletteVisible = false;
     bool anyIsocontours = false;
     float isocontourSpacingC = 0.0f;
 
@@ -98,10 +96,6 @@ void HeatOverlayRenderer::rebuildBindings() {
 
         if (config.showHeatPalette) {
             paletteVisible = true;
-        }
-
-        if (config.showCfdVelocityPalette) {
-            cfdVelocityPaletteVisible = true;
         }
 
         if (config.showIsocontours) {
@@ -180,23 +174,12 @@ void HeatOverlayRenderer::rebuildBindings() {
             }
         }
 
-        if (config.showDomainBox && config.hasGlobalDomain) {
+        if (config.hasGlobalDomain) {
             HeatBoxRenderer::RenderBinding boxBinding{};
             boxBinding.corners = config.globalDomainCorners;
+            boxBinding.outline = config.showDomainBox;
 
             boxBindings.push_back(boxBinding);
-        }
-
-        if (config.showCfdStreamlines &&
-            config.cfdStreamlineVertexBuffer != VK_NULL_HANDLE &&
-            config.cfdStreamlineVertexCount != 0) {
-            StreamlineRenderer::RenderBinding streamlineBinding{};
-            streamlineBinding.bindingKey = socketKey;
-            streamlineBinding.vertexBuffer = config.cfdStreamlineVertexBuffer;
-            streamlineBinding.vertexBufferOffset = config.cfdStreamlineVertexBufferOffset;
-            streamlineBinding.vertexCount = config.cfdStreamlineVertexCount;
-
-            streamlineBindings.push_back(streamlineBinding);
         }
 
         for (size_t i = 0; i < config.probePositions.size(); ++i) {
@@ -287,7 +270,7 @@ void HeatOverlayRenderer::renderOverlay(
         probeRenderer->render(commandBuffer, frameIndex, extent, viewProj, probeBindings);
     }
     if (boxRenderer) {
-        boxRenderer->render(commandBuffer, frameIndex, boxBindings);
+        boxRenderer->render(commandBuffer, frameIndex, boxBindings, boundaryHighlight);
     }
 }
 
@@ -296,7 +279,6 @@ void HeatOverlayRenderer::cleanup() {
     surfaceBindings.clear();
     fluxVectorBindings.clear();
     boxBindings.clear();
-    streamlineBindings.clear();
     probeBindings.clear();
     maxFramesInFlight = 0;
     surfaceInitialized = false;
@@ -322,6 +304,17 @@ void HeatOverlayRenderer::setSelectedProbe(uint32_t probeId, int probeIndex) {
     selectedProbeId = probeId;
     selectedProbeIndex = probeIndex;
     rebuildBindings();
+}
+
+void HeatOverlayRenderer::setBoundaryFaceHighlight(
+    int selectedFace,
+    int hoverFace,
+    const std::array<glm::vec3, 8>& corners,
+    bool valid) {
+    boundaryHighlight.selectedFace = selectedFace;
+    boundaryHighlight.hoverFace = hoverFace;
+    boundaryHighlight.corners = corners;
+    boundaryHighlight.boundsValid = valid;
 }
 
 void HeatOverlayRenderer::updateProbePosition(uint32_t probeId, int probeIndex, const glm::vec3& newPos) {

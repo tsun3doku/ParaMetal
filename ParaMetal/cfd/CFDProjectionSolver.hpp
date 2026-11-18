@@ -46,7 +46,7 @@ public:
         float* d_boundaryFlux,
         const glm::vec3* d_velocityStar,
         glm::vec4* d_velocity,
-        const uint32_t* d_scheduleStatus,
+        uint32_t* d_scheduleStatus,
         void* flowStreamHandle);
 
     void cleanup();
@@ -72,6 +72,7 @@ private:
     uint32_t cellCount = 0;
 
     cudaGraphExec_t pressurePcgExec = nullptr;
+    cudaStream_t pcgStream = nullptr;
     cudaUtils::CudaBuffer<int> d_publishGate;
     cudaPcg::PcgStatus* pinnedPcgStatus = nullptr;
     cudaEvent_t pcgStatusEvent = nullptr;

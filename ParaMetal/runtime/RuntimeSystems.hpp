@@ -60,6 +60,7 @@ public:
     void setCameraFov(float degrees);
     void setCameraZoomSpeed(float speed);
     void setCameraPanSpeed(float speed);
+    void setCameraCull(float meters, bool linesOnly);
     void setHeatPaletteRange(float minimum, float maximum);
     void setHeatPalette(int palette);
     void setVelocityPaletteRange(float minimum, float maximum);
@@ -75,9 +76,11 @@ public:
     void noteFramePresented();
     void startProbePicking(uint32_t targetNodeId, int probeIndex = 0);
     void cancelProbePicking();
+    void setBoundaryFaceEditing(int nodeId, bool armed);
 
 private:
     void cleanup();
+    void applyStreamlineCull();
     void dispatchViewportCommands();
     void reclaimRetiredGenerations();
     bool isSimulationActive() const override;

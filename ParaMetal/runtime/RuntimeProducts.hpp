@@ -156,7 +156,6 @@ struct VoronoiProduct {
     std::vector<double> fragmentVolumes;
     std::vector<uint32_t> cellFragmentOffsets;
     std::vector<uint32_t> cellFragments;
-    float nominalCellSize = 0.0f;
     uint32_t globalFaceCount = 0;
     std::vector<uint32_t> faceFragmentA;
     std::vector<uint32_t> faceFragmentB;
@@ -168,6 +167,9 @@ struct VoronoiProduct {
     std::vector<glm::dvec3> faceMomentsB;
     std::vector<uint8_t> faceTypes;
     std::vector<uint32_t> faceDomainFaces;
+    std::vector<uint32_t> faceLoopOffsets;
+    std::vector<uint32_t> loopVertexOffsets;
+    std::vector<glm::dvec3> loopVertices;
     uint32_t globalContactCouplingCount = 0;
     std::vector<uint32_t> contactCouplingFaceA;
     std::vector<uint32_t> contactCouplingFragmentA;
@@ -176,8 +178,6 @@ struct VoronoiProduct {
     std::vector<double> contactCouplingAreas;
     uint32_t globalBoundaryFaceCount = 0;
     std::vector<uint32_t> boundaryFaceIndices;
-    std::vector<uint32_t> boundaryFaceFragments;
-    std::vector<uint32_t> boundaryFaceDomainFaces;
     std::vector<uint32_t> instanceFragmentCounts;
 
     std::vector<uint32_t> globalDisplayRuntimeModelIds;
@@ -198,7 +198,6 @@ struct VoronoiProduct {
              cellFragmentOffsets.back() == cellFragments.size()) &&
             fragmentCentroids.size() == globalFragmentCount &&
             fragmentVolumes.size() == globalFragmentCount &&
-            nominalCellSize > 0.0f &&
             faceFragmentA.size() == globalFaceCount &&
             faceFragmentB.size() == globalFaceCount &&
             faceAreasA.size() == globalFaceCount &&
@@ -209,14 +208,16 @@ struct VoronoiProduct {
             faceMomentsB.size() == globalFaceCount &&
             faceTypes.size() == globalFaceCount &&
             faceDomainFaces.size() == globalFaceCount &&
+            faceLoopOffsets.size() == size_t(globalFaceCount) + 1 &&
+            !faceLoopOffsets.empty() &&
+            loopVertexOffsets.size() == size_t(faceLoopOffsets.back()) + 1 &&
+            loopVertices.size() == loopVertexOffsets.back() &&
             contactCouplingFaceA.size() == globalContactCouplingCount &&
             contactCouplingFragmentA.size() == globalContactCouplingCount &&
             contactCouplingFaceB.size() == globalContactCouplingCount &&
             contactCouplingFragmentB.size() == globalContactCouplingCount &&
             contactCouplingAreas.size() == globalContactCouplingCount &&
             boundaryFaceIndices.size() == globalBoundaryFaceCount &&
-            boundaryFaceFragments.size() == globalBoundaryFaceCount &&
-            boundaryFaceDomainFaces.size() == globalBoundaryFaceCount &&
             !instanceFragmentCounts.empty();
     }
 };
@@ -262,6 +263,7 @@ struct HeatProduct {
 // Borrowed view, owned by CFDSystem
 struct CFDProduct {
     uint32_t fluidNodeCount = 0;
+    std::vector<uint32_t> globalFragmentToFluidNode;
 
     VkBuffer faceFluxBuffer = VK_NULL_HANDLE;
     VkDeviceSize faceFluxBufferSize = 0;
@@ -276,6 +278,13 @@ struct CFDProduct {
     VkBuffer streamlineVertexBuffer = VK_NULL_HANDLE;
     VkDeviceSize streamlineVertexBufferOffset = 0;
     uint32_t streamlineVertexCount = 0;
+
+    VkBuffer velocityBuffer = VK_NULL_HANDLE;
+    VkDeviceSize velocityBufferOffset = 0;
+    VkBuffer gradientBuffer = VK_NULL_HANDLE;
+    VkDeviceSize gradientBufferOffset = 0;
+    VkBuffer centroidBuffer = VK_NULL_HANDLE;
+    VkDeviceSize centroidBufferOffset = 0;
 
     HashValues hashes{};
 

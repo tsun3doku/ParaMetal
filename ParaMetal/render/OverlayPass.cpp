@@ -1,7 +1,6 @@
 #include "OverlayPass.hpp"
 
 #include <array>
-#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <iostream>
@@ -115,6 +114,15 @@ void OverlayPass::create() {
     }
     streamlineRenderer->initialize(frameGraphRuntime.getRenderPass(), framegraph::toIndex(passId), maxFramesInFlight);
 
+    sliceRenderer = std::make_unique<CFDSliceRenderer>(
+        vulkanDevice, memoryAllocator, uniformBufferManager, renderCommandPool);
+    if (!sliceRenderer) {
+        std::cerr << "[OverlayPass] Failed to create velocity slice renderer" << std::endl;
+        destroy();
+        return;
+    }
+    sliceRenderer->initialize(frameGraphRuntime.getRenderPass(), framegraph::toIndex(passId), maxFramesInFlight);
+
     pointOverlayRenderer = std::make_unique<PointOverlayRenderer>(vulkanDevice, uniformBufferManager);
     if (!pointOverlayRenderer) {
         std::cerr << "[OverlayPass] Failed to create point overlay renderer" << std::endl;
@@ -184,6 +192,13 @@ void OverlayPass::setVelocityPaletteRange(float minimum, float maximum) {
     velocityPaletteMaximum = maximum;
 }
 
+void OverlayPass::setStreamlineCull(float worldDistance) {
+    if (!std::isfinite(worldDistance) || worldDistance < 0.0f) {
+        return;
+    }
+    streamlineCullDistance = worldDistance;
+}
+
 PointOverlayRenderer* OverlayPass::getPointOverlayRenderer() const {
     return pointOverlayRenderer.get();
 }
@@ -203,21 +218,26 @@ void OverlayPass::record(const FrameContext& context, const SceneView& view, con
     const uint32_t currentFrame = context.currentFrame;
     screenTextRenderer.beginFrame(currentFrame);
     const VkExtent2D extent = context.extent;
+    if (sliceRenderer) {
+        sliceRenderer->render(
+            commandBuffer,
+            currentFrame,
+            context.extent,
+            cfdOverlayRenderer.getSliceBindings(),
+            velocityPalette,
+            velocityPaletteMinimum,
+            velocityPaletteMaximum);
+    }
     heatOverlayRenderer.renderOverlay(commandBuffer, currentFrame, extent, view.proj * view.view);
     cfdOverlayRenderer.renderOverlay(commandBuffer, currentFrame);
     if (streamlineRenderer) {
-        streamlineBindings.clear();
-        const auto& heatLines = heatOverlayRenderer.getStreamlineBindings();
-        const auto& cfdLines = cfdOverlayRenderer.getStreamlineBindings();
-        streamlineBindings.reserve(heatLines.size() + cfdLines.size());
-        streamlineBindings.insert(streamlineBindings.end(), heatLines.begin(), heatLines.end());
-        streamlineBindings.insert(streamlineBindings.end(), cfdLines.begin(), cfdLines.end());
+        streamlineBindings = cfdOverlayRenderer.getStreamlineBindings();
         for (auto& binding : streamlineBindings) {
             binding.palette = velocityPalette;
             binding.minSpeed = velocityPaletteMinimum;
             binding.maxSpeed = velocityPaletteMaximum;
         }
-        streamlineRenderer->render(commandBuffer, currentFrame, streamlineBindings);
+        streamlineRenderer->render(commandBuffer, currentFrame, streamlineBindings, streamlineCullDistance);
     }
     voronoiOverlayRenderer.renderPoints(commandBuffer, currentFrame, extent);
     if (pointOverlayRenderer) {
@@ -320,6 +340,10 @@ void OverlayPass::destroy() {
     if (streamlineRenderer) {
         streamlineRenderer->cleanup();
         streamlineRenderer.reset();
+    }
+    if (sliceRenderer) {
+        sliceRenderer->cleanup();
+        sliceRenderer.reset();
     }
     streamlineBindings.clear();
 }

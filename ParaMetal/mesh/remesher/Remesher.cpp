@@ -16,7 +16,7 @@ Remesher::Remesher(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator)
 SupportingHalfedge::GPUResources Remesher::buildIntrinsicGPUResources(
     const SupportingHalfedge& supportingHalfedge,
     const SupportingHalfedge::IntrinsicMesh& intrinsicMesh) const {
-    const SupportingHalfedge::GPUBuffers gpuBuffers = supportingHalfedge.buildGPUBuffers();
+    const SupportingHalfedge::GPUBuffers gpuBuffers = supportingHalfedge.buildGPUBuffers(intrinsicMesh);
 
     SupportingHalfedge::GPUResources resources{};
     resources.triangleCount = intrinsicMesh.triangles.size();
@@ -164,15 +164,14 @@ bool Remesher::remesh(
         return false;
     }
 
-    const SupportingHalfedge::IntrinsicMesh intrinsicMesh = supportingHalfedge->buildIntrinsicMesh();
-    if (intrinsicMesh.vertices.empty() || intrinsicMesh.indices.empty()) {
+    outMesh = supportingHalfedge->buildIntrinsicMesh();
+    if (outMesh.vertices.empty() || outMesh.indices.empty()) {
         std::cerr << "[Remesher] Intrinsic mesh output was empty" << std::endl;
+        outMesh = {};
         return false;
     }
 
-    outMesh = intrinsicMesh;
     outGpuResources = buildIntrinsicGPUResources(*supportingHalfedge, outMesh);
-    remesher.cleanup();
     return true;
 }
 

@@ -41,32 +41,72 @@ Ray MousePicker::screenToWorldRay(float mouseX, float mouseY, uint32_t screenWid
     };
 }
 
-bool MousePicker::rayIntersectsAABB(const Ray& ray, const glm::vec3& aabbMin, const glm::vec3& aabbMax) {
-    float tMin = 0.0f;
-    float tMax = std::numeric_limits<float>::max();
-    
-    for (int i = 0; i < 3; i++) {
-        if (std::abs(ray.direction[i]) < 0.0001f) {
-            // Ray is parallel to slab
-            if (ray.origin[i] < aabbMin[i] || ray.origin[i] > aabbMax[i]) {
-                return false;
+SlabIntersection MousePicker::intersectSlab(const Ray& ray, const glm::vec3& aabbMin, const glm::vec3& aabbMax) {
+    SlabIntersection result{};
+    result.tNear = -std::numeric_limits<float>::max();
+    result.tFar = std::numeric_limits<float>::max();
+
+    for (int axis = 0; axis < 3; axis++) {
+        if (std::abs(ray.direction[axis]) < 0.0001f) {
+            if (ray.origin[axis] < aabbMin[axis] || ray.origin[axis] > aabbMax[axis]) {
+                return result;
             }
-        } else {
-            float t1 = (aabbMin[i] - ray.origin[i]) / ray.direction[i];
-            float t2 = (aabbMax[i] - ray.origin[i]) / ray.direction[i];
-            
-            if (t1 > t2) std::swap(t1, t2);
-            
-            tMin = std::max(tMin, t1);
-            tMax = std::min(tMax, t2);
-            
-            if (tMin > tMax) {
-                return false;
-            }
+            continue;
+        }
+
+        float t1 = (aabbMin[axis] - ray.origin[axis]) / ray.direction[axis];
+        float t2 = (aabbMax[axis] - ray.origin[axis]) / ray.direction[axis];
+        int nearFace = axis * 2;
+        int farFace = axis * 2 + 1;
+
+        if (t1 > t2) {
+            std::swap(t1, t2);
+            std::swap(nearFace, farFace);
+        }
+
+        if (t1 > result.tNear) {
+            result.tNear = t1;
+            result.nearFace = nearFace;
+        }
+        if (t2 < result.tFar) {
+            result.tFar = t2;
+            result.farFace = farFace;
+        }
+
+        if (result.tNear > result.tFar) {
+            return result;
         }
     }
-    
-    return true;
+
+    result.hit = true;
+    return result;
+}
+
+bool MousePicker::rayIntersectsAABB(const Ray& ray, const glm::vec3& aabbMin, const glm::vec3& aabbMax) {
+    const SlabIntersection slab = intersectSlab(ray, aabbMin, aabbMax);
+    return slab.hit && slab.tFar >= 0.0f;
+}
+
+bool MousePicker::rayIntersectsAABBFace(const Ray& ray, const glm::vec3& aabbMin, const glm::vec3& aabbMax,
+                                        float& outT, int& outFace) {
+    const SlabIntersection slab = intersectSlab(ray, aabbMin, aabbMax);
+    if (!slab.hit) {
+        return false;
+    }
+
+    if (slab.tNear >= 0.0f) {
+        outT = slab.tNear;
+        outFace = slab.nearFace;
+        return true;
+    }
+
+    if (slab.tFar >= 0.0f) {
+        outT = slab.tFar;
+        outFace = slab.farFace;
+        return true;
+    }
+
+    return false;
 }
 
 bool MousePicker::rayIntersectsSphere(const Ray& ray, const glm::vec3& center, float radius) {

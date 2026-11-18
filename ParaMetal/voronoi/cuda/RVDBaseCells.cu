@@ -3,7 +3,6 @@
 #include "RVDHostUtils.cuh"
 
 #include <algorithm>
-#include <array>
 #include <iostream>
 #include <vector>
 
@@ -11,6 +10,8 @@ namespace voronoi {
 
 namespace {
 
+using rvdDevice::CellClipOverflowWorkspace;
+using rvdDevice::CellClipWorkspace;
 using rvdDevice::ConvexCell;
 using rvdDevice::ConvexCellOverflowStorage;
 using rvdDevice::ConvexCellStorage;
@@ -83,9 +84,7 @@ __device__ bool addNeighborPlanes(
     float4 seedPosition,
     float3 seedCanonical,
     ConvexCell &cell) {
-  const int3 queryCell = cellIndexOf(
-      make_float3(seedPosition.x, seedPosition.y, seedPosition.z),
-      input.knn.grid);
+  const int3 queryCell = cellIndexOf(make_float3(seedPosition.x, seedPosition.y, seedPosition.z), input.knn.grid);
   double maxVertexDistSq = cell.maximumVertexDistanceSquared(seedCanonical);
   double maxVertexDistance = sqrt(maxVertexDistSq);
   const double canonicalScale = double(input.grid.scale);
@@ -93,8 +92,7 @@ __device__ bool addNeighborPlanes(
 
   for (uint32_t offsetIndex = 0; offsetIndex < input.knn.cellOffsetCount; ++offsetIndex) {
     const double distSq = input.knn.cellOffsetDistances[offsetIndex];
-    if (distSq > 0.0 &&
-        0.25 * distSq * canonicalScaleSq > maxVertexDistSq) {
+    if (distSq > 0.0 && 0.25 * distSq * canonicalScaleSq > maxVertexDistSq) {
       break;
     }
 
@@ -170,15 +168,13 @@ __device__ void processBaseCell(
     ConvexCell &cell,
     StorageT &storage) {
   const auto failWith = [&](RVDStatus fallback) {
-    output.statuses[cellId] =
-        cell.status == RVDStatus::Success ? fallback : cell.status;
+    output.statuses[cellId] = cell.status == RVDStatus::Success ? fallback : cell.status;
   };
 
   output.statuses[cellId] = RVDStatus::Success;
 
   const float4 seed = input.knn.seeds[cellId];
-  const float3 seedCanonical = cudaGeometry::canonicalFromWorld(
-      input.grid, make_float3(seed.x, seed.y, seed.z));
+  const float3 seedCanonical = cudaGeometry::canonicalFromWorld(input.grid, make_float3(seed.x, seed.y, seed.z));
 
   if (!buildUnrestrictedCell(input, cellId, seedCanonical, cell)) {
     failWith(RVDStatus::NonFiniteGeometry);
@@ -207,6 +203,7 @@ __global__ void baseKernel(
     BaseDeviceInput input,
     BaseDeviceOutput output,
     ConvexCellStorage *baseStates,
+    CellClipWorkspace *workspaces,
     uint32_t begin,
     uint32_t count) {
   const uint32_t local = blockIdx.x * blockDim.x + threadIdx.x;
@@ -216,8 +213,9 @@ __global__ void baseKernel(
   if (cellId >= input.knn.seedCount) return;
 
   ConvexCellStorage &storage = baseStates[cellId];
+  CellClipWorkspace &workspace = workspaces[local];
   ConvexCell cell;
-  cell.attachStorage(storage);
+  cell.attachStorage(storage, workspace);
   processBaseCell(cellId, input, output, cell, storage);
 }
 
@@ -228,7 +226,8 @@ __global__ void overflowBaseKernel(
     uint32_t begin,
     uint32_t count,
     const int32_t *overflowSlots,
-    ConvexCellOverflowStorage *overflowStates) {
+    ConvexCellOverflowStorage *overflowStates,
+    CellClipOverflowWorkspace *workspaces) {
   const uint32_t local = blockIdx.x * blockDim.x + threadIdx.x;
   if (local >= count) return;
 
@@ -239,8 +238,9 @@ __global__ void overflowBaseKernel(
   if (slot < 0) return;
 
   ConvexCellOverflowStorage &storage = overflowStates[slot];
+  CellClipOverflowWorkspace &workspace = workspaces[local];
   ConvexCell cell;
-  cell.attachStorage(storage, RVDOverflowPlaneCount, RVDOverflowVertexCount);
+  cell.attachStorage(storage, workspace, RVDOverflowPlaneCount, RVDOverflowVertexCount);
   processBaseCell(cellId, input, output, cell, storage);
 }
 
@@ -307,8 +307,7 @@ void buildDomainPlanes(
     const glm::vec3 &domainMin,
     const glm::vec3 &domainMax,
     const cudaGeometry::DeviceVoxelGrid &grid,
-    double4 canonicalPlanes[6],
-    std::array<glm::dvec4, 6> &outwardPlanes) {
+    double4 canonicalPlanes[6]) {
   const float3 minCorner = cudaGeometry::canonicalFromWorld(grid, make_float3(domainMin.x, domainMin.y, domainMin.z));
   const float3 maxCorner = cudaGeometry::canonicalFromWorld(grid, make_float3(domainMax.x, domainMax.y, domainMax.z));
 
@@ -318,16 +317,6 @@ void buildDomainPlanes(
   canonicalPlanes[3] = make_double4(0.0, -1.0, 0.0, double(maxCorner.y));
   canonicalPlanes[4] = make_double4(0.0, 0.0, 1.0, -double(minCorner.z));
   canonicalPlanes[5] = make_double4(0.0, 0.0, -1.0, double(maxCorner.z));
-
-  const glm::dvec3 worldMin(domainMin);
-  const glm::dvec3 worldMax(domainMax);
-
-  outwardPlanes[0] = glm::dvec4(-1.0, 0.0, 0.0, worldMin.x);
-  outwardPlanes[1] = glm::dvec4(1.0, 0.0, 0.0, -worldMax.x);
-  outwardPlanes[2] = glm::dvec4(0.0, -1.0, 0.0, worldMin.y);
-  outwardPlanes[3] = glm::dvec4(0.0, 1.0, 0.0, -worldMax.y);
-  outwardPlanes[4] = glm::dvec4(0.0, 0.0, -1.0, worldMin.z);
-  outwardPlanes[5] = glm::dvec4(0.0, 0.0, 1.0, -worldMax.z);
 }
 
 BaseDeviceInput makeBaseDeviceInput(const RVDInput &input, const BaseCellDomain &baseDomain) {
@@ -346,12 +335,18 @@ bool runUnrestrictedPass(
     BaseDeviceInput deviceInput,
     BaseDeviceOutput deviceOutput,
     cudaStream_t stream) {
+  const uint32_t chunkCapacity = std::min(baseDomain.count, std::max(1u, config.baseChunkSize));
+  cudaUtils::CudaBuffer<CellClipWorkspace> workspaces;
+  if (chunkCapacity > 0 && !workspaces.allocate(chunkCapacity)) {
+    return false;
+  }
+
   const bool launched = launchChunks(
       baseDomain.count, config.baseChunkSize, stream,
       "launch base kernel", "synchronize base pass",
       [&](uint32_t begin, uint32_t count) {
         baseKernel<<<rvdHost::blockCount(count, BaseCellBlockSize), BaseCellBlockSize, 0, stream>>>(
-            deviceInput, deviceOutput, baseDomain.devBaseStates.get(), begin, count);
+            deviceInput, deviceOutput, baseDomain.devBaseStates.get(), workspaces.get(), begin, count);
       });
   if (!launched) {
     std::cerr << "[RVD] base unrestricted kernel phase failed" << std::endl;
@@ -405,9 +400,7 @@ bool buildOverflowList(
   }
 
   int hostCount = 0;
-  if (!rvdHost::copyToHost(
-          &hostCount, selectedCount.get(), 1, stream,
-          "read overflow cell count")) {
+  if (!rvdHost::copyToHost(&hostCount, selectedCount.get(), 1, stream, "read overflow cell count")) {
     return false;
   }
   overflowCount = uint32_t(hostCount);
@@ -442,8 +435,14 @@ bool retryOverflowCells(
     return false;
   }
 
+  const uint32_t chunkCapacity = std::min(overflowCount, std::max(1u, config.baseChunkSize));
+  cudaUtils::CudaBuffer<CellClipOverflowWorkspace> workspaces;
+  if (chunkCapacity > 0 && !workspaces.allocate(chunkCapacity)) {
+    return false;
+  }
+
   const bool launched = launchChunks(
-      overflowCount, config.restrictedChunkSize, stream,
+      overflowCount, config.baseChunkSize, stream,
       "launch overflow base kernel", "synchronize overflow base pass",
       [&](uint32_t begin, uint32_t count) {
         overflowBaseKernel<<<rvdHost::blockCount(count, BaseCellBlockSize), BaseCellBlockSize, 0, stream>>>(
@@ -453,7 +452,8 @@ bool retryOverflowCells(
             begin,
             count,
             baseDomain.devOverflowSlots.get(),
-            baseDomain.devOverflowStates.get());
+            baseDomain.devOverflowStates.get(),
+            workspaces.get());
       });
   if (!launched) {
     std::cerr << "[RVD] overflow base retry pass failed" << std::endl;
@@ -470,10 +470,7 @@ bool detectBaseFailures(
   if (cellCount == 0) return true;
 
   cudaUtils::CudaBuffer<uint32_t> anyFailure;
-  if (!anyFailure.allocate(1) ||
-      !rvdHost::zero(
-          anyFailure.get(), sizeof(uint32_t), stream,
-          "clear base failure flag")) {
+  if (!anyFailure.allocate(1) || !rvdHost::zero(anyFailure.get(), sizeof(uint32_t), stream, "clear base failure flag")) {
     return false;
   }
 
@@ -491,15 +488,13 @@ bool detectBaseFailures(
   hasFailures = hostFailure != 0;
   return true;
 }
-bool reportBaseFailures(
-    const std::vector<RVDStatus> &statuses) {
+bool reportBaseFailures(const std::vector<RVDStatus> &statuses) {
   bool success = true;
   for (uint32_t cell = 0; cell < statuses.size(); ++cell) {
     const RVDStatus status = statuses[cell];
     if (status == RVDStatus::Success) continue;
 
-    std::cerr << "[RVD] base pass failed cell=" << cell
-              << " status=" << rvdStatusName(status) << std::endl;
+    std::cerr << "[RVD] base pass failed cell=" << cell << " status=" << rvdStatusName(status) << std::endl;
     success = false;
   }
   return success;
@@ -507,8 +502,7 @@ bool reportBaseFailures(
 
 bool buildCellPlaneOffsets(BaseCellDomain &baseDomain, cudaStream_t stream) {
   cudaUtils::CudaBuffer<uint32_t> cellPlaneCounts;
-  if (!cellPlaneCounts.allocate(size_t(baseDomain.count) + 1) ||
-      !baseDomain.devCellPlaneOffsets.allocate(size_t(baseDomain.count) + 1)) {
+  if (!cellPlaneCounts.allocate(size_t(baseDomain.count) + 1) || !baseDomain.devCellPlaneOffsets.allocate(size_t(baseDomain.count) + 1)) {
     return false;
   }
 
@@ -563,14 +557,11 @@ bool prepareBaseDomain(const RVDInput &input, BaseCellDomain &baseDomain) {
   baseDomain.invBaseVolumeScale = baseDomain.invBaseScale * baseDomain.invBaseScale * baseDomain.invBaseScale;
   baseDomain.invBaseMomentScale = baseDomain.invBaseVolumeScale * baseDomain.invBaseScale;
   baseDomain.invBaseAreaScale = baseDomain.invBaseScale * baseDomain.invBaseScale;
-  baseDomain.nominalCellSize = input.nominalCellSize;
 
   baseDomain.baseGrid.gridMin = make_float3(baseDomain.domainMin.x, baseDomain.domainMin.y, baseDomain.domainMin.z);
   baseDomain.baseGrid.scale = baseDomain.baseScale;
 
-  buildDomainPlanes(
-      baseDomain.domainMin, baseDomain.domainMax, baseDomain.baseGrid,
-      baseDomain.domainPlanes, baseDomain.outwardDomainPlanes);
+  buildDomainPlanes(baseDomain.domainMin, baseDomain.domainMax, baseDomain.baseGrid, baseDomain.domainPlanes);
   return true;
 }
 
@@ -596,15 +587,11 @@ bool buildBaseCells(
 
   cudaUtils::CudaBuffer<uint32_t> deviceOverflowCells;
   uint32_t overflowCount = 0;
-  if (!buildOverflowList(
-          deviceStatuses, baseDomain.count, deviceOverflowCells, overflowCount,
-          stream)) {
+  if (!buildOverflowList(deviceStatuses, baseDomain.count, deviceOverflowCells, overflowCount, stream)) {
     return false;
   }
 
-  if (!retryOverflowCells(
-          config, baseDomain, deviceInput, deviceOutput, deviceOverflowCells,
-          overflowCount, stream)) {
+  if (!retryOverflowCells(config, baseDomain, deviceInput, deviceOutput, deviceOverflowCells, overflowCount, stream)) {
     return false;
   }
 
@@ -614,8 +601,7 @@ bool buildBaseCells(
   }
   if (hasFailures) {
     std::vector<RVDStatus> hostStatuses(baseDomain.count);
-    if (!downloadStatuses(
-            deviceStatuses, hostStatuses, stream, "download base statuses") ||
+    if (!downloadStatuses(deviceStatuses, hostStatuses, stream, "download base statuses") ||
         !reportBaseFailures(hostStatuses)) {
       return false;
     }

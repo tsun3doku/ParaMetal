@@ -17,6 +17,9 @@ namespace voronoi::cudaGeometry {
 using cudaMath::min3;
 using cudaMath::max3;
 
+static constexpr float RVDVoxelScale = 990.222f;
+static constexpr float RVDVoxelBias = 4.998f;
+
 namespace {
 
 constexpr uint32_t BlockSize = 256;
@@ -284,7 +287,41 @@ bool computePositionBounds(
 
 } // namespace
 
-bool buildTriangleBvh(
+void TriangleBvh::reset() {
+  nodes.reset();
+  root = InvalidNodeId;
+}
+
+bool TriangleBvh::valid() const {
+  return root != InvalidNodeId && nodes.size() > 0;
+}
+
+DeviceVoxelGrid makeRVDVoxelGrid(
+    const glm::vec3& meshMin,
+    const glm::vec3& meshMax,
+    uint32_t voxelResolution) {
+  DeviceVoxelGrid grid{};
+  grid.scale = 0.0f;
+  grid.voxelSize = 0.0f;
+  grid.gridDim = make_int3(0, 0, 0);
+  const glm::vec3 extent = meshMax - meshMin;
+  const float maxExtent = std::max(std::max(extent.x, extent.y), extent.z);
+  if (!(maxExtent > 0.0f) || !std::isfinite(maxExtent) || voxelResolution == 0) {
+    return grid;
+  }
+
+  grid.scale = RVDVoxelScale / maxExtent;
+  grid.voxelSize = CanonicalDomainSize / float(voxelResolution);
+  grid.gridMin = make_float3(
+      meshMin.x - RVDVoxelBias / grid.scale,
+      meshMin.y - RVDVoxelBias / grid.scale,
+      meshMin.z - RVDVoxelBias / grid.scale);
+  grid.gridDim = make_int3(
+      int(voxelResolution), int(voxelResolution), int(voxelResolution));
+  return grid;
+}
+
+static bool buildTriangleBvh(
     const cudaUtils::CudaBuffer<DeviceTriangle>& triangles,
     TriangleBvh& bvh,
     cudaStream_t stream) {
@@ -296,8 +333,11 @@ bool buildTriangleBvh(
   const uint32_t count = uint32_t(triangleCount);
 
   if (count == 1) {
-    if (!bvh.nodes.allocate(1) || !bvh.parents.allocate(1)) return false;
-    initSingleLeafKernel<<<1, 1, 0, stream>>>(triangles.get(), bvh.nodes.get(), bvh.parents.get());
+    if (!bvh.nodes.allocate(1)) return false;
+    cudaUtils::CudaBuffer<uint32_t> devNodeParents;
+    if (!devNodeParents.allocate(1)) return false;
+    initSingleLeafKernel<<<1, 1, 0, stream>>>(
+        triangles.get(), bvh.nodes.get(), devNodeParents.get());
     bvh.root = 0;
     return cudaGetLastError() == cudaSuccess;
   }
@@ -370,62 +410,8 @@ bool buildTriangleBvh(
   initLeavesAndPropagateAabbKernel<<<grid, BlockSize, 0, stream>>>(
       triangles.get(), devKeysOut.get(), count, bvh.nodes.get(), devNodeParents.get(), devNodeFlags.get());
 
-  bvh.parents.swap(devNodeParents);
   bvh.root = 0;
   return cudaGetLastError() == cudaSuccess;
-}
-
-__global__ void accumulateBvhMomentsKernel(
-    const DeviceTriangle* triangles,
-    const TriangleBvhNode* nodes,
-    uint32_t nodeCount,
-    const uint32_t* parents,
-    float4* moments) {
-  const uint32_t nodeIdx = blockIdx.x * blockDim.x + threadIdx.x;
-  if (nodeIdx >= nodeCount) return;
-
-  const TriangleBvhNode node = nodes[nodeIdx];
-  if (!node.isLeaf()) return;
-
-  const DeviceTriangle tri = triangles[node.triangleId()];
-  const float3 a = make_float3(tri.v0.x, tri.v0.y, tri.v0.z);
-  const float3 b = make_float3(tri.v1.x, tri.v1.y, tri.v1.z);
-  const float3 c = make_float3(tri.v2.x, tri.v2.y, tri.v2.z);
-  const float3 ab = make_float3(b.x - a.x, b.y - a.y, b.z - a.z);
-  const float3 ac = make_float3(c.x - a.x, c.y - a.y, c.z - a.z);
-  const float3 areaVector = make_float3(
-      0.5f * (ab.y * ac.z - ab.z * ac.y),
-      0.5f * (ab.z * ac.x - ab.x * ac.z),
-      0.5f * (ab.x * ac.y - ab.y * ac.x));
-
-  uint32_t target = nodeIdx;
-  while (target != InvalidNodeId) {
-    atomicAdd(&moments[target].x, areaVector.x);
-    atomicAdd(&moments[target].y, areaVector.y);
-    atomicAdd(&moments[target].z, areaVector.z);
-    target = parents[target];
-  }
-}
-
-bool buildBvhMoments(DeviceModelGeometry& geometry, cudaStream_t stream) {
-  if (!geometry.bvh.valid() || geometry.triangles.size() == 0) return false;
-
-  const uint32_t nodeCount = static_cast<uint32_t>(geometry.bvh.nodes.size());
-  if (!geometry.bvhMoments.allocate(nodeCount) ||
-      !cudaUtils::cudaCheck(
-          cudaMemsetAsync(geometry.bvhMoments.get(), 0, nodeCount * sizeof(float4), stream),
-          "clear bvh moments")) {
-    return false;
-  }
-
-  const uint32_t momentBlocks = (nodeCount + BlockSize - 1) / BlockSize;
-  accumulateBvhMomentsKernel<<<momentBlocks, BlockSize, 0, stream>>>(
-      geometry.triangles.get(),
-      geometry.bvh.nodes.get(),
-      nodeCount,
-      geometry.bvh.parents.get(),
-      geometry.bvhMoments.get());
-  return cudaUtils::cudaCheck(cudaGetLastError(), "launch accumulateBvhMomentsKernel");
 }
 
 __global__ void buildWindingSolidMaskKernel(
@@ -435,7 +421,8 @@ __global__ void buildWindingSolidMaskKernel(
     int3 gridDim,
     float cellSize,
     uint8_t* outMask,
-    uint32_t totalVoxels) {
+    uint32_t totalVoxels,
+    uint32_t* unresolvedCount) {
   const uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index >= totalVoxels) return;
 
@@ -452,21 +439,22 @@ __global__ void buildWindingSolidMaskKernel(
   uint8_t solid = 0;
   for (uint32_t viewIndex = 0; viewIndex < viewCount; ++viewIndex) {
     const DeviceModelGeometryView& view = views[viewIndex];
-    if (view.moments == nullptr) continue;
     if (pointF.x < view.boundsMin.x || pointF.x > view.boundsMax.x ||
         pointF.y < view.boundsMin.y || pointF.y > view.boundsMax.y ||
         pointF.z < view.boundsMin.z || pointF.z > view.boundsMax.z) {
       continue;
     }
-    const double winding = computeWinding(
+    const uint32_t classification = cudaGeometry::classifyPoint(
         view.triangles,
         view.nodes,
-        view.parents,
         view.root,
-        view.moments,
-        point,
-        pointF);
-    if (isfinite(winding) && fabs(winding) > 0.5) {
+        point);
+    if (classification == cudaGeometry::PointUnresolved) {
+      atomicAdd(unresolvedCount, 1u);
+      outMask[index] = 0;
+      return;
+    }
+    if (classification == cudaGeometry::PointInside) {
       solid = 1;
       break;
     }
@@ -497,6 +485,12 @@ bool buildWindingSolidMask(
     return false;
   }
 
+  cudaUtils::CudaBuffer<uint32_t> devUnresolved;
+  if (!devUnresolved.allocate(1) ||
+      cudaMemsetAsync(devUnresolved.get(), 0, sizeof(uint32_t), stream) != cudaSuccess) {
+    return false;
+  }
+
   const uint32_t blocks = (uint32_t(totalVoxels) + BlockSize - 1) / BlockSize;
   buildWindingSolidMaskKernel<<<blocks, BlockSize, 0, stream>>>(
       devViews.get(),
@@ -505,8 +499,90 @@ bool buildWindingSolidMask(
       gridDim,
       cellSize,
       outMask,
-      uint32_t(totalVoxels));
-  return cudaUtils::cudaCheck(cudaGetLastError(), "launch buildWindingSolidMaskKernel");
+      uint32_t(totalVoxels),
+      devUnresolved.get());
+  if (!cudaUtils::cudaCheck(cudaGetLastError(), "launch buildWindingSolidMaskKernel")) {
+    return false;
+  }
+
+  // The mask means "inside or touching a solid", so a displayed slice never
+  // fills a wall's cross-section.
+  DeviceVoxelGrid occupancyGrid{};
+  occupancyGrid.gridMin = gridMin;
+  occupancyGrid.scale = 1.0f;
+  occupancyGrid.voxelSize = cellSize;
+  occupancyGrid.gridDim = gridDim;
+  for (uint32_t viewIndex = 0; viewIndex < viewCount; ++viewIndex) {
+    if (views[viewIndex].triangles == nullptr || views[viewIndex].triangleCount == 0) {
+      continue;
+    }
+    if (!::cudaGeometry::markTriangleVoxels(
+            views[viewIndex].triangles,
+            views[viewIndex].triangleCount,
+            occupancyGrid,
+            outMask,
+            stream)) {
+      return false;
+    }
+  }
+
+  uint32_t hostUnresolved = 0;
+  if (cudaMemcpyAsync(
+          &hostUnresolved,
+          devUnresolved.get(),
+          sizeof(uint32_t),
+          cudaMemcpyDeviceToHost,
+          stream) != cudaSuccess ||
+      !cudaUtils::cudaCheck(
+          cudaStreamSynchronize(stream), "read solid mask unresolved count")) {
+    return false;
+  }
+  if (hostUnresolved != 0) {
+    std::cerr << "[RVD] solid mask unresolved voxels=" << hostUnresolved
+              << std::endl;
+    return false;
+  }
+  return true;
+}
+
+void DeviceModelGeometry::reset() {
+  triangles.reset();
+  triangleVertexIds.reset();
+  voxelTriangleIds.reset();
+  voxelOffsets.reset();
+  bvh.reset();
+  voxelGrid = {};
+  runtimeModelId = 0;
+  boundsMin = make_float3(0.0f, 0.0f, 0.0f);
+  boundsMax = make_float3(0.0f, 0.0f, 0.0f);
+}
+
+size_t DeviceModelGeometry::voxelCellCount() const {
+  return size_t(voxelGrid.gridDim.x) * size_t(voxelGrid.gridDim.y) *
+         size_t(voxelGrid.gridDim.z);
+}
+
+bool DeviceModelGeometry::valid() const {
+  return triangles.size() != 0 &&
+         triangleVertexIds.size() == triangles.size() &&
+         voxelOffsets.size() == voxelCellCount() + 1 &&
+         voxelGrid.gridDim.x > 0 && voxelGrid.gridDim.y > 0 &&
+         voxelGrid.gridDim.z > 0 &&
+         voxelGrid.scale > 0.0f &&
+         bvh.valid();
+}
+
+DeviceModelGeometryView DeviceModelGeometry::view() const {
+  DeviceModelGeometryView v{};
+  v.triangles = triangles.get();
+  v.triangleCount = uint32_t(triangles.size());
+  v.triangleVertexIds = triangleVertexIds.get();
+  v.nodes = bvh.nodes.get();
+  v.root = bvh.root;
+  v.runtimeModelId = runtimeModelId;
+  v.boundsMin = boundsMin;
+  v.boundsMax = boundsMax;
+  return v;
 }
 
 bool uploadModelGeometry(
@@ -581,8 +657,7 @@ bool uploadModelGeometry(
   geometry.boundsMin = make_float3(boundsMin.x, boundsMin.y, boundsMin.z);
   geometry.boundsMax = make_float3(boundsMax.x, boundsMax.y, boundsMax.z);
 
-  if (!buildTriangleBvh(geometry.triangles, geometry.bvh, stream) ||
-      !buildBvhMoments(geometry, stream)) {
+  if (!buildTriangleBvh(geometry.triangles, geometry.bvh, stream)) {
     geometry.reset();
     return false;
   }

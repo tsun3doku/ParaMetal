@@ -128,6 +128,7 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(uint64_t socketKey, const HeatP
     }
 
     topology::GlobalDomain& globalDomain = outConfig.domainVoronoiProduct;
+    outConfig.hasDomainVoronoiProduct = true;
     globalDomain.fragments.reserve(domainProduct->globalFragmentCount);
     for (uint32_t fragmentId = 0; fragmentId < domainProduct->globalFragmentCount; ++fragmentId) {
         topology::Fragment fragment{};
@@ -162,14 +163,7 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(uint64_t socketKey, const HeatP
         coupling.couplingArea = domainProduct->contactCouplingAreas[cId];
         globalDomain.contactCouplings.push_back(coupling);
     }
-    globalDomain.boundaryFaces.reserve(domainProduct->globalBoundaryFaceCount);
-    for (uint32_t bfId = 0; bfId < domainProduct->globalBoundaryFaceCount; ++bfId) {
-        topology::BoundaryFace boundaryFace{};
-        boundaryFace.faceIndex = domainProduct->boundaryFaceIndices[bfId];
-        boundaryFace.fragment = domainProduct->boundaryFaceFragments[bfId];
-        boundaryFace.domainFace = domainProduct->boundaryFaceDomainFaces[bfId];
-        globalDomain.boundaryFaces.push_back(boundaryFace);
-    }
+    globalDomain.boundaryFaceIndices = domainProduct->boundaryFaceIndices;
     globalDomain.instanceFragmentCounts = domainProduct->instanceFragmentCounts;
     globalDomain.seedPositions.reserve(domainProduct->globalSeedPositions.size());
     for (const glm::vec4& position : domainProduct->globalSeedPositions) {
@@ -177,6 +171,9 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(uint64_t socketKey, const HeatP
     }
     globalDomain.cellFragmentOffsets = domainProduct->cellFragmentOffsets;
     globalDomain.cellFragments = domainProduct->cellFragments;
+    globalDomain.faceLoopOffsets = domainProduct->faceLoopOffsets;
+    globalDomain.loopVertexOffsets = domainProduct->loopVertexOffsets;
+    globalDomain.loopVertices = domainProduct->loopVertices;
     globalDomain.domainMin = domainProduct->globalDomainCorners[0];
     globalDomain.domainMax = domainProduct->globalDomainCorners[0];
     for (const glm::vec3& corner : domainProduct->globalDomainCorners) {
@@ -186,7 +183,6 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(uint64_t socketKey, const HeatP
     globalDomain.volumeGridMin = domainProduct->globalVolumeGridMin;
     globalDomain.volumeGridDim = domainProduct->globalVolumeGridDim;
     globalDomain.volumeGridCellSize = domainProduct->globalVolumeGridCellSize;
-    globalDomain.nominalCellSize = domainProduct->nominalCellSize;
     globalDomain.seedIdGridBuffer = domainProduct->globalSeedIdGridBuffer;
     globalDomain.seedIdGridBufferOffset = domainProduct->globalSeedIdGridBufferOffset;
 

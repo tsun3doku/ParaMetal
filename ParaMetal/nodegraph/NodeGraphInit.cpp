@@ -236,7 +236,6 @@ static NodeTypeDefinition buildVoronoiNode() {
             makeOutputSocket("Volume", NodeGraphValueType::Volume, payloadtypes::Voronoi),
         },
         {
-            {nodegraphparams::voronoi::CellSize, "Cell Size", NodeGraphParamType::Float, 0.005, 0, false, "", false},
             {nodegraphparams::voronoi::VoxelResolution, "Voxel Resolution", NodeGraphParamType::Int, 0.0, 128, false, "", false},
             {nodegraphparams::voronoi::VolumePadding, "Volume Grid Padding", NodeGraphParamType::Float, 0.01, 0, false, "", false},
             {nodegraphparams::voronoi::ContactRange, "Maximum Contact Gap", NodeGraphParamType::Float, voronoi::DefaultContactRange, 0, false, "", false},
@@ -304,7 +303,7 @@ static NodeTypeDefinition buildHeatSolveNode() {
 static NodeTypeDefinition buildCFDNode() {
     return {
         nodegraphtypes::CFD,
-        "CFD",
+        "Superfluid",
         NodeGraphNodeCategory::System,
         {
             makeInputSocket("Volume", NodeGraphValueType::Volume, false, true),
@@ -326,6 +325,10 @@ static NodeTypeDefinition buildCFDNode() {
             {nodegraphparams::cfd::ShowStreamlines, "Show Streamlines", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
             {nodegraphparams::cfd::ShowDomainBox, "Show Domain Box", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
             {nodegraphparams::cfd::ShowVelocityPalette, "Show Velocity Palette", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
+            {nodegraphparams::cfd::ShowSlice, "Show Slice", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
+            makeEnumParamDefinition(nodegraphparams::cfd::SliceAxis, "Slice Axis", "X", {"X", "Y", "Z"}),
+            {nodegraphparams::cfd::SlicePosition, "Slice Position", NodeGraphParamType::Float, 0.5, 0, false, "", false},
+            {nodegraphparams::cfd::ShowSliceWireframe, "Show Slice Wireframe", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
         },
     };
 }

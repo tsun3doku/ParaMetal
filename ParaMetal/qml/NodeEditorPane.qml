@@ -20,6 +20,7 @@ Rectangle {
         case "model": return "Model"
         case "heat_model": return "HeatModel"
         case "fluid": return "Fluid"
+        case "cfd": return "Cfd"
         case "remesh": return "Remesh"
         case "transform": return "Transform"
         case "voronoi": return "VoronoiSystem"

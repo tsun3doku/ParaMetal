@@ -43,7 +43,7 @@ bool VoronoiSystemComputeController::apply(uint64_t socketKey, const Config& con
     }
 
     auto candidate = std::make_unique<VoronoiSystem>(vulkanDevice, memoryAllocator, commandPool);
-    candidate->setParams(config.cellSize, config.voxelResolution);
+    candidate->setParams(config.voxelResolution);
     candidate->setLloydParams(
         config.lloydIterations,
         config.lloydVolumeThreshold,
@@ -56,7 +56,6 @@ bool VoronoiSystemComputeController::apply(uint64_t socketKey, const Config& con
         config.globalRemeshTriangleIndices,
         config.globalRemeshSurfacePositions,
         config.globalRemeshSurfaceTriangleIndices,
-        config.globalRemeshWorldToModel,
         config.volumePadding);
 
     if (!candidate->ensureConfigured()) {
@@ -209,7 +208,6 @@ bool VoronoiSystemComputeController::buildProduct(uint64_t socketKey, VoronoiPro
     outProduct.cellFragments = buildStage.getGlobalCellFragments();
     outProduct.fragmentCentroids = buildStage.getGlobalFragmentCentroids();
     outProduct.fragmentVolumes = buildStage.getGlobalFragmentVolumes();
-    outProduct.nominalCellSize = buildStage.getGlobalNominalCellSize();
     outProduct.faceFragmentA = buildStage.getGlobalFaceFragmentA();
     outProduct.faceFragmentB = buildStage.getGlobalFaceFragmentB();
     outProduct.faceAreasA = buildStage.getGlobalFaceAreasA();
@@ -220,14 +218,15 @@ bool VoronoiSystemComputeController::buildProduct(uint64_t socketKey, VoronoiPro
     outProduct.faceMomentsB = buildStage.getGlobalFaceMomentsB();
     outProduct.faceTypes = buildStage.getGlobalFaceTypes();
     outProduct.faceDomainFaces = buildStage.getGlobalFaceDomainFaces();
+    outProduct.faceLoopOffsets = buildStage.getGlobalFaceLoopOffsets();
+    outProduct.loopVertexOffsets = buildStage.getGlobalLoopVertexOffsets();
+    outProduct.loopVertices = buildStage.getGlobalLoopVertices();
     outProduct.contactCouplingFaceA = buildStage.getGlobalContactCouplingFaceA();
     outProduct.contactCouplingFragmentA = buildStage.getGlobalContactCouplingFragmentA();
     outProduct.contactCouplingFaceB = buildStage.getGlobalContactCouplingFaceB();
     outProduct.contactCouplingFragmentB = buildStage.getGlobalContactCouplingFragmentB();
     outProduct.contactCouplingAreas = buildStage.getGlobalContactCouplingAreas();
     outProduct.boundaryFaceIndices = buildStage.getGlobalBoundaryFaceIndices();
-    outProduct.boundaryFaceFragments = buildStage.getGlobalBoundaryFaceFragments();
-    outProduct.boundaryFaceDomainFaces = buildStage.getGlobalBoundaryFaceDomainFaces();
     outProduct.instanceFragmentCounts = buildStage.getGlobalInstanceFragmentCounts();
     outProduct.globalFragmentCount = static_cast<uint32_t>(outProduct.fragmentInstanceIds.size());
     outProduct.globalFaceCount = static_cast<uint32_t>(outProduct.faceAreasA.size());

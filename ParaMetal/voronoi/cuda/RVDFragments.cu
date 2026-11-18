@@ -1,4 +1,6 @@
 #include "RVDFragments.cuh"
+#include "RVDBaseFacePartition.cuh"
+#include "RVDHostUtils.cuh"
 
 #include <algorithm>
 #include <cmath>
@@ -48,72 +50,314 @@ void compensatedAdd(const glm::dvec3 &value, glm::dvec3 &sum, glm::dvec3 &compen
 
 } // namespace
 
+struct LoopMeasure {
+  glm::dvec3 areaVector{0.0};
+  glm::dvec3 moment{0.0};
+  glm::dvec3 boundsMin{std::numeric_limits<double>::max()};
+  glm::dvec3 boundsMax{std::numeric_limits<double>::lowest()};
+};
 
-bool validatePartitionedSolidAreas(
-    const RVDInput &input,
-    const BaseFaceTopology &faceTopology,
-    const BaseCellDomain &baseDomain,
-    const std::vector<BaseFace> &baseFaces,
-    const std::vector<BaseFaceMeasure> &baseMeasures,
-    const std::vector<uint32_t> &regionOffsets,
-    const std::vector<FaceRegion> &faceRegions,
-    const std::vector<ModelRestriction> &models) {
-  const uint32_t totalPlanes = baseDomain.totalPlanes;
-  if (totalPlanes == 0) return true;
+static bool integrateFaceLoops(
+    const RVDResult &result,
+    uint32_t face,
+    const glm::dvec3 &reference,
+    const glm::dvec3 &normal,
+    LoopMeasure &out) {
+  out = LoopMeasure{};
+  if (size_t(face) + 1 >= result.faceLoopOffsets.size()) return false;
+  const uint32_t loopBegin = result.faceLoopOffsets[face];
+  const uint32_t loopEnd = result.faceLoopOffsets[face + 1];
+  if (loopBegin > loopEnd ||
+      size_t(loopEnd) + 1 > result.loopVertexOffsets.size()) {
+    return false;
+  }
+  bool any = false;
+  for (uint32_t loop = loopBegin; loop < loopEnd; ++loop) {
+    const uint32_t begin = result.loopVertexOffsets[loop];
+    const uint32_t end = result.loopVertexOffsets[loop + 1];
+    if (begin > end || size_t(end) > result.loopVertices.size()) return false;
+    if (end - begin < 3) return false;
+    for (uint32_t vertex = begin; vertex < end; ++vertex) {
+      const glm::dvec3 current = result.loopVertices[vertex] - reference;
+      const glm::dvec3 next =
+          result.loopVertices[vertex + 1 < end ? vertex + 1 : begin] - reference;
+      const glm::dvec3 spanned = glm::cross(current, next);
+      out.areaVector += spanned * 0.5;
+      out.moment += (current + next) * (glm::dot(spanned, normal) / 6.0);
+      out.boundsMin = glm::min(out.boundsMin, current);
+      out.boundsMax = glm::max(out.boundsMax, current);
+    }
+    any = true;
+  }
+  return any;
+}
 
-  std::vector<std::vector<double>> restrictedAreas(models.size());
-  for (size_t model = 0; model < models.size(); ++model) {
-    restrictedAreas[model].resize(totalPlanes);
-    if (!models[model].devRestrictedPlaneAreas.download(restrictedAreas[model].data(), totalPlanes)) {
+static bool appendFaceLoop(
+    RVDResult &result,
+    const std::vector<glm::dvec3> &polygon,
+    const glm::dvec3 &normal) {
+  if (polygon.size() < 3 || result.faceLoopOffsets.empty() ||
+      result.loopVertexOffsets.empty()) {
+    return false;
+  }
+  glm::dvec3 boundsMin(std::numeric_limits<double>::max());
+  glm::dvec3 boundsMax(std::numeric_limits<double>::lowest());
+  for (const glm::dvec3 &point : polygon) {
+    boundsMin = glm::min(boundsMin, point);
+    boundsMax = glm::max(boundsMax, point);
+  }
+  const double extent = glm::length(boundsMax - boundsMin);
+  if (!(extent > 0.0) || !std::isfinite(extent)) return false;
+  const double tolerance =
+      64.0 * std::numeric_limits<double>::epsilon() * extent;
+
+  std::vector<glm::dvec3> loop;
+  loop.reserve(polygon.size());
+  for (const glm::dvec3 &point : polygon) {
+    if (!loop.empty() && glm::length(point - loop.back()) <= tolerance) continue;
+    loop.push_back(point);
+  }
+  while (loop.size() > 1 &&
+         glm::length(loop.front() - loop.back()) <= tolerance) {
+    loop.pop_back();
+  }
+  if (loop.size() < 3) return false;
+
+  glm::dvec3 reference(0.0);
+  for (const glm::dvec3 &point : loop) reference += point;
+  reference /= double(loop.size());
+  double signedArea = 0.0;
+  for (size_t vertex = 0; vertex < loop.size(); ++vertex) {
+    const glm::dvec3 current = loop[vertex] - reference;
+    const glm::dvec3 next = loop[(vertex + 1) % loop.size()] - reference;
+    signedArea += glm::dot(glm::cross(current, next), normal);
+  }
+  if (!std::isfinite(signedArea) || signedArea == 0.0) return false;
+  if (signedArea < 0.0) std::reverse(loop.begin(), loop.end());
+
+  result.faceLoopOffsets.push_back(result.faceLoopOffsets.back() + 1u);
+  result.loopVertexOffsets.push_back(
+      result.loopVertexOffsets.back() + uint32_t(loop.size()));
+  result.loopVertices.insert(result.loopVertices.end(), loop.begin(), loop.end());
+  return true;
+}
+
+static bool validateFaceLoops(
+    const RVDResult &result,
+    uint32_t baseFaceCount,
+    const std::vector<SurfaceRegion> &surfaceRegions) {
+  if (result.faceLoopOffsets.empty() ||
+      result.faceLoopOffsets.size() != result.fragmentFaces.size() + 1 ||
+      result.faceLoopOffsets[0] != 0u ||
+      result.loopVertexOffsets.empty() ||
+      result.loopVertexOffsets.size() != size_t(result.faceLoopOffsets.back()) + 1 ||
+      result.loopVertexOffsets[0] != 0u ||
+      result.loopVertices.size() != result.loopVertexOffsets.back()) {
+    std::cerr << "[RVDTopology] face loop arrays are inconsistent" << std::endl;
+    return false;
+  }
+
+  for (uint32_t faceId = 0; faceId < result.fragmentFaces.size(); ++faceId) {
+    const FragmentFace &face = result.fragmentFaces[faceId];
+    if (!(face.areaA > 0.0) || !std::isfinite(face.areaA)) {
+      std::cerr << "[RVDTopology] face has no A-side measure face=" << faceId
+                << std::endl;
+      return false;
+    }
+    const double areaA = face.areaA;
+    const glm::dvec3 publishedCentroid = face.momentA / areaA;
+    const glm::dvec3 normal = face.areaVectorA / areaA;
+    LoopMeasure loop;
+    if (!integrateFaceLoops(result, faceId, publishedCentroid, normal, loop)) {
+      std::cerr << "[RVDTopology] invalid face loop face=" << faceId
+                << " loops=" << result.faceLoopOffsets[faceId + 1] -
+                       result.faceLoopOffsets[faceId]
+                << std::endl;
+      return false;
+    }
+    const double extent = glm::length(loop.boundsMax - loop.boundsMin);
+    const double lengthTolerance =
+        1e-9 * extent + 1e-12 * glm::length(publishedCentroid);
+    const double areaTolerance = 1e-9 * areaA + extent * lengthTolerance;
+    const double centroidTolerance =
+        1e-6 * extent + 1e-11 * glm::length(publishedCentroid);
+    if (!(glm::length(loop.areaVector - face.areaVectorA) <= areaTolerance)) {
+      std::cerr << "[RVDTopology] face loop area mismatch face=" << faceId
+                << " area=" << areaA
+                << " loopArea=" << glm::dot(loop.areaVector, normal)
+                << " error=" << glm::length(loop.areaVector - face.areaVectorA)
+                << std::endl;
+      return false;
+    }
+
+    const double loopArea = glm::dot(loop.areaVector, normal);
+    if (!(loopArea > 0.0)) {
+      std::cerr << "[RVDTopology] face loop winding mismatch face=" << faceId
+                << " loopArea=" << loopArea << std::endl;
+      return false;
+    }
+    const glm::dvec3 loopCentroid = publishedCentroid + loop.moment / loopArea;
+    if (!(glm::length(loopCentroid - publishedCentroid) <= centroidTolerance)) {
+      std::cerr << "[RVDTopology] face loop centroid mismatch face=" << faceId
+                << " source=" << (faceId < baseFaceCount ? "base" : "surface")
+                << " baseFaces=" << baseFaceCount
+                << " fragmentA=" << face.fragmentA
+                << " fragmentB=" << face.fragmentB
+                << " faceType=" << uint32_t(face.type)
+                << " domainFace=" << face.domainFace
+                << " error="
+                << glm::length(loopCentroid - publishedCentroid)
+                << " tolerance=" << centroidTolerance
+                << " area=" << areaA
+                << " extent=" << extent
+                << " centroid=(" << publishedCentroid.x << ","
+                << publishedCentroid.y << "," << publishedCentroid.z << ")"
+                << " moment=(" << face.momentA.x << "," << face.momentA.y
+                << "," << face.momentA.z << ")"
+                << " loopMoment=(" << loop.moment.x << "," << loop.moment.y
+                << "," << loop.moment.z << ")"
+                << " loops=" << result.faceLoopOffsets[faceId + 1] -
+                       result.faceLoopOffsets[faceId]
+                << " vertices=" << result.loopVertexOffsets[
+                       result.faceLoopOffsets[faceId + 1]] -
+                       result.loopVertexOffsets[result.faceLoopOffsets[faceId]];
+      if (faceId >= baseFaceCount) {
+        const uint32_t surfaceIndex = faceId - baseFaceCount;
+        if (surfaceIndex < surfaceRegions.size()) {
+          const SurfaceRegion &region = surfaceRegions[surfaceIndex];
+          std::cerr << " surfaceIndex=" << surfaceIndex
+                    << " cell=" << region.cellId
+                    << " model=" << region.runtimeModelId
+                    << " triangle=" << region.sourceTriangleId
+                    << " contact=" << region.contactFacing
+                    << " regionArea=" << region.area
+                    << " regionMoment=(" << region.moment.x << ","
+                    << region.moment.y << "," << region.moment.z << ")";
+        }
+      }
+      std::cerr << " loopVertices=";
+      for (uint32_t loopIndex = result.faceLoopOffsets[faceId];
+           loopIndex < result.faceLoopOffsets[faceId + 1]; ++loopIndex) {
+        std::cerr << "[";
+        for (uint32_t vertexIndex = result.loopVertexOffsets[loopIndex];
+             vertexIndex < result.loopVertexOffsets[loopIndex + 1];
+             ++vertexIndex) {
+          const glm::dvec3 &point = result.loopVertices[vertexIndex];
+          std::cerr << "(" << point.x << "," << point.y << ","
+                    << point.z << ")";
+        }
+        std::cerr << "]";
+      }
+      std::cerr << std::endl;
       return false;
     }
   }
+  return true;
+}
 
-  bool valid = true;
-  uint32_t reportedMismatches = 0;
-  for (uint32_t faceId = 0; faceId < baseFaces.size(); ++faceId) {
-    const BaseFace &face = baseFaces[faceId];
-    const uint32_t slots[2] = {face.slotA, face.slotB};
-    const uint32_t cells[2] = {face.cellA, face.cellB};
-    const uint32_t regionBegin = regionOffsets[faceId];
-    const uint32_t regionEnd = regionOffsets[faceId + 1];
 
-    for (int side = 0; side < 2; ++side) {
-      const uint32_t slot = slots[side];
-      const uint32_t cell = cells[side];
-      if (slot == InvalidId || cell == InvalidId) continue;
-      if (slot >= totalPlanes) return false;
+struct VerifySolidModel {
+  uint32_t runtimeModelId;
+  const double *restrictedPlaneAreas;
+};
 
-      for (size_t model = 0; model < models.size(); ++model) {
-        const uint32_t materialId = models[model].runtimeModelId;
-        double partitionSolid = 0.0;
-        for (uint32_t regionId = regionBegin; regionId < regionEnd;
-             ++regionId) {
-          const FaceRegion &region = faceRegions[regionId];
-          const uint32_t material = side == 0 ? region.materialA : region.materialB;
-          if (material != materialId) continue;
-          partitionSolid += region.measure.area;
-        }
+__global__ void verifySolidAreas(
+    uint32_t faceCount,
+    uint32_t totalPlanes,
+    const BaseFace *baseFaces,
+    const BaseFaceMeasure *baseMeasures,
+    const uint32_t *regionOffsets,
+    const FaceRegion *faceRegions,
+    uint32_t modelCount,
+    const VerifySolidModel *models,
+    RvdPackedError *packedError) {
+  const uint32_t faceId = blockIdx.x * blockDim.x + threadIdx.x;
+  if (faceId >= faceCount) return;
 
-        const double rawRestricted = restrictedAreas[model][slot];
-        const double delta = partitionSolid - rawRestricted;
-        const BaseFaceMeasure &baseMeasure = baseMeasures[faceId];
-        const double tolerance = 1.0e-4 * std::max(baseMeasure.area, 1.0e-30);
-        if (fabs(delta) <= tolerance) continue;
+  const BaseFace &face = baseFaces[faceId];
+  const uint32_t slots[2] = {face.slotA, face.slotB};
+  const uint32_t cells[2] = {face.cellA, face.cellB};
+  const uint32_t regionBegin = regionOffsets[faceId];
+  const uint32_t regionEnd = regionOffsets[faceId + 1];
 
-        valid = false;
-        if (reportedMismatches < 8u) {
-          std::cerr << "[RVD] face area mismatch face=" << faceId
-                    << " side=" << (side == 0 ? 'A' : 'B')
-                    << " slot=" << slot
-                    << " model=" << materialId
-                    << " delta=" << delta << std::endl;
-        }
-        ++reportedMismatches;
+  for (int side = 0; side < 2; ++side) {
+    const uint32_t slot = slots[side];
+    const uint32_t cell = cells[side];
+    if (slot == InvalidId || cell == InvalidId) continue;
+    if (slot >= totalPlanes) {
+      rvdReportErrorOnce(packedError, uint32_t(RVDStatus::InvalidIndex), faceId);
+      return;
+    }
+
+    for (uint32_t m = 0; m < modelCount; ++m) {
+      const uint32_t materialId = models[m].runtimeModelId;
+      double partitionSolid = 0.0;
+      for (uint32_t regionId = regionBegin; regionId < regionEnd; ++regionId) {
+        const FaceRegion &region = faceRegions[regionId];
+        const uint32_t material = side == 0 ? region.materialA : region.materialB;
+        if (material != materialId) continue;
+        partitionSolid += region.measure.area;
+      }
+
+      const double rawRestricted = models[m].restrictedPlaneAreas[slot];
+      const double delta = partitionSolid - rawRestricted;
+      const BaseFaceMeasure &baseMeasure = baseMeasures[faceId];
+      const double tolerance = 1.0e-4 * fmax(baseMeasure.area, 1.0e-30);
+      if (fabs(delta) > tolerance) {
+        rvdReportErrorOnce(packedError, uint32_t(FacePartitionError::AreaConservation), faceId);
+        return;
       }
     }
   }
-  return valid;
+}
+
+bool verifySolidAreas(
+    const BaseFaceTopology &faceTopology,
+    const BaseCellDomain &baseDomain,
+    const std::vector<ModelRestriction> &models,
+    cudaStream_t stream) {
+  const uint32_t totalPlanes = baseDomain.totalPlanes;
+  const uint32_t faceCount = faceTopology.totalBaseFaces;
+  if (totalPlanes == 0 || faceCount == 0 || models.empty()) return true;
+
+  std::vector<VerifySolidModel> hostModels(models.size());
+  for (size_t m = 0; m < models.size(); ++m) {
+    if (models[m].devRestrictedPlaneAreas.size() < totalPlanes) return false;
+    hostModels[m].runtimeModelId = models[m].runtimeModelId;
+    hostModels[m].restrictedPlaneAreas = models[m].devRestrictedPlaneAreas.get();
+  }
+
+  cudaUtils::CudaBuffer<VerifySolidModel> devModels;
+  cudaUtils::CudaBuffer<RvdPackedError> devPackedError;
+  if (!devModels.allocate(models.size()) ||
+      !devModels.uploadAsync(hostModels.data(), models.size(), stream) ||
+      !devPackedError.allocate(1) ||
+      !rvdHost::zero(devPackedError.get(), sizeof(RvdPackedError), stream, "clear solid area error")) {
+    return false;
+  }
+
+  constexpr uint32_t BlockSize = 256;
+  verifySolidAreas<<<
+      rvdHost::blockCount(faceCount, BlockSize), BlockSize, 0, stream>>>(
+      faceCount,
+      totalPlanes,
+      faceTopology.devBaseFaces.get(),
+      faceTopology.devMeasures.get(),
+      faceTopology.devRegionOffsets.get(),
+      faceTopology.devRegions.get(),
+      uint32_t(models.size()),
+      devModels.get(),
+      devPackedError.get());
+
+  if (!rvdHost::checkLaunch("launch verifySolidAreas")) return false;
+
+  RvdPackedError hostError = 0;
+  if (!rvdHost::readPackedError(devPackedError, stream, hostError)) return false;
+  if (hostError != 0) {
+    std::cerr << "[RVD] face area mismatch face=" << rvdErrorId(hostError) << std::endl;
+    return false;
+  }
+  return true;
 }
 
 bool buildFragmentsAndFaces(
@@ -123,7 +367,8 @@ bool buildFragmentsAndFaces(
     const std::vector<ModelRestriction> &models,
     std::vector<SurfaceRegion> &surfaceRegions,
     uint32_t &totalBaseFragmentFaces,
-    RVDResult &result) {
+    RVDResult &result,
+    cudaStream_t stream) {
   if (input.seeds == nullptr || input.seeds->size() != baseDomain.count) {
     return false;
   }
@@ -259,15 +504,22 @@ bool buildFragmentsAndFaces(
        !faceTopology.devRegions.download(faceRegions.data(), regionCount))) {
     return false;
   }
-  std::vector<BaseFaceMeasure> baseMeasures(faceCount);
-  if (faceCount > 0 &&
-      (faceTopology.devMeasures.size() < faceCount ||
-       !faceTopology.devMeasures.download(baseMeasures.data(), faceCount))) {
+  if (faceTopology.hostFaceLoopOffsets.size() != size_t(regionCount) + 1 ||
+      faceTopology.hostFaceLoopOffsets[0] != 0u ||
+      faceTopology.hostLoopVertexOffsets.empty() ||
+      faceTopology.hostLoopVertexOffsets.size() !=
+          size_t(faceTopology.hostFaceLoopOffsets.back()) + 1 ||
+      faceTopology.hostLoopVertices.size() !=
+          faceTopology.hostLoopVertexOffsets.back()) {
+    std::cerr << "[RVDTopology] base face loops are incomplete regions="
+              << regionCount << " loops=" << faceTopology.hostFaceLoopOffsets.size()
+              << std::endl;
     return false;
   }
-  if (!validatePartitionedSolidAreas(
-          input, faceTopology, baseDomain, baseFaces, baseMeasures,
-          regionOffsets, faceRegions, models)) {
+  result.faceLoopOffsets = faceTopology.hostFaceLoopOffsets;
+  result.loopVertexOffsets = faceTopology.hostLoopVertexOffsets;
+  result.loopVertices = faceTopology.hostLoopVertices;
+  if (!verifySolidAreas(faceTopology, baseDomain, models, stream)) {
     return false;
   }
 
@@ -287,7 +539,7 @@ bool buildFragmentsAndFaces(
     }
   }
   for (const SurfaceRegion &region : surfaceRegions) {
-    if (region.cellId < cellCount && region.outsideMaterialId == InvalidId) {
+    if (region.cellId < cellCount && !region.contactFacing && region.outsideMaterialId == InvalidId) {
       ++fluidBoundaryCounts[region.cellId];
     }
   }
@@ -386,31 +638,52 @@ bool buildFragmentsAndFaces(
       return false;
     }
     const uint32_t solid = fragmentFor(region.cellId, region.runtimeModelId);
-    const uint32_t outside =
-        fragmentFor(region.cellId, region.outsideMaterialId);
-    if (solid == InvalidId || outside == InvalidId || solid == outside) {
+    if (solid == InvalidId) {
       std::cerr << "[RVDTopology] CAD surface missing phase fragment "
                 << "region=" << regionId << " cell=" << region.cellId
-                << " inside=" << region.runtimeModelId
-                << " outside=" << region.outsideMaterialId
-                << " solidFragment=" << solid
-                << " outsideFragment=" << outside << std::endl;
+                << " inside=" << region.runtimeModelId << std::endl;
       return false;
     }
 
     FragmentFace face{};
     face.fragmentA = solid;
-    face.fragmentB = outside;
     face.areaA = region.area;
-    face.areaB = region.area;
     face.areaVectorA = region.normal * region.area;
-    face.areaVectorB = -face.areaVectorA;
     face.momentA = region.moment;
-    face.momentB = region.moment;
-    face.type = FaceType::Shared;
     face.domainFace = InvalidId;
+
+    if (region.contactFacing) {
+      face.fragmentB = InvalidId;
+      face.areaB = 0.0;
+      face.areaVectorB = glm::dvec3(0.0);
+      face.momentB = glm::dvec3(0.0);
+      face.type = FaceType::MaterialBoundary;
+    } else {
+      const uint32_t outside =
+          fragmentFor(region.cellId, region.outsideMaterialId);
+      if (outside == InvalidId || solid == outside) {
+        std::cerr << "[RVDTopology] CAD surface missing phase fragment "
+                  << "region=" << regionId << " cell=" << region.cellId
+                  << " inside=" << region.runtimeModelId
+                  << " outside=" << region.outsideMaterialId
+                  << " solidFragment=" << solid
+                  << " outsideFragment=" << outside << std::endl;
+        return false;
+      }
+      face.fragmentB = outside;
+      face.areaB = region.area;
+      face.areaVectorB = -face.areaVectorA;
+      face.momentB = region.moment;
+      face.type = FaceType::Shared;
+    }
+
     region.faceId = uint32_t(result.fragmentFaces.size());
     result.fragmentFaces.push_back(face);
+    if (!appendFaceLoop(result, region.polygon, region.normal)) {
+      std::cerr << "[RVDTopology] invalid CAD surface loop region=" << regionId
+                << " cell=" << region.cellId << std::endl;
+      return false;
+    }
   }
 
   std::vector<double> fluidBoundaryVolumes(result.fragments.size(), 0.0);
@@ -479,6 +752,7 @@ bool buildFragmentsAndFaces(
       result.fragments[i].centroid = c;
     }
   }
+  if (!validateFaceLoops(result, totalBaseFragmentFaces, surfaceRegions)) return false;
   for (uint32_t fragmentId = 0; fragmentId < result.fragments.size();
        ++fragmentId) {
     const Fragment &fragment = result.fragments[fragmentId];

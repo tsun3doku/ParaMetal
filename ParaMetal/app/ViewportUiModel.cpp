@@ -48,6 +48,14 @@ void ViewportUiModel::setCameraPanSpeed(float speed) {
     emit cameraPanSpeedRequested(speed);
 }
 
+void ViewportUiModel::setNearClip(float meters) {
+    emit nearClipRequested(meters);
+}
+
+void ViewportUiModel::setCullLinesOnly(bool linesOnly) {
+    emit cullLinesOnlyRequested(linesOnly);
+}
+
 void ViewportUiModel::applyState(const ViewportUiState& updated) {
     if (state == updated) return;
     state = updated;

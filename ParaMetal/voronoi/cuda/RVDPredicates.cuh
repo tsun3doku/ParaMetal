@@ -12,7 +12,7 @@ struct PredicateResult {
 };
 
 template <class T>
-__device__ inline PredicateResult determinant4x4FilteredDouble(T p0, T p1, T p2, T equation) {
+__host__ __device__ inline PredicateResult determinant4x4FilteredDouble(T p0, T p1, T p2, T equation) {
     const double p0x = double(p0.x), p0y = double(p0.y), p0z = double(p0.z), p0w = double(p0.w);
     const double p1x = double(p1.x), p1y = double(p1.y), p1z = double(p1.z), p1w = double(p1.w);
     const double p2x = double(p2.x), p2y = double(p2.y), p2z = double(p2.z), p2w = double(p2.w);
@@ -52,7 +52,7 @@ __device__ inline PredicateResult determinant4x4FilteredDouble(T p0, T p1, T p2,
     return { det, permanent * epsDoubleBound };
 }
 
-__device__ inline void twoSum(double a, double b, double& x, double& y) {
+__host__ __device__ inline void twoSum(double a, double b, double& x, double& y) {
     x = a + b;
     const double bVirtual = x - a;
     const double aVirtual = x - bVirtual;
@@ -61,12 +61,12 @@ __device__ inline void twoSum(double a, double b, double& x, double& y) {
     y = aRoundoff + bRoundoff;
 }
 
-__device__ inline void twoProduct(double a, double b, double& x, double& y) {
+__host__ __device__ inline void twoProduct(double a, double b, double& x, double& y) {
     x = a * b;
     y = fma(a, b, -x);
 }
 
-__device__ inline int twoTwoDiff(double a1, double a0, double b1, double b0, double* res) {
+__host__ __device__ inline int twoTwoDiff(double a1, double a0, double b1, double b0, double* res) {
     double _i, _j;
     double _0, _1, _2, _3;
     twoSum(a0, -b0, _i, _0);
@@ -79,7 +79,7 @@ __device__ inline int twoTwoDiff(double a1, double a0, double b1, double b0, dou
     return 4;
 }
 
-__device__ inline int scaleExpansion(int elen, const double* e, double b, double* h) {
+__host__ __device__ inline int scaleExpansion(int elen, const double* e, double b, double* h) {
     if (elen <= 0) return 0;
     double bProduct, bRoundoff;
     twoProduct(e[0], b, bProduct, bRoundoff);
@@ -97,7 +97,7 @@ __device__ inline int scaleExpansion(int elen, const double* e, double b, double
     return 2 * elen;
 }
 
-__device__ inline int expansionSum(int elen, const double* e, int flen, const double* f, double* h) {
+__host__ __device__ inline int expansionSum(int elen, const double* e, int flen, const double* f, double* h) {
     if (elen == 0) {
         for (int i = 0; i < flen; ++i) h[i] = f[i];
         return flen;
@@ -164,7 +164,7 @@ __device__ inline int expansionSum(int elen, const double* e, int flen, const do
     return hindex;
 }
 
-__device__ inline int expansionSign(int hlen, const double* h) {
+__host__ __device__ inline int expansionSign(int hlen, const double* h) {
     for (int i = hlen - 1; i >= 0; --i) {
         if (h[i] > 0.0) return 1;
         if (h[i] < 0.0) return -1;
@@ -172,7 +172,8 @@ __device__ inline int expansionSign(int hlen, const double* h) {
     return 0;
 }
 
-__device__ inline int det3x3ExactSign(double3 p0, double3 p1, double3 p2) {
+__host__ __device__ inline int det3x3ExactExpansion(
+    double3 p0, double3 p1, double3 p2, double* result) {
     auto compute2x2 = [](double ax, double ay, double bx, double by, double* res) {
         double v0, v1, v2, v3;
         twoProduct(ax, by, v0, v1);
@@ -190,10 +191,21 @@ __device__ inline int det3x3ExactSign(double3 p0, double3 p1, double3 p2) {
     const int l1 = scaleExpansion(4, m02, -p0.y, t1);
     const int l2 = scaleExpansion(4, m12, p0.z, t2);
 
-    double s0[16], sFinal[32];
+    double s0[16];
     const int ls0 = expansionSum(l0, t0, l1, t1, s0);
-    const int lFinal = expansionSum(ls0, s0, l2, t2, sFinal);
-    return expansionSign(lFinal, sFinal);
+    return expansionSum(ls0, s0, l2, t2, result);
+}
+
+__host__ __device__ inline double expansionEstimate(int length, const double* expansion) {
+    double estimate = 0.0;
+    for (int i = 0; i < length; ++i) estimate += expansion[i];
+    return estimate;
+}
+
+__host__ __device__ inline int det3x3ExactSign(double3 p0, double3 p1, double3 p2) {
+    double expansion[32];
+    const int length = det3x3ExactExpansion(p0, p1, p2, expansion);
+    return expansionSign(length, expansion);
 }
 
 struct Dot3Result {
@@ -207,8 +219,7 @@ __device__ inline Dot3Result dot3FilteredExact(double3 a, double3 b) {
     const double p1 = a.y * b.y;
     const double p2 = a.z * b.z;
     const double value = p0 + p1 + p2;
-    const double errorBound =
-        (fabs(p0) + fabs(p1) + fabs(p2)) * 3.3306690738754716e-16;
+    const double errorBound = (fabs(p0) + fabs(p1) + fabs(p2)) * 3.3306690738754716e-16;
     if (value > errorBound) return {1, value, errorBound};
     if (value < -errorBound) return {-1, value, errorBound};
 
@@ -228,7 +239,7 @@ struct PlaneEvalResult {
     double errorBound = 0.0;
 };
 
-__device__ inline int planeEvaluateExactSign(double4 plane, double3 point) {
+__host__ __device__ inline int planeEvaluateExactSign(double4 plane, double3 point) {
     double e0[2], e1[2], e2[2];
     twoProduct(plane.x, point.x, e0[1], e0[0]);
     twoProduct(plane.y, point.y, e1[1], e1[0]);
@@ -241,14 +252,13 @@ __device__ inline int planeEvaluateExactSign(double4 plane, double3 point) {
     return expansionSign(l2, s2);
 }
 
-__device__ inline PlaneEvalResult planeEvaluateFilteredExact(
+__host__ __device__ inline PlaneEvalResult planeEvaluateFilteredExact(
     double4 plane, double3 point) {
     const double px = plane.x * point.x;
     const double py = plane.y * point.y;
     const double pz = plane.z * point.z;
     const double value = px + py + pz + plane.w;
-    const double magnitude =
-        fabs(px) + fabs(py) + fabs(pz) + fabs(plane.w);
+    const double magnitude = fabs(px) + fabs(py) + fabs(pz) + fabs(plane.w);
     const double errorBound = magnitude * 3.3306690738754716e-16;
     if (value > errorBound) return {1, value, errorBound};
     if (value < -errorBound) return {-1, value, errorBound};
@@ -275,14 +285,19 @@ __device__ inline Orient2DResult orient2dFilteredDouble(
     const double errorBound = errorFactor * detsum;
     if (det > errorBound) return {1, det, errorBound};
     if (det < -errorBound) return {-1, det, errorBound};
-    const int exact = det3x3ExactSign(
+    double exactExpansion[32];
+    const int exactLength = det3x3ExactExpansion(
         make_double3(a.x, a.y, 1.0),
         make_double3(b.x, b.y, 1.0),
-        make_double3(c.x, c.y, 1.0));
-    return {exact, det, errorBound};
+        make_double3(c.x, c.y, 1.0),
+        exactExpansion);
+    return {
+        expansionSign(exactLength, exactExpansion),
+        expansionEstimate(exactLength, exactExpansion),
+        errorBound};
 }
 
-__device__ inline int det4x4ExactSign(double4 p0, double4 p1, double4 p2, double4 p3) {
+__host__ __device__ inline int det4x4ExactSign(double4 p0, double4 p1, double4 p2, double4 p3) {
     auto compute2x2 = [](double ax, double ay, double bx, double by, double* res) {
         double v0, v1, v2, v3;
         twoProduct(ax, by, v0, v1);
@@ -326,7 +341,7 @@ __device__ inline int det4x4ExactSign(double4 p0, double4 p1, double4 p2, double
     const int ls1 = expansionSum(lt2, t2, lt3, t3, s1);
     const int lFinal = expansionSum(ls0, s0, ls1, s1, sFinal);
 
-    return expansionSign(lFinal, sFinal);
+    return -expansionSign(lFinal, sFinal);
 }
 
 } // namespace voronoi::rvdDevice

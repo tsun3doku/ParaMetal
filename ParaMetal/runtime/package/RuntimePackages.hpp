@@ -229,9 +229,13 @@ struct CFDPackage {
         bool showStreamlines = false;
         bool showDomainBox = false;
         bool showVelocityPalette = false;
+        bool showSlice = false;
+        int sliceAxis = 0;
+        float slicePosition = 0.5f;
+        bool showSliceWireframe = false;
 
         bool anyVisible() const {
-            return showStreamlines || showDomainBox || showVelocityPalette;
+            return showStreamlines || showDomainBox || showVelocityPalette || showSlice;
         }
     };
 

@@ -79,6 +79,7 @@ public:
         std::unordered_map<uint64_t, uint32_t> serialBaudRatesBySourceKey;
         std::unordered_map<uint64_t, HeatProbeData> heatProbesBySourceKey;
         topology::GlobalDomain domainVoronoiProduct;
+        bool hasDomainVoronoiProduct = false;
         std::unordered_map<uint32_t, std::array<float, 16>> modelLocalToWorldByModelId;
         std::unordered_map<uint32_t, bool> modelPrescribedTemperatureEnabledByRuntimeId;
         std::unordered_map<uint32_t, float> modelPrescribedTemperaturesCByRuntimeId;
@@ -125,7 +126,7 @@ private:
         std::unique_ptr<HeatSystem> candidate;
     };
 
-    void configureHeatSystem(HeatSystem& system, const Config& config);
+    bool configureHeatSystem(HeatSystem& system, const Config& config);
     std::unique_ptr<HeatSystem> buildHeatSystem();
     const Config* getBuildConfig(uint64_t socketKey) const;
 

@@ -15,6 +15,7 @@
 
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 
@@ -112,9 +113,6 @@ void RuntimeSystems::tickFrame(float deltaTime, VkCommandBuffer commandBuffer, u
         }
         timelineRuntime.tick(deltaTime, maxAdvanceFrame);
     } else if (hadSimulationTimeline) {
-        // Playback metadata went away. Clear its range once instead of every frame:
-        // clearing also drops the play state, which would stop live simulation nodes
-        // that record no playback frames.
         timelineRuntime.clearSimulationMetadata();
     }
     hadSimulationTimeline = hasSimulationTimeline;
@@ -306,6 +304,12 @@ void RuntimeSystems::cancelProbePicking() {
     }
 }
 
+void RuntimeSystems::setBoundaryFaceEditing(int nodeId, bool armed) {
+    if (interaction.isInitialized()) {
+        interaction.setBoundaryFaceEditing(nodeId, armed);
+    }
+}
+
 TimelineController* RuntimeSystems::timelineController() {
     return &timelineControllerInstance;
 }
@@ -353,6 +357,23 @@ void RuntimeSystems::setCameraPanSpeed(float speed) {
     scene.cameraController().setPanSpeed(speed);
 }
 
+void RuntimeSystems::setCameraCull(float meters, bool linesOnly) {
+    if (!std::isfinite(meters)) return;
+    const float clamped = std::clamp(meters, Camera::MinNearClip, Camera::MaxNearClip);
+    renderSettingsState.nearClipMeters = clamped;
+    renderSettingsState.cullLinesOnly = linesOnly;
+    scene.cameraController().getCamera().setNearClip(linesOnly ? Camera::DefaultNearClip : clamped);
+    applyStreamlineCull();
+}
+
+void RuntimeSystems::applyStreamlineCull() {
+    if (!render.runtime()) return;
+    const float worldDistance = renderSettingsState.cullLinesOnly
+        ? renderSettingsState.nearClipMeters * units::canonicalToWorldScale(worldUnitState)
+        : 0.0f;
+    render.runtime()->getSceneRenderer().setStreamlineCull(worldDistance);
+}
+
 void RuntimeSystems::setWorldUnit(int unit) {
     if (unit < static_cast<int>(units::LengthUnit::Millimeter) ||
         unit > static_cast<int>(units::LengthUnit::Meter)) return;
@@ -366,6 +387,7 @@ void RuntimeSystems::setWorldUnit(int unit) {
     if (render.runtime()) {
         render.runtime()->getSceneRenderer().setWorldUnit(next);
     }
+    applyStreamlineCull();
 }
 
 void RuntimeSystems::setHeatPaletteRange(float minimum, float maximum) {

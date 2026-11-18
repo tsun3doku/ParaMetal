@@ -147,6 +147,10 @@ void App::connectUi(ViewportItem& viewport, GraphHost& graphHost) {
                      &viewport, &ViewportItem::requestCameraZoomSpeed);
     QObject::connect(uiModel.viewport(), &ViewportUiModel::cameraPanSpeedRequested,
                      &viewport, &ViewportItem::requestCameraPanSpeed);
+    QObject::connect(uiModel.viewport(), &ViewportUiModel::nearClipRequested,
+                     &viewport, &ViewportItem::requestCameraNearClip);
+    QObject::connect(uiModel.viewport(), &ViewportUiModel::cullLinesOnlyRequested,
+                     &viewport, &ViewportItem::requestCullLinesOnly);
     QObject::connect(uiModel.heatPalette(), &HeatPaletteUiModel::paletteRequested,
                      &viewport, &ViewportItem::requestHeatPalette);
     QObject::connect(uiModel.heatPalette(), &HeatPaletteUiModel::rangeRequested,
@@ -167,6 +171,10 @@ void App::connectUi(ViewportItem& viewport, GraphHost& graphHost) {
                      &viewport, &ViewportItem::requestSelection);
     QObject::connect(uiModel.nodeGraph(), &NodeGraphUiModel::probePickingRequested,
                      &viewport, &ViewportItem::requestProbePicking);
+    QObject::connect(uiModel.nodeGraph(), &NodeGraphUiModel::boundaryFaceEditingRequested,
+                     &viewport, &ViewportItem::requestBoundaryFaceEditing);
+    QObject::connect(uiModel.nodeGraph(), &NodeGraphUiModel::boundaryFaceEditingRequested,
+                     uiModel.boundaryFace(), &BoundaryFaceUiModel::applyEditingNode);
     QObject::connect(uiModel.nodeGraph(), &NodeGraphUiModel::exportRequested,
                      &graphHost, &GraphHost::requestExport, Qt::QueuedConnection);
     QObject::connect(uiModel.nodeGraph(), &NodeGraphUiModel::exportProductsRequested,
@@ -210,6 +218,8 @@ void App::connectRuntime(GraphHost& graphHost) {
                      uiModel.heatPalette(), &HeatPaletteUiModel::applyVisibility, Qt::QueuedConnection);
     QObject::connect(&runtimeNotifier, &RuntimeNotifier::velocityPaletteVisibilityChanged,
                      uiModel.velocityPalette(), &VelocityPaletteUiModel::applyVisibility, Qt::QueuedConnection);
+    QObject::connect(&runtimeNotifier, &RuntimeNotifier::boundaryFaceSelectionChanged,
+                     uiModel.boundaryFace(), &BoundaryFaceUiModel::applySelectedFace, Qt::QueuedConnection);
     QObject::connect(&runtimeNotifier, &RuntimeNotifier::timelineStateChanged,
                      uiModel.timeline(), &TimelineUiModel::applyState, Qt::QueuedConnection);
     QObject::connect(&runtimeNotifier, &RuntimeNotifier::graphSelectionChanged,

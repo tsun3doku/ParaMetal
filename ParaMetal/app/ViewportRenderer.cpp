@@ -12,6 +12,7 @@
 #include "runtime/TimelineController.hpp"
 #include "scene/Camera.hpp"
 #include "scene/CameraController.hpp"
+#include "scene/DomainFaceInteractionController.hpp"
 #include "scene/MarkerInteractionController.hpp"
 #include "scene/ModelSelection.hpp"
 
@@ -157,6 +158,11 @@ void ViewportRenderer::synchronize(QQuickRhiItem* item) {
     if (mailbox.takeCameraPanSpeed(cameraPanSpeed)) {
         runtime.setCameraPanSpeed(cameraPanSpeed);
     }
+    float cameraNearClip = Camera::DefaultNearClip;
+    bool cullLinesOnly = false;
+    if (mailbox.takeCameraCull(cameraNearClip, cullLinesOnly, runtimeFresh)) {
+        runtime.setCameraCull(cameraNearClip, cullLinesOnly);
+    }
 
     TimelineController* timeline = runtime.timelineController();
     uint32_t frameCount = 0;
@@ -188,6 +194,11 @@ void ViewportRenderer::synchronize(QQuickRhiItem* item) {
         } else {
             runtime.cancelProbePicking();
         }
+    }
+    int boundaryFaceNode = 0;
+    bool boundaryFaceArmed = false;
+    if (mailbox.takeBoundaryFaceEditing(boundaryFaceNode, boundaryFaceArmed, runtimeFresh)) {
+        runtime.setBoundaryFaceEditing(boundaryFaceNode, boundaryFaceArmed);
     }
     float paletteMin = 0.0f, paletteMax = 100.0f;
     if (mailbox.takeHeatPaletteRange(paletteMin, paletteMax, runtimeFresh)) runtime.setHeatPaletteRange(paletteMin, paletteMax);
@@ -280,16 +291,15 @@ void ViewportRenderer::render(QRhiCommandBuffer* commandBuffer) {
 
     runtime.processDeferredWork();
 
+    const bool probePickingActive = runtime.getInteractionContext().isProbePickingActive();
+    if (probePickingActiveLast && !probePickingActive) {
+        notifier.notifyProbePickingCompleted(0);
+    }
+    probePickingActiveLast = probePickingActive;
 
     NodeGraphNodeId nodeId{};
     std::vector<NodeGraphParamValue> parameters;
     while (runtime.takePendingNodeParameters(nodeId, parameters)) {
-        for (const auto& param : parameters) {
-            if (param.id == nodegraphparams::heatprobe::ProbesJson) {
-                notifier.notifyProbePickingCompleted(static_cast<int>(nodeId.value));
-                break;
-            }
-        }
         emit notifier.nodeParametersRequested(nodeId, parameters);
     }
     int exportNodeId = 0;
@@ -359,6 +369,8 @@ void ViewportRenderer::publishState() {
     viewport.backgroundMode = renderSettings.backgroundMode;
     viewport.navigationCubeVisible = renderSettings.navigationCubeVisible;
     viewport.axisLabelsVisible = renderSettings.axisLabelsVisible;
+    viewport.nearClip = renderSettings.nearClipMeters;
+    viewport.cullLinesOnly = renderSettings.cullLinesOnly;
     if (const CameraController* cameraController = runtime.getCameraController()) {
         const Camera& camera = cameraController->getCamera();
         viewport.projectionMode = camera.getProjectionMode();
@@ -445,6 +457,9 @@ void ViewportRenderer::publishState() {
     }
 
     if (runtime.getInteractionContext().isInitialized()) {
+        if (auto selection = runtime.getInteractionContext().domainFaceInteractionController().takePendingSelection()) {
+            notifier.publishBoundaryFaceSelection(static_cast<int>(selection->nodeId), selection->face);
+        }
         if (auto selectedNode = runtime.getInteractionContext().markerInteractionController().takePendingSelectedNodeId()) {
             notifier.notifyGraphSelectionChanged(NodeGraphNodeId{*selectedNode});
         }

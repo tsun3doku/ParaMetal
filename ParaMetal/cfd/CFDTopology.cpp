@@ -3,15 +3,10 @@
 
 #include <iostream>
 #include <cmath>
-#include <limits>
-#include <queue>
 #include <algorithm>
 #include <unordered_map>
-#include <map>
 
 namespace cfd {
-
-namespace {
 
 struct RawFineFace {
     uint32_t globalFaceIndex = 0;
@@ -33,16 +28,17 @@ struct RawFineBoundaryFace {
     float weight = 0.0f;
 };
 
-} 
 bool buildCFDTopology(
-    const std::vector<topology::Fragment>& fragments,
-    const std::vector<topology::Face>& faces,
-    const std::vector<topology::BoundaryFace>& boundaryFaces,
+    const topology::GlobalDomain& domain,
     const std::vector<uint32_t>& globalFragmentToFluidNode,
     const std::vector<uint32_t>& fluidNodeToGlobalFragment,
     CFDTopology& outTopology) {
 
     outTopology = CFDTopology{};
+
+    const std::vector<topology::Fragment>& fragments = domain.fragments;
+    const std::vector<topology::Face>& faces = domain.faces;
+    const std::vector<uint32_t>& boundaryFaces = domain.boundaryFaceIndices;
 
     if (fragments.empty() || globalFragmentToFluidNode.size() != fragments.size()) {
         std::cerr << "[CFDTopology] build FAILED: globalFragmentToFluidNode size mismatch\n";
@@ -64,6 +60,7 @@ bool buildCFDTopology(
     }
 
     std::vector<float> refVolume(fineNodeCount, 0.0f);
+    std::vector<glm::vec4> fineCentroids(fineNodeCount, glm::vec4(0.0f));
     for (uint32_t i = 0; i < fineNodeCount; ++i) {
         const uint32_t fragIdx = fluidNodeToGlobalFragment[i];
         if (fragIdx >= fragments.size() || globalFragmentToFluidNode[fragIdx] != i ||
@@ -72,6 +69,7 @@ bool buildCFDTopology(
             return false;
         }
         fineVolumes[i] = fragments[fragIdx].volume;
+        fineCentroids[i] = glm::vec4(glm::vec3(fragments[fragIdx].centroid), 1.0f);
         auto it = seedVolume.find(fragments[fragIdx].seedId);
         refVolume[i] = (it != seedVolume.end() && it->second > 0.0f) ? it->second : fineVolumes[i];
     }
@@ -83,6 +81,7 @@ bool buildCFDTopology(
 
     for (uint32_t faceIdx = 0; faceIdx < faces.size(); ++faceIdx) {
         const auto& face = faces[faceIdx];
+        if (face.type == topology::FaceType::DomainBoundary) continue;
         if (face.fragmentA >= fragments.size()) continue;
 
         const uint32_t nodeA = globalFragmentToFluidNode[face.fragmentA];
@@ -96,18 +95,9 @@ bool buildCFDTopology(
         if (!std::isfinite(area) || !(area > 0.0)) continue;
 
         const glm::dvec3 faceCentroid = (face.areaA > 0.0) ? (face.momentA / face.areaA) : (face.momentB / face.areaB);
-        glm::vec3 normal(0.0f);
-        const double areaVecLenA = glm::length(face.areaVectorA);
-        const double areaVecLenB = glm::length(face.areaVectorB);
-        if (areaVecLenA > 1e-14 && std::isfinite(areaVecLenA)) {
-            normal = glm::vec3(face.areaVectorA / areaVecLenA);
-        } else if (areaVecLenB > 1e-14 && std::isfinite(areaVecLenB)) {
-            normal = glm::vec3(-face.areaVectorB / areaVecLenB);
-        } else if (face.fragmentB < fragments.size()) {
-            const glm::dvec3 diff = fragments[face.fragmentB].centroid - fragments[face.fragmentA].centroid;
-            const double diffLen = glm::length(diff);
-            if (diffLen > 1e-14) normal = glm::vec3(diff / diffLen);
-        }
+        const glm::vec3 normal = (face.areaA > 0.0)
+            ? glm::vec3(face.areaVectorA / face.areaA)
+            : glm::vec3(-face.areaVectorB / face.areaB);
 
         const float rawDA = static_cast<float>(glm::dot(faceCentroid - fragments[face.fragmentA].centroid, glm::dvec3(normal)));
         float rawDB = 0.0f;
@@ -176,32 +166,25 @@ bool buildCFDTopology(
 
     // domain boundary faces (domainFace < 6)
     for (uint32_t bfIdx = 0; bfIdx < boundaryFaces.size(); ++bfIdx) {
-        const auto& bf = boundaryFaces[bfIdx];
-        if (bf.fragment >= fragments.size()) continue;
+        const auto& face = faces[boundaryFaces[bfIdx]];
 
-        const uint32_t node = globalFragmentToFluidNode[bf.fragment];
-        if (node != UINT32_MAX && bf.domainFace < 6) {
-            const topology::Face* boundaryFace =
-                (bf.faceIndex < faces.size()) ? &faces[bf.faceIndex] : nullptr;
-            const double faceArea = boundaryFace ? boundaryFace->areaA : 0.0;
-            const glm::dvec3 faceMoment = boundaryFace ? boundaryFace->momentA : glm::dvec3(0.0);
-            const glm::vec3 boxNormal = getDomainBoxNormal(bf.domainFace);
-            float rawD = 0.0f;
-            if (faceArea > 0.0 && std::isfinite(faceArea)) {
-                const glm::dvec3 bfCentroid = faceMoment / faceArea;
-                rawD = static_cast<float>(glm::dot(bfCentroid - fragments[bf.fragment].centroid, glm::dvec3(boxNormal)));
-            }
+        const uint32_t node = globalFragmentToFluidNode[face.fragmentA];
+        if (node != UINT32_MAX) {
+            const double faceArea = face.areaA;
+            const glm::vec3 boxNormal = getDomainBoxNormal(face.domainFace);
+            const glm::dvec3 bfCentroid = face.momentA / faceArea;
+            const float rawD = static_cast<float>(glm::dot(
+                bfCentroid - fragments[face.fragmentA].centroid, glm::dvec3(boxNormal)));
             const float minD = 0.25f * std::cbrt(std::max(refVolume[node], 1e-12f));
             const float effD = std::max(rawD, minD);
-            if (!std::isfinite(faceArea) || !(faceArea > 0.0) ||
-                !std::isfinite(effD) || !(effD > 0.0f)) {
+            if (!std::isfinite(rawD) || !std::isfinite(effD) || !(effD > 0.0f)) {
                 std::cerr << "[CFDTopology] build FAILED: invalid domain boundary geometry on face " << bfIdx << "\n";
                 return false;
             }
             RawFineBoundaryFace fbf{};
             fbf.globalBoundaryFaceIndex = bfIdx;
             fbf.fineNode = node;
-            fbf.boundaryCondition = bf.domainFace;
+            fbf.boundaryCondition = face.domainFace;
             fbf.outwardNormal = boxNormal;
             fbf.area = static_cast<float>(faceArea);
             fbf.weight = static_cast<float>(faceArea) / effD;
@@ -284,6 +267,7 @@ bool buildCFDTopology(
     outTopology.boundaryFaces = std::move(fineBoundaryFaceGpu);
     outTopology.boundaryGlobalIndex = std::move(fineBoundaryGlobalIndex);
     outTopology.cellVolumes = fineVolumes;
+    outTopology.cellCentroids = std::move(fineCentroids);
     outTopology.component = std::move(fineComponent);
     outTopology.componentCount = fineComponentCount;
 

@@ -24,6 +24,13 @@ bool buildTriangleVoxelGrid(
     cudaUtils::CudaBuffer<int32_t>& triangleIds,
     cudaStream_t stream);
 
+bool markTriangleVoxels(
+    const DeviceTriangle* triangles,
+    uint32_t triangleCount,
+    const DeviceVoxelGrid& grid,
+    uint8_t* occupancy,
+    cudaStream_t stream);
+
 bool buildVoxelOccupancy(
     const DeviceTriangle* triangles,
     uint32_t triangleCount,

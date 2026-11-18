@@ -76,8 +76,6 @@ bool RuntimePackageCompiler::compileNode(
         }
 
         const NodeDataBlock& output = evaluated->data;
-        // A frozen output keeps no package: its generation may reference an upstream
-        // publication retired by the packages this pass still commits.
         if (output.isFrozen && frozenPackages == FrozenPackages::Preserve) {
             continue;
         }
@@ -261,12 +259,19 @@ bool RuntimePackageCompiler::compileVoronoiPackage(
     const float longestExtent = std::max(std::max(physicalExtent.x, physicalExtent.y), physicalExtent.z);
     const float spacing = longestExtent /
         static_cast<float>(package.authored.voxelResolution - 1);
-    if (spacing > 0.5f * package.authored.cellSize) {
+    const float domainVolume = physicalExtent.x * physicalExtent.y * physicalExtent.z;
+    if (package.pointPositions.empty() || !(domainVolume > 0.0f)) {
+        errors.push_back("Voronoi domain has no point set to size the voxel resolution against.");
+        return false;
+    }
+    const float pointSpacing = std::cbrt(
+        domainVolume / static_cast<float>(package.pointPositions.size()));
+    if (spacing > 0.5f * pointSpacing) {
         errors.push_back(
             "Voronoi domain violates the resolution rule: spacing (" +
             std::to_string(spacing) +
-            ") must be <= 0.5 * cell size (" +
-            std::to_string(0.5f * package.authored.cellSize) + ").");
+            ") must be <= 0.5 * point spacing (" +
+            std::to_string(0.5f * pointSpacing) + ").");
         return false;
     }
 
@@ -538,6 +543,9 @@ bool RuntimePackageCompiler::compileHeatPackage(
     if (package.domainVoronoiProduct.isValid()) {
         package.displayDependencyKeys.push_back(package.domainVoronoiProduct.outputSocketKey);
     }
+    if (package.cfdProduct.isValid()) {
+        package.displayDependencyKeys.push_back(package.cfdProduct.outputSocketKey);
+    }
     HashPackage::seal(package, output.hashes);
     packages.apply<HeatPackage>(outputSocketKey, package);
     return true;
@@ -572,6 +580,10 @@ bool RuntimePackageCompiler::compileCFDPackage(
     package.display.showStreamlines = params.preview.showStreamlines;
     package.display.showDomainBox = params.preview.showDomainBox;
     package.display.showVelocityPalette = params.preview.showVelocityPalette;
+    package.display.showSlice = params.preview.showSlice;
+    package.display.sliceAxis = params.preview.sliceAxis;
+    package.display.slicePosition = static_cast<float>(params.preview.slicePosition);
+    package.display.showSliceWireframe = params.preview.showSliceWireframe;
 
     const BoundaryData* boundary = cfd->boundaryHandle.key != 0
         ? payloads.get<BoundaryData>(cfd->boundaryHandle)

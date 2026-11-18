@@ -10,8 +10,6 @@
 
 namespace voronoi {
 
-
-
 bool agglomerateFragments(
     const BaseCellDomain &baseDomain,
     std::vector<SurfaceRegion> &surfaceRegions,

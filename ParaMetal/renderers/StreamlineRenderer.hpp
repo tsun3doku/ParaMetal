@@ -29,7 +29,7 @@ public:
         float minSpeed = 0.0f;
         float maxSpeed = 1.0f;
         uint32_t palette = 0;
-        float padding = 0.0f;
+        float cullDistance = 0.0f;
     };
 
     StreamlineRenderer(
@@ -40,7 +40,7 @@ public:
     ~StreamlineRenderer();
 
     void initialize(VkRenderPass renderPass, uint32_t subpass, uint32_t maxFramesInFlight);
-    void render(VkCommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<RenderBinding>& lines);
+    void render(VkCommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<RenderBinding>& lines, float cullDistance);
     void cleanup();
 
 private:

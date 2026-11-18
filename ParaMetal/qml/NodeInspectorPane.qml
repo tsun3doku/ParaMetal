@@ -4,7 +4,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
-import QtQuick.Effects
 
 Item {
     id: root
@@ -135,6 +134,7 @@ Item {
         }
 
         Rectangle {
+            id: inspectorCard
             x: 12
             width: Math.max(1, root.width - 24)
             height: inspectorScroll.contentHeight
@@ -142,6 +142,12 @@ Item {
             border.width: graphModel.selectedNodeId > 0 ? 1 : 0
             border.color: root.theme.border
             radius: graphModel.selectedNodeId > 0 ? 10 : 0
+
+            MouseArea {
+                anchors.fill: parent
+                z: -1
+                onClicked: inspectorCard.forceActiveFocus()
+            }
 
             Text {
                 visible: graphModel.selectedNodeId === 0
@@ -173,7 +179,7 @@ Item {
                 width: parent.width
                 TextField {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 29
+                    Layout.preferredHeight: 22
                     readOnly: true
                     text: root.parameter(1) ? root.parameter(1).value : ""
                     color: root.theme.text
@@ -181,8 +187,8 @@ Item {
                     background: Rectangle { radius: 3; color: root.theme.inputBackground; border.width: 1; border.color: root.theme.border }
                 }
                 Button {
-                    Layout.preferredWidth: 29
-                    Layout.preferredHeight: 29
+                    Layout.preferredWidth: 22
+                    Layout.preferredHeight: 22
                     padding: 0
                     contentItem: Item {
                         Image {
@@ -300,7 +306,6 @@ Item {
             width: panelLoader.width; spacing: root.theme.inspectorRowSpacing
             Column {
                 width: parent.width; spacing: root.theme.inspectorBoxSpacing
-                InspectorField { width: parent.width; theme: root.theme; editor: "slider"; label: qsTr("Cell Size"); parameter: root.parameter(1); minimum: .0001; maximum: .1; decimals: 6; onValueEdited: value => root.setValue(1, value) }
             InspectorField { width: parent.width; theme: root.theme; editor: "slider"; label: qsTr("Voxel Resolution"); parameter: root.parameter(2); minimum: 1; maximum: 1024; decimals: 0; onValueEdited: value => root.setValue(2, value) }
             InspectorField { width: parent.width; theme: root.theme; editor: "slider"; label: qsTr("Volume Grid Padding"); parameter: root.parameter(5); minimum: 0.0; maximum: .1; decimals: 4; onValueEdited: value => root.setValue(5, value) }
             InspectorField { width: parent.width; theme: root.theme; editor: "slider"; label: qsTr("Maximum Contact Gap"); parameter: root.parameter(6); minimum: .000001; maximum: .01; decimals: 6; onValueEdited: value => root.setValue(6, value) }
@@ -397,47 +402,40 @@ Item {
         Column {
             width: panelLoader.width; spacing: root.theme.inspectorRowSpacing
 
-            Repeater {
-                model: [
-                    { title: "-X", base: 100 },
-                    { title: "+X", base: 110 },
-                    { title: "-Y", base: 120 },
-                    { title: "+Y", base: 130 },
-                    { title: "-Z", base: 140 },
-                    { title: "+Z", base: 150 }
-                ]
+            Item {
+                width: 22
+                height: 22
 
-                Column {
-                    id: faceColumn
-                    required property var modelData
-                    readonly property int firstParameterId: modelData.base
-                    readonly property string flow: root.parameter(firstParameterId) ? String(root.parameter(firstParameterId).value) : ""
-                    readonly property string thermal: root.parameter(firstParameterId + 4) ? String(root.parameter(firstParameterId + 4).value) : ""
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 4
+                    color: graphModel.boundaryFaceSelectionActive
+                        ? Qt.rgba(root.theme.accent.r, root.theme.accent.g, root.theme.accent.b, 0.2)
+                        : (selectMouse.containsMouse ? root.theme.sourceButtonHover : "transparent")
+                    border.width: 1
+                    border.color: graphModel.boundaryFaceSelectionActive ? root.theme.accent : "transparent"
+                }
 
-                    width: parent.width
-                    spacing: root.theme.inspectorBoxSpacing
+                Image {
+                    anchors.centerIn: parent
+                    width: 18
+                    height: 18
+                    source: "../textures/icons/Select/128w/Artboard 1.png"
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    mipmap: true
+                }
 
-                    Text { text: faceColumn.modelData.title; color: root.theme.headingText; font: root.theme.regularFont; topPadding: 6 }
-                    InspectorField { width: parent.width; theme: root.theme; editor: "combo"; label: qsTr("Flow"); parameter: root.parameter(faceColumn.firstParameterId); onValueEdited: value => root.setValue(faceColumn.firstParameterId, value) }
-                    Column {
-                        visible: faceColumn.flow === "Velocity Inlet"
-                        width: parent.width
-                        spacing: root.theme.inspectorRowSpacing
-
-                        Text { text: qsTr("Velocity (m/s)"); color: root.theme.secondaryText; font: root.theme.regularFont }
-                        Column {
-                            width: parent.width
-                            spacing: root.theme.inspectorBoxSpacing
-                            InspectorField { width: parent.width; theme: root.theme; compact: true; label: "X"; parameter: root.parameter(faceColumn.firstParameterId + 1); decimals: 3; onValueEdited: value => root.setValue(faceColumn.firstParameterId + 1, value) }
-                            InspectorField { width: parent.width; theme: root.theme; compact: true; label: "Y"; parameter: root.parameter(faceColumn.firstParameterId + 2); decimals: 3; onValueEdited: value => root.setValue(faceColumn.firstParameterId + 2, value) }
-                            InspectorField { width: parent.width; theme: root.theme; compact: true; label: "Z"; parameter: root.parameter(faceColumn.firstParameterId + 3); decimals: 3; onValueEdited: value => root.setValue(faceColumn.firstParameterId + 3, value) }
-                        }
-                    }
-                    InspectorField { width: parent.width; theme: root.theme; editor: "combo"; label: qsTr("Thermal"); parameter: root.parameter(faceColumn.firstParameterId + 4); onValueEdited: value => root.setValue(faceColumn.firstParameterId + 4, value) }
-                    InspectorField { visible: faceColumn.thermal === "Dirichlet" || faceColumn.thermal === "Robin"; width: parent.width; theme: root.theme; label: faceColumn.thermal === "Robin" ? qsTr("Ambient Temp (C)") : qsTr("Temperature (C)"); parameter: root.parameter(faceColumn.firstParameterId + 5); decimals: 2; onValueEdited: value => root.setValue(faceColumn.firstParameterId + 5, value) }
-                    InspectorField { visible: faceColumn.thermal === "Neumann"; width: parent.width; theme: root.theme; label: qsTr("Heat Flux (W/m²)"); parameter: root.parameter(faceColumn.firstParameterId + 6); decimals: 2; onValueEdited: value => root.setValue(faceColumn.firstParameterId + 6, value) }
-                    InspectorField { visible: faceColumn.thermal === "Robin"; width: parent.width; theme: root.theme; label: qsTr("HTC (W/(m²·K))"); parameter: root.parameter(faceColumn.firstParameterId + 7); decimals: 2; onValueEdited: value => root.setValue(faceColumn.firstParameterId + 7, value) }
-                    InspectorField { visible: faceColumn.flow === "Velocity Inlet" || faceColumn.flow === "Pressure Outlet"; width: parent.width; theme: root.theme; label: qsTr("Inflow Temperature (C)"); parameter: root.parameter(faceColumn.firstParameterId + 8); decimals: 2; onValueEdited: value => root.setValue(faceColumn.firstParameterId + 8, value) }
+                MouseArea {
+                    id: selectMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    ToolTip.visible: containsMouse
+                    ToolTip.text: graphModel.boundaryFaceSelectionActive
+                        ? qsTr("Disable boundary face selection")
+                        : qsTr("Enable boundary face selection")
+                    onClicked: graphModel.setBoundaryFaceSelectionActive(!graphModel.boundaryFaceSelectionActive)
                 }
             }
         }
@@ -555,7 +553,7 @@ Item {
                 TextField {
                     id: writePathField
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 29
+                    Layout.preferredHeight: 22
                     text: graphModel.selectedWriteFile()
                     color: root.theme.text
                     font: root.theme.regularFont
@@ -568,8 +566,8 @@ Item {
                     onEditingFinished: commitPath(text)
                 }
                 Button {
-                    Layout.preferredWidth: 29
-                    Layout.preferredHeight: 29
+                    Layout.preferredWidth: 22
+                    Layout.preferredHeight: 22
                     padding: 0
                     contentItem: Item {
                         Image {
@@ -751,11 +749,18 @@ Item {
                     clip: true
 
                     Flickable {
+                        id: probeListFlick
                         anchors.fill: parent
                         anchors.margins: 4
-                        contentHeight: probeRowsCol.implicitHeight
+                        contentHeight: Math.max(probeListFlick.height, probeRowsCol.implicitHeight)
                         clip: true
                         boundsBehavior: Flickable.StopAtBounds
+
+                        MouseArea {
+                            anchors.fill: parent
+                            z: -1
+                            onClicked: probeCol.forceActiveFocus()
+                        }
 
                         Column {
                             id: probeRowsCol
@@ -837,6 +842,7 @@ Item {
                                                 ToolTip.visible: containsMouse
                                                 ToolTip.text: qsTr("Toggle unit (C / F)")
                                                 onClicked: {
+                                                    probeCol.forceActiveFocus()
                                                     probeCol.tempUnit = (probeCol.tempUnit === "C") ? "F" : "C"
                                                 }
                                             }
@@ -849,6 +855,7 @@ Item {
                                         hoverEnabled: true
                                         z: -1
                                         onClicked: {
+                                            probeCol.forceActiveFocus()
                                             probeCol.selectedProbeIndex = rowRect.index
                                         }
                                     }
@@ -952,32 +959,24 @@ Item {
                         Layout.preferredHeight: 28
                         Layout.alignment: Qt.AlignHCenter
 
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 4
+                            color: probeCol.isPicking
+                                ? Qt.rgba(root.theme.accent.r, root.theme.accent.g, root.theme.accent.b, 0.2)
+                                : (markerMouse.containsMouse ? root.theme.sourceButtonHover : "transparent")
+                            border.width: 1
+                            border.color: probeCol.isPicking ? root.theme.accent : "transparent"
+                        }
+
                         Image {
-                            id: markerIconImg
                             anchors.centerIn: parent
-                            width: 20
-                            height: 20
+                            width: 22
+                            height: 22
                             source: "../textures/icons/Marker/marker_a/128w/Artboard 1.png"
                             fillMode: Image.PreserveAspectFit
                             smooth: true
                             mipmap: true
-                            opacity: probeCol.isPicking ? 1.0 : (markerMouse.containsMouse ? 0.95 : 0.6)
-                            layer.enabled: true
-                            layer.effect: MultiEffect {
-                                colorization: 1.0
-                                colorizationColor: probeCol.isPicking ? root.theme.accent : root.theme.toolIconColor
-                            }
-                        }
-
-                        Rectangle {
-                            anchors.bottom: parent.bottom
-                            anchors.bottomMargin: 1
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            width: 4
-                            height: 4
-                            radius: 2
-                            color: root.theme.accent
-                            visible: probeCol.isPicking
                         }
 
                         MouseArea {
@@ -990,6 +989,7 @@ Item {
                                 ? qsTr("Cancel marker picking")
                                 : qsTr("Pick surface coordinate on 3D model")
                             onClicked: {
+                                probeCol.forceActiveFocus()
                                 if (probeCol.isPicking) {
                                     graphModel.cancelProbePicking()
                                 } else {

@@ -49,8 +49,9 @@ public:
 
     bool launch(
         bool sourceIsA,
-        uint64_t destinationVulkanReleaseValue,
-        uint64_t cudaReadyValue);
+        uint64_t releaseValue,
+        uint64_t cudaReadyValue,
+        bool runAdvection);
 
     SolvePollResult poll() const;
     void waitIdle();

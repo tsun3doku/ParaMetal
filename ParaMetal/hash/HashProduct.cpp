@@ -114,7 +114,6 @@ void HashProduct::seal(VoronoiProduct& p) {
     HashBuilder::combinePodVector(hash, p.cellFragments);
     HashBuilder::combinePodVector(hash, p.fragmentCentroids);
     HashBuilder::combinePodVector(hash, p.fragmentVolumes);
-    HashBuilder::combineFloat(hash, p.nominalCellSize);
     HashBuilder::combinePodVector(hash, p.faceFragmentA);
     HashBuilder::combinePodVector(hash, p.faceFragmentB);
     HashBuilder::combinePodVector(hash, p.faceAreasA);
@@ -125,14 +124,15 @@ void HashProduct::seal(VoronoiProduct& p) {
     HashBuilder::combinePodVector(hash, p.faceMomentsB);
     HashBuilder::combinePodVector(hash, p.faceTypes);
     HashBuilder::combinePodVector(hash, p.faceDomainFaces);
+    HashBuilder::combinePodVector(hash, p.faceLoopOffsets);
+    HashBuilder::combinePodVector(hash, p.loopVertexOffsets);
+    HashBuilder::combinePodVector(hash, p.loopVertices);
     HashBuilder::combinePodVector(hash, p.contactCouplingFaceA);
     HashBuilder::combinePodVector(hash, p.contactCouplingFragmentA);
     HashBuilder::combinePodVector(hash, p.contactCouplingFaceB);
     HashBuilder::combinePodVector(hash, p.contactCouplingFragmentB);
     HashBuilder::combinePodVector(hash, p.contactCouplingAreas);
     HashBuilder::combinePodVector(hash, p.boundaryFaceIndices);
-    HashBuilder::combinePodVector(hash, p.boundaryFaceFragments);
-    HashBuilder::combinePodVector(hash, p.boundaryFaceDomainFaces);
     HashBuilder::combinePodVector(hash, p.instanceFragmentCounts);
     HashBuilder::combine(hash, uint64_t(p.globalFragmentCount));
     HashBuilder::combine(hash, uint64_t(p.globalFaceCount));

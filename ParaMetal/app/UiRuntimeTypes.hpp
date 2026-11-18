@@ -22,6 +22,8 @@ struct ViewportUiState {
     float baseFov = Camera::DefaultFov;
     float zoomSpeed = Camera::DefaultZoomSpeed;
     float panSpeed = Camera::DefaultPanSpeed;
+    float nearClip = Camera::DefaultNearClip;
+    bool cullLinesOnly = false;
 
     bool operator==(const ViewportUiState& other) const {
         return wireframeMode == other.wireframeMode &&
@@ -32,7 +34,9 @@ struct ViewportUiState {
                projectionMode == other.projectionMode &&
                baseFov == other.baseFov &&
                zoomSpeed == other.zoomSpeed &&
-               panSpeed == other.panSpeed;
+               panSpeed == other.panSpeed &&
+               nearClip == other.nearClip &&
+               cullLinesOnly == other.cullLinesOnly;
     }
     bool operator!=(const ViewportUiState& other) const { return !(*this == other); }
 };

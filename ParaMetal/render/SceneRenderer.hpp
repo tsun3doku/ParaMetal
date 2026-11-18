@@ -82,6 +82,7 @@ public:
     void setHeatPalette(int palette);
     void setVelocityPaletteRange(float minimum, float maximum);
     void setVelocityPalette(int palette);
+    void setStreamlineCull(float worldDistance);
     bool isHeatPaletteVisible() const;
     bool isVelocityPaletteVisible() const;
 

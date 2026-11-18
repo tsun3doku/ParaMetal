@@ -133,6 +133,10 @@ public:
         emit graphSelectionChanged(nodeId);
     }
 
+    void publishBoundaryFaceSelection(int nodeId, int face) {
+        emit boundaryFaceSelectionChanged(nodeId, face);
+    }
+
     void publishHeatSolveStatus(bool active, bool paused) {
         {
             const QMutexLocker lock(&statusMutex);
@@ -175,6 +179,7 @@ signals:
     void heatProbeTemperaturesChanged(int nodeId, const QList<float>& temperatures);
     void probePickingCompleted(int nodeId);
     void graphSelectionChanged(NodeGraphNodeId nodeId);
+    void boundaryFaceSelectionChanged(int nodeId, int face);
     void exportStatusChanged(int nodeId, bool success, const QString& message);
     void exportProductsReady(int nodeId, qulonglong requestId, qulonglong graphRevision,
                              const QVariantList& products, const QString& error);

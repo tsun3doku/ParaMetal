@@ -7,8 +7,7 @@
 class VulkanDevice;
 class MemoryAllocator;
 
-// Per-step velocity frames, one glm::vec4 per fluid node. Frame stride is
-// aligned so a frame can be bound as a storage buffer at an offset.
+// Per-step velocity frames stored with aligned frame stride.
 class CFDSystemPlayback {
 public:
     ~CFDSystemPlayback();

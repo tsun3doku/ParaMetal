@@ -10,11 +10,12 @@ Popup {
 
     popupType: Popup.Item
     padding: 5
+    property real rowSpacing: 1
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
     contentItem: ColumnLayout {
         id: contentColumn
-        spacing: 5
+        spacing: control.rowSpacing
     }
 
     background: Rectangle {

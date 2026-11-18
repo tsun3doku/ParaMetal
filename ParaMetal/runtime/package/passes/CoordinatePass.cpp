@@ -26,8 +26,8 @@ void runtimepackage::CoordinatePass::run(PointPackage& package, units::LengthUni
 void runtimepackage::CoordinatePass::run(VoronoiPackage& package, units::LengthUnit worldUnit) const {
     const float factor = units::canonicalToWorldScale(worldUnit);
     package.canonicalToWorldScale = factor;
-    package.authored.cellSize *= factor;
     package.authored.volumePadding *= factor;
+    package.authored.contactRange *= factor;
 }
 
 void runtimepackage::CoordinatePass::run(HeatPackage& package, units::LengthUnit worldUnit) const {

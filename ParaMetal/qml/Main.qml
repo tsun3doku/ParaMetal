@@ -194,6 +194,8 @@ Rectangle {
                         bridge: ui.viewport
                         heatPalette: ui.heatPalette
                         velocityPalette: ui.velocityPalette
+                        graphModel: ui.nodeGraph
+                        boundaryFace: ui.boundaryFace
                     }
                 }
 

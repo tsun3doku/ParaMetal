@@ -9,7 +9,7 @@ CheckBox {
 
     required property QtObject theme
 
-    implicitHeight: 26
+    implicitHeight: 22
     Layout.fillWidth: true
     leftPadding: 24
     rightPadding: 4

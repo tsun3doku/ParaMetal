@@ -149,3 +149,55 @@ inline bool intersectRayAabb(const glm::vec3& origin, const glm::vec3& direction
 
 	return true;
 }
+
+using Point2D = std::array<double, 2>;
+using QuantizedKey3D = std::array<int64_t, 3>;
+
+struct LineSegment3D {
+	glm::dvec3 a{0.0};
+	glm::dvec3 b{0.0};
+};
+
+inline glm::dvec3 axisNormal(uint32_t axis) {
+	glm::dvec3 n(0.0);
+	if (axis < 3) {
+		n[axis] = 1.0;
+	}
+	return n;
+}
+
+inline QuantizedKey3D quantizePoint3D(const glm::dvec3& p, double tolerance) {
+	return {
+		int64_t(std::llround(p.x / tolerance)),
+		int64_t(std::llround(p.y / tolerance)),
+		int64_t(std::llround(p.z / tolerance))
+	};
+}
+
+inline Point2D projectPointTo2D(const glm::dvec3& p, uint32_t axis) {
+	if (axis == 0) return {p.y, p.z};
+	if (axis == 1) return {p.x, p.z};
+	return {p.x, p.y};
+}
+
+inline double polygonDoubleArea2D(const std::vector<Point2D>& points) {
+	double area = 0.0;
+	for (size_t i = 0; i < points.size(); ++i) {
+		const auto& a = points[i];
+		const auto& b = points[(i + 1) % points.size()];
+		area += a[0] * b[1] - b[0] * a[1];
+	}
+	return area;
+}
+
+inline bool pointInPolygon2D(const Point2D& p, const std::vector<Point2D>& poly) {
+	bool inside = false;
+	for (size_t i = 0, j = poly.size() - 1; i < poly.size(); j = i++) {
+		const auto& a = poly[i];
+		const auto& b = poly[j];
+		const bool crosses = ((a[1] > p[1]) != (b[1] > p[1])) &&
+			(p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]);
+		if (crosses) inside = !inside;
+	}
+	return inside;
+}

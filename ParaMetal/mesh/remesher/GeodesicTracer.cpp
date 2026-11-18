@@ -3,7 +3,6 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 #include <algorithm>
-#include <complex>
 #include <cmath>
 #include <limits>
 
@@ -94,21 +93,7 @@ GeodesicTracer::GeodesicTraceResult GeodesicTracer::traceFromVertex(uint32_t ver
     glm::dvec2 intervalStart = glm::normalize(hvv_vert[wedgeHe]);
 
     // Power scaling based on vertex angle sum 
-    bool isBoundaryVertex = false;
-    uint32_t probe = wedgeHe;
-    do {
-        if (halfEdges[probe].opposite == HalfEdgeMesh::INVALID_INDEX) {
-            isBoundaryVertex = true;
-            break;
-        }
-
-        probe = conn.getNextAroundVertex(probe);
-        if (probe == HalfEdgeMesh::INVALID_INDEX) {
-            isBoundaryVertex = true; 
-            break; 
-        }
-
-    } while (probe != wedgeHe);
+    const bool isBoundaryVertex = conn.isBoundaryVertex(vertexIdx);
 
     // Input mesh's expected vertex angle sum
     double targetAngleSum = isBoundaryVertex ? glm::pi<double>() : 2.0 * glm::pi<double>();
@@ -117,18 +102,9 @@ GeodesicTracer::GeodesicTraceResult GeodesicTracer::traceFromVertex(uint32_t ver
     double geometricAngleSum = (vertexIdx < vAngleSums.size()) ? vAngleSums[vertexIdx] : targetAngleSum;
     double power = geometricAngleSum / targetAngleSum;
 
-    // Convert to complex representation for power transform 
-    std::complex<double> intervalStartComplex(intervalStart.x, intervalStart.y);
-    std::complex<double> dirVertexComplex(dirVertex.x, dirVertex.y);
-    
-    // Compute relative direction as complex division
-    std::complex<double> traceDirRelativeToStart = dirVertexComplex / intervalStartComplex;
-    
-    // Apply power transform 
-    std::complex<double> poweredDir = std::pow(traceDirRelativeToStart, power);
-    
-    // Convert back to angle
-    double newA = std::arg(poweredDir);
+    double relativeAngle = std::atan2(cross2d(intervalStart, dirVertex),
+                                      glm::dot(intervalStart, dirVertex));
+    double newA = std::remainder(power * relativeAngle, 2.0 * glm::pi<double>());
 
     // Convert to face coordinates
     glm::dvec2 startDirInFace = glm::normalize(hvf_face[wedgeHe]);
@@ -215,6 +191,7 @@ GeodesicTracer::GeodesicTraceResult GeodesicTracer::traceFromFace(uint32_t start
     const auto& conn = mesh.getConnectivity();
     const auto& halfEdges = conn.getHalfEdges();
     const auto& edgesRef = conn.getEdges();
+    const auto& faces = conn.getFaces();
 
     // Tolerance for remaining distance
     constexpr double EPS_REMAIN = 1e-12;
@@ -456,20 +433,42 @@ GeodesicTracer::GeodesicTraceResult GeodesicTracer::traceFromFace(uint32_t start
             oppositeHE,
             dir2D);
 
-        // Reproject point into next face's chart
-        auto tri2D = mesh.layoutTriangle(currFace);
-        glm::dvec2 exit2D = tri2D.vertices[0] * bary.x +
-            tri2D.vertices[1] * bary.y +
-            tri2D.vertices[2] * bary.z;
+        // The crossing point lies on the shared edge, so its two non-zero
+        // weights carry over to the two corners the next face shares.
+        const int localEdge = step.localEdgeIndex;
+        if (localEdge < 0 || localEdge > 2) {
+            result.success = false;
+            result.baryCoords = currPoint.baryCoords;
+            result.position3D = glm::vec3(evaluateSurfacePoint(currPoint));
+            result.distance = length - remaining;
+            return result;
+        }
 
-        glm::dvec2 next2D = chartLocal2D(currFace, nextFace, exit2D);
+        uint32_t walkHe = faces[nextFace].halfEdgeIdx;
+        int nextSlot = -1;
+        for (int i = 0; i < 3 && walkHe != HalfEdgeMesh::INVALID_INDEX; ++i) {
+            if (walkHe == oppositeHE) {
+                nextSlot = i;
+                break;
+            }
+            walkHe = halfEdges[walkHe].next;
+        }
 
-        // Convert to barycentric in next face
-        auto nextTri2D = mesh.layoutTriangle(nextFace);
-        glm::dvec3 nextBary = mesh.computeBarycentric2D(
-            next2D,
-            nextTri2D.vertices[0], nextTri2D.vertices[1], nextTri2D.vertices[2]
-        );
+        const double weightA = bary[localEdge];
+        const double weightB = bary[(localEdge + 1) % 3];
+        const double weightSum = weightA + weightB;
+        if (nextSlot < 0 || !(weightSum > 1e-12)) {
+            result.success = false;
+            result.baryCoords = currPoint.baryCoords;
+            result.position3D = glm::vec3(evaluateSurfacePoint(currPoint));
+            result.distance = length - remaining;
+            return result;
+        }
+
+        const double param = weightB / weightSum;
+        glm::dvec3 nextBary(0.0);
+        nextBary[nextSlot] = param;
+        nextBary[(nextSlot + 1) % 3] = 1.0 - param;
 
         currFace = nextFace;
         currPoint.elementId = currFace;
@@ -570,12 +569,12 @@ GeodesicTracer::FaceStepResult GeodesicTracer::traceInFace(const SurfacePoint& s
         glm::dvec2 exit2D = start2D + dir2D * bestT;
         result.finalBary = mesh.computeBarycentric2D(exit2D, V[0], V[1], V[2]);
         result.distanceTraveled = bestT;
-        result.hitEdge = true;
         result.localEdgeIndex = bestEdge;
         result.edgeParam = bestU;
 
         // Map to halfedge index
         const auto& conn = mesh.getConnectivity();
+        const auto& halfEdges = conn.getHalfEdges();
         auto faceHEs = conn.getFaceHalfEdges(start.elementId);
         if (bestEdge < (int)faceHEs.size()) {
             result.halfEdgeIdx = faceHEs[bestEdge];
@@ -584,8 +583,26 @@ GeodesicTracer::FaceStepResult GeodesicTracer::traceInFace(const SurfacePoint& s
             result.halfEdgeIdx = INVALID_INDEX;
         }
 
-        result.hitVertex = false;
-        result.vertexIdx = INVALID_INDEX;
+        bool vertexHit = (bestU <= U_EPS || bestU >= 1.0 - U_EPS);
+        if (vertexHit) {
+            int localVertex = (bestU <= U_EPS) ? bestEdge : ((bestEdge + 1) % 3);
+            result.hitEdge = false;
+            result.hitVertex = true;
+            result.vertexIdx = INVALID_INDEX;
+            if (localVertex >= 0 && localVertex < static_cast<int>(faceHEs.size())) {
+                uint32_t vertexHE = faceHEs[localVertex];
+                if (vertexHE < halfEdges.size()) {
+                    result.vertexIdx = halfEdges[vertexHE].origin;
+                }
+            }
+            result.finalBary = glm::dvec3(0.0);
+            result.finalBary[localVertex] = 1.0;
+        }
+        else {
+            result.hitEdge = true;
+            result.hitVertex = false;
+            result.vertexIdx = INVALID_INDEX;
+        }
 
         result.success = true;
         result.dir2D = dir2D;
@@ -611,8 +628,32 @@ GeodesicTracer::FaceStepResult GeodesicTracer::traceInFace(const SurfacePoint& s
                     int minIdx = 0;
                     if (result.finalBary[1] < minBary) { minBary = result.finalBary[1]; minIdx = 1; }
                     if (result.finalBary[2] < minBary) { minBary = result.finalBary[2]; minIdx = 2; }
-                    
-                    if (minBary < BARY_SNAP_TOL) {
+
+                    double maxBary = result.finalBary[0];
+                    int maxIdx = 0;
+                    if (result.finalBary[1] > maxBary) { maxBary = result.finalBary[1]; maxIdx = 1; }
+                    if (result.finalBary[2] > maxBary) { maxBary = result.finalBary[2]; maxIdx = 2; }
+
+                    const auto& conn = mesh.getConnectivity();
+                    const auto& halfEdges = conn.getHalfEdges();
+                    auto faceHEs = conn.getFaceHalfEdges(start.elementId);
+
+                    if (maxBary >= 1.0 - BARY_SNAP_TOL) {
+                        result.hitVertex = true;
+                        result.hitEdge = false;
+                        result.vertexIdx = INVALID_INDEX;
+                        if (maxIdx >= 0 && maxIdx < static_cast<int>(faceHEs.size())) {
+                            uint32_t vertexHE = faceHEs[maxIdx];
+                            if (vertexHE < halfEdges.size()) {
+                                result.vertexIdx = halfEdges[vertexHE].origin;
+                            }
+                        }
+                        result.localEdgeIndex = -1;
+                        result.edgeParam = 0.0;
+                        result.finalBary = glm::dvec3(0.0);
+                        result.finalBary[maxIdx] = 1.0;
+                    }
+                    else if (minBary < BARY_SNAP_TOL) {
                         int edgeIdx = (minIdx + 1) % 3;
                         int vp = edgeIdx;
                         int vq = (edgeIdx + 1) % 3;
@@ -620,11 +661,10 @@ GeodesicTracer::FaceStepResult GeodesicTracer::traceInFace(const SurfacePoint& s
                         double t = (edgeSum > 1e-12) ? result.finalBary[vq] / edgeSum : 0.5;
 
                         result.hitEdge = true;
+                        result.hitVertex = false;
                         result.localEdgeIndex = edgeIdx;
                         result.edgeParam = t;
 
-                        const auto& conn = mesh.getConnectivity();
-                        auto faceHEs = conn.getFaceHalfEdges(start.elementId);
                         if (result.localEdgeIndex < static_cast<int>(faceHEs.size())) {
                             result.halfEdgeIdx = faceHEs[result.localEdgeIndex];
                         }
@@ -663,9 +703,7 @@ glm::dvec3 GeodesicTracer::evaluateSurfacePoint(const SurfacePoint& point) const
         uint32_t vB = (he1 != SignpostMesh::INVALID_INDEX
             ? halfEs[he1].origin
             : halfEs[halfEs[he0].next].origin);
-        // baryCoords = (1-t, t, 0)
-        double t = point.baryCoords.y;
-        return glm::mix(verts[vA].position, verts[vB].position, float(t));
+        return glm::mix(verts[vA].position, verts[vB].position, float(point.split));
     }
     case SurfacePoint::Type::FACE: {
         uint32_t fIdx = point.elementId;
@@ -686,80 +724,6 @@ glm::dvec3 GeodesicTracer::evaluateSurfacePoint(const SurfacePoint& point) const
     }
     }
     return glm::dvec3(0.0);
-}
-
-glm::dvec2 GeodesicTracer::chartLocal2D(uint32_t oldFaceIdx, uint32_t newFaceIdx, const glm::dvec2& oldPoint2D) const {
-    // ***ONLY MAPS ADJACENT FACES***
-    const double EPS = 1e-12;
-    auto oldTri = mesh.layoutTriangle(oldFaceIdx);
-    auto newTri = mesh.layoutTriangle(newFaceIdx);
-
-    // Bary in old chart
-    glm::dvec3 baryOld = mesh.computeBarycentric2D(oldPoint2D, oldTri.vertices[0], oldTri.vertices[1], oldTri.vertices[2]);
-
-    // Find shared vertices between old 2d triangle and new 2d triangle
-    int sharedOldIdx[2] = { -1,-1 };
-    int sharedNewIdx[2] = { -1,-1 };
-    int sharedCount = 0;
-    for (int i = 0; i < 3; ++i) {
-        uint32_t oldVID = oldTri.indices[i];
-        for (int j = 0; j < 3; ++j) {
-            if (newTri.indices[j] == oldVID) {
-                if (sharedCount < 2) {
-                    sharedOldIdx[sharedCount] = i;
-                    sharedNewIdx[sharedCount] = j;
-                }
-                ++sharedCount;
-            }
-        }
-    }
-
-    glm::dvec3 baryNew(0.0);
-
-    if (sharedCount == 2) {
-        // Calculate u along edge from old bary (A to B)
-        int iA = sharedOldIdx[0], iB = sharedOldIdx[1];
-        int jA = sharedNewIdx[0], jB = sharedNewIdx[1];
-        double wA = baryOld[iA], wB = baryOld[iB];
-        double sum = wA + wB;
-
-        double u;
-        if (sum > EPS) {
-            // Parameter from A to B
-            u = wB / sum;
-        }
-        else {
-            // Fallback: project oldPoint2D onto old edge if degenerate
-            glm::dvec2 vA = oldTri.vertices[iA], vB = oldTri.vertices[iB];
-            glm::dvec2 e = vB - vA;
-            double denom = glm::dot(e, e);
-            u = (denom < EPS) ? 0.5 : glm::dot(oldPoint2D - vA, e) / denom;
-            u = glm::clamp(u, 0.0, 1.0);
-        }
-
-        // Assign bary in new face with respect to neighbor orientation
-        baryNew[jA] = 1.0 - u;
-        baryNew[jB] = u;
-        // Third corner remains 0
-    }
-    else {
-        // Fallback: map by matching vertex ids
-        for (int i = 0; i < 3; ++i) {
-            uint32_t oldVID = oldTri.indices[i];
-            for (int j = 0; j < 3; ++j) {
-                if (newTri.indices[j] == oldVID) {
-                    baryNew[j] = baryOld[i];
-                    break;
-                }
-            }
-        }
-    }
-
-    // Reproject to new chart coords
-    glm::dvec2 chart = newTri.vertices[0] * baryNew.x
-        + newTri.vertices[1] * baryNew.y
-        + newTri.vertices[2] * baryNew.z;
-    return chart;
 }
 
 glm::dvec2 GeodesicTracer::rotateVectorAcrossEdge(uint32_t oldHe, uint32_t newHe, const glm::dvec2& vecInOld) const

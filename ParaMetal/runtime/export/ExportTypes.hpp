@@ -29,6 +29,12 @@ struct ExportProductKey {
     NodeGraphNodeId producerNodeId{};
     NodeGraphSocketId outputSocketId{};
     std::string productId;
+
+    bool operator<(const ExportProductKey& other) const {
+        if (producerNodeId.value != other.producerNodeId.value) return producerNodeId.value < other.producerNodeId.value;
+        if (outputSocketId.value != other.outputSocketId.value) return outputSocketId.value < other.outputSocketId.value;
+        return productId < other.productId;
+    }
 };
 
 struct ExportProduct {

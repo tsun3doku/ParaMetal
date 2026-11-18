@@ -24,7 +24,9 @@ public:
         }
 
         cudaDevice = requestedDevice;
-        if (cudaSetDevice(cudaDevice) != cudaSuccess) return false;
+        if (cudaSetDevice(cudaDevice) != cudaSuccess) {
+            return false;
+        }
 
         const auto getMemoryHandle = reinterpret_cast<PFN_vkGetMemoryWin32HandleKHR>(
             vkGetDeviceProcAddr(device, "vkGetMemoryWin32HandleKHR"));
@@ -80,9 +82,15 @@ public:
     }
 
     void cleanup() {
-        if (cudaDevice >= 0) cudaSetDevice(cudaDevice);
-        if (pointer) cudaFree(pointer);
-        if (memory) cudaDestroyExternalMemory(memory);
+        if (cudaDevice >= 0) {
+            cudaSetDevice(cudaDevice);
+        }
+        if (pointer) {
+            cudaFree(pointer);
+        }
+        if (memory) {
+            cudaDestroyExternalMemory(memory);
+        }
         pointer = nullptr;
         memory = nullptr;
         sourceBuffer = VK_NULL_HANDLE;

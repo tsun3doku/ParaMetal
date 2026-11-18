@@ -9,6 +9,22 @@
 #include <array>
 #include <iostream>
 
+static void boxBounds(const std::array<glm::vec3, 8>& corners, glm::vec3& outMin, glm::vec3& outMax) {
+    outMin = corners[0];
+    outMax = corners[0];
+    for (size_t i = 1; i < corners.size(); ++i) {
+        outMin = glm::min(outMin, corners[i]);
+        outMax = glm::max(outMax, corners[i]);
+    }
+}
+
+static bool boundsApproximatelyEqual(const glm::vec3& minA, const glm::vec3& maxA,
+                                     const glm::vec3& minB, const glm::vec3& maxB) {
+    constexpr float Epsilon = 1e-4f;
+    return glm::all(glm::lessThanEqual(glm::abs(minA - minB), glm::vec3(Epsilon))) &&
+           glm::all(glm::lessThanEqual(glm::abs(maxA - maxB), glm::vec3(Epsilon)));
+}
+
 HeatBoxRenderer::HeatBoxRenderer(
     VulkanDevice& device,
     MemoryAllocator& allocator,
@@ -120,21 +136,35 @@ bool HeatBoxRenderer::createDescriptorSets(uint32_t maxFramesInFlight) {
 bool HeatBoxRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpass) {
     std::vector<char> vertCode;
     std::vector<char> fragCode;
+    std::vector<char> faceVertCode;
+    std::vector<char> faceFragCode;
     if (!readFile("shaders/heat_box_vert.spv", vertCode) ||
-        !readFile("shaders/heat_box_frag.spv", fragCode)) {
+        !readFile("shaders/heat_box_frag.spv", fragCode) ||
+        !readFile("shaders/heat_box_face_vert.spv", faceVertCode) ||
+        !readFile("shaders/heat_box_face_frag.spv", faceFragCode)) {
         std::cerr << "HeatBoxRenderer: Failed to read shader files" << std::endl;
         return false;
     }
 
     VkShaderModule vertModule = VK_NULL_HANDLE;
     VkShaderModule fragModule = VK_NULL_HANDLE;
+    VkShaderModule faceVertModule = VK_NULL_HANDLE;
+    VkShaderModule faceFragModule = VK_NULL_HANDLE;
     if (createShaderModule(vulkanDevice, vertCode, vertModule) != VK_SUCCESS ||
-        createShaderModule(vulkanDevice, fragCode, fragModule) != VK_SUCCESS) {
+        createShaderModule(vulkanDevice, fragCode, fragModule) != VK_SUCCESS ||
+        createShaderModule(vulkanDevice, faceVertCode, faceVertModule) != VK_SUCCESS ||
+        createShaderModule(vulkanDevice, faceFragCode, faceFragModule) != VK_SUCCESS) {
         if (vertModule != VK_NULL_HANDLE) {
             vkDestroyShaderModule(vulkanDevice.getDevice(), vertModule, nullptr);
         }
         if (fragModule != VK_NULL_HANDLE) {
             vkDestroyShaderModule(vulkanDevice.getDevice(), fragModule, nullptr);
+        }
+        if (faceVertModule != VK_NULL_HANDLE) {
+            vkDestroyShaderModule(vulkanDevice.getDevice(), faceVertModule, nullptr);
+        }
+        if (faceFragModule != VK_NULL_HANDLE) {
+            vkDestroyShaderModule(vulkanDevice.getDevice(), faceFragModule, nullptr);
         }
         std::cerr << "HeatBoxRenderer: Failed to create shader modules" << std::endl;
         return false;
@@ -217,10 +247,6 @@ bool HeatBoxRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpass) 
     dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
     dynamicState.pDynamicStates = dynamicStates.data();
 
-    struct PushConstants {
-        glm::vec4 corners[8];
-    };
-
     VkPushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     pushConstantRange.offset = 0;
@@ -261,12 +287,49 @@ bool HeatBoxRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpass) 
     if (vkCreateGraphicsPipelines(vulkanDevice.getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
         vkDestroyShaderModule(vulkanDevice.getDevice(), vertModule, nullptr);
         vkDestroyShaderModule(vulkanDevice.getDevice(), fragModule, nullptr);
+        vkDestroyShaderModule(vulkanDevice.getDevice(), faceVertModule, nullptr);
+        vkDestroyShaderModule(vulkanDevice.getDevice(), faceFragModule, nullptr);
         std::cerr << "HeatBoxRenderer: Failed to create graphics pipeline" << std::endl;
+        return false;
+    }
+
+    VkPipelineShaderStageCreateInfo faceVertShaderStageInfo{};
+    faceVertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    faceVertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    faceVertShaderStageInfo.module = faceVertModule;
+    faceVertShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo faceFragShaderStageInfo{};
+    faceFragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    faceFragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    faceFragShaderStageInfo.module = faceFragModule;
+    faceFragShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo faceShaderStages[] = { faceVertShaderStageInfo, faceFragShaderStageInfo };
+
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    colorBlendAttachments[0].blendEnable = VK_TRUE;
+    colorBlendAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorBlendAttachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachments[0].colorBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorBlendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
+    pipelineInfo.pStages = faceShaderStages;
+
+    if (vkCreateGraphicsPipelines(vulkanDevice.getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &facePipeline) != VK_SUCCESS) {
+        vkDestroyShaderModule(vulkanDevice.getDevice(), vertModule, nullptr);
+        vkDestroyShaderModule(vulkanDevice.getDevice(), fragModule, nullptr);
+        vkDestroyShaderModule(vulkanDevice.getDevice(), faceVertModule, nullptr);
+        vkDestroyShaderModule(vulkanDevice.getDevice(), faceFragModule, nullptr);
+        std::cerr << "HeatBoxRenderer: Failed to create face highlight pipeline" << std::endl;
         return false;
     }
 
     vkDestroyShaderModule(vulkanDevice.getDevice(), vertModule, nullptr);
     vkDestroyShaderModule(vulkanDevice.getDevice(), fragModule, nullptr);
+    vkDestroyShaderModule(vulkanDevice.getDevice(), faceVertModule, nullptr);
+    vkDestroyShaderModule(vulkanDevice.getDevice(), faceFragModule, nullptr);
 
     return true;
 }
@@ -274,7 +337,8 @@ bool HeatBoxRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpass) 
 void HeatBoxRenderer::render(
     VkCommandBuffer commandBuffer,
     uint32_t frameIndex,
-    const std::vector<RenderBinding>& bindings) {
+    const std::vector<RenderBinding>& bindings,
+    const Highlight& highlight) {
     if (!initialized || bindings.empty() || frameIndex >= descriptorSets.size()) {
         return;
     }
@@ -290,14 +354,26 @@ void HeatBoxRenderer::render(
         0,
         nullptr);
 
-    struct PushConstants {
-        glm::vec4 corners[8];
-    };
+    glm::vec3 highlightMin(0.0f);
+    glm::vec3 highlightMax(0.0f);
+    if (highlight.boundsValid) {
+        boxBounds(highlight.corners, highlightMin, highlightMax);
+    }
 
     for (const auto& binding : bindings) {
+        glm::vec3 boxMin(0.0f);
+        glm::vec3 boxMax(0.0f);
+        boxBounds(binding.corners, boxMin, boxMax);
+
+        const bool highlighted = highlight.boundsValid &&
+            boundsApproximatelyEqual(boxMin, boxMax, highlightMin, highlightMax);
+
         PushConstants pc{};
-        for (size_t i = 0; i < 8; ++i) {
-            pc.corners[i] = glm::vec4(binding.corners[i], 1.0f);
+        pc.boxMin = glm::vec4(boxMin, 1.0f);
+        pc.boxMax = glm::vec4(boxMax, 1.0f);
+        if (highlighted) {
+            pc.selectedFace = highlight.selectedFace;
+            pc.hoverFace = highlight.hoverFace;
         }
 
         vkCmdPushConstants(
@@ -308,7 +384,15 @@ void HeatBoxRenderer::render(
             sizeof(PushConstants),
             &pc);
 
-        vkCmdDraw(commandBuffer, 24, 1, 0, 0);
+        if (pc.selectedFace >= 0 || pc.hoverFace >= 0) {
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, facePipeline);
+            vkCmdDraw(commandBuffer, 12, 1, 0, 0);
+        }
+
+        if (binding.outline || highlighted) {
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            vkCmdDraw(commandBuffer, 24, 1, 0, 0);
+        }
     }
 }
 
@@ -318,6 +402,10 @@ void HeatBoxRenderer::cleanup() {
     if (pipeline != VK_NULL_HANDLE) {
         vkDestroyPipeline(device, pipeline, nullptr);
         pipeline = VK_NULL_HANDLE;
+    }
+    if (facePipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device, facePipeline, nullptr);
+        facePipeline = VK_NULL_HANDLE;
     }
     if (pipelineLayout != VK_NULL_HANDLE) {
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);

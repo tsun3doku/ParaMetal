@@ -34,6 +34,36 @@ struct DeviceFragmentFace {
   uint32_t domainFace;
 };
 
+inline DeviceFragmentFace toDeviceFragmentFace(const FragmentFace &ff) {
+  DeviceFragmentFace df{};
+  df.fragmentA = ff.fragmentA;
+  df.fragmentB = ff.fragmentB;
+  df.areaA = ff.areaA;
+  df.areaB = ff.areaB;
+  df.areaVectorA = make_double3(ff.areaVectorA.x, ff.areaVectorA.y, ff.areaVectorA.z);
+  df.areaVectorB = make_double3(ff.areaVectorB.x, ff.areaVectorB.y, ff.areaVectorB.z);
+  df.momentA = make_double3(ff.momentA.x, ff.momentA.y, ff.momentA.z);
+  df.momentB = make_double3(ff.momentB.x, ff.momentB.y, ff.momentB.z);
+  df.type = static_cast<uint8_t>(ff.type);
+  df.domainFace = ff.domainFace;
+  return df;
+}
+
+inline FragmentFace fromDeviceFragmentFace(const DeviceFragmentFace &df) {
+  FragmentFace ff{};
+  ff.fragmentA = df.fragmentA;
+  ff.fragmentB = df.fragmentB;
+  ff.areaA = df.areaA;
+  ff.areaB = df.areaB;
+  ff.areaVectorA = glm::dvec3(df.areaVectorA.x, df.areaVectorA.y, df.areaVectorA.z);
+  ff.areaVectorB = glm::dvec3(df.areaVectorB.x, df.areaVectorB.y, df.areaVectorB.z);
+  ff.momentA = glm::dvec3(df.momentA.x, df.momentA.y, df.momentA.z);
+  ff.momentB = glm::dvec3(df.momentB.x, df.momentB.y, df.momentB.z);
+  ff.type = static_cast<FaceType>(df.type);
+  ff.domainFace = df.domainFace;
+  return ff;
+}
+
 __device__ inline double evaluateConditionNumberDevice(const double *B) {
   const double trB = B[0] + B[1] + B[2];
   if (!(trB > 0.0) || !isfinite(trB)) return 1e12;
@@ -109,7 +139,7 @@ __global__ void evaluateFragmentQualityKernel(
     const uint32_t *parent,
     const double *devCovariance,
     const uint32_t *devFaceCount,
-    double minVolumeFloor,
+    const double *volumeFloors,
     uint32_t *devSliverCount) {
   uint32_t idx = blockDim.x * blockIdx.x + threadIdx.x;
   if (idx >= numFragments) return;
@@ -128,7 +158,7 @@ __global__ void evaluateFragmentQualityKernel(
   fragments[idx].conditionNumber = cond;
 
   bool bad = false;
-  if (!(fragments[idx].volume >= minVolumeFloor) || !isfinite(fragments[idx].volume)) {
+  if (!(fragments[idx].volume >= volumeFloors[idx]) || !isfinite(fragments[idx].volume)) {
     bad = true;
   } else if (fragments[idx].faceCount < 4) {
     bad = true;
@@ -508,18 +538,25 @@ bool agglomerateFragments(
 
   const uint32_t numFragments = static_cast<uint32_t>(result.fragments.size());
   const uint32_t numFaces = static_cast<uint32_t>(result.fragmentFaces.size());
-  const double nominalSize = double(baseDomain.nominalCellSize);
-  if (!(nominalSize > 0.0) || !std::isfinite(nominalSize)) {
-    std::cerr << "[RVDAgglomeration] invalid nominalCellSize=" << baseDomain.nominalCellSize << std::endl;
+
+  std::vector<double4> baseMoments(baseDomain.count);
+  if (baseDomain.devBaseMoments.size() < baseDomain.count ||
+      !baseDomain.devBaseMoments.download(baseMoments.data(), baseDomain.count)) {
+    std::cerr << "[RVDAgglomeration] failed to download base-cell moments" << std::endl;
     return false;
   }
-  const double nominalVolume = nominalSize * nominalSize * nominalSize;
-  const double minVolumeFloor = 1e-4 * nominalVolume;
 
   std::vector<DeviceFragment> hostFragments(numFragments);
   std::vector<uint32_t> hostCellIds(numFragments);
+  std::vector<double> hostVolumeFloors(numFragments);
   for (uint32_t i = 0; i < numFragments; ++i) {
     hostCellIds[i] = result.fragments[i].cellId;
+    if (hostCellIds[i] >= baseDomain.count) {
+      std::cerr << "[RVDAgglomeration] fragment cell out of range=" << hostCellIds[i] << std::endl;
+      return false;
+    }
+    hostVolumeFloors[i] =
+        1e-4 * baseMoments[hostCellIds[i]].w * baseDomain.invBaseVolumeScale / 6.0;
     hostFragments[i].materialId = result.fragments[i].ownerModelId;
     hostFragments[i].faceCount = 0;
     hostFragments[i].volume = result.fragments[i].volume;
@@ -530,21 +567,12 @@ bool agglomerateFragments(
 
   std::vector<DeviceFragmentFace> hostFaces(numFaces);
   for (uint32_t f = 0; f < numFaces; ++f) {
-    const FragmentFace &ff = result.fragmentFaces[f];
-    hostFaces[f].fragmentA = ff.fragmentA;
-    hostFaces[f].fragmentB = ff.fragmentB;
-    hostFaces[f].areaA = ff.areaA;
-    hostFaces[f].areaB = ff.areaB;
-    hostFaces[f].areaVectorA = make_double3(ff.areaVectorA.x, ff.areaVectorA.y, ff.areaVectorA.z);
-    hostFaces[f].areaVectorB = make_double3(ff.areaVectorB.x, ff.areaVectorB.y, ff.areaVectorB.z);
-    hostFaces[f].momentA = make_double3(ff.momentA.x, ff.momentA.y, ff.momentA.z);
-    hostFaces[f].momentB = make_double3(ff.momentB.x, ff.momentB.y, ff.momentB.z);
-    hostFaces[f].type = static_cast<uint8_t>(ff.type);
-    hostFaces[f].domainFace = ff.domainFace;
+    hostFaces[f] = toDeviceFragmentFace(result.fragmentFaces[f]);
   }
 
   cudaUtils::CudaBuffer<DeviceFragment> devFragments;
   cudaUtils::CudaBuffer<DeviceFragmentFace> devFaces;
+  cudaUtils::CudaBuffer<double> devVolumeFloors;
   cudaUtils::CudaBuffer<uint32_t> devParent;
   cudaUtils::CudaBuffer<double> devCovariance;
   cudaUtils::CudaBuffer<uint32_t> devFaceCount;
@@ -563,6 +591,7 @@ bool agglomerateFragments(
   const uint32_t pairCapacity = totalBaseFragmentFaces + 1;
   if (!devFragments.allocate(numFragments) ||
       !devFaces.allocate(numFaces) ||
+      !devVolumeFloors.allocate(numFragments) ||
       !devParent.allocate(numFragments) ||
       !devCovariance.allocate(numFragments * 6) ||
       !devFaceCount.allocate(numFragments) ||
@@ -580,7 +609,8 @@ bool agglomerateFragments(
   }
 
   if (!devFragments.uploadAsync(hostFragments.data(), numFragments, stream) ||
-      !devFaces.uploadAsync(hostFaces.data(), numFaces, stream)) {
+      !devFaces.uploadAsync(hostFaces.data(), numFaces, stream) ||
+      !devVolumeFloors.uploadAsync(hostVolumeFloors.data(), numFragments, stream)) {
     return false;
   }
 
@@ -606,7 +636,7 @@ bool agglomerateFragments(
     evaluateFragmentQualityKernel<<<rvdHost::blockCount(numFragments), rvdHost::BlockSize, 0, stream>>>(
         devFragments.get(), numFragments, devParent.get(),
         devCovariance.get(), devFaceCount.get(),
-        minVolumeFloor, devFlags.get());
+        devVolumeFloors.get(), devFlags.get());
 
     uint32_t hostSliverCount = 0;
     cudaMemcpyAsync(&hostSliverCount, devFlags.get(), sizeof(uint32_t), cudaMemcpyDeviceToHost, stream);
@@ -834,17 +864,7 @@ bool agglomerateFragments(
 
   std::vector<FragmentFace> compactedFaces(totalCompactedFaces);
   for (uint32_t f = 0; f < totalCompactedFaces; ++f) {
-    const DeviceFragmentFace &df = compactedHostFaces[f];
-    compactedFaces[f].fragmentA = df.fragmentA;
-    compactedFaces[f].fragmentB = df.fragmentB;
-    compactedFaces[f].areaA = df.areaA;
-    compactedFaces[f].areaB = df.areaB;
-    compactedFaces[f].areaVectorA = glm::dvec3(df.areaVectorA.x, df.areaVectorA.y, df.areaVectorA.z);
-    compactedFaces[f].areaVectorB = glm::dvec3(df.areaVectorB.x, df.areaVectorB.y, df.areaVectorB.z);
-    compactedFaces[f].momentA = glm::dvec3(df.momentA.x, df.momentA.y, df.momentA.z);
-    compactedFaces[f].momentB = glm::dvec3(df.momentB.x, df.momentB.y, df.momentB.z);
-    compactedFaces[f].type = static_cast<FaceType>(df.type);
-    compactedFaces[f].domainFace = df.domainFace;
+    compactedFaces[f] = fromDeviceFragmentFace(compactedHostFaces[f]);
   }
 
   for (SurfaceRegion &region : surfaceRegions) {
@@ -862,6 +882,49 @@ bool agglomerateFragments(
   result.fragments = std::move(compactedFragments);
   result.fragmentFaces = std::move(compactedFaces);
   totalBaseFragmentFaces = newTotalBaseFaces;
+
+  if (result.faceLoopOffsets.size() != size_t(numFaces) + 1 ||
+      result.loopVertexOffsets.size() !=
+          size_t(result.faceLoopOffsets.back()) + 1 ||
+      result.loopVertices.size() != result.loopVertexOffsets.back()) {
+    std::cerr << "[RVDAgglomeration] inconsistent face loop arrays faces="
+              << numFaces << std::endl;
+    return false;
+  }
+  std::vector<uint32_t> remappedFaceLoopOffsets{0u};
+  std::vector<uint32_t> remappedLoopVertexOffsets{0u};
+  std::vector<glm::dvec3> remappedLoopVertices;
+  remappedLoopVertexOffsets.reserve(result.loopVertexOffsets.size());
+  remappedLoopVertices.reserve(result.loopVertices.size());
+  for (uint32_t f = 0; f < numFaces; ++f) {
+    if (oldFaceToNew[f] == InvalidId) continue;
+    if (oldFaceToNew[f] != uint32_t(remappedFaceLoopOffsets.size()) - 1u) {
+      std::cerr << "[RVDAgglomeration] non-monotonic compacted face mapping old="
+                << f << " new=" << oldFaceToNew[f] << std::endl;
+      return false;
+    }
+    for (uint32_t loop = result.faceLoopOffsets[f];
+         loop < result.faceLoopOffsets[f + 1]; ++loop) {
+      const uint32_t begin = result.loopVertexOffsets[loop];
+      const uint32_t end = result.loopVertexOffsets[loop + 1];
+      remappedLoopVertices.insert(
+          remappedLoopVertices.end(),
+          result.loopVertices.begin() + begin,
+          result.loopVertices.begin() + end);
+      remappedLoopVertexOffsets.push_back(
+          remappedLoopVertexOffsets.back() + (end - begin));
+    }
+    remappedFaceLoopOffsets.push_back(
+        uint32_t(remappedLoopVertexOffsets.size()) - 1u);
+  }
+  if (remappedFaceLoopOffsets.size() != size_t(totalCompactedFaces) + 1) {
+    std::cerr << "[RVDAgglomeration] compacted face count mismatch faces="
+              << totalCompactedFaces << std::endl;
+    return false;
+  }
+  result.faceLoopOffsets = std::move(remappedFaceLoopOffsets);
+  result.loopVertexOffsets = std::move(remappedLoopVertexOffsets);
+  result.loopVertices = std::move(remappedLoopVertices);
 
   const uint32_t cellCount = baseDomain.count;
   std::vector<std::vector<uint32_t>> cellToFragments(cellCount);

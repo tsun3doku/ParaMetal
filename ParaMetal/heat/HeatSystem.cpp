@@ -322,17 +322,22 @@ void HeatSystem::clearAdvectionInput() {
     domainRuntime.clearAdvectionInput();
 }
 
-void HeatSystem::setGlobalVoronoiInput(
+bool HeatSystem::setGlobalVoronoiInput(
     const topology::GlobalDomain& domain,
     const std::unordered_map<uint32_t, std::array<float, 16>>& modelLocalToWorld) {
     if (!domain.isValid()) {
-        clearGlobalVoronoiInput();
-        return;
+        std::cerr << "[HeatSystem] Supplied domain is structurally invalid\n";
+        return false;
+    }
+    if (!topology::validateBoundaryFaceIndices(domain)) {
+        std::cerr << "[HeatSystem] Domain boundary validation failed\n";
+        return false;
     }
     modelLocalToWorldByModelId = modelLocalToWorld;
     domainRuntime.setGlobalDomain(domain);
     domainDirty = true;
     voronoiConfigDirty = true;
+    return true;
 }
 
 bool HeatSystem::fluidVolumeReady() const {
@@ -371,7 +376,6 @@ void HeatSystem::update(const SimTickContext& context) {
                 updateHeatProbes();
             }
         }
-
         if (!physicsFailed) {
             if (domainRuntime.globalValuesDirty()) {
                 if (!domainRuntime.updateGlobalValues(domainRuntime.getActiveModels(), fluidRuntime.get(), FixedTimeStep)) {
@@ -381,7 +385,7 @@ void HeatSystem::update(const SimTickContext& context) {
             }
 
             if (!physicsFailed && domainRuntime.globalAdvectionDirty()) {
-                if (!domainRuntime.updateGlobalAdvection(fluidRuntime.get(), FixedTimeStep)) {
+                if (!domainRuntime.updateGlobalAdvection(FixedTimeStep)) {
                     std::cerr << "[HeatSystem] global advection update failed; heat physics halted until reset." << std::endl;
                     physicsFailed = true;
                 }

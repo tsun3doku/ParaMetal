@@ -225,7 +225,6 @@ void NodeGraphEditor::resetToDefaultGraph() {
     writeHeatModelNodeParams(*this, sourceHeatModel.id, sourceHeatModelParams);
 
     VoronoiNodeParams voronoiParams{};
-    voronoiParams.cellSize = 0.005;
     writeVoronoiNodeParams(*this, voronoi.id, voronoiParams);
 
     HeatFluidNodeParams fluidParams{};

@@ -39,10 +39,16 @@ public:
     VkBuffer velocityBuffer() const { return velocity.getBuffer(); }
     VkBuffer faceFluxBuffer() const { return faceFlux.getBuffer(); }
     VkBuffer boundaryFluxBuffer() const { return boundaryFlux.getBuffer(); }
+    VkBuffer velocityGradientsBuffer() const { return velocityGradients.getBuffer(); }
+
+    glm::vec4* velocityGradientsCuda() {
+        return reinterpret_cast<glm::vec4*>(velocityGradientsMapping.getPointer());
+    }
 
     const VulkanExternalBuffer& getVelocityExternalBuffer() const { return velocity; }
     const VulkanExternalBuffer& getFaceFluxExternalBuffer() const { return faceFlux; }
     const VulkanExternalBuffer& getBoundaryFluxExternalBuffer() const { return boundaryFlux; }
+    const VulkanExternalBuffer& getVelocityGradientsExternalBuffer() const { return velocityGradients; }
 
     uint32_t getFluidNodeCount() const { return fluidNodeCount; }
     uint32_t getGlobalFaceCount() const { return globalFaceCount; }
@@ -51,6 +57,9 @@ public:
 private:
     VulkanExternalBuffer velocity;
     CudaExternalBuffer velocityMapping;
+
+    VulkanExternalBuffer velocityGradients;
+    CudaExternalBuffer velocityGradientsMapping;
 
     VulkanExternalBuffer faceFlux;
     CudaExternalBuffer faceFluxMapping;

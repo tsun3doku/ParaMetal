@@ -12,7 +12,6 @@ struct VoronoiPreviewSettings {
 };
 
 struct VoronoiNodeParams {
-    double cellSize = 0.005;
     int voxelResolution = 128;
     double volumePadding = 0.01;
     int lloydIterations = int(voronoi::DefaultLloydIterations);

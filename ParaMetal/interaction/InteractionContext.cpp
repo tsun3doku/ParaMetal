@@ -2,6 +2,7 @@
 
 #include "IViewportInteraction.hpp"
 #include "scene/CameraController.hpp"
+#include "scene/DomainFaceInteractionController.hpp"
 #include "scene/GizmoController.hpp"
 #include "scene/MarkerInteractionController.hpp"
 #include "scene/NavigationGizmoController.hpp"
@@ -19,17 +20,14 @@ bool InteractionContext::initialize(
     }
 
     navigationGizmo = std::make_unique<NavigationGizmoController>(cameraController);
-    markerInteraction = std::make_unique<MarkerInteractionController>(
-        cameraController.getCamera(), modelRegistry, windowState);
+    markerInteraction = std::make_unique<MarkerInteractionController>(cameraController.getCamera(), modelRegistry, windowState);
+    domainFace = std::make_unique<DomainFaceInteractionController>(cameraController.getCamera(), windowState);
     gizmo = std::make_unique<GizmoController>(cameraController, windowState);
 
-    // Interaction priority order:
-    // 1. Screen-space widgets (Navigation cube)
-    // 2. Entity manipulators (Probe marker placement and direct dragging)
-    // 3. Transform gizmos (Translation/Rotation handles)
     interactionStack = {
         navigationGizmo.get(),
         markerInteraction.get(),
+        domainFace.get(),
         gizmo.get()
     };
 
@@ -40,6 +38,7 @@ bool InteractionContext::initialize(
 void InteractionContext::shutdown() {
     interactionStack.clear();
     gizmo.reset();
+    domainFace.reset();
     markerInteraction.reset();
     navigationGizmo.reset();
     initialized = false;
@@ -59,6 +58,14 @@ MarkerInteractionController& InteractionContext::markerInteractionController() {
 
 const MarkerInteractionController& InteractionContext::markerInteractionController() const {
     return *markerInteraction;
+}
+
+DomainFaceInteractionController& InteractionContext::domainFaceInteractionController() {
+    return *domainFace;
+}
+
+const DomainFaceInteractionController& InteractionContext::domainFaceInteractionController() const {
+    return *domainFace;
 }
 
 GizmoController& InteractionContext::gizmoController() {
@@ -161,4 +168,10 @@ void InteractionContext::cancelProbePicking() {
 
 bool InteractionContext::isProbePickingActive() const {
     return markerInteraction ? markerInteraction->isProbePickingActive() : false;
+}
+
+void InteractionContext::setBoundaryFaceEditing(int nodeId, bool armed) {
+    if (domainFace) {
+        domainFace->setEditingNode(nodeId, armed);
+    }
 }

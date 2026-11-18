@@ -243,6 +243,50 @@ __global__ void countTriangleVoxelsKernel(
     }
 }
 
+__global__ void markTriangleVoxelsKernel(
+    const DeviceTriangle* triangles,
+    uint32_t triangleCount,
+    DeviceVoxelGrid grid,
+    uint8_t* occupancy) {
+    for (uint32_t triangleIndex = blockIdx.x * blockDim.x + threadIdx.x;
+         triangleIndex < triangleCount;
+         triangleIndex += gridDim.x * blockDim.x) {
+        float3 canonical[3];
+        int3 voxelMinimum;
+        int3 voxelMaximum;
+        if (!triangleGridRange(
+                triangles[triangleIndex], grid, canonical, voxelMinimum, voxelMaximum)) {
+            continue;
+        }
+
+        const float boxHalfSize[3] = {
+            0.5f * grid.voxelSize,
+            0.5f * grid.voxelSize,
+            0.5f * grid.voxelSize};
+        const float triangleVertices[3][3] = {
+            {canonical[0].x, canonical[0].y, canonical[0].z},
+            {canonical[1].x, canonical[1].y, canonical[1].z},
+            {canonical[2].x, canonical[2].y, canonical[2].z}};
+
+        for (int z = voxelMinimum.z; z <= voxelMaximum.z; ++z) {
+            for (int y = voxelMinimum.y; y <= voxelMaximum.y; ++y) {
+                for (int x = voxelMinimum.x; x <= voxelMaximum.x; ++x) {
+                    const float boxCenter[3] = {
+                        (float(x) + 0.5f) * grid.voxelSize,
+                        (float(y) + 0.5f) * grid.voxelSize,
+                        (float(z) + 0.5f) * grid.voxelSize};
+                    if (!triangleBoxOverlap(boxCenter, boxHalfSize, triangleVertices)) {
+                        continue;
+                    }
+                    const int32_t voxel =
+                        x + y * grid.gridDim.x + z * grid.gridDim.x * grid.gridDim.y;
+                    occupancy[voxel] = 1u;
+                }
+            }
+        }
+    }
+}
+
 __global__ void finalizeOffsetsKernel(
     int32_t* offsets,
     const int32_t* counts,
@@ -406,6 +450,30 @@ bool buildTriangleVoxelGrid(
         return false;
     }
     return true;
+}
+
+bool markTriangleVoxels(
+    const DeviceTriangle* triangles,
+    uint32_t triangleCount,
+    const DeviceVoxelGrid& grid,
+    uint8_t* occupancy,
+    cudaStream_t stream) {
+    if (triangles == nullptr || triangleCount == 0) return false;
+    if (occupancy == nullptr) return false;
+    if (grid.gridDim.x <= 0 || grid.gridDim.y <= 0 || grid.gridDim.z <= 0 ||
+        !(grid.scale > 0.0f) || !std::isfinite(grid.scale) ||
+        !(grid.voxelSize > 0.0f) || !std::isfinite(grid.voxelSize) ||
+        !std::isfinite(grid.gridMin.x) || !std::isfinite(grid.gridMin.y) ||
+        !std::isfinite(grid.gridMin.z)) {
+        std::cerr << "[VoxelGrid] invalid grid parameters" << std::endl;
+        return false;
+    }
+
+    const uint32_t gridBlocks = (triangleCount + BlockSize - 1) / BlockSize;
+    markTriangleVoxelsKernel<<<gridBlocks, BlockSize, 0, stream>>>(
+        triangles, triangleCount, grid, occupancy);
+    return cudaUtils::cudaCheck(
+        cudaGetLastError(), "launch markTriangleVoxelsKernel");
 }
 
 constexpr double VoxelOccupancyBorderFraction = 0.1;

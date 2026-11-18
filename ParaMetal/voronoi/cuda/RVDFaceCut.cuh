@@ -6,12 +6,6 @@
 
 namespace voronoi {
 
-bool canonicalizeFaceCutVertices(
-    std::vector<ModelRestriction> &models,
-    cudaStream_t stream);
-
-bool validateFaceCutCanonicalization(
-    const std::vector<ModelRestriction> &models,
-    cudaStream_t stream);
+bool canonicalizeFaceCutVertices(std::vector<ModelRestriction> &models, cudaStream_t stream);
 
 } // namespace voronoi

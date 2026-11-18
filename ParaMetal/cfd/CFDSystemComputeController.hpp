@@ -27,8 +27,6 @@ public:
         uint64_t geometryHash = 0;
     };
 
-    static bool canUpdateInPlace(const Config& previous, const Config& next);
-
     CFDSystemComputeController(
         VulkanDevice& device,
         MemoryAllocator& allocator,

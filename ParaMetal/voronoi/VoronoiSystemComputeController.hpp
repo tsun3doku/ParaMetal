@@ -22,7 +22,6 @@ struct VoronoiProduct;
 class VoronoiSystemComputeController {
 public:
     struct Config {
-        float cellSize = 0.005f;
         int voxelResolution = 128;
         int lloydIterations = int(voronoi::DefaultLloydIterations);
         float lloydVolumeThreshold = voronoi::DefaultLloydVolumeThresholdFraction;
@@ -37,7 +36,6 @@ public:
         std::vector<std::vector<uint32_t>> globalRemeshTriangleIndices;
         std::vector<std::vector<glm::vec3>> globalRemeshSurfacePositions;
         std::vector<std::vector<uint32_t>> globalRemeshSurfaceTriangleIndices;
-        std::vector<std::array<float, 16>> globalRemeshWorldToModel;
 
         uint64_t computeHash = 0;
     };

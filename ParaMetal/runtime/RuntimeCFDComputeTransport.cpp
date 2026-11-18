@@ -14,7 +14,12 @@ ComputeApplyResult RuntimeCFDComputeTransport::apply(
     }
 
     const uint64_t computeHash = package.hashes.simulation;
-    if (controller->getCurrentComputeHash(socketKey) == computeHash) {
+    const VoronoiProduct* domainProduct = products->resolve<VoronoiProduct>(
+        package.domainVoronoiProduct);
+    const auto* currentConfig = controller->getConfig(socketKey);
+    if (currentConfig && domainProduct &&
+        controller->getCurrentComputeHash(socketKey) == computeHash &&
+        currentConfig->geometryHash == domainProduct->hashes.geometry) {
         return ComputeApplyResult::Unchanged;
     }
 
@@ -88,13 +93,6 @@ bool RuntimeCFDComputeTransport::tryBuildConfig(
         outConfig.domainBoundaryVelocities[i] = package.domainBoundaryVelocities[i];
     }
 
-    const auto* existingConfig = controller ? controller->getConfig(socketKey) : nullptr;
-    if (existingConfig &&
-        cfd::CFDSystemComputeController::canUpdateInPlace(*existingConfig, outConfig)) {
-        outConfig.domain = nullptr;
-        return true;
-    }
-
     topology::GlobalDomain& globalDomain = outDomain;
     globalDomain.fragments.reserve(domainProduct->globalFragmentCount);
     for (uint32_t fragmentId = 0; fragmentId < domainProduct->globalFragmentCount; ++fragmentId) {
@@ -122,14 +120,7 @@ bool RuntimeCFDComputeTransport::tryBuildConfig(
         globalDomain.faces.push_back(face);
     }
 
-    globalDomain.boundaryFaces.reserve(domainProduct->globalBoundaryFaceCount);
-    for (uint32_t bfId = 0; bfId < domainProduct->globalBoundaryFaceCount; ++bfId) {
-        topology::BoundaryFace boundaryFace{};
-        boundaryFace.faceIndex = domainProduct->boundaryFaceIndices[bfId];
-        boundaryFace.fragment = domainProduct->boundaryFaceFragments[bfId];
-        boundaryFace.domainFace = domainProduct->boundaryFaceDomainFaces[bfId];
-        globalDomain.boundaryFaces.push_back(boundaryFace);
-    }
+    globalDomain.boundaryFaceIndices = domainProduct->boundaryFaceIndices;
 
     globalDomain.instanceFragmentCounts = domainProduct->instanceFragmentCounts;
     globalDomain.seedPositions.reserve(domainProduct->globalSeedPositions.size());
@@ -138,6 +129,9 @@ bool RuntimeCFDComputeTransport::tryBuildConfig(
     }
     globalDomain.cellFragmentOffsets = domainProduct->cellFragmentOffsets;
     globalDomain.cellFragments = domainProduct->cellFragments;
+    globalDomain.faceLoopOffsets = domainProduct->faceLoopOffsets;
+    globalDomain.loopVertexOffsets = domainProduct->loopVertexOffsets;
+    globalDomain.loopVertices = domainProduct->loopVertices;
     globalDomain.domainMin = domainProduct->globalDomainCorners[0];
     globalDomain.domainMax = domainProduct->globalDomainCorners[0];
     for (const glm::vec3& corner : domainProduct->globalDomainCorners) {
@@ -147,7 +141,6 @@ bool RuntimeCFDComputeTransport::tryBuildConfig(
     globalDomain.volumeGridMin = domainProduct->globalVolumeGridMin;
     globalDomain.volumeGridDim = domainProduct->globalVolumeGridDim;
     globalDomain.volumeGridCellSize = domainProduct->globalVolumeGridCellSize;
-    globalDomain.nominalCellSize = domainProduct->nominalCellSize;
     globalDomain.seedIdGridBuffer = domainProduct->globalSeedIdGridBuffer;
     globalDomain.seedIdGridBufferOffset = domainProduct->globalSeedIdGridBufferOffset;
 

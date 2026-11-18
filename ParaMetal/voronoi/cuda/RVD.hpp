@@ -18,8 +18,8 @@ namespace voronoi {
 
 class KNNNeighbors;
 
-constexpr uint32_t RVDRetryPlaneCount = 256;
-constexpr uint32_t RVDRetryVertexCount = 256;
+constexpr uint32_t RVDRetryPlaneCount = 128;
+constexpr uint32_t RVDRetryVertexCount = 128;
 constexpr uint32_t RVDRetryTriangleCount = 768;
 
 // overflow tier re-run at full capacity
@@ -28,7 +28,6 @@ constexpr uint32_t RVDOverflowVertexCount = 512;
 
 struct RVDConfig {
   uint32_t baseChunkSize = 8192;
-  uint32_t restrictedChunkSize = 1024;
 
   uint32_t lloydIterations = DefaultLloydIterations;
   float lloydDamping = DefaultLloydDamping;
@@ -40,8 +39,6 @@ struct ModelGeometry {
   uint32_t runtimeModelId = 0;
   const std::vector<glm::vec3> *positions = nullptr;
   const std::vector<uint32_t> *indices = nullptr;
-  // optional inverse model transform to recover local vertices
-  const std::array<float, 16> *worldToModel = nullptr;
   uint32_t voxelResolution = 128;
 };
 
@@ -50,7 +47,6 @@ struct RVDInput {
   KNNNeighbors *seedSpatialIndex = nullptr;
   const std::array<glm::vec3, 8> *domainCorners = nullptr;
   const std::vector<ModelGeometry> *geometries = nullptr;
-  float nominalCellSize = 0.0f;
 
   uint8_t *outDevSolidMask = nullptr;
   glm::vec3 solidMaskGridMin{};
@@ -74,6 +70,9 @@ using ContactCoupling = topology::ContactCoupling;
 struct RVDResult {
   std::vector<Fragment> fragments;
   std::vector<FragmentFace> fragmentFaces;
+  std::vector<uint32_t> faceLoopOffsets;
+  std::vector<uint32_t> loopVertexOffsets;
+  std::vector<glm::dvec3> loopVertices;
   std::vector<ContactCoupling> contactCouplings;
 
   std::vector<glm::vec4> seedPositions;

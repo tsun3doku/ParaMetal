@@ -297,10 +297,6 @@ bool VEMDiffusion::validateElementGeometry(
         faceIncidences, cell, conductivity, fluxOperator);
 }
 
-bool VEMDiffusion::rowTermLess(const RowTerm& a, const RowTerm& b) {
-    return a.column < b.column;
-}
-
 int VEMDiffusion::buildRowEntries(
     uint32_t trace,
     uint32_t totalTraceCount,
@@ -357,7 +353,7 @@ int VEMDiffusion::buildRowEntries(
         entries[numEntries++] = { trace, robinTerms[trace].coefficient };
     }
 
-    std::sort(entries, entries + numEntries, rowTermLess);
+    std::sort(entries, entries + numEntries);
     outEntries = entries;
     return numEntries;
 }

@@ -99,7 +99,6 @@ inline constexpr uint32_t inflowTemperatureParam(uint32_t face)  { return 108 + 
 }
 
 namespace voronoi {
-constexpr uint32_t CellSize = 1;
 constexpr uint32_t VoxelResolution = 2;
 constexpr uint32_t ShowVoronoi = 3;
 constexpr uint32_t ShowPoints = 4;
@@ -172,6 +171,10 @@ constexpr uint32_t Duration = 9;
 constexpr uint32_t ShowDomainBox = 24;
 constexpr uint32_t ShowStreamlines = 28;
 constexpr uint32_t ShowVelocityPalette = 29;
+constexpr uint32_t ShowSlice = 30;
+constexpr uint32_t SliceAxis = 31;
+constexpr uint32_t SlicePosition = 32;
+constexpr uint32_t ShowSliceWireframe = 35;
 }
 
 namespace write {

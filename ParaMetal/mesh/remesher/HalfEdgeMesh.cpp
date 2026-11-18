@@ -487,17 +487,13 @@ HalfEdgeMesh::VertexRing2D HalfEdgeMesh::buildVertexRing2D(uint32_t vertexIdx) c
 	ring.neighborPositions2D.push_back(glm::dvec2(firstLen, 0.0));
 
 	// Unfold remaining neighbors using corner angles
+	double cumulativeAngle = 0.0;
 	for (size_t i = 1; i < ring.neighborVertexIndices.size(); ++i) {
+		cumulativeAngle += halfEdges[outgoingHEs[i - 1]].cornerAngle;
+
 		uint32_t edgeIdx = ring.edgeIndices[i];
 		double edgeLen = edges[edgeIdx].intrinsicLength;
-		
-		// Get cumulative angle from first edge
-		double cumulativeAngle = 0.0;
-		for (size_t j = 0; j < i; ++j) {
-			uint32_t heOut = outgoingHEs[j];
-			cumulativeAngle += halfEdges[heOut].cornerAngle;
-		}
-		
+
 		// Position = rotate by cumulative angle
 		glm::dvec2 pos;
 		pos.x = edgeLen * std::cos(cumulativeAngle);
@@ -627,7 +623,7 @@ bool HalfEdgeMesh::isManifold() const {
 	return true;
 }
 
-bool HalfEdgeMesh::isFlippableEdge(uint32_t edgeIdx) const {
+bool HalfEdgeMesh::isFlippableEdge(uint32_t edgeIdx, std::array<glm::dvec2,4>* outPositions) const {
 	if (edgeIdx >= edges.size()) {
 		return false;
 	}
@@ -644,12 +640,18 @@ bool HalfEdgeMesh::isFlippableEdge(uint32_t edgeIdx) const {
 	// Get the HEs of both triangles 
 	uint32_t ha1 = diagonalHE;
 	uint32_t ha2 = halfEdges[ha1].next;
+	if (ha2 >= halfEdges.size()) {
+		return false;
+	}
 	uint32_t ha3 = halfEdges[ha2].next;
 	if (ha3 >= halfEdges.size() || halfEdges[ha3].next != ha1) {
 		return false;
 	}
 	uint32_t hb1 = diagonal2HE;
 	uint32_t hb2 = halfEdges[hb1].next;
+	if (hb2 >= halfEdges.size()) {
+		return false;
+	}
 	uint32_t hb3 = halfEdges[hb2].next;
 	if (hb3 >= halfEdges.size() || halfEdges[hb3].next != hb1) {
 		return false;
@@ -672,6 +674,32 @@ bool HalfEdgeMesh::isFlippableEdge(uint32_t edgeIdx) const {
 	// Prevent trivials
 	if (va == vb || va == vc || va == vd || vb == vc || vb == vd || vc == vd) {
 		return false;
+	}
+
+	// Prevent creating a duplicate diagonal between vc and vd
+	uint32_t fanHE = (vc < vertices.size()) ? vertices[vc].halfEdgeIdx : INVALID_INDEX;
+	if (fanHE != INVALID_INDEX && fanHE < halfEdges.size() && halfEdges[fanHE].origin == vc) {
+		const uint32_t startHE = fanHE;
+		const size_t maxSteps = std::max<size_t>(halfEdges.size(), 1);
+		size_t steps = 0;
+		do {
+			if (fanHE >= halfEdges.size()) {
+				break;
+			}
+			uint32_t heNext = halfEdges[fanHE].next;
+			if (heNext < halfEdges.size() && halfEdges[heNext].origin == vd) {
+				return false;
+			}
+
+			uint32_t nextHE = getNextAroundVertex(fanHE);
+			if (nextHE == INVALID_INDEX) {
+				break;
+			}
+			fanHE = nextHE;
+			if (++steps > maxSteps) {
+				break;
+			}
+		} while (fanHE != startHE);
 	}
 
 	uint32_t fa = halfEdges[ha1].face;
@@ -690,69 +718,62 @@ bool HalfEdgeMesh::isFlippableEdge(uint32_t edgeIdx) const {
 		return false;
 	}
 
+	double areaEPS = 1e-9 * newLength * newLength;
+	double areaFA = (positions[3].x - positions[2].x) * (positions[1].y - positions[2].y)
+		- (positions[3].y - positions[2].y) * (positions[1].x - positions[2].x);
+	double areaFB = (positions[2].x - positions[3].x) * (positions[0].y - positions[3].y)
+		- (positions[2].y - positions[3].y) * (positions[0].x - positions[3].x);
+	if (!(areaFA > areaEPS) || !(areaFB > areaEPS)) {
+		return false;
+	}
+
+	if (outPositions) {
+		*outPositions = positions;
+	}
+
 	return true;
 }
 
-bool HalfEdgeMesh::flipEdge(uint32_t edgeIdx) {
+bool HalfEdgeMesh::isFixedEdge(uint32_t edgeIdx) const {
 	if (edgeIdx >= edges.size()) {
 		return false;
 	}
-	
-	uint32_t diagonalHE = edges[edgeIdx].halfEdgeIdx;
-	if (diagonalHE >= halfEdges.size()) {
-		return false;
-	}
-	uint32_t diagonal2HE = halfEdges[diagonalHE].opposite;
-	if (diagonal2HE == INVALID_INDEX) {
+
+	uint32_t he = edges[edgeIdx].halfEdgeIdx;
+	if (he == INVALID_INDEX || he >= halfEdges.size()) {
 		return false;
 	}
 
-	// Get the HEs of both triangles 
+	return halfEdges[he].opposite == INVALID_INDEX;
+}
+
+bool HalfEdgeMesh::flipEdge(uint32_t edgeIdx, const std::array<glm::dvec2,4>* precheckedPositions) {
+	std::array<glm::dvec2,4> positionsStorage;
+	if (!precheckedPositions) {
+		if (!isFlippableEdge(edgeIdx, &positionsStorage)) {
+			return false;
+		}
+		precheckedPositions = &positionsStorage;
+	}
+
+	uint32_t diagonalHE = edges[edgeIdx].halfEdgeIdx;
 	uint32_t ha1 = diagonalHE;
 	uint32_t ha2 = halfEdges[ha1].next;
 	uint32_t ha3 = halfEdges[ha2].next;
-	if (ha3 >= halfEdges.size() || halfEdges[ha3].next != ha1) {
-		return false;
-	}
-	uint32_t hb1 = diagonal2HE;
+	uint32_t hb1 = halfEdges[diagonalHE].opposite;
 	uint32_t hb2 = halfEdges[hb1].next;
 	uint32_t hb3 = halfEdges[hb2].next;
-	if (hb3 >= halfEdges.size() || halfEdges[hb3].next != hb1) {
-		return false;
-	}
 
-	// Manifold checks 
-	if (halfEdges[hb1].opposite != ha1) {
-		return false;
-	}
-	if (ha2 == hb1 || hb2 == ha1) {
-		return false;
-	}
-
-	// Vertices and faces
 	uint32_t va = halfEdges[ha1].origin;
 	uint32_t vb = halfEdges[hb1].origin;
 	uint32_t vc = halfEdges[ha3].origin;
 	uint32_t vd = halfEdges[hb3].origin;
 
-	// Prevent trivials
-	if (va == vb || va == vc || va == vd || vb == vc || vb == vd || vc == vd) {
-		return false;
-	}
-
 	uint32_t fa = halfEdges[ha1].face;
 	uint32_t fb = halfEdges[hb1].face;
-	if (fa == INVALID_INDEX || fb == INVALID_INDEX || fa >= faces.size() || fb >= faces.size()) {
-		return false;
-	}
 
-	// Layout the diamond using current intrinsic lengths 
-	auto positions = layoutDiamond(diagonalHE);
-	// Compute new edge length 
+	const auto& positions = *precheckedPositions;
 	double newLength = glm::distance(positions[2], positions[3]);
-	if (!std::isfinite(newLength) || newLength < 1e-10) {
-		return false;
-	}
 
 	// Lengths of the boundary edges of the diamond
 	double lenAC = getIntrinsicLengthFromHalfEdge(ha3);
@@ -959,14 +980,14 @@ uint32_t HalfEdgeMesh::addIntrinsicVertex() {
 	return static_cast<uint32_t>(vertices.size() - 1);
 }
 
-uint32_t HalfEdgeMesh::splitTriangleIntrinsic(uint32_t faceIdx, double r0, double r1, double r2) {
+HalfEdgeMesh::TriangleSplit HalfEdgeMesh::splitTriangleIntrinsic(uint32_t faceIdx, double r0, double r1, double r2) {
 	if (!(std::isfinite(r0) && std::isfinite(r1) && std::isfinite(r2)) ||
 		r0 <= 1e-12 || r1 <= 1e-12 || r2 <= 1e-12) {
-		return INVALID_INDEX;
+		return {};
 	}
 
 	if (faceIdx >= faces.size() || faces[faceIdx].halfEdgeIdx == INVALID_INDEX)
-		return INVALID_INDEX;
+		return {};
 
 	// Get the three HEs of the triangle
 	uint32_t he0 = faces[faceIdx].halfEdgeIdx;
@@ -974,7 +995,7 @@ uint32_t HalfEdgeMesh::splitTriangleIntrinsic(uint32_t faceIdx, double r0, doubl
 	uint32_t he2 = halfEdges[he1].next;
 
 	if (halfEdges[he2].next != he0)
-		return INVALID_INDEX;
+		return {};
 
 	// Get the three vertices
 	uint32_t v0 = halfEdges[he0].origin;
@@ -984,7 +1005,7 @@ uint32_t HalfEdgeMesh::splitTriangleIntrinsic(uint32_t faceIdx, double r0, doubl
 	// Add the new intrinsic vertex
 	uint32_t newV = addIntrinsicVertex();
 	if (newV == INVALID_INDEX)
-		return INVALID_INDEX;
+		return {};
 
 	// Allocate 6 new HEs
 	uint32_t baseIdx = static_cast<uint32_t>(halfEdges.size());
@@ -1085,7 +1106,16 @@ uint32_t HalfEdgeMesh::splitTriangleIntrinsic(uint32_t faceIdx, double r0, doubl
 	faces[f2].halfEdgeIdx = he1;
 	faces[f3].halfEdgeIdx = he2;
 	vertices[newV].halfEdgeIdx = newHe01;  // outgoing HE from newV
-	return newV;
+
+	TriangleSplit result;
+	result.newV = newV;
+	result.heV0ToNewV = newHe02;
+	result.heV1ToNewV = newHe10;
+	result.heV2ToNewV = newHe21;
+	result.heNewVToV0 = newHe01;
+	result.heNewVToV1 = newHe12;
+	result.heNewVToV2 = newHe20;
+	return result;
 }
 
 uint32_t HalfEdgeMesh::insertVertexAlongEdge(uint32_t edgeIdx) {
@@ -1097,12 +1127,36 @@ uint32_t HalfEdgeMesh::insertVertexAlongEdge(uint32_t edgeIdx) {
 	uint32_t heA = edges[edgeIdx].halfEdgeIdx;
 	uint32_t heB = halfEdges[heA].opposite;
 
-	if (heB == INVALID_INDEX) {
-		return INVALID_INDEX;
-	}
-
 	// Faces on each side
 	uint32_t fA = halfEdges[heA].face;
+
+	if (heB == INVALID_INDEX) {
+		if (fA == INVALID_INDEX || halfEdges[heA].prev == INVALID_INDEX) {
+			return INVALID_INDEX;
+		}
+
+		uint32_t newV = vertices.size();
+		vertices.emplace_back();
+
+		uint32_t heAnew = halfEdges.size();
+		halfEdges.emplace_back();
+		halfEdges[heAnew].face = fA;
+
+		uint32_t hePrevA = halfEdges[heA].prev;
+		halfEdges[hePrevA].next = heAnew;
+		halfEdges[heAnew].prev = hePrevA;
+		halfEdges[heAnew].next = heA;
+		halfEdges[heA].prev = heAnew;
+
+		halfEdges[heAnew].origin = halfEdges[heA].origin;
+		halfEdges[heA].origin = newV;
+
+		vertices[newV].halfEdgeIdx = heA;
+		vertices[halfEdges[heAnew].origin].halfEdgeIdx = heAnew;
+
+		return heAnew;
+	}
+
 	uint32_t fB = halfEdges[heB].face;
 
 	// Original vertices
@@ -1326,6 +1380,126 @@ HalfEdgeMesh::Split HalfEdgeMesh::splitEdgeTopo(uint32_t edgeIdx, double t) {
 	}
 
 	return { newV, child1, child2, diagFront, diagBack };
+}
+
+uint32_t HalfEdgeMesh::removeVertex(uint32_t vertexIdx) {
+	if (vertexIdx >= vertices.size() || vertices[vertexIdx].halfEdgeIdx == INVALID_INDEX) {
+		return INVALID_INDEX;
+	}
+
+	uint32_t out0 = vertices[vertexIdx].halfEdgeIdx;
+	if (out0 >= halfEdges.size() || halfEdges[out0].origin != vertexIdx) {
+		return INVALID_INDEX;
+	}
+	uint32_t out1 = getNextAroundVertex(out0);
+	if (out1 == INVALID_INDEX) {
+		return INVALID_INDEX;
+	}
+	uint32_t out2 = getNextAroundVertex(out1);
+	if (out2 == INVALID_INDEX) {
+		return INVALID_INDEX;
+	}
+	if (getNextAroundVertex(out2) != out0) {
+		return INVALID_INDEX;
+	}
+
+	uint32_t outHEs[3] = { out0, out1, out2 };
+	uint32_t twinHEs[3] = {
+		halfEdges[out0].opposite,
+		halfEdges[out1].opposite,
+		halfEdges[out2].opposite
+	};
+	uint32_t ringHEs[3] = {
+		halfEdges[out0].next,
+		halfEdges[out1].next,
+		halfEdges[out2].next
+	};
+
+	for (int i = 0; i < 3; ++i) {
+		if (outHEs[i] >= halfEdges.size() || twinHEs[i] == INVALID_INDEX ||
+			twinHEs[i] >= halfEdges.size() || ringHEs[i] == INVALID_INDEX ||
+			ringHEs[i] >= halfEdges.size()) {
+			return INVALID_INDEX;
+		}
+	}
+
+	uint32_t ringVerts[3] = {
+		halfEdges[twinHEs[0]].origin,
+		halfEdges[twinHEs[1]].origin,
+		halfEdges[twinHEs[2]].origin
+	};
+	if (ringVerts[0] == ringVerts[1] || ringVerts[1] == ringVerts[2] || ringVerts[2] == ringVerts[0]) {
+		return INVALID_INDEX;
+	}
+
+	if (halfEdges[ringHEs[0]].origin != ringVerts[0] ||
+		halfEdges[ringHEs[1]].origin != ringVerts[1] ||
+		halfEdges[ringHEs[2]].origin != ringVerts[2]) {
+		return INVALID_INDEX;
+	}
+
+	if (halfEdges[ringHEs[0]].next != twinHEs[1] ||
+		halfEdges[ringHEs[1]].next != twinHEs[2] ||
+		halfEdges[ringHEs[2]].next != twinHEs[0]) {
+		return INVALID_INDEX;
+	}
+
+	uint32_t keepFace = halfEdges[out0].face;
+	uint32_t dropFace0 = halfEdges[out1].face;
+	uint32_t dropFace1 = halfEdges[out2].face;
+	if (keepFace == INVALID_INDEX || dropFace0 == INVALID_INDEX || dropFace1 == INVALID_INDEX) {
+		return INVALID_INDEX;
+	}
+	if (keepFace == dropFace0 || keepFace == dropFace1 || dropFace0 == dropFace1) {
+		return INVALID_INDEX;
+	}
+
+	halfEdges[ringHEs[0]].next = ringHEs[1];
+	halfEdges[ringHEs[1]].prev = ringHEs[0];
+	halfEdges[ringHEs[1]].next = ringHEs[2];
+	halfEdges[ringHEs[2]].prev = ringHEs[1];
+	halfEdges[ringHEs[2]].next = ringHEs[0];
+	halfEdges[ringHEs[0]].prev = ringHEs[2];
+
+	for (int i = 0; i < 3; ++i) {
+		halfEdges[ringHEs[i]].face = keepFace;
+	}
+
+	faces[keepFace].halfEdgeIdx = ringHEs[0];
+	faces[dropFace0].halfEdgeIdx = INVALID_INDEX;
+	faces[dropFace1].halfEdgeIdx = INVALID_INDEX;
+
+	for (int i = 0; i < 3; ++i) {
+		if (vertices[ringVerts[i]].halfEdgeIdx == twinHEs[i]) {
+			vertices[ringVerts[i]].halfEdgeIdx = ringHEs[i];
+		}
+	}
+
+	for (int i = 0; i < 3; ++i) {
+		uint32_t edgeIdx = halfEdges[outHEs[i]].edgeIdx;
+		if (edgeIdx < edges.size()) {
+			edges[edgeIdx].halfEdgeIdx = INVALID_INDEX;
+			edges[edgeIdx].intrinsicLength = 0.0;
+		}
+	}
+
+	for (int i = 0; i < 3; ++i) {
+		for (uint32_t h : { outHEs[i], twinHEs[i] }) {
+			halfEdges[h].origin = INVALID_INDEX;
+			halfEdges[h].next = INVALID_INDEX;
+			halfEdges[h].prev = INVALID_INDEX;
+			halfEdges[h].opposite = INVALID_INDEX;
+			halfEdges[h].face = INVALID_INDEX;
+			halfEdges[h].edgeIdx = INVALID_INDEX;
+			halfEdges[h].cornerAngle = 0.0;
+			halfEdges[h].signpostAngle = 0.0;
+		}
+	}
+
+	vertices[vertexIdx].halfEdgeIdx = INVALID_INDEX;
+	vertices[vertexIdx].originalIndex = INVALID_INDEX;
+
+	return keepFace;
 }
 
 double HalfEdgeMesh::lawOfCosinesAngle(double a, double b, double opposite) const {

@@ -42,16 +42,6 @@ public:
         float pressureTolerance = 0.0f,
         float simulationDuration = 10.0f);
 
-    void updateParameters(
-        float kinematicViscosity,
-        const glm::vec3& initialVelocity,
-        const uint32_t* domainBoundaryTypes,
-        const glm::vec3* domainBoundaryVelocities,
-        float fixedTimeStep,
-        float targetCourant);
-
-    void setPressureSolverParameters(int maxIterations, float tolerance);
-
     void update(const SimTickContext& context) override;
     bool isSubmissionReady() const override;
     bool hasPendingSubmission() const override { return pendingSubmission || displayDirty; }
@@ -70,16 +60,20 @@ public:
 
     const CFDRuntime& getRuntime() const { return runtime; }
     CFDRuntime& getRuntime() { return runtime; }
+    const std::vector<uint32_t>& getGlobalFragmentToFluidNode() const { return globalFragmentToFluidNode; }
 
-    // Line geometry integrated from the displayed velocity frame. The buffer is
-    // drawn as-is by the overlay streamline renderer.
     VkBuffer streamlineVertexBuffer() const;
     VkDeviceSize streamlineVertexBufferOffset() const;
     uint32_t streamlineVertexCount() const;
 
-    bool readStreamlinePolylines(
-        std::vector<mesh::Polyline>& polylines,
-        std::string& outError);
+    VkBuffer getDisplayVelocityBuffer() const { return displayVelocityBufferHandle; }
+    VkDeviceSize getDisplayVelocityBufferOffset() const { return displayVelocityOffset; }
+    VkBuffer getDisplayGradientBuffer() const { return displayGradientBufferHandle; }
+    VkDeviceSize getDisplayGradientBufferOffset() const { return displayGradientOffset; }
+    VkBuffer getFluidCentroidBuffer() const { return fluidCentroidBuffer; }
+    VkDeviceSize getFluidCentroidBufferOffset() const { return fluidCentroidBufferOffset; }
+
+    bool readStreamlinePolylines(std::vector<mesh::Polyline>& polylines, std::string& outError);
 
     VkSemaphore publicationReadySemaphore() const override { return cfdReadyVkSemaphore; }
     uint64_t publicationReadyValue() const override { return pendingCfdReadyValue; }
@@ -104,6 +98,10 @@ private:
     uint32_t computeTimelineFrameCount() const;
     uint32_t computeHistoryFrameCapacity() const { return computeTimelineFrameCount() + 1u; }
     void updateDisplayFrameState(const SimTickContext& context);
+    bool uploadFluidField(
+        const topology::GlobalDomain& domain,
+        const std::vector<uint32_t>& globalFragmentToFluidNode,
+        const std::vector<glm::vec4>& centroids);
 
     VulkanDevice& vulkanDevice;
     MemoryAllocator& memoryAllocator;
@@ -119,6 +117,13 @@ private:
     VkDeviceSize seedIdGridBufferOffset = 0;
     VkBuffer displayVelocityBufferHandle = VK_NULL_HANDLE;
     VkDeviceSize displayVelocityOffset = 0;
+    VkBuffer displayGradientBufferHandle = VK_NULL_HANDLE;
+    VkDeviceSize displayGradientOffset = 0;
+    VkBuffer seedToFluidNodeBuffer = VK_NULL_HANDLE;
+    VkDeviceSize seedToFluidNodeBufferOffset = 0;
+    uint32_t seedToFluidNodeCount = 0;
+    VkBuffer fluidCentroidBuffer = VK_NULL_HANDLE;
+    VkDeviceSize fluidCentroidBufferOffset = 0;
     float streamlineStepLength = 0.0f;
 
     float kinematicViscosity = 1.516e-5f;

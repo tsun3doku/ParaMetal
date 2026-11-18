@@ -24,10 +24,10 @@ enum FacePartitionError : uint32_t {
   UnresolvedRegion = 8,
   TooManySegments = 9,
   EmptyFacePartition = 10,
-  MaterialInconsistency = 11
+  MaterialInconsistency = 11,
+  UnresolvedIntersection = 12
 };
 
-// partitions reciprocal Voronoi base faces into material regions
 bool buildFacePartitionsGPU(
     const BaseCellDomain &baseDomain,
     BaseFaceTopology &faceTopology,

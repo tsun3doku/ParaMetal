@@ -42,15 +42,13 @@ bool VoronoiSystemBuildStage::buildGlobalDomain(VoronoiRuntime& runtime) {
     const auto& runtimeModelIds = runtime.getGlobalRemeshRuntimeModelIds();
     const auto& positions = runtime.getGlobalRemeshPositions();
     const auto& triangleIndices = runtime.getGlobalRemeshTriangleIndices();
-    const auto& worldToModel = runtime.getGlobalRemeshWorldToModel();
     const std::vector<glm::vec4>& seeds = runtime.getSeedPositions();
     const std::array<glm::vec3, 8>& corners = runtime.getPointDomainCorners();
     if (!rvd ||
         runtimeModelIds.empty() ||
         seeds.size() < 4u ||
         positions.size() != runtimeModelIds.size() ||
-        triangleIndices.size() != runtimeModelIds.size() ||
-        worldToModel.size() != runtimeModelIds.size()) {
+        triangleIndices.size() != runtimeModelIds.size()) {
         if (runtimeModelIds.empty()) {
             std::cerr << "[VoronoiBuild] Global domain requires at least one remesh instance"
                       << std::endl;
@@ -95,7 +93,6 @@ bool VoronoiSystemBuildStage::buildGlobalDomain(VoronoiRuntime& runtime) {
             runtimeModelIds[i],
             &positions[i],
             &triangleIndices[i],
-            &worldToModel[i],
             static_cast<uint32_t>(runtime.getVoxelResolution())});
     }
 
@@ -119,7 +116,6 @@ bool VoronoiSystemBuildStage::buildGlobalDomain(VoronoiRuntime& runtime) {
     }
 
     voronoi::RVDConfig config{};
-    config.restrictedChunkSize = 8192;
     config.contactRange = runtime.getContactRange();
     config.lloydIterations = static_cast<uint32_t>(
         std::max(0, runtime.getLloydIterations()));
@@ -131,7 +127,6 @@ bool VoronoiSystemBuildStage::buildGlobalDomain(VoronoiRuntime& runtime) {
     input.seedSpatialIndex = knn.get();
     input.domainCorners = &corners;
     input.geometries = &geometries;
-    input.nominalCellSize = runtime.getCellSize();
     input.outDevSolidMask = devSolidMask.get();
     input.solidMaskGridMin = gridMin;
     input.solidMaskGridDim = gridDim;
@@ -193,8 +188,6 @@ bool VoronoiSystemBuildStage::buildGlobalDomain(VoronoiRuntime& runtime) {
         }
     }
 
-    globalNominalCellSize = input.nominalCellSize;
-
     const size_t totalFaces = result.fragmentFaces.size();
     globalFaceFragmentA.resize(totalFaces);
     globalFaceFragmentB.resize(totalFaces);
@@ -208,8 +201,6 @@ bool VoronoiSystemBuildStage::buildGlobalDomain(VoronoiRuntime& runtime) {
     globalFaceDomainFaces.resize(totalFaces);
 
     globalBoundaryFaceIndices.clear();
-    globalBoundaryFaceFragments.clear();
-    globalBoundaryFaceDomainFaces.clear();
 
     for (size_t i = 0; i < totalFaces; ++i) {
         const auto& f = result.fragmentFaces[i];
@@ -226,10 +217,12 @@ bool VoronoiSystemBuildStage::buildGlobalDomain(VoronoiRuntime& runtime) {
 
         if (f.type == voronoi::FaceType::DomainBoundary) {
             globalBoundaryFaceIndices.push_back(static_cast<uint32_t>(i));
-            globalBoundaryFaceFragments.push_back(f.fragmentA);
-            globalBoundaryFaceDomainFaces.push_back(f.domainFace);
         }
     }
+
+    globalFaceLoopOffsets = result.faceLoopOffsets;
+    globalLoopVertexOffsets = result.loopVertexOffsets;
+    globalLoopVertices = result.loopVertices;
 
     const size_t couplingCount = result.contactCouplings.size();
     globalContactCouplingFaceA.resize(couplingCount);
@@ -264,8 +257,7 @@ bool VoronoiSystemBuildStage::buildGlobalDomain(VoronoiRuntime& runtime) {
     globalVolumeGridCellSize = spacing;
     globalSeedPositions =
         result.seedPositions.empty() ? seeds : result.seedPositions;
-    // RVD builds the physical domain from the AABB of the authored corners;
-    // publish that same box so consumers describe the simulated domain.
+    // RVD builds the physical domain from the AABB of the authored corners
     std::array<glm::vec3, 8> aabbCorners{};
     for (uint32_t corner = 0; corner < 8; ++corner) {
         aabbCorners[corner] = glm::vec3(
@@ -459,7 +451,6 @@ void VoronoiSystemBuildStage::cleanup() {
     globalCellFragments.clear();
     globalFragmentCentroids.clear();
     globalFragmentVolumes.clear();
-    globalNominalCellSize = 0.0f;
     globalFaceFragmentA.clear();
     globalFaceFragmentB.clear();
     globalFaceAreasA.clear();
@@ -470,14 +461,15 @@ void VoronoiSystemBuildStage::cleanup() {
     globalFaceMomentsB.clear();
     globalFaceTypes.clear();
     globalFaceDomainFaces.clear();
+    globalFaceLoopOffsets.clear();
+    globalLoopVertexOffsets.clear();
+    globalLoopVertices.clear();
     globalContactCouplingFaceA.clear();
     globalContactCouplingFragmentA.clear();
     globalContactCouplingFaceB.clear();
     globalContactCouplingFragmentB.clear();
     globalContactCouplingAreas.clear();
     globalBoundaryFaceIndices.clear();
-    globalBoundaryFaceFragments.clear();
-    globalBoundaryFaceDomainFaces.clear();
     globalInstanceFragmentCounts.clear();
     globalVolumeGridMin = {};
     globalVolumeGridDim = {};

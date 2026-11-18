@@ -5,9 +5,10 @@
 #include "../../cuda/Triangle.cuh"
 #include "../../cuda/VoxelGrid.cuh"
 #include "RVD.hpp"
+#include "RVDPredicates.cuh"
 
 #include <cuda_runtime.h>
-#include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -21,6 +22,7 @@ using ::cudaGeometry::DeviceVoxelGrid;
 
 constexpr uint32_t LeafBit = 0x80000000u;
 constexpr uint32_t InvalidNodeId = 0xffffffffu;
+inline constexpr float CanonicalDomainSize = 1000.0f;
 
 struct alignas(16) TriangleBvhNode {
   float3 minimum;
@@ -36,33 +38,58 @@ struct alignas(16) TriangleBvhNode {
 
 struct TriangleBvh {
   cudaUtils::CudaBuffer<TriangleBvhNode> nodes;
-  cudaUtils::CudaBuffer<uint32_t> parents;
   uint32_t root = InvalidNodeId;
 
-  void reset() {
-    nodes.reset();
-    parents.reset();
-    root = InvalidNodeId;
-  }
-
-  bool valid() const {
-    return root != InvalidNodeId && nodes.size() > 0 && parents.size() > 0;
-  }
+  void reset();
+  bool valid() const;
 };
 
-__host__ __device__ inline float pointAabbDistanceSquared(float3 p, float3 bMin, float3 bMax) {
-  const float dx = fmaxf(0.0f, fmaxf(bMin.x - p.x, p.x - bMax.x));
-  const float dy = fmaxf(0.0f, fmaxf(bMin.y - p.y, p.y - bMax.y));
-  const float dz = fmaxf(0.0f, fmaxf(bMin.z - p.z, p.z - bMax.z));
-  return dx * dx + dy * dy + dz * dz;
-}
+struct PointRay {
+  double crossings = 0.0;
+  bool onSurface = false;
+  bool ambiguous = false;
+};
 
-bool buildTriangleBvh(
-    const cudaUtils::CudaBuffer<DeviceTriangle>& triangles,
-    TriangleBvh& bvh,
-    cudaStream_t stream);
+struct SideWinding {
+  double value = 0.0;
+  bool ambiguous = false;
+};
 
-// Winding number computation
+enum PointClass : uint32_t {
+  PointOutside = 0,
+  PointInside = 1,
+  PointOnSurface = 2,
+  PointUnresolved = 3,
+};
+
+struct DeviceModelGeometryView {
+  const DeviceTriangle *triangles = nullptr;
+  uint32_t triangleCount = 0;
+  const uint3 *triangleVertexIds = nullptr;
+  const TriangleBvhNode *nodes = nullptr;
+  uint32_t root = InvalidNodeId;
+  uint32_t runtimeModelId = 0;
+  float3 boundsMin{0.0f};
+  float3 boundsMax{0.0f};
+};
+
+struct DeviceModelGeometry {
+  cudaUtils::CudaBuffer<DeviceTriangle> triangles;
+  cudaUtils::CudaBuffer<uint3> triangleVertexIds;
+  cudaUtils::CudaBuffer<int32_t> voxelTriangleIds;
+  cudaUtils::CudaBuffer<int32_t> voxelOffsets;
+  DeviceVoxelGrid voxelGrid{};
+  uint32_t runtimeModelId = 0;
+  float3 boundsMin{0.0f};
+  float3 boundsMax{0.0f};
+  TriangleBvh bvh;
+
+  void reset();
+  size_t voxelCellCount() const;
+  bool valid() const;
+  DeviceModelGeometryView view() const;
+};
+
 __host__ __device__ inline double triangleSolidAngle(double3 a, double3 b, double3 c) {
   using cudaMath::dot3;
   using cudaMath::cross3;
@@ -76,32 +103,15 @@ __host__ __device__ inline double triangleSolidAngle(double3 a, double3 b, doubl
   const double lb = sqrt(lb2);
   const double lc = sqrt(lc2);
   const double numerator = dot3(a, cross3(b, c));
-  const double denominator =
-      la * lb * lc +
-      dot3(a, b) * lc +
-      dot3(b, c) * la +
-      dot3(c, a) * lb;
+  const double denominator = la * lb * lc + dot3(a, b) * lc + dot3(b, c) * la + dot3(c, a) * lb;
   return 2.0 * atan2(numerator, denominator);
-}
-
-__device__ inline bool windingNodeIsFar(float3 point, const TriangleBvhNode& node) {
-  const float3 extent = make_float3(
-      node.maximum.x - node.minimum.x,
-      node.maximum.y - node.minimum.y,
-      node.maximum.z - node.minimum.z);
-  const float radiusSquared =
-      0.25f * (extent.x * extent.x + extent.y * extent.y + extent.z * extent.z);
-  return pointAabbDistanceSquared(point, node.minimum, node.maximum) > 9.0f * radiusSquared;
 }
 
 __device__ inline double computeWinding(
     const DeviceTriangle* triangles,
     const TriangleBvhNode* nodes,
-    const uint32_t* parents,
     uint32_t root,
-    const float4* moments,
-    double3 corner,
-    float3 cornerF) {
+    double3 corner) {
   using cudaMath::toDouble3;
   using cudaMath::sub3;
   if (root == InvalidNodeId) return 0.0;
@@ -109,143 +119,243 @@ __device__ inline double computeWinding(
 
   uint32_t stack[64];
   int stackTop = 0;
-  stack[stackTop++] = root;
+  uint32_t current = root;
 
-  while (stackTop > 0) {
-    const uint32_t curr = stack[--stackTop];
-    const TriangleBvhNode node = nodes[curr];
-
+  while (true) {
+    const TriangleBvhNode node = nodes[current];
     if (node.isLeaf()) {
       const DeviceTriangle tri = triangles[node.triangleId()];
       winding += triangleSolidAngle(
           sub3(toDouble3(tri.v0), corner),
           sub3(toDouble3(tri.v1), corner),
           sub3(toDouble3(tri.v2), corner));
-    } else if (windingNodeIsFar(cornerF, node)) {
-      const float4 moment = moments[curr];
-      const double cx = 0.5 * (double(node.minimum.x) + double(node.maximum.x));
-      const double cy = 0.5 * (double(node.minimum.y) + double(node.maximum.y));
-      const double cz = 0.5 * (double(node.minimum.z) + double(node.maximum.z));
-      const double dx = cx - corner.x;
-      const double dy = cy - corner.y;
-      const double dz = cz - corner.z;
-      const double r2 = dx * dx + dy * dy + dz * dz;
-      if (r2 > 0.0) {
-        const double inverseR3 = 1.0 / (r2 * sqrt(r2));
-        winding +=
-            (double(moment.x) * dx + double(moment.y) * dy + double(moment.z) * dz) *
-            inverseR3;
-      }
-    } else {
-      if (stackTop < 62) {
-        stack[stackTop++] = node.rightChild();
-        stack[stackTop++] = node.leftChild();
-      }
+      if (stackTop == 0) break;
+      current = stack[--stackTop];
+      continue;
     }
+    if (stackTop == 64) return __longlong_as_double(0x7ff8000000000000ull);
+    stack[stackTop++] = node.rightChild();
+    current = node.leftChild();
   }
   return winding * (1.0 / (4.0 * 3.14159265358979323846));
 }
 
-inline constexpr float CanonicalDomainSize = 1000.0f;
-inline constexpr float RVDVoxelScale = 990.222f;
-inline constexpr float RVDVoxelBias = 4.998f;
-
-inline DeviceVoxelGrid makeRVDVoxelGrid(
-    const glm::vec3& meshMin,
-    const glm::vec3& meshMax,
-    uint32_t voxelResolution) {
-  DeviceVoxelGrid grid{};
-  grid.scale = 0.0f;
-  grid.voxelSize = 0.0f;
-  grid.gridDim = make_int3(0, 0, 0);
-  const glm::vec3 extent = meshMax - meshMin;
-  const float maxExtent = std::max(std::max(extent.x, extent.y), extent.z);
-  if (!(maxExtent > 0.0f) || !std::isfinite(maxExtent) || voxelResolution == 0) {
-    return grid;
+__device__ inline bool rayHitsBounds(
+    const TriangleBvhNode &node,
+    double3 origin,
+    double3 direction) {
+  const double minimum[3] = {double(node.minimum.x), double(node.minimum.y), double(node.minimum.z)};
+  const double maximum[3] = {double(node.maximum.x), double(node.maximum.y), double(node.maximum.z)};
+  const double position[3] = {origin.x, origin.y, origin.z};
+  const double travel[3] = {direction.x, direction.y, direction.z};
+  double tNear = -DBL_MAX;
+  double tFar = DBL_MAX;
+  for (int axis = 0; axis < 3; ++axis) {
+    if (travel[axis] == 0.0) {
+      if (position[axis] < minimum[axis] || position[axis] > maximum[axis]) {
+        return false;
+      }
+      continue;
+    }
+    const double t0 = (minimum[axis] - position[axis]) / travel[axis];
+    const double t1 = (maximum[axis] - position[axis]) / travel[axis];
+    const double enter = t0 < t1 ? t0 : t1;
+    const double exit = t0 < t1 ? t1 : t0;
+    if (enter > tNear) tNear = enter;
+    if (exit < tFar) tFar = exit;
   }
-
-  grid.scale = RVDVoxelScale / maxExtent;
-  grid.voxelSize = CanonicalDomainSize / float(voxelResolution);
-  grid.gridMin = make_float3(
-      meshMin.x - RVDVoxelBias / grid.scale,
-      meshMin.y - RVDVoxelBias / grid.scale,
-      meshMin.z - RVDVoxelBias / grid.scale);
-  grid.gridDim = make_int3(
-      int(voxelResolution), int(voxelResolution), int(voxelResolution));
-  return grid;
+  tNear = nextafter(tNear, -DBL_MAX);
+  tFar = nextafter(tFar, DBL_MAX);
+  return tFar >= tNear && tFar >= 0.0;
 }
 
-struct DeviceModelGeometryView {
-  const DeviceTriangle *triangles = nullptr;
-  const uint3 *triangleVertexIds = nullptr;
-  const TriangleBvhNode *nodes = nullptr;
-  const uint32_t *parents = nullptr;
-  const float4 *moments = nullptr;
-  uint32_t root = InvalidNodeId;
-  uint32_t runtimeModelId = 0;
-  float3 boundsMin{0.0f};
-  float3 boundsMax{0.0f};
-};
+__device__ inline int classifyRayCrossing(int edgeAB, int edgeBC, int edgeCA) {
+  if (edgeAB == 0 || edgeBC == 0 || edgeCA == 0) {
+    if (edgeAB == 0 && edgeBC != 0 && edgeCA != 0 && edgeBC != edgeCA) return 0;
+    if (edgeBC == 0 && edgeAB != 0 && edgeCA != 0 && edgeAB != edgeCA) return 0;
+    if (edgeCA == 0 && edgeAB != 0 && edgeBC != 0 && edgeAB != edgeBC) return 0;
+    return -1;
+  }
+  if (edgeAB == edgeBC && edgeBC == edgeCA) return 1;
+  return 0;
+}
 
-struct DeviceModelGeometry {
-  cudaUtils::CudaBuffer<DeviceTriangle> triangles;
-  cudaUtils::CudaBuffer<uint3> triangleVertexIds;
-  cudaUtils::CudaBuffer<float4> bvhMoments;
-  cudaUtils::CudaBuffer<int32_t> voxelTriangleIds;
-  cudaUtils::CudaBuffer<int32_t> voxelOffsets;
-  DeviceVoxelGrid voxelGrid{};
-  uint32_t runtimeModelId = 0;
-  float3 boundsMin{0.0f};
-  float3 boundsMax{0.0f};
-  TriangleBvh bvh;
-
-  void reset() {
-    triangles.reset();
-    triangleVertexIds.reset();
-    bvhMoments.reset();
-    voxelTriangleIds.reset();
-    voxelOffsets.reset();
-    bvh.reset();
-    voxelGrid = {};
-    runtimeModelId = 0;
-    boundsMin = make_float3(0.0f, 0.0f, 0.0f);
-    boundsMax = make_float3(0.0f, 0.0f, 0.0f);
+__device__ inline PointRay castPointRay(
+    const DeviceTriangle* triangles,
+    const TriangleBvhNode* nodes,
+    uint32_t root,
+    double3 origin,
+    double3 direction,
+    uint32_t excludedTriangle,
+    bool detectSurface) {
+  using cudaMath::toDouble3;
+  using cudaMath::sub3;
+  PointRay result{};
+  if (triangles == nullptr || nodes == nullptr || root == InvalidNodeId) {
+    return result;
   }
 
-  size_t voxelCellCount() const {
-    return size_t(voxelGrid.gridDim.x) * size_t(voxelGrid.gridDim.y) *
-           size_t(voxelGrid.gridDim.z);
+  uint32_t stack[64];
+  int stackTop = 0;
+  uint32_t current = root;
+
+  while (true) {
+    const TriangleBvhNode node = nodes[current];
+    if (!rayHitsBounds(node, origin, direction)) {
+      if (stackTop == 0) break;
+      current = stack[--stackTop];
+      continue;
+    }
+    if (node.isLeaf()) {
+      const uint32_t triangleId = node.triangleId();
+      if (triangleId != excludedTriangle) {
+        const DeviceTriangle tri = triangles[triangleId];
+        const double3 a = toDouble3(tri.v0);
+        const double3 b = toDouble3(tri.v1);
+        const double3 c = toDouble3(tri.v2);
+        const double3 ab = sub3(b, a);
+        const double3 ac = sub3(c, a);
+        const double3 ao = sub3(origin, a);
+        const int denominatorSign =
+            rvdDevice::det3x3ExactSign(ab, direction, ac);
+        const int tSign = rvdDevice::det3x3ExactSign(ac, ao, ab);
+        if (denominatorSign != 0) {
+          const bool ahead =
+              tSign != 0 && ((tSign > 0) == (denominatorSign > 0));
+          const bool inPlane = detectSurface && tSign == 0;
+          if (ahead || inPlane) {
+            const int crossing = classifyRayCrossing(
+                rvdDevice::det3x3ExactSign(ab, ao, direction),
+                rvdDevice::det3x3ExactSign(
+                    sub3(c, b), sub3(origin, b), direction),
+                rvdDevice::det3x3ExactSign(
+                    sub3(a, c), sub3(origin, c), direction));
+            if (inPlane) {
+              if (crossing != 0) {
+                result.onSurface = true;
+                return result;
+              }
+            } else if (crossing < 0) {
+              result.ambiguous = true;
+              return result;
+            } else if (crossing > 0) {
+              result.crossings += denominatorSign < 0 ? 1.0 : -1.0;
+            }
+          }
+        } else if (detectSurface && tSign == 0) {
+          result.ambiguous = true;
+          return result;
+        }
+      }
+      if (stackTop == 0) break;
+      current = stack[--stackTop];
+      continue;
+    }
+    if (stackTop == 64) {
+      result.ambiguous = true;
+      return result;
+    }
+    stack[stackTop++] = node.rightChild();
+    current = node.leftChild();
+  }
+  return result;
+}
+
+__device__ inline uint32_t classifyPoint(
+    const DeviceTriangle* triangles,
+    const TriangleBvhNode* nodes,
+    uint32_t root,
+    double3 point) {
+  if (triangles == nullptr || nodes == nullptr || root == InvalidNodeId) {
+    return PointOutside;
+  }
+  const double3 directions[9] = {
+      make_double3(1.0, 0.0, 0.0), make_double3(0.0, 1.0, 0.0),
+      make_double3(0.0, 0.0, 1.0), make_double3(1.0, 1.0, 0.0),
+      make_double3(1.0, 0.0, 1.0), make_double3(0.0, 1.0, 1.0),
+      make_double3(1.0, 1.0, 1.0), make_double3(1.0, -1.0, 1.0),
+      make_double3(-1.0, 1.0, 1.0)};
+  for (const double3 &direction : directions) {
+    const PointRay ray = castPointRay(
+        triangles, nodes, root, point, direction, InvalidNodeId, true);
+    if (ray.onSurface) return PointOnSurface;
+    if (!ray.ambiguous) {
+      return fabs(ray.crossings) > 0.5 ? PointInside : PointOutside;
+    }
+  }
+  const double winding = computeWinding(triangles, nodes, root, point);
+  if (!isfinite(winding)) return PointUnresolved;
+  return fabs(winding) > 0.5 ? PointInside : PointOutside;
+}
+
+__device__ inline SideWinding computeSideWinding(
+    const DeviceTriangle* triangles,
+    const TriangleBvhNode* nodes,
+    uint32_t root,
+    double3 origin,
+    double3 normal,
+    uint32_t excludedTriangle) {
+  SideWinding result{};
+  if (triangles == nullptr || nodes == nullptr || root == InvalidNodeId) {
+    return result;
   }
 
-  bool valid() const {
-    return triangles.size() != 0 &&
-           triangleVertexIds.size() == triangles.size() &&
-           bvhMoments.size() != 0 &&
-           voxelOffsets.size() == voxelCellCount() + 1 &&
-           voxelGrid.gridDim.x > 0 && voxelGrid.gridDim.y > 0 &&
-           voxelGrid.gridDim.z > 0 &&
-           voxelGrid.scale > 0.0f &&
-           bvh.valid();
+  const double nx = fabs(normal.x);
+  const double ny = fabs(normal.y);
+  const double nz = fabs(normal.z);
+  double3 axis = make_double3(1.0, 0.0, 0.0);
+  if (ny <= nx && ny <= nz) {
+    axis = make_double3(0.0, 1.0, 0.0);
+  } else if (nz <= nx && nz <= ny) {
+    axis = make_double3(0.0, 0.0, 1.0);
   }
+  const double3 tangentA = cudaMath::cross3(normal, axis);
+  const double3 tangentB = cudaMath::cross3(normal, tangentA);
+  constexpr double step = 1.0 / 1048576.0;
+  const double3 candidates[5] = {
+      normal,
+      make_double3(normal.x + tangentA.x * step, normal.y + tangentA.y * step,
+                   normal.z + tangentA.z * step),
+      make_double3(normal.x - tangentA.x * step, normal.y - tangentA.y * step,
+                   normal.z - tangentA.z * step),
+      make_double3(normal.x + tangentB.x * step, normal.y + tangentB.y * step,
+                   normal.z + tangentB.z * step),
+      make_double3(normal.x - tangentB.x * step, normal.y - tangentB.y * step,
+                   normal.z - tangentB.z * step)};
 
-  DeviceModelGeometryView view() const {
-    DeviceModelGeometryView v{};
-    v.triangles = triangles.get();
-    v.triangleVertexIds = triangleVertexIds.get();
-    v.nodes = bvh.nodes.get();
-    v.parents = bvh.parents.get();
-    v.moments = bvhMoments.get();
-    v.root = bvh.root;
-    v.runtimeModelId = runtimeModelId;
-    v.boundsMin = boundsMin;
-    v.boundsMax = boundsMax;
-    return v;
+  for (const double3 &direction : candidates) {
+    if (rvdDevice::dot3FilteredExact(normal, direction).sign <= 0) continue;
+    const PointRay ray = castPointRay(
+        triangles, nodes, root, origin, direction, excludedTriangle, false);
+    if (ray.ambiguous) continue;
+    result.value = ray.crossings;
+    return result;
   }
-};
+  result.ambiguous = true;
+  return result;
+}
 
-bool buildBvhMoments(
-    DeviceModelGeometry& geometry,
-    cudaStream_t stream = nullptr);
+__host__ __device__ inline float3 canonicalFromWorld(const DeviceVoxelGrid &grid, float3 point) {
+  return make_float3(
+      (point.x - grid.gridMin.x) * grid.scale,
+      (point.y - grid.gridMin.y) * grid.scale,
+      (point.z - grid.gridMin.z) * grid.scale);
+}
+
+__host__ __device__ inline double3 canonicalToWorld(
+    double3 point,
+    double3 domainMin,
+    double invBaseScale) {
+  return make_double3(
+      domainMin.x + point.x * invBaseScale,
+      domainMin.y + point.y * invBaseScale,
+      domainMin.z + point.z * invBaseScale);
+}
+
+DeviceVoxelGrid makeRVDVoxelGrid(
+    const glm::vec3& meshMin,
+    const glm::vec3& meshMax,
+    uint32_t voxelResolution);
 
 bool buildWindingSolidMask(
     const DeviceModelGeometryView* views,
@@ -268,22 +378,5 @@ bool uploadGeometries(
     const RVDInput& input,
     std::vector<DeviceModelGeometry>& geometries,
     cudaStream_t stream = nullptr);
-
-__host__ __device__ inline float3 canonicalFromWorld(const DeviceVoxelGrid &grid, float3 point) {
-  return make_float3(
-      (point.x - grid.gridMin.x) * grid.scale,
-      (point.y - grid.gridMin.y) * grid.scale,
-      (point.z - grid.gridMin.z) * grid.scale);
-}
-
-__host__ __device__ inline double3 canonicalToWorld(
-    double3 point,
-    double3 domainMin,
-    double invBaseScale) {
-  return make_double3(
-      domainMin.x + point.x * invBaseScale,
-      domainMin.y + point.y * invBaseScale,
-      domainMin.z + point.z * invBaseScale);
-}
 
 } // namespace voronoi::cudaGeometry

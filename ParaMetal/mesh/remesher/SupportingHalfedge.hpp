@@ -4,6 +4,9 @@
 #include "SignPostMesh.hpp"
 #include "GeodesicTracer.hpp"
 #include <vector>
+#include <functional>
+#include <unordered_map>
+#include <unordered_set>
 #include <glm/glm.hpp>
 #include <vulkan/vulkan.h>
 
@@ -16,6 +19,12 @@ public:
     struct SupportingInfo {
         uint32_t supportingHE = INVALID_INDEX;  // Which intrinsic halfedge supports this input halfedge
         double supportingAngle = 0.0;           // Angular offset 
+    };
+
+    // Staged result of a removal remap. Changes are computed against the old
+    // topology and must only be committed after removeVertex() succeeds.
+    struct RemovalPlan {
+        std::unordered_map<uint32_t, SupportingInfo> changes;
     };
 
     struct IntrinsicVertex {
@@ -104,22 +113,35 @@ public:
         glm::vec3 baryCoords;       // Barycentric coordinates
     };
 
-    SupportingHalfedge(const SignpostMesh& inputMesh, SignpostMesh& intrinsicMesh, const GeodesicTracer& tracer);
+    SupportingHalfedge(const SignpostMesh& inputMesh, SignpostMesh& intrinsicMesh);
     ~SupportingHalfedge();
 
     void initialize();
     void updateRemoval(uint32_t intrinsicHE);
     void updateInsertion(uint32_t intrinsicHE);
+
+    // Compute the support remapping for a halfedge that will be invalidated by
+    // removeVertex(), without mutating any supporting data.
+    void prepareRemoval(uint32_t intrinsicHE, RemovalPlan& plan) const;
+    // Apply a previously prepared removal plan.
+    void commitRemoval(const RemovalPlan& plan);
+    // True if applying this plan would leave a reference to an invalidated
+    // halfedge. Used to reject a removal before topology is touched.
+    bool planReferencesInvalidated(const RemovalPlan& plan,
+                                   const std::unordered_set<uint32_t>& invalidated) const;
+
     bool flipEdge(uint32_t edgeIdx);
     int makeDelaunay(std::vector<uint32_t>* flippedEdges = nullptr);
-    int makeDelaunayLocal(const std::vector<uint32_t>& seedEdges, std::vector<uint32_t>* flippedEdges = nullptr);
+    int makeDelaunayLocal(const std::vector<uint32_t>& seedEdges, std::vector<uint32_t>* flippedEdges = nullptr,
+                          const std::function<void(uint32_t)>& onFlip = {});
 
     // Track where inserted vertices are located on the input mesh
     void trackInsertedVertex(uint32_t vertexIdx, const struct GeodesicTracer::SurfacePoint& surfacePoint);
+    void untrackInsertedVertex(uint32_t vertexIdx);
 
     const SupportingInfo& getSupportingInfo(uint32_t inputHalfedgeIdx) const;
 
-    GPUBuffers buildGPUBuffers() const;
+    GPUBuffers buildGPUBuffers(const IntrinsicMesh& exportedMesh) const;
     IntrinsicMesh buildIntrinsicMesh() const;
     void calculateVertexNormals(IntrinsicMesh& meshData) const;
 
@@ -127,10 +149,10 @@ public:
 
 private:
     void clampSupportingAngle(SupportingInfo& info) const;
+    double cornerAngleAtHalfedge(uint32_t he) const;
 
     const SignpostMesh& inputMesh;
     SignpostMesh& intrinsicMesh;
-    const GeodesicTracer& tracer;
 
     std::vector<SupportingInfo> supportingInfoPerHalfedge;     // One entry per input halfedge
     std::unordered_map<uint32_t, InsertedVertexLocation> insertedVertexLocations;

@@ -65,7 +65,6 @@ void HashPackage::seal(VoronoiPackage& pkg, const HashValues& authoredHashes) {
     uint64_t geometryHash = HashBuilder::start();
     HashBuilder::combine(geometryHash, authoredHashes.full);
 
-    HashBuilder::combineFloat(geometryHash, pkg.authored.cellSize);
     HashBuilder::combine(geometryHash, static_cast<uint64_t>(pkg.authored.voxelResolution));
     HashBuilder::combineFloat(geometryHash, pkg.authored.volumePadding);
     HashBuilder::combineFloat(geometryHash, pkg.authored.contactRange);
@@ -205,6 +204,9 @@ void HashPackage::seal(CFDPackage& pkg, const HashValues& authoredHashes) {
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showStreamlines ? 1u : 0u));
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showDomainBox ? 1u : 0u));
     HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showVelocityPalette ? 1u : 0u));
+    HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.showSlice ? 1u : 0u));
+    HashBuilder::combine(displayHash, static_cast<uint64_t>(pkg.display.sliceAxis));
+    HashBuilder::combineFloat(displayHash, pkg.display.slicePosition);
     HashBuilder::combineFloat(displayHash, pkg.canonicalToWorldScale);
 
     uint64_t fullHash = HashBuilder::start();

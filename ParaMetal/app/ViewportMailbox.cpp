@@ -53,6 +53,16 @@ void ViewportMailbox::requestCameraPanSpeed(float speed) {
     cameraPanSpeedDirty = true;
 }
 
+void ViewportMailbox::requestCameraNearClip(float meters) {
+    requestedCameraNearClip = meters;
+    cameraCullDirty = true;
+}
+
+void ViewportMailbox::requestCullLinesOnly(bool linesOnly) {
+    requestedCullLinesOnly = linesOnly;
+    cameraCullDirty = true;
+}
+
 void ViewportMailbox::requestTimelinePlaying(bool playing) {
     pendingScrubFrame.store(noPendingScrubFrame, std::memory_order_relaxed);
     requestedTimelineStep = 0;
@@ -99,6 +109,12 @@ void ViewportMailbox::requestProbePicking(int nodeId, int probeIndex) {
     requestedProbePickingNode = nodeId;
     requestedProbePickingIndex = probeIndex;
     probePickingDirty = true;
+}
+
+void ViewportMailbox::requestBoundaryFaceEditing(int nodeId, bool armed) {
+    requestedBoundaryFaceNode = std::max(0, nodeId);
+    requestedBoundaryFaceArmed = armed;
+    boundaryFaceDirty = true;
 }
 
 void ViewportMailbox::requestHeatPaletteRange(float minimum, float maximum) {
@@ -212,6 +228,14 @@ bool ViewportMailbox::takeCameraPanSpeed(float& speed) {
     return true;
 }
 
+bool ViewportMailbox::takeCameraCull(float& meters, bool& linesOnly, bool force) {
+    if (!force && !cameraCullDirty) return false;
+    meters = requestedCameraNearClip;
+    linesOnly = requestedCullLinesOnly;
+    cameraCullDirty = false;
+    return true;
+}
+
 bool ViewportMailbox::takeTimelinePlaying(bool& playing, bool force) {
     if (!force && !timelinePlayingDirty) return false;
     playing = requestedTimelinePlaying;
@@ -255,6 +279,14 @@ bool ViewportMailbox::takeProbePicking(int& outNodeId, int& outProbeIndex) {
     outNodeId = requestedProbePickingNode;
     outProbeIndex = requestedProbePickingIndex;
     probePickingDirty = false;
+    return true;
+}
+
+bool ViewportMailbox::takeBoundaryFaceEditing(int& outNodeId, bool& outArmed, bool force) {
+    if (!force && !boundaryFaceDirty) return false;
+    outNodeId = requestedBoundaryFaceNode;
+    outArmed = requestedBoundaryFaceArmed;
+    boundaryFaceDirty = false;
     return true;
 }
 

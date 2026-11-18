@@ -36,8 +36,6 @@ public:
     void updateVertexSums(const std::vector<uint32_t>& vertexIndices);
     double computeAngleFromLengths(double a, double b, double c, uint32_t faceIdx) const;
     std::array<double, 3> computeCornerAngles(uint32_t faceIdx) const;
-    void computeCornerScaledAngles();
-    void updateCornerScales(const std::vector<uint32_t>& vertexIndices);
     void computeVertexAngleScales();
     void updateVertexScales(const std::vector<uint32_t>& vertexIndices);
     void updateCornerAnglesForFace(uint32_t faceIdx);
@@ -57,9 +55,6 @@ public:
     // Vertex operations
     std::vector<uint32_t> getBoundaryVertices() const;
     uint32_t getVertexDegree(uint32_t vertexIdx) const;
-
-    // Debug
-    void printMeshStatistics() const;
 
    // Getters
     const HalfEdgeMesh& getConnectivity() const {
@@ -96,10 +91,8 @@ public:
 
 private:
     HalfEdgeMesh conn;
-    std::vector<glm::vec3> faceNormals;
     std::vector<double> vertexAngleSums;
     std::vector<double> vertexAngleScales;  
-    std::vector<double> cornerScaledAngles;
     std::vector<glm::dvec2> halfedgeVectorsInVertex;
     std::vector<glm::dvec2> halfedgeVectorsInFace;
 };

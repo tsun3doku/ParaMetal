@@ -11,7 +11,12 @@
 
 namespace voronoi {
 
-// build fragments and physical faces from restricted phase measures
+bool verifySolidAreas(
+    const BaseFaceTopology &faceTopology,
+    const BaseCellDomain &baseDomain,
+    const std::vector<ModelRestriction> &models,
+    cudaStream_t stream = cudaStream_t(0));
+
 bool buildFragmentsAndFaces(
     const RVDInput &input,
     const BaseCellDomain &baseDomain,
@@ -19,6 +24,7 @@ bool buildFragmentsAndFaces(
     const std::vector<ModelRestriction> &models,
     std::vector<SurfaceRegion> &surfaceRegions,
     uint32_t &totalBaseFragmentFaces,
-    RVDResult &result);
+    RVDResult &result,
+    cudaStream_t stream = cudaStream_t(0));
 
 } // namespace voronoi

@@ -15,11 +15,6 @@
 
 namespace voronoi {
 
-struct RestrictedSurfaceGeometry {
-  double4 centroidArea; // xyz = canonical centroid, w = canonical area
-  double3 normal;       // unit triangle normal
-};
-
 enum class FaceCutSegmentType : uint32_t {
   Crossing = 0,
   Coplanar = 1,
@@ -35,8 +30,6 @@ struct FaceCutVertexKey {
   uint32_t basePlaneC = InvalidId;
 };
 
-// fields read by the face partition are grouped first; keyA/keyB are only
-// needed during canonicalization and are kept last
 struct FaceBoundarySegment {
   double3 a;
   double3 b;
@@ -53,18 +46,25 @@ struct FaceBoundarySegment {
 
 enum class RVDRestrictionError : uint32_t {
   None = 0,
-  NonPositiveMoment = 101,
   PlaneAreaOutOfRange = 102,
   InvalidFaceCutCanonicalization = 103,
+  MissingCellOrigin = 104,
+  BaseCellBoundary = 105,
+  TriangleTopology = 106,
+  TriangleClipMeasures = 107,
+  WindingOnSurface = 108,
 };
 
 inline const char *rvdRestrictionErrorName(uint32_t code) {
   switch (RVDRestrictionError(code)) {
   case RVDRestrictionError::None: return "None";
-  case RVDRestrictionError::NonPositiveMoment: return "NonPositiveMoment";
   case RVDRestrictionError::PlaneAreaOutOfRange: return "PlaneAreaOutOfRange";
-  case RVDRestrictionError::InvalidFaceCutCanonicalization:
-    return "InvalidFaceCutCanonicalization";
+  case RVDRestrictionError::InvalidFaceCutCanonicalization: return "InvalidFaceCutCanonicalization";
+  case RVDRestrictionError::MissingCellOrigin: return "MissingCellOrigin";
+  case RVDRestrictionError::BaseCellBoundary: return "BaseCellBoundary";
+  case RVDRestrictionError::TriangleTopology: return "TriangleTopology";
+  case RVDRestrictionError::TriangleClipMeasures: return "TriangleClipMeasures";
+  case RVDRestrictionError::WindingOnSurface: return "WindingOnSurface";
   default: return "Unknown";
   }
 }
@@ -74,7 +74,7 @@ struct ModelRestriction {
 
   cudaUtils::CudaBuffer<double4> devMoments;
   cudaUtils::CudaBuffer<double> devRestrictedPlaneAreas;
-  cudaUtils::CudaBuffer<RestrictedSurfaceGeometry> devSurfaceGeometry;
+  cudaUtils::CudaBuffer<double3> devSurfaceNormals;
   cudaUtils::CudaBuffer<RestrictedSurface> devSurfaces;
   cudaUtils::CudaBuffer<double3> devRestrictedVertices;
   cudaUtils::CudaBuffer<uint32_t> devFaceSegmentOffsets;

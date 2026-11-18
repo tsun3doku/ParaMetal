@@ -1,64 +1,11 @@
 #include <glm/gtc/constants.hpp>
 
-#include <iostream>
 #include <algorithm>
 
 #include "SignPostMesh.hpp"
 
 void SignpostMesh::buildSignposts(const std::vector<float>& pointPositions, const std::vector<uint32_t>& triangleIndices) {
     conn.buildMesh(pointPositions, triangleIndices);
-    auto& HEs = conn.getHalfEdges();
-    auto& V = conn.getVertices();
-
-    const auto& connFaces = conn.getFaces();
-    faceNormals.resize(connFaces.size());
-    for (uint32_t fid = 0; fid < connFaces.size(); ++fid) {
-        uint32_t startHe = connFaces[fid].halfEdgeIdx;
-        if (startHe == INVALID_INDEX) {
-            faceNormals[fid] = glm::vec3(0.0f);
-            continue;
-        }
-
-        uint32_t he1 = startHe;
-        uint32_t he2 = HEs[he1].next;
-        uint32_t he3 = HEs[he2].next;
-        uint32_t v0 = HEs[he1].origin;
-        uint32_t v1 = HEs[he2].origin;
-        uint32_t v2 = HEs[he3].origin;
-        if (v0 >= V.size() || v1 >= V.size() || v2 >= V.size()) {
-            faceNormals[fid] = glm::vec3(0.0f);
-            continue;
-        }
-
-        const glm::vec3 A = V[v0].position;
-        const glm::vec3 B = V[v1].position;
-        const glm::vec3 C = V[v2].position;
-        faceNormals[fid] = glm::normalize(glm::cross(B - A, C - A));
-    }
-
-    auto& edges = conn.getEdges();
-    for (uint32_t edgeIdx = 0; edgeIdx < edges.size(); ++edgeIdx) {
-        const uint32_t he = edges[edgeIdx].halfEdgeIdx;
-        if (he == INVALID_INDEX || he >= HEs.size()) {
-            continue;
-        }
-
-        const uint32_t v1 = HEs[he].origin;
-        const uint32_t heN = HEs[he].next;
-        if (heN == INVALID_INDEX || v1 == INVALID_INDEX) {
-            continue;
-        }
-
-        const uint32_t v2 = HEs[heN].origin;
-        if (v1 >= V.size() || v2 >= V.size()) {
-            continue;
-        }
-
-        const glm::dvec3 dv1(V[v1].position.x, V[v1].position.y, V[v1].position.z);
-        const glm::dvec3 dv2(V[v2].position.x, V[v2].position.y, V[v2].position.z);
-        edges[edgeIdx].intrinsicLength = glm::length(dv2 - dv1);
-    }
-
     updateAllCornerAngles(std::unordered_set<uint32_t>());
 }
 
@@ -68,17 +15,7 @@ SignpostMesh::Triangle2D SignpostMesh::layoutTriangle(uint32_t faceIdx) const {
 
 void SignpostMesh::updateAllSignposts() {
     const auto& V = conn.getVertices();
-    const auto& HEs = conn.getHalfEdges();
-    vertexAngleSums.clear();
-    vertexAngleSums.resize(V.size(), 0.0);
-
-    // Calculate vertex angle sums by summing corner angles
-    for (uint32_t heIdx = 0; heIdx < HEs.size(); ++heIdx) {
-        uint32_t vertexIdx = HEs[heIdx].origin;
-        if (vertexIdx < vertexAngleSums.size()) {
-            vertexAngleSums[vertexIdx] += HEs[heIdx].cornerAngle;
-        }
-    }
+    rebuildVertexSums();
 
     // Walk around vertices assigning angular directions 
     for (uint32_t vid = 0; vid < V.size(); ++vid) {
@@ -192,26 +129,7 @@ void SignpostMesh::buildHalfedgeVectorsInVertex() {
         int safety = 0;
         
         do {
-            // Use stored signpost angle directly 
-            double coordSum = conn.getHalfEdges()[currHe].signpostAngle;
-            
-            // Apply vertex angle scaling
-            double scaleFactor = 1.0;
-            if (vid < vertexAngleScales.size()) scaleFactor = vertexAngleScales[vid];
-            coordSum *= scaleFactor;
-            
-            // Build vector using signpost angle and edge length 
-            double length = conn.getIntrinsicLengthFromHalfEdge(currHe);
-            halfedgeVectorsInVertex[currHe] = glm::dvec2(
-                std::cos(coordSum) * length,
-                std::sin(coordSum) * length
-            );
-            
-            // Get scaled corner angle for debug output
-            double scaledAngle = 0.0;
-            if (currHe < cornerScaledAngles.size()) {
-                scaledAngle = cornerScaledAngles[currHe]; 
-            }
+            halfedgeVectorsInVertex[currHe] = halfedgeVector(currHe);
             
             // Break at boundary 
             if (HEs[currHe].opposite == HalfEdgeMesh::INVALID_INDEX) {
@@ -253,18 +171,7 @@ void SignpostMesh::updateVertexVectors(const std::vector<uint32_t>& vertexIndice
         uint32_t currHe = firstOutgoing;
         int safety = 0;
         do {
-            double coordSum = HEs[currHe].signpostAngle;
-            double scaleFactor = 1.0;
-            if (vid < vertexAngleScales.size()) {
-                scaleFactor = vertexAngleScales[vid];
-            }
-            coordSum *= scaleFactor;
-
-            double length = conn.getIntrinsicLengthFromHalfEdge(currHe);
-            halfedgeVectorsInVertex[currHe] = glm::dvec2(
-                std::cos(coordSum) * length,
-                std::sin(coordSum) * length
-            );
+            halfedgeVectorsInVertex[currHe] = halfedgeVector(currHe);
 
             if (HEs[currHe].opposite == HalfEdgeMesh::INVALID_INDEX) {
                 break;
@@ -342,14 +249,6 @@ void SignpostMesh::updateFaceVectors(const std::vector<uint32_t>& faceIndices) {
             halfedgeVectorsInFace[faceHEs[i]] = tri.vertices[ni] - tri.vertices[i];
         }
     }
-
-    for (uint32_t f : uniqueFaces) {
-        for (uint32_t heIdx : conn.getFaceHalfEdges(f)) {
-            if (heIdx < HEs.size() && HEs[heIdx].face == HalfEdgeMesh::INVALID_INDEX) {
-                halfedgeVectorsInFace[heIdx] = glm::dvec2(std::numeric_limits<double>::quiet_NaN());
-            }
-        }
-    }
 }
 
 glm::dvec2 SignpostMesh::computeCircumcenter2D(const glm::dvec2& a, const glm::dvec2& b, const glm::dvec2& c) const {
@@ -390,18 +289,16 @@ glm::dvec3 SignpostMesh::computeBarycentric2D(const glm::dvec2& p, const glm::dv
 double SignpostMesh::computeSplitDiagonalLength(uint32_t faceIdx, uint32_t originalVA, uint32_t originalVB, double splitFraction) const {
     // Lay out the triangle in 2D using intrinsic edge lengths
     auto triangle2D = layoutTriangle(faceIdx);
-    auto faceVertices = conn.getFaceVertices(faceIdx);  
-
-    if (faceVertices.size() != 3) {
-        return 0.0;
-    }
 
     // Find which indices belong to the original edge's endpoints
     int idxA = -1, idxB = -1, idxC = -1;
     for (int i = 0; i < 3; ++i) {
-        if (faceVertices[i] == originalVA)
+        if (triangle2D.indices[i] == INVALID_INDEX) {
+            return 0.0;
+        }
+        if (triangle2D.indices[i] == originalVA)
             idxA = i;
-        else if (faceVertices[i] == originalVB)
+        else if (triangle2D.indices[i] == originalVB)
             idxB = i;
         else
             idxC = i;
@@ -471,80 +368,6 @@ std::array<double, 3> SignpostMesh::computeCornerAngles(uint32_t faceIdx) const 
     angles[1] = std::max(0.0, computeAngleFromLengths(c, a, b, faceIdx));
     angles[2] = std::max(0.0, computeAngleFromLengths(a, b, c, faceIdx));
     return angles;
-}
-
-void SignpostMesh::computeCornerScaledAngles() {
-    const auto& HEs = conn.getHalfEdges();
-    const auto& V = conn.getVertices();
-
-    cornerScaledAngles.clear();
-    cornerScaledAngles.resize(HEs.size(), 0.0);
-
-    // Need vertex angle sums available
-    if (vertexAngleSums.size() != V.size()) {
-        // Fallback: recompute vertex sums
-        vertexAngleSums.clear();
-        vertexAngleSums.resize(V.size(), 0.0);
-        for (size_t he = 0; he < HEs.size(); ++he) {
-            uint32_t vid = HEs[he].origin;
-            if (vid < vertexAngleSums.size()) vertexAngleSums[vid] += HEs[he].cornerAngle;
-        }
-    }
-
-    // For every halfedge, compute its scaled corner angle based on its corner's vertex
-    for (size_t he = 0; he < HEs.size(); ++he) {
-        uint32_t vid = HEs[he].origin;
-        if (vid >= V.size() || vid >= vertexAngleSums.size()) {
-            cornerScaledAngles[he] = HEs[he].cornerAngle; // fallback
-            continue;
-        }
-
-        double vSum = vertexAngleSums[vid];
-        double target = (HEs[he].opposite == HalfEdgeMesh::INVALID_INDEX) ? glm::pi<double>() : 2.0 * glm::pi<double>();
-        if (vSum > 1e-12) {
-            double scale = target / vSum;
-            cornerScaledAngles[he] = HEs[he].cornerAngle * scale;
-        }
-        else {
-            cornerScaledAngles[he] = HEs[he].cornerAngle;
-        }
-    }
-}
-
-void SignpostMesh::updateCornerScales(const std::vector<uint32_t>& vertexIndices) {
-    const auto& HEs = conn.getHalfEdges();
-    const auto& V = conn.getVertices();
-
-    if (cornerScaledAngles.size() != HEs.size()) {
-        cornerScaledAngles.resize(HEs.size(), 0.0);
-    }
-
-    std::unordered_set<uint32_t> uniqueVertices;
-    for (uint32_t vertexIdx : vertexIndices) {
-        if (vertexIdx < V.size()) {
-            uniqueVertices.insert(vertexIdx);
-        }
-    }
-
-    for (uint32_t vid : uniqueVertices) {
-        if (vid >= vertexAngleSums.size()) {
-            continue;
-        }
-
-        double vSum = vertexAngleSums[vid];
-        for (uint32_t heIdx : conn.getVertexHalfEdges(vid)) {
-            if (heIdx >= HEs.size()) {
-                continue;
-            }
-
-            double target = (HEs[heIdx].opposite == HalfEdgeMesh::INVALID_INDEX) ? glm::pi<double>() : 2.0 * glm::pi<double>();
-            if (vSum > 1e-12) {
-                cornerScaledAngles[heIdx] = HEs[heIdx].cornerAngle * (target / vSum);
-            } else {
-                cornerScaledAngles[heIdx] = HEs[heIdx].cornerAngle;
-            }
-        }
-    }
 }
 
 void SignpostMesh::updateCornerAnglesForFace(uint32_t faceIdx) {
@@ -626,20 +449,27 @@ float SignpostMesh::computeFaceArea(uint32_t faceIdx) const {
     const auto& faces = conn.getFaces();
     const auto& halfEdges = conn.getHalfEdges();
 
-    if (faceIdx >= faces.size()) {
+    if (faceIdx >= faces.size() || faces[faceIdx].halfEdgeIdx == HalfEdgeMesh::INVALID_INDEX) {
         return 0.0f;
     }
 
-    // Get the halfedges of this face
-    std::vector<uint32_t> faceEdges = conn.getFaceHalfEdges(faceIdx);
-    if (faceEdges.size() != 3) {
+    uint32_t he0 = faces[faceIdx].halfEdgeIdx;
+    if (he0 >= halfEdges.size()) {
+        return 0.0f;
+    }
+    uint32_t he1 = halfEdges[he0].next;
+    if (he1 >= halfEdges.size()) {
+        return 0.0f;
+    }
+    uint32_t he2 = halfEdges[he1].next;
+    if (he2 >= halfEdges.size() || halfEdges[he2].next != he0) {
         return 0.0f;
     }
 
     // Get the edge lengths from edge objects
-    double a = conn.getIntrinsicLengthFromHalfEdge(faceEdges[0]);
-    double b = conn.getIntrinsicLengthFromHalfEdge(faceEdges[1]);
-    double c = conn.getIntrinsicLengthFromHalfEdge(faceEdges[2]);
+    double a = conn.getIntrinsicLengthFromHalfEdge(he0);
+    double b = conn.getIntrinsicLengthFromHalfEdge(he1);
+    double c = conn.getIntrinsicLengthFromHalfEdge(he2);
 
     // Ensure minimum positive length for numerical stability
     a = std::max(a, 1e-12);
@@ -697,9 +527,6 @@ double SignpostMesh::getCornerAngle(uint32_t halfEdgeIdx) const {
     return (halfEdgeIdx < HEs.size())
         ? HEs[halfEdgeIdx].cornerAngle
         : 0.0;
-}
-
-void SignpostMesh::printMeshStatistics() const {
 }
 
 void SignpostMesh::computeVertexAngleScales() {

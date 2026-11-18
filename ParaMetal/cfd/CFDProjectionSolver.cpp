@@ -200,6 +200,7 @@ bool CFDProjectionSolver::build(
 
 bool CFDProjectionSolver::setupNativePcg(cudaStream_t stream) {
     cleanupNativePcg();
+    pcgStream = stream;
 
     const size_t nnz = pressureValues.size();
     if (!d_pressureRowOffsets.allocate(pressureRowOffsets.size()) ||
@@ -298,6 +299,7 @@ void CFDProjectionSolver::cleanupNativePcg() {
     d_pcgStatus.reset();
     d_pcgConfig.reset();
     d_publishGate.reset();
+    pcgStream = nullptr;
     pcgStatusPending = false;
 }
 
@@ -323,13 +325,13 @@ CFDProjectionSolver::SolvePollResult CFDProjectionSolver::pollNativeSolveResult(
                          pinnedPcgStatus->failed == 0 &&
                          pinnedPcgStatus->exhausted == 0;
     if (!success) {
-        std::cerr << "[CFDProjectionSolver] native PCG result: converged="
-                  << pinnedPcgStatus->converged
+        std::cerr << "[PCG] cells=" << cellCount
+                  << " converged=" << pinnedPcgStatus->converged
                   << " failed=" << pinnedPcgStatus->failed
                   << " exhausted=" << pinnedPcgStatus->exhausted
                   << " iterations=" << pinnedPcgStatus->iterationCount
                   << " residual=" << pinnedPcgStatus->residual
-                  << " residual0=" << pinnedPcgStatus->residual0 << std::endl;
+                  << " residual0=" << pinnedPcgStatus->residual0 << '\n';
     }
     return success ? SolvePollResult::Succeeded : SolvePollResult::Failed;
 }
@@ -347,7 +349,7 @@ bool CFDProjectionSolver::projectVelocity(
     float* d_boundaryFlux,
     const glm::vec3* d_velocityStar,
     glm::vec4* d_velocity,
-    const uint32_t* d_scheduleStatus,
+    uint32_t* d_scheduleStatus,
     void* flowStreamHandle) {
     if (inCellCount == 0 || !flowStreamHandle) {
         return true;
@@ -375,16 +377,12 @@ bool CFDProjectionSolver::projectVelocity(
     // set RHS = 0 on pinned reference nodes
     fluidkernels::launchZeroMasked(inCellCount, d_isPinned.get(), d_pressureRhs.get(), stream);
 
+    // reject non-finite pressure input before it reaches the solver
+    fluidkernels::launchValidatePressureRhs(
+        inCellCount, d_pressureRhs.get(), d_scheduleStatus, stream);
+
     if (!pressurePcgExec) {
         std::cerr << "[CFDProjectionSolver] pressure PCG graph missing\n";
-        cudaMemsetAsync(d_psi.get(), 0, inCellCount * sizeof(float), stream);
-        return false;
-    }
-
-    cudaPcg::PcgConfig config{};
-    config.maxIterations = nativeIterationLimit(pressureMaxIterations);
-    config.tolerance = nativeTolerance(pressureTolerance);
-    if (!d_pcgConfig.uploadAsync(&config, 1, stream)) {
         cudaMemsetAsync(d_psi.get(), 0, inCellCount * sizeof(float), stream);
         return false;
     }
@@ -444,6 +442,14 @@ void CFDProjectionSolver::setPressureSolverParameters(int maxIterations, float t
     }
     pressureMaxIterations = maxIterations;
     pressureTolerance = tolerance;
+    if (d_pcgConfig.get() != nullptr && pcgStream != nullptr) {
+        cudaPcg::PcgConfig config{};
+        config.maxIterations = nativeIterationLimit(pressureMaxIterations);
+        config.tolerance = nativeTolerance(pressureTolerance);
+        if (!d_pcgConfig.uploadAsync(&config, 1, pcgStream)) {
+            std::cerr << "[CFDProjectionSolver] pressure config upload failed\n";
+        }
+    }
 }
 
 } // namespace cfd

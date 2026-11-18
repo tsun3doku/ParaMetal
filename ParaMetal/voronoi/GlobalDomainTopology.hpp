@@ -10,10 +10,12 @@
 namespace topology {
 
 inline constexpr uint32_t InvalidInstanceId = 0xffffffffu;
+inline constexpr uint32_t DomainFaceCount = 6;
 
 enum class FaceType : uint8_t {
-    Shared,          // Two-sided physical material interface
-    DomainBoundary   // Domain boundary face
+    Shared = 0,          // Two-sided physical material interface
+    DomainBoundary = 1,  // Domain boundary face
+    MaterialBoundary = 2 // One-sided solid surface facing contact / exterior
 };
 
 // Thermal geometry is strictly fragment based
@@ -45,17 +47,14 @@ struct ContactCoupling {
     double couplingArea = 0.0;
 };
 
-struct BoundaryFace {
-    uint32_t faceIndex = 0xffffffffu;
-    uint32_t fragment = 0xffffffffu;
-    uint32_t domainFace = 0;
-};
-
 struct GlobalDomain {
     std::vector<Fragment> fragments;
     std::vector<Face> faces;
+    std::vector<uint32_t> faceLoopOffsets;
+    std::vector<uint32_t> loopVertexOffsets;
+    std::vector<glm::dvec3> loopVertices;
     std::vector<ContactCoupling> contactCouplings;
-    std::vector<BoundaryFace> boundaryFaces;
+    std::vector<uint32_t> boundaryFaceIndices;
     std::vector<uint32_t> instanceFragmentCounts;
     std::vector<glm::vec3> seedPositions;
     std::vector<uint32_t> cellFragmentOffsets;
@@ -65,22 +64,27 @@ struct GlobalDomain {
     glm::vec3 volumeGridMin{0.0f, 0.0f, 0.0f};
     glm::ivec3 volumeGridDim{0, 0, 0};
     float volumeGridCellSize = 0.0f;
-    float nominalCellSize = 0.0f;
     VkBuffer seedIdGridBuffer = VK_NULL_HANDLE;
     VkDeviceSize seedIdGridBufferOffset = 0;
 
     bool isValid() const {
         return !fragments.empty() && !faces.empty() &&
+            faceLoopOffsets.size() == faces.size() + 1 &&
+            !faceLoopOffsets.empty() &&
+            loopVertexOffsets.size() == faceLoopOffsets.back() + 1 &&
+            !loopVertexOffsets.empty() &&
+            loopVertices.size() == loopVertexOffsets.back() &&
             cellFragmentOffsets.size() == seedPositions.size() + 1 &&
             (!cellFragmentOffsets.empty() &&
              cellFragmentOffsets.back() == cellFragments.size()) &&
             std::isfinite(domainMin.x) && std::isfinite(domainMin.y) && std::isfinite(domainMin.z) &&
             std::isfinite(domainMax.x) && std::isfinite(domainMax.y) && std::isfinite(domainMax.z) &&
             domainMax.x > domainMin.x && domainMax.y > domainMin.y && domainMax.z > domainMin.z &&
-            nominalCellSize > 0.0f &&
             volumeGridDim.x > 0 && volumeGridDim.y > 0 && volumeGridDim.z > 0 &&
             volumeGridCellSize > 0.0f;
     }
 };
+
+bool validateBoundaryFaceIndices(const GlobalDomain& domain);
 
 } // namespace topology

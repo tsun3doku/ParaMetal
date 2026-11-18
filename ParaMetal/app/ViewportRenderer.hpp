@@ -44,4 +44,5 @@ private:
     TimelineUiState publishedTimeline{};
     bool initialized = false;
     bool runtimeFresh = false;
+    bool probePickingActiveLast = false;
 };

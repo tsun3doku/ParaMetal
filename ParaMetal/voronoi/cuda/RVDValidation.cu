@@ -26,10 +26,6 @@ struct FragmentAudit {
   double gaussSum[9] = {};
   double absTermSum = 0.0;
   uint32_t incidentFaceCount = 0;
-  double baseAreaSum = 0.0;
-  glm::dvec3 baseVectorSum{0.0};
-  double surfaceAreaSum = 0.0;
-  glm::dvec3 surfaceVectorSum{0.0};
 };
 
 ReciprocalError measureSharedFaceReciprocity(const std::vector<FragmentFace> &faces) {
@@ -79,20 +75,12 @@ void accumulateFaceForFragment(
     const glm::dvec3 &fragmentCentroid,
     const glm::dvec3 &faceMoment,
     const glm::dvec3 &faceAreaVector,
-    double area,
-    bool isBaseFace) {
+    double area) {
   const glm::dvec3 centroid = faceMoment / area;
   const glm::dvec3 offset = centroid - fragmentCentroid;
 
   audit.areaSum += area;
   audit.areaVectorSum += faceAreaVector;
-  if (isBaseFace) {
-    audit.baseAreaSum += area;
-    audit.baseVectorSum += faceAreaVector;
-  } else {
-    audit.surfaceAreaSum += area;
-    audit.surfaceVectorSum += faceAreaVector;
-  }
 
   audit.absTermSum += glm::length(offset) * glm::length(faceAreaVector);
   ++audit.incidentFaceCount;
@@ -105,25 +93,21 @@ void accumulateFaceForFragment(
 
 std::vector<FragmentAudit> auditFragmentFaces(
     const std::vector<Fragment> &fragments,
-    const std::vector<FragmentFace> &faces,
-    uint32_t baseFaceCount) {
+    const std::vector<FragmentFace> &faces) {
   std::vector<FragmentAudit> audits(fragments.size());
 
-  for (size_t faceIndex = 0; faceIndex < faces.size(); ++faceIndex) {
-    const FragmentFace &face = faces[faceIndex];
-    const bool isBaseFace = faceIndex < baseFaceCount;
-
+  for (const FragmentFace &face : faces) {
     if (face.fragmentA < audits.size() &&
         face.areaA > 0.0 && std::isfinite(face.areaA)) {
       accumulateFaceForFragment(
           audits[face.fragmentA], fragments[face.fragmentA].centroid,
-          face.momentA, face.areaVectorA, face.areaA, isBaseFace);
+          face.momentA, face.areaVectorA, face.areaA);
     }
     if (face.fragmentB < audits.size() &&
         face.areaB > 0.0 && std::isfinite(face.areaB)) {
       accumulateFaceForFragment(
           audits[face.fragmentB], fragments[face.fragmentB].centroid,
-          face.momentB, face.areaVectorB, face.areaB, isBaseFace);
+          face.momentB, face.areaVectorB, face.areaB);
     }
   }
   return audits;
@@ -181,21 +165,12 @@ bool validateFragmentClosure(
       }
     }
     const double gaussError = std::sqrt(gaussErrorSquared) / volume;
-    const double errorBound =
-        128.0 * std::numeric_limits<double>::epsilon() *
-        audit.absTermSum / volume;
+    const double errorBound = 128.0 * std::numeric_limits<double>::epsilon() * audit.absTermSum / volume;
 
     if (closureError <= toleranceClosure &&
         (gaussError <= toleranceGauss || gaussError <= errorBound)) {
       continue;
     }
-
-    const double baseClosure = audit.baseAreaSum > 0.0
-        ? glm::length(audit.baseVectorSum) / audit.baseAreaSum
-        : 0.0;
-    const double surfaceClosure = audit.surfaceAreaSum > 0.0
-        ? glm::length(audit.surfaceVectorSum) / audit.surfaceAreaSum
-        : 0.0;
 
     if (reportedCount++ < MaxReportedFragments) {
       std::cerr << "[RVDFragments] fragment " << i
@@ -252,6 +227,14 @@ bool validateContactCouplings(
       std::cerr << "[RVD-ContactValidation] invalid coupling area "
                 << coupling.couplingArea << " for "
                 << coupling.faceA << " -> " << coupling.faceB << std::endl;
+      valid = false;
+      continue;
+    }
+    if (coupling.fragmentA >= result.fragments.size() ||
+        coupling.fragmentB >= result.fragments.size()) {
+      std::cerr << "[RVD-ContactValidation] coupling fragment index out of bounds "
+                << coupling.fragmentA << " or " << coupling.fragmentB
+                << " >= " << result.fragments.size() << std::endl;
       valid = false;
       continue;
     }
@@ -379,13 +362,21 @@ bool validateFragmentTopology(
       std::cerr << std::endl;
       return false;
     }
+    if (face.type == FaceType::MaterialBoundary) {
+      if (!hasA || hasB || face.areaB != 0.0 || face.domainFace != InvalidId) {
+        std::cerr << "[RVDFaces] MaterialBoundary face " << faceIndex
+                  << " violates invariant: hasA=" << hasA << " hasB=" << hasB
+                  << " areaB=" << face.areaB << " domainFace=" << face.domainFace
+                  << std::endl;
+        return false;
+      }
+    }
   }
 
   if (!validateSharedFaceReciprocity(result.fragmentFaces)) return false;
   if (!validateFragmentClosure(
           result.fragments,
-          auditFragmentFaces(
-              result.fragments, result.fragmentFaces, totalBaseFragmentFaces),
+          auditFragmentFaces(result.fragments, result.fragmentFaces),
           toleranceClosure,
           toleranceGauss)) {
     return false;

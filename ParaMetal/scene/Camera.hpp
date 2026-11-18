@@ -29,6 +29,9 @@ public:
     static constexpr float DefaultPanSpeed = 1.0f;
     static constexpr float MinPanSpeed = 0.1f;
     static constexpr float MaxPanSpeed = 5.0f;
+    static constexpr float DefaultNearClip = 0.01f;
+    static constexpr float MinNearClip = 0.01f;
+    static constexpr float MaxNearClip = 10.0f;
 
     void update(float deltaTime);   
     void processMouseScroll(double yOffset);
@@ -38,6 +41,7 @@ public:
     void setFov(float f);
     void setZoomSpeed(float speed);
     void setPanSpeed(float speed);
+    void setNearClip(float meters);
     void setProjectionMode(CameraProjectionMode mode);
     void setOrthographicHeight(float height);
     void orbit(float dx, float dy);
@@ -46,6 +50,7 @@ public:
     void setWorldUnit(units::LengthUnit unit);
     glm::vec3 screenToWorldRayOrigin(double mouseX, double mouseY, int screenWidth, int screenHeight) const;
     glm::vec3 screenToWorldRay(double mouseX, double mouseY, int screenWidth, int screenHeight) const;
+    bool isClippedByNearPlane(const glm::vec3& worldPos) const;
     void setState(
         const glm::vec3& target,
         const glm::quat& orientation,
@@ -83,6 +88,10 @@ public:
         return panSpeed;
     }
 
+    float getNearClip() const {
+        return nearClipDistance;
+    }
+
     glm::vec3 getLookAt() const {
         return lookAt;
     }
@@ -114,6 +123,7 @@ private:
         glm::angleAxis(glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
     float nearPlane = 0.01f, farPlane = 100.0f;
+    float nearClipDistance = DefaultNearClip;
 
     float radiusVelocity = 0.0f;
     float radius = 2.0f;

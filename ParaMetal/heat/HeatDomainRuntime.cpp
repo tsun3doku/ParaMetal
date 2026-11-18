@@ -420,11 +420,11 @@ bool HeatDomainRuntime::rebuildGlobalSolver(
                 faces[i].nodeA = fragmentA < fragmentCount ? fragmentA : InvalidSolverNode;
                 faces[i].nodeB = fragmentB < fragmentCount ? fragmentB : InvalidSolverNode;
             }
-            std::vector<heat::AdvectionBoundaryFace> boundaryFaces(globalDomain.boundaryFaces.size());
-            for (size_t i = 0; i < globalDomain.boundaryFaces.size(); ++i) {
-                const uint32_t fragment = globalDomain.boundaryFaces[i].fragment;
-                boundaryFaces[i].node = fragment < fragmentCount ? fragment : InvalidSolverNode;
-                boundaryFaces[i].domainFace = globalDomain.boundaryFaces[i].domainFace;
+            std::vector<heat::AdvectionBoundaryFace> boundaryFaces(globalDomain.boundaryFaceIndices.size());
+            for (size_t i = 0; i < globalDomain.boundaryFaceIndices.size(); ++i) {
+                const topology::Face& face = globalDomain.faces[globalDomain.boundaryFaceIndices[i]];
+                boundaryFaces[i].node = face.fragmentA;
+                boundaryFaces[i].domainFace = face.domainFace;
             }
             std::vector<float> cellVolumes(cellCount, 0.0f);
             for (uint32_t c = 0; c < cellCount; ++c) {
@@ -525,13 +525,31 @@ bool HeatDomainRuntime::updateGlobalValues(
     return true;
 }
 
-bool HeatDomainRuntime::updateGlobalAdvection(HeatFluidRuntime* fluidRuntime, float fixedTimeStep) {
+bool HeatDomainRuntime::advectionActive() const {
+    const bool faceSourceReady = advectionInput.faceFluxBuffer != VK_NULL_HANDLE &&
+        advectionInput.faceFluxBufferSize >=
+            static_cast<VkDeviceSize>(advectionInput.faceCount) * sizeof(float);
+    const bool boundarySourceReady = advectionInput.boundaryFaceCount == 0 ||
+        (advectionInput.boundaryFluxBuffer != VK_NULL_HANDLE &&
+         advectionInput.boundaryFluxBufferSize >=
+             static_cast<VkDeviceSize>(advectionInput.boundaryFaceCount) * sizeof(float) &&
+         advectionBoundaryFlux.isValid());
+
+    return advectionInput.enabled && advectionConnected &&
+        advectionInput.faceCount > 0 &&
+        faceSourceReady && advectionFaceFlux.isValid() &&
+        boundarySourceReady;
+}
+
+bool HeatDomainRuntime::updateGlobalAdvection(float fixedTimeStep) {
     if (!globalSolver) {
         return false;
     }
+    if (globalSolveInFlight) {
+        return true;
+    }
 
-    if (fluidRuntime && fluidRuntime->getNodeCount() > 0 && advectionInput.enabled && advectionConnected) {
-        waitGlobalSolveIdle();
+    if (advectionActive()) {
         float inflowTemps[6];
         for (size_t i = 0; i < 6; ++i) {
             inflowTemps[i] = domainBoundaries[i].inflowTemperatureC;
@@ -554,9 +572,7 @@ bool HeatDomainRuntime::launchGlobalSolve(bool sourceIsA) {
 
     const uint64_t cudaReady = ++cudaReadyCounter;
 
-    stagingCopyScheduled = advectionInput.enabled &&
-        advectionConnected &&
-        advectionFaceFlux.isValid() && advectionBoundaryFlux.isValid();
+    stagingCopyScheduled = advectionActive();
 
     // Destination overwrite only waits for its last real reader, staging copies wait on this frame submission
     const uint64_t destinationLastReader = lastReaderReleaseValue[sourceIsA ? 1u : 0u];
@@ -564,7 +580,7 @@ bool HeatDomainRuntime::launchGlobalSolve(bool sourceIsA) {
         ? (vulkanReleaseCounter + 1)
         : (destinationLastReader != 0 ? destinationLastReader : (vulkanReleaseCounter + 1));
 
-    if (!globalSolver->launch(sourceIsA, pendingSolveReleaseValue, cudaReady)) {
+    if (!globalSolver->launch(sourceIsA, pendingSolveReleaseValue, cudaReady, stagingCopyScheduled)) {
         return false;
     }
 

@@ -70,6 +70,12 @@ void Camera::setPanSpeed(float speed) {
     panSpeed = glm::clamp(speed, MinPanSpeed, MaxPanSpeed);
 }
 
+void Camera::setNearClip(float meters) {
+    if (!std::isfinite(meters)) return;
+    nearClipDistance = glm::clamp(meters, MinNearClip, MaxNearClip);
+    nearPlane = nearClipDistance * units::canonicalToWorldScale(worldUnit);
+}
+
 void Camera::setProjectionMode(CameraProjectionMode mode) {
     if (mode == projectionMode) {
         return;
@@ -149,7 +155,7 @@ void Camera::setWorldUnit(units::LengthUnit unit) {
     worldUnit = unit;
 
     const float metersToWorld = units::canonicalToWorldScale(worldUnit);
-    nearPlane = 0.01f * metersToWorld;
+    nearPlane = nearClipDistance * metersToWorld;
     farPlane = 100.0f * metersToWorld;
     minRadius = 0.1f * metersToWorld;
     maxRadius = 200.0f * metersToWorld;
@@ -270,6 +276,11 @@ void Camera::setState(
     setPanSpeed(nextPanSpeed);
     projectionMode = nextProjectionMode;
     orthographicReferenceFov = baseFov;
+}
+
+bool Camera::isClippedByNearPlane(const glm::vec3& worldPos) const {
+    const glm::vec3 forward = orientation * glm::vec3(0.0f, 0.0f, -1.0f);
+    return glm::dot(worldPos - position, forward) < nearPlane;
 }
 
 glm::vec3 Camera::screenToWorldRayOrigin(

@@ -16,7 +16,6 @@ public:
     const std::vector<std::vector<uint32_t>>& getGlobalRemeshTriangleIndices() const { return globalRemeshTriangleIndices; }
     const std::vector<std::vector<glm::vec3>>& getGlobalRemeshSurfacePositions() const { return globalRemeshSurfacePositions; }
     const std::vector<std::vector<uint32_t>>& getGlobalRemeshSurfaceTriangleIndices() const { return globalRemeshSurfaceTriangleIndices; }
-    const std::vector<std::array<float, 16>>& getGlobalRemeshWorldToModel() const { return globalRemeshWorldToModel; }
     float getGlobalVolumePadding() const { return globalVolumePadding; }
 
     std::vector<glm::vec4>& getSeedPositions() { return seedPositions; }
@@ -24,8 +23,7 @@ public:
     const std::array<glm::vec3, 8>& getPointDomainCorners() const { return pointDomainCorners; }
 
     void clearGeometry();
-    void setParams(float cellSize, int voxelResolution);
-    float getCellSize() const { return cellSize; }
+    void setParams(int voxelResolution);
     int getVoxelResolution() const { return voxelResolution; }
     int getLloydIterations() const { return lloydIterations; }
     float getLloydVolumeThreshold() const { return lloydVolumeThreshold; }
@@ -44,7 +42,6 @@ public:
         const std::vector<std::vector<uint32_t>>& triangleIndices,
         const std::vector<std::vector<glm::vec3>>& surfacePositions,
         const std::vector<std::vector<uint32_t>>& surfaceTriangleIndices,
-        const std::vector<std::array<float, 16>>& worldToModel,
         float volumePadding);
 
     void cleanup();
@@ -52,7 +49,6 @@ public:
 private:
     void invalidateMaterialization();
 
-    float cellSize = 0.005f;
     int voxelResolution = 128;
     int lloydIterations = int(voronoi::DefaultLloydIterations);
     float lloydVolumeThreshold = voronoi::DefaultLloydVolumeThresholdFraction;
@@ -66,7 +62,6 @@ private:
     std::vector<std::vector<uint32_t>> globalRemeshTriangleIndices;
     std::vector<std::vector<glm::vec3>> globalRemeshSurfacePositions;
     std::vector<std::vector<uint32_t>> globalRemeshSurfaceTriangleIndices;
-    std::vector<std::array<float, 16>> globalRemeshWorldToModel;
     float globalVolumePadding = 0.0f;
 
     bool voronoiReady = false;

@@ -7,9 +7,20 @@
 #include "../CFDBoundaryConditions.hpp"
 #include "../../cuda/SubcycleTimestep.cuh"
 
+namespace cfd {
+class CFDReconstruction;
+}
+
 namespace cfd::fluidkernels {
 
 constexpr uint32_t BlockSize = 256;
+
+void launchAggregateViscousWeights(
+    uint32_t cellCount,
+    const float* d_cellWeights,
+    const uint32_t* d_mergeTarget,
+    float* d_mergedWeights,
+    cudaStream_t stream);
 
 void launchBuildPressureRhs(
     uint32_t cellCount,
@@ -20,6 +31,12 @@ void launchBuildPressureRhs(
     const float* d_faceFlux,
     const float* d_boundaryFlux,
     float* d_pressureRhs,
+    cudaStream_t stream);
+
+void launchValidatePressureRhs(
+    uint32_t cellCount,
+    const float* d_pressureRhs,
+    uint32_t* d_invalid,
     cudaStream_t stream);
 
 void launchCorrectFluxes(
@@ -100,6 +117,19 @@ void publishVelocity(
     const int* d_publishGate,
     cudaStream_t stream);
 
+void launchReconstructVelocityGradients(
+    uint32_t cellCount,
+    uint32_t faceCount,
+    uint32_t boundaryFaceCount,
+    const FaceTopology* d_faces,
+    const FaceFluxVectors* d_fluxVectors,
+    const CFDBoundaryFaceGpu* d_boundaryFaces,
+    const BoundaryConditionGpu* d_boundaryConditions,
+    const float* d_cellVolumes,
+    const glm::vec4* d_velocity,
+    glm::vec4* d_gradients,
+    cudaStream_t stream);
+
 cudaError_t appendMomentumOutflowRate(
     cudaGraph_t graph,
     cudaGraphNode_t& prev,
@@ -111,6 +141,11 @@ cudaError_t appendMomentumOutflowRate(
     const float* d_faceFlux,
     const float* d_boundaryFlux,
     const float* d_cellVolumes,
+    const uint32_t* d_viscousMergeTarget,
+    const float* d_viscousMergeVolume,
+    const float* d_mergedViscousWeight,
+    const float* d_kinematicViscosity,
+    float targetCfl,
     float* d_outflowRates,
     float* d_maxRate,
     uint32_t* d_invalid);
@@ -127,11 +162,19 @@ cudaError_t appendMomentumSubcycleBody(
     const float* d_faceFlux,
     const float* d_boundaryFlux,
     const float* d_cellVolumes,
-    const float* d_cellViscousWeight,
     const float* d_kinematicViscosity,
+    const double* d_referenceVelocity,
     glm::vec3* d_momentumAccum,
+    glm::vec3* d_viscousAccum,
+    glm::vec3* d_mergedViscousAccum,
+    const uint32_t* d_viscousMergeTarget,
+    const float* d_viscousMergeVolume,
     glm::vec4* d_velocity,
+    glm::vec4* d_stageA,
+    glm::vec4* d_stageB,
     glm::vec3* d_velocityStar,
-    const cudaSubcycle::SubcycleTimestep* d_timestep);
+    cudaSubcycle::SubcycleTimestep* d_timestep,
+    cfd::CFDReconstruction* d_reconstruction,
+    uint64_t* d_stageStamps);
 
 } // namespace cfd::fluidkernels

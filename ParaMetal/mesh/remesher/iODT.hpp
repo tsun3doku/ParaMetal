@@ -2,6 +2,7 @@
 #include <glm/glm.hpp>
 #include <queue>
 #include <deque>
+#include <functional>
 #include "GeodesicTracer.hpp"
 #include "SignPostMesh.hpp"
 #include "util/Structs.hpp"
@@ -17,6 +18,11 @@ public:
 
     bool optimalDelaunayTriangulation(int iterations, double minAngleDegrees, double maxEdgeLength, double stepSize);
 
+    enum class RefinementStatus {
+        Complete,
+        Partial
+    };
+
     GeodesicTracer::GeodesicTraceResult traceIntrinsicHalfedgeAlongInput(uint32_t intrinsicHalfedgeIdx);
 
     void createCommonSubdivision(Model& overlayModel, std::vector<CommonSubdivision::IntrinsicTriangle>& outIntrinsicTriangles);
@@ -28,14 +34,17 @@ public:
     SupportingHalfedge* getSupportingHalfedge() { return supportingHalfedge.get(); }
     const SupportingHalfedge* getSupportingHalfedge() const { return supportingHalfedge.get(); }
 
-    void cleanup();
-
 private:
     void refreshIntrinsicDirectionalData();
     void optimalReposition(int iterations, double tol, double maxEdgeLength, double stepSize);
     int splitLongEdges(double maxEdgeLength, int maxSplits);
-    double repositionInsertedVertices(double stepSize);
-    bool delaunayRefinement(int maxIters, float minAngleDegrees);
+    double repositionInsertedVertices(double stepSize, std::vector<uint32_t>& outMovedEdges);
+    RefinementStatus delaunayRefinement(float minAngleDegrees);
+
+    struct RefinementCallbacks {
+        std::function<void(uint32_t)> onFlip;
+        std::function<void(uint32_t)> onFace;
+    };
 
     struct FaceCandidate {
         uint32_t faceIdx = INVALID_INDEX;
@@ -48,26 +57,39 @@ private:
     };
 
     std::vector<uint32_t> collectLocalDelaunayEdges(HalfEdgeMesh& conn, uint32_t vertexIdx);
-    void updateLocalFaces(HalfEdgeMesh& conn, const std::vector<uint32_t>& facePatch);
     void updateLocalEdges(HalfEdgeMesh& conn, const std::vector<uint32_t>& edgePatch);
     bool isValidFace(uint32_t faceIdx) const;
     bool isValidEdge(uint32_t edgeIdx) const;
-    bool needsRefinement(uint32_t faceIdx, float minAngleThreshold, float minAreaThreshold);
-    float refinementPriority(uint32_t faceIdx);
+    uint32_t getParentInputFace(uint32_t faceIdx) const;
+    bool needsRefinement(uint32_t faceIdx, float minAngleThreshold);
+    float refinementPriority(uint32_t faceIdx, float area);
 
-    static size_t countSharpCorners(SignpostMesh& mesh, uint32_t faceIdx);
-    void queueRefineFace(uint32_t faceIdx, float minAngleThreshold, float minAreaThreshold, std::priority_queue<FaceCandidate>& faceQueue);
+    size_t countSharpCorners(SignpostMesh& mesh, const uint32_t* faceHEs);
+    void queueRefineFace(uint32_t faceIdx, float minAngleThreshold, std::priority_queue<FaceCandidate>& faceQueue);
     void queueDelaunayEdge(uint32_t edgeIdx, std::deque<uint32_t>& edgeQueue, std::vector<uint8_t>& inQueue);
 
-    bool insertPoint(uint32_t faceIdx, const glm::dvec3& baryCoords, uint32_t& outVertex, bool* outWasInserted = nullptr);
-    bool insertCircumcenter(uint32_t faceIdx, uint32_t& outNewVertex);
-    bool splitEdge(uint32_t edgeIdx, uint32_t& outNewVertex, uint32_t& outDiagFront, uint32_t& outDiagBack, uint32_t HESplit, double t = 0.5);
-    bool splitEdge(uint32_t heEdge, double tParam, uint32_t& outNewV, bool* outWasInserted = nullptr);
+    bool insertPoint(uint32_t faceIdx, const glm::dvec3& baryCoords, uint32_t& outVertex, bool* outWasInserted = nullptr, const RefinementCallbacks* callbacks = nullptr);
+    bool insertCircumcenter(uint32_t faceIdx, uint32_t& outNewVertex, const RefinementCallbacks* callbacks = nullptr);
+    bool splitEdge(uint32_t edgeIdx, uint32_t& outNewVertex, uint32_t& outDiagFront, uint32_t& outDiagBack, uint32_t HESplit, double t = 0.5, const RefinementCallbacks* callbacks = nullptr);
+    bool splitEdge(uint32_t heEdge, double tParam, uint32_t& outNewV, bool* outWasInserted = nullptr, const RefinementCallbacks* callbacks = nullptr);
 
-    bool computeWeightedCircumcenter(uint32_t vertIdx, glm::dvec2& outAvgVec, double& outAvgLen);
-    bool resolveVertex(uint32_t newVertexIdx);
+    uint32_t removeInsertedVertex(uint32_t vertexIdx, const RefinementCallbacks* callbacks = nullptr);
+    void collectFlipNeighborhood(uint32_t edgeIdx, std::vector<uint32_t>& outFaces, std::vector<uint32_t>& outEdges) const;
+    void collectVerticesWithinBall(uint32_t startVertex, double radius, std::vector<uint32_t>& outVertices) const;
+    void deleteInsertedVerticesNear(uint32_t insertedVertex, double ballRadius, const RefinementCallbacks* callbacks = nullptr);
+
+    bool computeWeightedCircumcenter(const HalfEdgeMesh::VertexRing2D& ring, glm::dvec2& outAvgVec, double& outAvgLen);
+    bool resolveVertex(uint32_t vertexIdx);
+    bool chooseTraceStart(const uint32_t* candidates, size_t count, uint32_t& outStart) const;
+    bool traceFromLocation(uint32_t startVertex, const GeodesicTracer::SurfacePoint& start,
+                           const glm::dvec2& dir2D, double length,
+                           GeodesicTracer::GeodesicTraceResult& outTrace);
+    void storeVertexLocation(uint32_t vertexIdx, const GeodesicTracer::GeodesicTraceResult& trace);
+    void anchorFanToArrival(uint32_t vertexIdx, uint32_t anchorHE, const glm::dvec2& outgoingVec);
 
     bool isEdgeOriginal(uint32_t edgeIdx) const;
+
+    size_t countInvalidIntrinsicFaces() const;
 
     void initializeVertexLocations();
     SignpostMesh intrinsicMesh;     // Intrinsic mesh 

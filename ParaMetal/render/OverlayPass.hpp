@@ -2,6 +2,7 @@
 
 #include "framegraph/FramePass.hpp"
 #include "framegraph/FrameGraphTypes.hpp"
+#include "renderers/CFDSliceRenderer.hpp"
 #include "renderers/StreamlineRenderer.hpp"
 #include "util/Units.hpp"
 
@@ -70,6 +71,7 @@ public:
     void setWorldUnit(units::LengthUnit unit);
     void setVelocityPalette(uint32_t palette);
     void setVelocityPaletteRange(float minimum, float maximum);
+    void setStreamlineCull(float worldDistance);
 
 private:
     GeometryPass& geometryPass;
@@ -96,10 +98,12 @@ private:
     std::unique_ptr<TimingRenderer> timingOverlay;
     std::unique_ptr<GridRenderer> gridRenderer;
     std::unique_ptr<StreamlineRenderer> streamlineRenderer;
+    std::unique_ptr<CFDSliceRenderer> sliceRenderer;
     std::vector<StreamlineRenderer::RenderBinding> streamlineBindings;
     uint32_t velocityPalette = 0;
     float velocityPaletteMinimum = 0.0f;
     float velocityPaletteMaximum = 1.0f;
+    float streamlineCullDistance = 0.0f;
     bool ready = false;
 };
 

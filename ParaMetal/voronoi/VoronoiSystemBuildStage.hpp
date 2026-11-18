@@ -52,19 +52,19 @@ class VoronoiSystemBuildStage {
     const std::vector<glm::dvec3>& getGlobalFaceMomentsB() const { return globalFaceMomentsB; }
     const std::vector<uint8_t>& getGlobalFaceTypes() const { return globalFaceTypes; }
     const std::vector<uint32_t>& getGlobalFaceDomainFaces() const { return globalFaceDomainFaces; }
+    const std::vector<uint32_t>& getGlobalFaceLoopOffsets() const { return globalFaceLoopOffsets; }
+    const std::vector<uint32_t>& getGlobalLoopVertexOffsets() const { return globalLoopVertexOffsets; }
+    const std::vector<glm::dvec3>& getGlobalLoopVertices() const { return globalLoopVertices; }
     const std::vector<uint32_t>& getGlobalContactCouplingFaceA() const { return globalContactCouplingFaceA; }
     const std::vector<uint32_t>& getGlobalContactCouplingFragmentA() const { return globalContactCouplingFragmentA; }
     const std::vector<uint32_t>& getGlobalContactCouplingFaceB() const { return globalContactCouplingFaceB; }
     const std::vector<uint32_t>& getGlobalContactCouplingFragmentB() const { return globalContactCouplingFragmentB; }
     const std::vector<double>& getGlobalContactCouplingAreas() const { return globalContactCouplingAreas; }
     const std::vector<uint32_t>& getGlobalBoundaryFaceIndices() const { return globalBoundaryFaceIndices; }
-    const std::vector<uint32_t>& getGlobalBoundaryFaceFragments() const { return globalBoundaryFaceFragments; }
-    const std::vector<uint32_t>& getGlobalBoundaryFaceDomainFaces() const { return globalBoundaryFaceDomainFaces; }
     const std::vector<uint32_t>& getGlobalInstanceFragmentCounts() const { return globalInstanceFragmentCounts; }
     glm::vec3 getGlobalVolumeGridMin() const { return globalVolumeGridMin; }
     glm::ivec3 getGlobalVolumeGridDim() const { return globalVolumeGridDim; }
     float getGlobalVolumeGridCellSize() const { return globalVolumeGridCellSize; }
-    float getGlobalNominalCellSize() const { return globalNominalCellSize; }
     const std::vector<glm::vec4>& getGlobalSeedPositions() const { return globalSeedPositions; }
     const std::array<glm::vec3, 8>& getGlobalDomainCorners() const { return globalDomainCorners; }
 
@@ -99,7 +99,6 @@ class VoronoiSystemBuildStage {
     std::vector<uint32_t> globalCellFragments;
     std::vector<glm::dvec3> globalFragmentCentroids;
     std::vector<double> globalFragmentVolumes;
-    float globalNominalCellSize = 0.0f;
     std::vector<uint32_t> globalFaceFragmentA;
     std::vector<uint32_t> globalFaceFragmentB;
     std::vector<double> globalFaceAreasA;
@@ -110,14 +109,15 @@ class VoronoiSystemBuildStage {
     std::vector<glm::dvec3> globalFaceMomentsB;
     std::vector<uint8_t> globalFaceTypes;
     std::vector<uint32_t> globalFaceDomainFaces;
+    std::vector<uint32_t> globalFaceLoopOffsets;
+    std::vector<uint32_t> globalLoopVertexOffsets;
+    std::vector<glm::dvec3> globalLoopVertices;
     std::vector<uint32_t> globalContactCouplingFaceA;
     std::vector<uint32_t> globalContactCouplingFragmentA;
     std::vector<uint32_t> globalContactCouplingFaceB;
     std::vector<uint32_t> globalContactCouplingFragmentB;
     std::vector<double> globalContactCouplingAreas;
     std::vector<uint32_t> globalBoundaryFaceIndices;
-    std::vector<uint32_t> globalBoundaryFaceFragments;
-    std::vector<uint32_t> globalBoundaryFaceDomainFaces;
     std::vector<uint32_t> globalInstanceFragmentCounts;
     glm::vec3 globalVolumeGridMin{};
     glm::ivec3 globalVolumeGridDim{};

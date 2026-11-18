@@ -75,7 +75,10 @@ struct BaseFaceTopology {
   cudaUtils::CudaBuffer<uint32_t> devRegionOffsets;
   cudaUtils::CudaBuffer<FaceRegion> devRegions;
 
-  // shared cell-vertex IDs for reciprocal base-face boundaries
+  std::vector<uint32_t> hostFaceLoopOffsets;
+  std::vector<uint32_t> hostLoopVertexOffsets;
+  std::vector<glm::dvec3> hostLoopVertices;
+
   cudaUtils::CudaBuffer<uint32_t> devCellVertexOffsets;
   cudaUtils::CudaBuffer<uint32_t> devCellVertexIds;
   cudaUtils::CudaBuffer<double3> devCellVertexPositions;

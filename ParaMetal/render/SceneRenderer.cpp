@@ -413,13 +413,18 @@ void SceneRenderer::setVelocityPalette(int palette) {
     }
 }
 
+void SceneRenderer::setStreamlineCull(float worldDistance) {
+    if (overlayPass) {
+        overlayPass->setStreamlineCull(worldDistance);
+    }
+}
+
 bool SceneRenderer::isHeatPaletteVisible() const {
     return heatOverlayRenderer && heatOverlayRenderer->isPaletteVisible();
 }
 
 bool SceneRenderer::isVelocityPaletteVisible() const {
-    return (cfdOverlayRenderer && cfdOverlayRenderer->isVelocityPaletteVisible()) ||
-        (heatOverlayRenderer && heatOverlayRenderer->isCfdVelocityPaletteVisible());
+    return cfdOverlayRenderer && cfdOverlayRenderer->isVelocityPaletteVisible();
 }
 
 void SceneRenderer::setTimingOverlayLines(const std::vector<std::string>& lines) {

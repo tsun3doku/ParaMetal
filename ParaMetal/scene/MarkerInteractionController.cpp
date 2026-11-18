@@ -140,7 +140,7 @@ bool MarkerInteractionController::handlePointerPress(float mouseX, float mouseY,
             }
         }
 
-        if (hitAny) {
+        if (hitAny && !camera.isClippedByNearPlane(closestHit.worldPosition)) {
             pendingCommit = MarkerCommit{ probePickingNodeId, probePickingIndex, closestHit.worldPosition };
             probePickingActive = false;
             probePickingNodeId = 0;
@@ -192,7 +192,7 @@ bool MarkerInteractionController::handlePointerMove(float mouseX, float mouseY) 
         }
     }
 
-    if (hitAny) {
+    if (hitAny && !camera.isClippedByNearPlane(closestHit.worldPosition)) {
         dragCurrentPosition = closestHit.worldPosition;
         for (auto& item : markers) {
             if (item.nodeId == selectedNodeId && item.probeIndex == selectedProbeIndex) {

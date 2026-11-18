@@ -250,9 +250,13 @@ bool HeatFluidVolumeStage::updateSeedToFluidNode(
         for (uint32_t entry = globalDomain.cellFragmentOffsets[cell];
              entry < globalDomain.cellFragmentOffsets[cell + 1]; ++entry) {
             const uint32_t fragment = globalDomain.cellFragments[entry];
-            if (fragment >= globalDomain.fragments.size() ||
-                globalDomain.fragments[fragment].instanceId !=
-                    topology::InvalidInstanceId) {
+            if (fragment >= globalDomain.fragments.size()) {
+                std::cerr << "[HeatFluidVolumeStage] seed cell " << cell
+                          << " references out-of-range fragment " << fragment << std::endl;
+                return false;
+            }
+            if (globalDomain.fragments[fragment].instanceId !=
+                topology::InvalidInstanceId) {
                 continue;
             }
             if (fluidFragment != 0xFFFFFFFFu) {

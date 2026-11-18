@@ -11,57 +11,6 @@ Item {
     width: UiTheme.toolButtonGroupWidth(2)
     height: UiTheme.toolButtonSize + UiTheme.toolButtonFrameSize
 
-    function syncFov(force) {
-        if (force || !fovField.activeFocus)
-            fovField.text = Number(bridge.cameraFov).toFixed(1)
-    }
-
-    function commitFov() {
-        const input = fovField.text.trim()
-        const parsed = Number(input)
-        if (input.length === 0 || !Number.isFinite(parsed)) {
-            syncFov(true)
-            return
-        }
-        const clamped = Math.max(1.0, Math.min(120.0, parsed))
-        fovField.text = clamped.toFixed(1)
-        bridge.setCameraFov(clamped)
-    }
-
-    function syncZoomSpeed(force) {
-        if (force || !zoomSpeedField.activeFocus)
-            zoomSpeedField.text = Number(bridge.cameraZoomSpeed).toFixed(1)
-    }
-
-    function commitZoomSpeed() {
-        const input = zoomSpeedField.text.trim()
-        const parsed = Number(input)
-        if (input.length === 0 || !Number.isFinite(parsed)) {
-            syncZoomSpeed(true)
-            return
-        }
-        const clamped = Math.max(0.1, Math.min(5.0, parsed))
-        zoomSpeedField.text = clamped.toFixed(1)
-        bridge.setCameraZoomSpeed(clamped)
-    }
-
-    function syncPanSpeed(force) {
-        if (force || !panSpeedField.activeFocus)
-            panSpeedField.text = Number(bridge.cameraPanSpeed).toFixed(1)
-    }
-
-    function commitPanSpeed() {
-        const input = panSpeedField.text.trim()
-        const parsed = Number(input)
-        if (input.length === 0 || !Number.isFinite(parsed)) {
-            syncPanSpeed(true)
-            return
-        }
-        const clamped = Math.max(0.1, Math.min(5.0, parsed))
-        panSpeedField.text = clamped.toFixed(1)
-        bridge.setCameraPanSpeed(clamped)
-    }
-
     Rectangle {
         anchors.fill: parent
         radius: 5
@@ -95,7 +44,7 @@ Item {
         theme: root.theme
         x: 0
         y: root.height + 4
-        width: 232
+        width: 205
 
         ButtonGroup { id: projectionGroup }
 
@@ -106,7 +55,7 @@ Item {
             Button {
                 id: perspectiveButton
                 Layout.fillWidth: true
-                implicitHeight: 28
+                implicitHeight: 22
                 checkable: true
                 ButtonGroup.group: projectionGroup
                 checked: root.bridge.projectionMode === 0
@@ -131,7 +80,7 @@ Item {
             Button {
                 id: orthographicButton
                 Layout.fillWidth: true
-                implicitHeight: 28
+                implicitHeight: 22
                 checkable: true
                 ButtonGroup.group: projectionGroup
                 checked: root.bridge.projectionMode === 1
@@ -156,137 +105,107 @@ Item {
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.topMargin: 5
-            spacing: 8
+            spacing: 6
+            enabled: root.bridge.projectionMode === 0
+            opacity: enabled ? 1.0 : 0.45
 
-            RowLayout {
+            Text {
                 Layout.preferredWidth: 80
-                spacing: 4
-                enabled: root.bridge.projectionMode === 0
-                opacity: enabled ? 1.0 : 0.45
-
-                Text {
-                    Layout.preferredWidth: 24
-                    text: qsTr("FOV")
-                    color: root.theme.text
-                    font: root.theme.regularFont
-                }
-
-                TextField {
-                    id: fovField
-                    Layout.preferredWidth: 52
-                    implicitHeight: 28
-                    color: root.theme.text
-                    selectionColor: root.theme.accent
-                        selectedTextColor: root.theme.onAccentText
-                    font: root.theme.regularFont
-                    padding: 7
-                    horizontalAlignment: TextInput.AlignRight
-                    verticalAlignment: TextInput.AlignVCenter
-                    validator: DoubleValidator {
-                        bottom: 1.0
-                        top: 120.0
-                        decimals: 1
-                    }
-                    background: Rectangle {
-                        radius: 3
-                        color: root.theme.inputBackground
-                        border.width: 1
-                        border.color: fovField.activeFocus ? root.theme.accent : root.theme.border
-                    }
-                    onEditingFinished: root.commitFov()
-                }
+                text: qsTr("FOV")
+                color: root.theme.text
+                font: root.theme.regularFont
+                elide: Text.ElideRight
             }
 
-            RowLayout {
+            UiNumberBox {
                 Layout.fillWidth: true
-                spacing: 4
-
-                Text {
-                    Layout.fillWidth: true
-                    text: qsTr("Zoom Speed")
-                    color: root.theme.text
-                    font: root.theme.regularFont
-                }
-
-                TextField {
-                    id: zoomSpeedField
-                    Layout.preferredWidth: 44
-                    implicitHeight: 28
-                    color: root.theme.text
-                    selectionColor: root.theme.accent
-                        selectedTextColor: root.theme.onAccentText
-                    font: root.theme.regularFont
-                    padding: 7
-                    horizontalAlignment: TextInput.AlignRight
-                    verticalAlignment: TextInput.AlignVCenter
-                    validator: DoubleValidator {
-                        bottom: 0.1
-                        top: 5.0
-                        decimals: 1
-                    }
-                    background: Rectangle {
-                        radius: 3
-                        color: root.theme.inputBackground
-                        border.width: 1
-                        border.color: zoomSpeedField.activeFocus ? root.theme.accent : root.theme.border
-                    }
-                    onEditingFinished: root.commitZoomSpeed()
-                }
+                Layout.preferredHeight: 22
+                theme: root.theme
+                value: root.bridge.cameraFov
+                minimum: 1.0
+                maximum: 120.0
+                decimals: 1
+                onValueEdited: val => root.bridge.setCameraFov(val)
             }
         }
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 4
+            spacing: 6
 
             Text {
+                Layout.preferredWidth: 80
+                text: qsTr("Zoom Speed")
+                color: root.theme.text
+                font: root.theme.regularFont
+                elide: Text.ElideRight
+            }
+
+            UiNumberBox {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 22
+                theme: root.theme
+                value: root.bridge.cameraZoomSpeed
+                minimum: 0.1
+                maximum: 5.0
+                decimals: 1
+                onValueEdited: val => root.bridge.setCameraZoomSpeed(val)
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 6
+
+            Text {
+                Layout.preferredWidth: 80
                 text: qsTr("Pan Speed")
                 color: root.theme.text
                 font: root.theme.regularFont
+                elide: Text.ElideRight
             }
 
-            TextField {
-                id: panSpeedField
-                Layout.preferredWidth: 44
-                implicitHeight: 28
-                color: root.theme.text
-                selectionColor: root.theme.accent
-                    selectedTextColor: root.theme.onAccentText
-                font: root.theme.regularFont
-                padding: 7
-                horizontalAlignment: TextInput.AlignRight
-                verticalAlignment: TextInput.AlignVCenter
-                validator: DoubleValidator {
-                    bottom: 0.1
-                    top: 5.0
-                    decimals: 1
-                }
-                background: Rectangle {
-                    radius: 3
-                    color: root.theme.inputBackground
-                    border.width: 1
-                    border.color: panSpeedField.activeFocus ? root.theme.accent : root.theme.border
-                }
-                onEditingFinished: root.commitPanSpeed()
+            UiNumberBox {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 22
+                theme: root.theme
+                value: root.bridge.cameraPanSpeed
+                minimum: 0.1
+                maximum: 5.0
+                decimals: 1
+                onValueEdited: val => root.bridge.setCameraPanSpeed(val)
             }
-
-            Item { Layout.fillWidth: true }
         }
-    }
 
-    Component.onCompleted: {
-        syncFov()
-        syncZoomSpeed()
-        syncPanSpeed()
-    }
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 6
 
-    Connections {
-        target: root.bridge
-        function onStateChanged() {
-            root.syncFov()
-            root.syncZoomSpeed()
-            root.syncPanSpeed()
+            Text {
+                Layout.preferredWidth: 80
+                text: qsTr("Cull")
+                color: root.theme.text
+                font: root.theme.regularFont
+                elide: Text.ElideRight
+            }
+
+            UiNumberBox {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 22
+                theme: root.theme
+                value: root.bridge.nearClip
+                minimum: 0.01
+                maximum: 10.0
+                decimals: 2
+                onValueEdited: val => root.bridge.setNearClip(val)
+            }
+        }
+
+        UiCheckBox {
+            theme: root.theme
+            text: qsTr("Cull streamlines only")
+            checked: root.bridge.cullLinesOnly
+            onClicked: root.bridge.setCullLinesOnly(checked)
         }
     }
 }

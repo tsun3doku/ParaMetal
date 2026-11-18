@@ -1,5 +1,4 @@
-static const uint InvalidSeed = 0xFFFFFFFFu;
-static const uint SolidSeed   = 0xFFFFFFFEu;
+#include "cfd_field.slang"
 
 struct LineVertex {
     float4 positionSpeed;  // xyz = world position, w = sampled speed
@@ -10,6 +9,8 @@ struct LineVertex {
 [[vk::binding(2, 0)]] StructuredBuffer<float4>   velocity;
 [[vk::binding(3, 0)]] StructuredBuffer<float4>   seeds;
 [[vk::binding(4, 0)]] RWStructuredBuffer<LineVertex> lineVertices;
+[[vk::binding(5, 0)]] StructuredBuffer<float4>   nodeCentroids;
+[[vk::binding(6, 0)]] StructuredBuffer<float4>   nodeGradients;
 
 struct PushConstants {
     float4 gridMinCellSize;      // xyz = grid min, w = cell size
@@ -20,6 +21,11 @@ struct PushConstants {
     float4 domainMax;            // xyz = domain box max
 };
 [[vk::push_constant]] ConstantBuffer<PushConstants> pc;
+
+CfdFieldParams fieldParams() {
+    return {pc.gridMinCellSize, pc.gridDimMaxSegments,
+            uint4(pc.counts.y, pc.counts.z, 0u, 0u), pc.domainMin, pc.domainMax};
+}
 
 // Fraction of p->next at which the segment leaves the domain box; p is inside.
 float domainExitFraction(float3 p, float3 next) {
@@ -39,42 +45,18 @@ bool sampleVelocity(float3 p, out float3 direction, out float speed) {
     direction = float3(0.0f);
     speed = 0.0f;
 
-    const float cellSize = pc.gridMinCellSize.w;
-    const int3 dim = pc.gridDimMaxSegments.xyz;
-    if (cellSize <= 0.0f || any(dim <= int3(0))) {
-        return false;
-    }
-    // The seed grid is inflated beyond the domain, so padded voxels would
-    // otherwise project live cells onto space outside the domain faces.
-    if (any(p < pc.domainMin.xyz) || any(p > pc.domainMax.xyz)) {
+    float3 linearV;
+    if (!sampleCfdField(fluidSeedGrid, seedToFluidNode, velocity, nodeCentroids,
+                        nodeGradients, fieldParams(), p, linearV)) {
         return false;
     }
 
-    const int3 voxel = int3(floor((p - pc.gridMinCellSize.xyz) / cellSize));
-    if (any(voxel < int3(0)) || any(voxel >= dim)) {
-        return false;
-    }
-
-    const uint index = uint(voxel.x) +
-        uint(voxel.y) * uint(dim.x) +
-        uint(voxel.z) * uint(dim.x) * uint(dim.y);
-    const uint seed = fluidSeedGrid[index];
-    if (seed >= SolidSeed || seed >= pc.counts.y) {
-        return false;
-    }
-
-    const uint node = seedToFluidNode[seed];
-    if (node >= pc.counts.z) {
-        return false;
-    }
-
-    const float3 v = velocity[node].xyz;
-    speed = length(v);
+    speed = length(linearV);
     if (!(speed > 1e-6f)) {
         return false;
     }
 
-    direction = v / speed;
+    direction = linearV / speed;
     return true;
 }
 
@@ -109,10 +91,11 @@ void main(uint3 id : SV_DispatchThreadID) {
 
     uint written = 0u;
     for (uint s = 0; s < segmentCount; ++s) {
-        float3 advance;
-        float advanceSpeed;
         float3 midDirection;
         float midSpeed;
+        float3 advance;
+        float advanceSpeed;
+
         if (sampleVelocity(p + direction * (0.5f * stepLength), midDirection, midSpeed)) {
             advance = stepLength * midDirection;
             advanceSpeed = midSpeed;
@@ -121,30 +104,36 @@ void main(uint3 id : SV_DispatchThreadID) {
             advanceSpeed = speed;
         }
 
-        // Stop on the domain face instead of overshooting it by one step.
         const float exitFraction = domainExitFraction(p, p + advance);
+        float3 nextPosition = p + exitFraction * advance;
+
+        // Verify destination is inside valid fluid BEFORE writing the segment.
+        // If it hit a solid or boundary, test a half-step; if that also fails,
+        // stop cleanly at p so no segment is ever drawn into solid geometry.
+        float3 nextDirection;
+        float nextSpeed;
+        if (!sampleVelocity(nextPosition, nextDirection, nextSpeed)) {
+            nextPosition = p + (0.5f * exitFraction) * advance;
+            if (!sampleVelocity(nextPosition, nextDirection, nextSpeed)) {
+                break;
+            }
+        }
 
         LineVertex start;
         start.positionSpeed = float4(p, speed);
 
         LineVertex end;
-        end.positionSpeed = float4(p + exitFraction * advance, advanceSpeed);
+        end.positionSpeed = float4(nextPosition, advanceSpeed);
 
         lineVertices[base + 2u * s] = start;
         lineVertices[base + 2u * s + 1u] = end;
         written = s + 1u;
 
         if (exitFraction < 1.0f) {
-            p += exitFraction * advance;
+            p = nextPosition;
             break;
         }
 
-        const float3 nextPosition = p + advance;
-        float3 nextDirection;
-        float nextSpeed;
-        if (!sampleVelocity(nextPosition, nextDirection, nextSpeed)) {
-            break;
-        }
         p = nextPosition;
         direction = nextDirection;
         speed = nextSpeed;

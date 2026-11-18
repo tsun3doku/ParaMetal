@@ -8,37 +8,6 @@
 
 namespace cfd {
 
-bool CFDSystemComputeController::canUpdateInPlace(const Config& previous, const Config& next) {
-    if (previous.geometryHash == 0 || previous.geometryHash != next.geometryHash) {
-        return false;
-    }
-    if (previous.targetCourant != next.targetCourant) {
-        return false;
-    }
-    // History frame index is duration / time step; changing either reallocates it.
-    if (previous.fixedTimeStep != next.fixedTimeStep) {
-        return false;
-    }
-    if (previous.simulationDuration != next.simulationDuration) {
-        return false;
-    }
-    if (glm::length(previous.initialVelocity - next.initialVelocity) > 1e-6f) {
-        return false;
-    }
-    if (std::abs(previous.kinematicViscosity - next.kinematicViscosity) > 1e-12f) {
-        return false;
-    }
-    for (uint32_t i = 0; i < 6; ++i) {
-        if (previous.domainBoundaryTypes[i] != next.domainBoundaryTypes[i]) {
-            return false;
-        }
-        if (glm::length(previous.domainBoundaryVelocities[i] - next.domainBoundaryVelocities[i]) > 1e-6f) {
-            return false;
-        }
-    }
-    return true;
-}
-
 CFDSystemComputeController::CFDSystemComputeController(
     VulkanDevice& device,
     MemoryAllocator& allocator,
@@ -60,7 +29,6 @@ bool CFDSystemComputeController::apply(uint64_t socketKey, const Config& config)
     }
 
     const auto configIt = configuredConfigs.find(socketKey);
-
     if (configIt != configuredConfigs.end() &&
         configIt->second.computeHash == config.computeHash) {
         cancelCandidate(socketKey);
@@ -74,15 +42,6 @@ bool CFDSystemComputeController::apply(uint64_t socketKey, const Config& config)
     failedComputeHashes.erase(socketKey);
 
     auto it = generationSlots.find(socketKey);
-    const bool hasSystem = it != generationSlots.end() && it->second.current;
-
-    if (hasSystem && configIt != configuredConfigs.end() &&
-        canUpdateInPlace(configIt->second, config) &&
-        it->second.current->isInitialized()) {
-            pendingConfigs[socketKey] = config;
-        pendingConfigs[socketKey].domain = nullptr;
-        return true;
-    }
 
     if (!config.domain) {
         failedComputeHashes[socketKey] = config.computeHash;
@@ -164,26 +123,13 @@ void CFDSystemComputeController::commitPending(uint64_t socketKey) {
     if (slot.retiring != nullptr) {
         return;
     }
-    const bool replaced = slot.candidate != nullptr;
-    if (replaced) {
+    if (slot.candidate != nullptr) {
         slot.retiring = std::move(slot.current);
         slot.current = std::move(slot.candidate);
     }
 
     const auto pending = pendingConfigs.find(socketKey);
     if (pending != pendingConfigs.end()) {
-        if (!replaced && slot.current) {
-                    slot.current->updateParameters(
-                pending->second.kinematicViscosity,
-                pending->second.initialVelocity,
-                pending->second.domainBoundaryTypes,
-                pending->second.domainBoundaryVelocities,
-                pending->second.fixedTimeStep,
-                pending->second.targetCourant);
-            slot.current->setPressureSolverParameters(
-                pending->second.pressureIterations,
-                pending->second.pressureTolerance);
-        }
         const auto committed = configuredConfigs.find(socketKey);
         if (committed != configuredConfigs.end()) {
             committed->second = std::move(pending->second);
@@ -261,10 +207,18 @@ bool CFDSystemComputeController::buildProduct(uint64_t socketKey, CFDProduct& ou
 
     const auto& runtime = systemPtr->getRuntime();
     outProduct.fluidNodeCount = runtime.getFluidNodeCount();
+    outProduct.globalFragmentToFluidNode = systemPtr->getGlobalFragmentToFluidNode();
 
     outProduct.streamlineVertexBuffer = systemPtr->streamlineVertexBuffer();
     outProduct.streamlineVertexBufferOffset = systemPtr->streamlineVertexBufferOffset();
     outProduct.streamlineVertexCount = systemPtr->streamlineVertexCount();
+
+    outProduct.velocityBuffer = systemPtr->getDisplayVelocityBuffer();
+    outProduct.velocityBufferOffset = systemPtr->getDisplayVelocityBufferOffset();
+    outProduct.gradientBuffer = systemPtr->getDisplayGradientBuffer();
+    outProduct.gradientBufferOffset = systemPtr->getDisplayGradientBufferOffset();
+    outProduct.centroidBuffer = systemPtr->getFluidCentroidBuffer();
+    outProduct.centroidBufferOffset = systemPtr->getFluidCentroidBufferOffset();
 
     outProduct.faceFluxBuffer = runtime.faceFluxBuffer();
     outProduct.faceFluxBufferSize = runtime.getFaceFluxExternalBuffer().getBufferSize();

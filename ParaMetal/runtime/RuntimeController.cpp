@@ -15,11 +15,15 @@
 #include "render/RenderRuntime.hpp"
 #include "render/SceneRenderer.hpp"
 #include "render/HeatOverlayRenderer.hpp"
+#include "render/CFDOverlayRenderer.hpp"
 #include "scene/CameraController.hpp"
+#include "scene/DomainFaceInteractionController.hpp"
 #include "interaction/InteractionContext.hpp"
 #include "scene/MarkerInteractionController.hpp"
 #include "scene/SceneController.hpp"
 #include "vulkan/ModelRegistry.hpp"
+
+#include <array>
 
 
 RuntimeController::RuntimeController() = default;
@@ -155,9 +159,59 @@ void RuntimeController::tick(
         return;
     }
 
+    render::HeatOverlayRenderer* heatOverlay = nullptr;
+    render::CFDOverlayRenderer* cfdOverlay = nullptr;
+    DomainFaceInteractionController* faceEditing = nullptr;
+    bool domainBoxValid = false;
+
+    if (render->runtime() && interaction) {
+        SceneRenderer& sceneRenderer = render->runtime()->getSceneRenderer();
+        heatOverlay = sceneRenderer.getHeatOverlayRenderer();
+        cfdOverlay = sceneRenderer.getCFDOverlayRenderer();
+        faceEditing = &interaction->domainFaceInteractionController();
+
+        std::array<glm::vec3, 8> domainBox{};
+        bool boxSet = false;
+        bool boxAmbiguous = false;
+        const std::vector<HeatBoxRenderer::RenderBinding>* boxSources[2] = {
+            heatOverlay ? &heatOverlay->getBoxBindings() : nullptr,
+            cfdOverlay ? &cfdOverlay->getBoxBindings() : nullptr
+        };
+        for (const auto* boxes : boxSources) {
+            if (!boxes) {
+                continue;
+            }
+            for (const auto& binding : *boxes) {
+                if (!boxSet) {
+                    domainBox = binding.corners;
+                    boxSet = true;
+                } else if (binding.corners != domainBox) {
+                    boxAmbiguous = true;
+                }
+            }
+        }
+
+        domainBoxValid = boxSet && !boxAmbiguous;
+        faceEditing->setDomainBox(domainBox, domainBoxValid);
+    }
+
     dispatchInputEvents();
     updateRawMouseDrag();
     viewportEdits->tick();
+
+    if (faceEditing) {
+        const int selectedFace = faceEditing->selectedFace();
+        const int hoverFace = faceEditing->hoverFace();
+        const bool highlightValid = domainBoxValid && faceEditing->editingNodeId() > 0;
+        if (heatOverlay) {
+            heatOverlay->setBoundaryFaceHighlight(
+                selectedFace, hoverFace, faceEditing->domainCorners(), highlightValid);
+        }
+        if (cfdOverlay) {
+            cfdOverlay->setBoundaryFaceHighlight(
+                selectedFace, hoverFace, faceEditing->domainCorners(), highlightValid);
+        }
+    }
 
     if (render->runtime() && interaction) {
         const auto& markerCtrl = interaction->markerInteractionController();

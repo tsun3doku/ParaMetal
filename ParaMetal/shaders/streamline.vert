@@ -10,8 +10,11 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
 } ubo;
 
 layout(location = 0) out float outSpeed;
+layout(location = 1) out float outForwardDepth;
 
 void main() {
-    gl_Position = ubo.proj * ubo.view * vec4(inPositionSpeed.xyz, 1.0);
+    vec4 viewPosition = ubo.view * vec4(inPositionSpeed.xyz, 1.0);
+    gl_Position = ubo.proj * viewPosition;
     outSpeed = inPositionSpeed.w;
+    outForwardDepth = -viewPosition.z;
 }

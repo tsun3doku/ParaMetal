@@ -21,28 +21,51 @@ struct RayHit {
     uint32_t triangleIndex = 0;
 };
 
+struct SlabIntersection {
+    bool hit = false;
+    float tNear = 0.0f;
+    float tFar = 0.0f;
+    int nearFace = -1;
+    int farFace = -1;
+};
+
 class MousePicker {
 public:
-    // Convert screen coordinates to world-space ray
-    static Ray screenToWorldRay(float mouseX, float mouseY, uint32_t screenWidth, uint32_t screenHeight,
-                                 const glm::mat4& view, const glm::mat4& proj);
-    static Ray screenToWorldRay(float mouseX, float mouseY, uint32_t screenWidth, uint32_t screenHeight,
-                                 const Camera& camera);
+    static Ray screenToWorldRay(
+        float mouseX, 
+        float mouseY, 
+        uint32_t screenWidth, 
+        uint32_t screenHeight,
+        const glm::mat4& view, 
+        const glm::mat4& proj);
+
+    static Ray screenToWorldRay(
+        float mouseX, 
+        float mouseY, 
+        uint32_t screenWidth, 
+        uint32_t screenHeight,
+        const Camera& camera);
     
-    // Check if ray intersects with model's bounding box (simple AABB test)
-    static bool rayIntersectsAABB(const Ray& ray, const glm::vec3& aabbMin, const glm::vec3& aabbMax);
+    static bool rayIntersectsAABB(
+        const Ray& ray, 
+        const glm::vec3& aabbMin, 
+        const glm::vec3& aabbMax);
+
+    static SlabIntersection intersectSlab(
+        const Ray& ray, 
+        const glm::vec3& aabbMin, const glm::vec3& aabbMax);
+
+    static bool rayIntersectsAABBFace(const Ray& ray, const glm::vec3& aabbMin, const glm::vec3& aabbMax,
+                                      float& outT, int& outFace);
     
-    // Check if ray intersects with a sphere (for simpler hit testing)
     static bool rayIntersectsSphere(const Ray& ray, const glm::vec3& center, float radius);
 
-    // Check if ray intersects a single triangle (Möller–Trumbore)
     static bool rayIntersectsTriangle(
         const Ray& ray,
         const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2,
         float& outT, glm::vec3& outNormal,
         bool cullBackFace = false);
 
-    // Raycast against a Model's CPU mesh
     static bool raycastModel(
         const Ray& ray,
         const Model& model,
@@ -50,7 +73,6 @@ public:
         RayHit& outHit,
         bool cullBackFace = false);
 
-    // Overload using model's own model matrix
     static bool raycastModel(
         const Ray& ray,
         const Model& model,

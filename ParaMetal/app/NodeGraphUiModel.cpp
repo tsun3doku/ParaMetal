@@ -152,6 +152,7 @@ void NodeGraphUiModel::replaceGraphState(const NodeGraphState& state) {
     graphState = state;
     revision = UINT64_MAX;
     refresh();
+    syncBoundaryFaceEditing(true);
     relabelExportProducts();
     if (selectedType == QStringLiteral("write")) requestCurrentExportProducts();
 }
@@ -275,6 +276,15 @@ void NodeGraphUiModel::cancelProbePicking() {
         QGuiApplication::restoreOverrideCursor();
     }
     emit probePickingRequested(0, 0);
+}
+
+void NodeGraphUiModel::setBoundaryFaceSelectionActive(bool active) {
+    if (boundaryEditingNode <= 0 || boundaryFaceSelectionActive == active) {
+        return;
+    }
+    boundaryFaceSelectionActive = active;
+    emit boundaryFaceSelectionActiveChanged();
+    emit boundaryFaceEditingRequested(boundaryEditingNode, active);
 }
 
 void NodeGraphUiModel::removeSelectedNodes() {
@@ -757,4 +767,22 @@ void NodeGraphUiModel::rebuildSelectedNode() {
     }
 
     emit selectedNodeChanged();
+    syncBoundaryFaceEditing(false);
+}
+
+void NodeGraphUiModel::syncBoundaryFaceEditing(bool force) {
+    const int targetNode =
+        (selectedId > 0 && selectedType == QString::fromLatin1(nodegraphtypes::BoundaryConditions)) ? selectedId : 0;
+
+    if (!force && targetNode == boundaryEditingNode) {
+        return;
+    }
+    boundaryEditingNode = targetNode;
+
+    const bool active = targetNode > 0;
+    if (boundaryFaceSelectionActive != active) {
+        boundaryFaceSelectionActive = active;
+        emit boundaryFaceSelectionActiveChanged();
+    }
+    emit boundaryFaceEditingRequested(targetNode, active);
 }

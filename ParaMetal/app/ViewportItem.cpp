@@ -27,6 +27,11 @@ void ViewportItem::requestProbePicking(int nodeId, int probeIndex) {
     update();
 }
 
+void ViewportItem::requestBoundaryFaceEditing(int nodeId, bool armed) {
+    mailbox.requestBoundaryFaceEditing(nodeId, armed);
+    update();
+}
+
 void ViewportItem::requestExport(int nodeId) {
     mailbox.requestExport(nodeId);
     update();
@@ -52,6 +57,8 @@ void ViewportItem::requestProjectionMode(CameraProjectionMode mode) { mailbox.re
 void ViewportItem::requestCameraFov(float degrees) { mailbox.requestCameraFov(degrees); update(); }
 void ViewportItem::requestCameraZoomSpeed(float speed) { mailbox.requestCameraZoomSpeed(speed); update(); }
 void ViewportItem::requestCameraPanSpeed(float speed) { mailbox.requestCameraPanSpeed(speed); update(); }
+void ViewportItem::requestCameraNearClip(float meters) { mailbox.requestCameraNearClip(meters); update(); }
+void ViewportItem::requestCullLinesOnly(bool linesOnly) { mailbox.requestCullLinesOnly(linesOnly); update(); }
 void ViewportItem::requestTimelinePlaying(bool playing) { mailbox.requestTimelinePlaying(playing); update(); }
 void ViewportItem::requestTimelineReset() { mailbox.requestTimelineReset(); update(); }
 void ViewportItem::requestTimelineScrub(uint32_t frame) { mailbox.requestTimelineScrub(frame); update(); }

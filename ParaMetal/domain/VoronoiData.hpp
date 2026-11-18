@@ -13,7 +13,6 @@
 //                                                        - This header must not be included in any backend ]
 
 struct VoronoiData {
-    float cellSize = 0.005f;
     int voxelResolution = 128;
     float volumePadding = 0.01f;
     int lloydIterations = int(voronoi::DefaultLloydIterations);

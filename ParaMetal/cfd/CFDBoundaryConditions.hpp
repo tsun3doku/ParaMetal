@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 
 #include "CFDGpuStructs.hpp"
+#include "../voronoi/GlobalDomainTopology.hpp"
 
 namespace cfd {
 
@@ -14,6 +15,10 @@ enum class BoundaryType : uint8_t {
     PressureOutlet
 };
 
+constexpr uint32_t BoundaryTypeNoSlipWall = static_cast<uint32_t>(BoundaryType::NoSlipWall);
+constexpr uint32_t BoundaryTypeVelocityInlet = static_cast<uint32_t>(BoundaryType::VelocityInlet);
+constexpr uint32_t BoundaryTypePressureOutlet = static_cast<uint32_t>(BoundaryType::PressureOutlet);
+
 struct BoundaryCondition {
     BoundaryType type = BoundaryType::NoSlipWall;
     glm::vec3 velocity{0.0f};
@@ -22,7 +27,7 @@ struct BoundaryCondition {
 using DomainBoundaryConditions =
     std::array<BoundaryCondition, 6>;
 
-constexpr uint32_t DomainBoundaryCount = 6;
+constexpr uint32_t DomainBoundaryCount = topology::DomainFaceCount;
 constexpr uint32_t EmbeddedWallBoundary = 6;
 
 inline glm::vec3 getDomainBoxNormal(uint32_t domainFace) {

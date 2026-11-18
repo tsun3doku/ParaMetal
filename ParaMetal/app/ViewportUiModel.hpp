@@ -15,6 +15,8 @@ class ViewportUiModel final : public QObject {
     Q_PROPERTY(float cameraFov READ cameraFov NOTIFY stateChanged)
     Q_PROPERTY(float cameraZoomSpeed READ cameraZoomSpeed NOTIFY stateChanged)
     Q_PROPERTY(float cameraPanSpeed READ cameraPanSpeed NOTIFY stateChanged)
+    Q_PROPERTY(float nearClip READ nearClip NOTIFY stateChanged)
+    Q_PROPERTY(bool cullLinesOnly READ cullLinesOnly NOTIFY stateChanged)
 
 public:
     explicit ViewportUiModel(QObject* parent = nullptr) : QObject(parent) {}
@@ -28,6 +30,8 @@ public:
     float cameraFov() const { return state.baseFov; }
     float cameraZoomSpeed() const { return state.zoomSpeed; }
     float cameraPanSpeed() const { return state.panSpeed; }
+    float nearClip() const { return state.nearClip; }
+    bool cullLinesOnly() const { return state.cullLinesOnly; }
 
     Q_INVOKABLE void setWireframeMode(int mode);
     Q_INVOKABLE void setGridEnabled(bool enabled);
@@ -39,6 +43,8 @@ public:
     Q_INVOKABLE void setCameraFov(float degrees);
     Q_INVOKABLE void setCameraZoomSpeed(float speed);
     Q_INVOKABLE void setCameraPanSpeed(float speed);
+    Q_INVOKABLE void setNearClip(float meters);
+    Q_INVOKABLE void setCullLinesOnly(bool linesOnly);
 
 public slots:
     void applyState(const ViewportUiState& updated);
@@ -55,6 +61,8 @@ signals:
     void cameraFovRequested(float degrees);
     void cameraZoomSpeedRequested(float speed);
     void cameraPanSpeedRequested(float speed);
+    void nearClipRequested(float meters);
+    void cullLinesOnlyRequested(bool linesOnly);
 
 private:
     ViewportUiState state{};

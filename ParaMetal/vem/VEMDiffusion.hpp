@@ -93,6 +93,8 @@ private:
     struct RowTerm {
         uint32_t column = 0;
         float value = 0.0f;
+
+        bool operator<(const RowTerm& other) const { return column < other.column; }
     };
 
     static bool computeElementFluxOperator(
@@ -107,7 +109,6 @@ private:
         std::vector<double>& inverse,
         int* outFailedPivot,
         double* outFailedPivotValue);
-    static bool rowTermLess(const RowTerm& a, const RowTerm& b);
     static int buildRowEntries(
         uint32_t trace,
         uint32_t totalTraceCount,

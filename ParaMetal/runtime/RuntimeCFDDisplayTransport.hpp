@@ -6,6 +6,8 @@
 #include "runtime/RuntimeProductManager.hpp"
 
 #include <unordered_set>
+#include <memory>
+#include <unordered_map>
 #include <vector>
 
 class RuntimeCFDDisplayTransport {
@@ -98,12 +100,23 @@ private:
         outConfig.showStreamlines = package.display.showStreamlines;
         outConfig.showDomainBox = package.display.showDomainBox;
         outConfig.showVelocityPalette = package.display.showVelocityPalette;
+        outConfig.showSlice = package.display.showSlice;
+        outConfig.sliceAxis = package.display.sliceAxis;
+        outConfig.slicePosition = package.display.slicePosition;
+        outConfig.showSliceWireframe = package.display.showSliceWireframe;
         outConfig.authoredActive = package.active;
         outConfig.active = package.active;
         outConfig.canonicalToWorldScale = package.canonicalToWorldScale;
         outConfig.streamlineVertexBuffer = product->streamlineVertexBuffer;
         outConfig.streamlineVertexBufferOffset = product->streamlineVertexBufferOffset;
         outConfig.streamlineVertexCount = product->streamlineVertexCount;
+        outConfig.fluidNodeCount = product->fluidNodeCount;
+        outConfig.velocityBuffer = product->velocityBuffer;
+        outConfig.velocityBufferOffset = product->velocityBufferOffset;
+        outConfig.gradientBuffer = product->gradientBuffer;
+        outConfig.gradientBufferOffset = product->gradientBufferOffset;
+        outConfig.centroidBuffer = product->centroidBuffer;
+        outConfig.centroidBufferOffset = product->centroidBufferOffset;
 
         uint64_t productDisplayHash = product->hashes.display;
 
@@ -113,10 +126,40 @@ private:
             }
             const VoronoiProduct* voronoi = products->resolve<VoronoiProduct>(package.domainVoronoiProduct);
             if (voronoi && voronoi->isValid()) {
+                if (product->hashes.geometry != voronoi->hashes.geometry) {
+                    return false;
+                }
                 outConfig.globalDomainCorners = voronoi->globalDomainCorners;
                 outConfig.hasGlobalDomain = true;
                 HashBuilder::combine(productDisplayHash, voronoi->hashes.geometry);
                 HashBuilder::combine(productDisplayHash, voronoi->hashes.display);
+                if (outConfig.showSlice) {
+                    const uint64_t geometryKey = voronoi->hashes.geometry;
+                    std::shared_ptr<const cfd::CFDSliceGeometrySource> source;
+                    auto cached = sliceGeometryCache.find(geometryKey);
+                    if (cached != sliceGeometryCache.end()) source = cached->second.lock();
+                    if (!source) {
+                        for (auto entry = sliceGeometryCache.begin(); entry != sliceGeometryCache.end();) {
+                            if (entry->second.expired()) entry = sliceGeometryCache.erase(entry);
+                            else ++entry;
+                        }
+                        auto created = std::make_shared<cfd::CFDSliceGeometrySource>();
+                        created->faceFragmentA = voronoi->faceFragmentA;
+                        created->faceFragmentB = voronoi->faceFragmentB;
+                        created->faceAreaVectorA = voronoi->faceAreaVectorsA;
+                        created->faceAreaVectorB = voronoi->faceAreaVectorsB;
+                        created->faceLoopOffsets = voronoi->faceLoopOffsets;
+                        created->loopVertexOffsets = voronoi->loopVertexOffsets;
+                        created->loopVertices = voronoi->loopVertices;
+                        created->globalFragmentToFluidNode = product->globalFragmentToFluidNode;
+                        created->fragmentCount = voronoi->globalFragmentCount;
+                        created->fluidNodeCount = product->fluidNodeCount;
+                        created->geometryHash = geometryKey;
+                        source = std::move(created);
+                        sliceGeometryCache[geometryKey] = source;
+                    }
+                    outConfig.sliceGeometry = std::move(source);
+                }
             }
         }
 
@@ -128,4 +171,5 @@ private:
     CFDDisplayController* controller = nullptr;
     RuntimeProductManager* products = nullptr;
     std::unordered_set<uint64_t> activeSocketKeys;
+    mutable std::unordered_map<uint64_t, std::weak_ptr<const cfd::CFDSliceGeometrySource>> sliceGeometryCache;
 };

@@ -12,6 +12,7 @@ namespace cudaPcg {
 
 constexpr float AbsoluteResidualFloor = 1e-7f;
 
+
 static __device__ __forceinline__ void warpReducePair(float& a, float& b) {
     for (int offset = warpSize / 2; offset > 0; offset /= 2) {
         a += __shfl_down_sync(0xffffffff, a, offset);
@@ -196,10 +197,11 @@ __global__ void pcgPersistentKernel(
     for (uint32_t i = globalThread; i < nodeCount; i += threadCount) {
         const float ri = b[i] - Ap[i];
         const float zi = ri * invDiag[i];
+        const float rzi = ri * zi;
         r[i] = ri;
         z[i] = zi;
         p[i] = zi;
-        localRz += ri * zi;
+        localRz += rzi;
         localR2 += ri * ri;
     }
     blockReducePair(localRz, localR2);
@@ -364,7 +366,7 @@ cudaGraphExec_t buildPcgGraphExec(
         ok = cudaUtils::cudaCheck(cudaGraphInstantiate(&exec, graph, nullptr, nullptr, 0), "CudaPcg instantiate");
     }
     if (graph) cudaGraphDestroy(graph);
-    cudaStreamDestroy(captureStream);
+    if (captureStream) cudaStreamDestroy(captureStream);
     return ok ? exec : nullptr;
 }
 

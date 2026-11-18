@@ -30,7 +30,6 @@ __global__ void classifyAndVerifyBasePlanesKernel(
     double invBaseScale,
     double invBaseAreaScale,
     double facetFloor,
-    float nominalCellSize,
     uint32_t *faceFlags,
     uint32_t *reciprocalSlots,
     RvdPackedError *packedError) {
@@ -129,7 +128,7 @@ __global__ void classifyAndVerifyBasePlanesKernel(
     }
 
     const double offsetSum = planeA.w + planeB.w;
-    const double offsetTol = fmax(1e-5, 1e-4 * double(nominalCellSize));
+    const double offsetTol = 1e-8 * double(cudaGeometry::CanonicalDomainSize);
     if (fabs(offsetSum) > offsetTol) {
       reportTopologyError(packedError, BaseFaceTopologyError::OffsetMismatch, cellA);
       return;
@@ -357,7 +356,6 @@ bool classifyBasePlanes(
       baseDomain.invBaseScale,
       baseDomain.invBaseAreaScale,
       baseDomain.facetFloor(),
-      baseDomain.nominalCellSize,
       classified.flags.get(),
       classified.reciprocalSlots.get(),
       packedError.get());

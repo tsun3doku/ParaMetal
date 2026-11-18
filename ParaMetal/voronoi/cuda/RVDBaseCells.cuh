@@ -6,7 +6,6 @@
 #include "KNNNeighbors.hpp"
 #include "../../cuda/CudaBuffer.cuh"
 
-#include <array>
 #include <cstdint>
 #include <limits>
 
@@ -68,7 +67,6 @@ struct BaseCellDomain {
 
   glm::vec3 domainMin{0.0f};
   glm::vec3 domainMax{0.0f};
-  std::array<glm::dvec4, 6> outwardDomainPlanes{};
 
   cudaGeometry::DeviceVoxelGrid baseGrid;
   double4 domainPlanes[6];
@@ -82,8 +80,6 @@ struct BaseCellDomain {
   cudaUtils::CudaBuffer<int32_t> devOverflowSlots;
   uint32_t overflowCount = 0;
 
-  float nominalCellSize = 0.0f;
-
   DeviceBaseCells deviceView() const {
     DeviceBaseCells view{};
     view.cells = devBaseStates.get();
@@ -94,8 +90,8 @@ struct BaseCellDomain {
   }
 
   double facetFloor() const {
-    return 64.0 * std::numeric_limits<double>::epsilon() *
-           double(nominalCellSize * nominalCellSize);
+    const double extent = double(cudaGeometry::CanonicalDomainSize) / double(baseScale);
+    return 64.0 * std::numeric_limits<double>::epsilon() * extent * extent;
   }
 };
 

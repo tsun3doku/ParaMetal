@@ -61,10 +61,11 @@ C:/VulkanSDK/1.3.283.0/Bin/glslc.exe surface_vector.vert -o surface_vector_vert.
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe surface_vector.frag -o surface_vector_frag.spv
 
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe streamline.vert -o streamline_vert.spv
-C:/VulkanSDK/1.3.283.0/Bin/glslc.exe streamline.frag -o streamline_frag.spv
 
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe heat_box.vert -o heat_box_vert.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe heat_box.frag -o heat_box_frag.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe heat_box_face.vert -o heat_box_face_vert.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe heat_box_face.frag -o heat_box_face_frag.spv
 
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe probe_marker.vert -o probe_marker_vert.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe probe_marker.frag -o probe_marker_frag.spv
@@ -76,6 +77,11 @@ slangc heat_isocontour.slang -target spirv -stage compute -entry main -o heat_is
 slangc heat_diffusion.slang -target spirv -o heat_diffusion_comp.spv
 slangc heat_fluid_volume.slang -target spirv -o heat_fluid_volume_comp.spv
 slangc cfd_streamlines.slang -target spirv -o cfd_streamlines_comp.spv
+slangc streamline.slang -target spirv -stage fragment -entry main -o streamline_frag.spv
+slangc cfd_slice_mesh_fill.slang -target spirv -stage vertex -entry vsMain -o cfd_slice_mesh_fill_vert.spv
+slangc cfd_slice_mesh_fill.slang -target spirv -stage fragment -entry fsMain -o cfd_slice_mesh_fill_frag.spv
+slangc cfd_slice_mesh_wire.slang -target spirv -stage vertex -entry vsMain -o cfd_slice_mesh_wire_vert.spv
+slangc cfd_slice_mesh_wire.slang -target spirv -stage fragment -entry fsMain -o cfd_slice_mesh_wire_frag.spv
 
 slangc voronoi_geometry.slang -target spirv -o voronoi_geometry_comp.spv
 slangc voronoi_candidates.slang -target spirv -o voronoi_candidates_comp.spv

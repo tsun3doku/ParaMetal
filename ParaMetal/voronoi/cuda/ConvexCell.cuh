@@ -49,7 +49,6 @@ struct ConvexCellStorageT {
     alignas(16) uint3 vertices[Limits::V];
     alignas(16) double4 planes[Limits::P];
     int planeNeighborIds[Limits::P];
-    uint32_t boundaryNext[Limits::P];
     double planeAreas[Limits::P];
     double planeAreaAbsSums[Limits::P];
     double3 planeMoments[Limits::P];
@@ -57,8 +56,15 @@ struct ConvexCellStorageT {
     uint32_t planeCount = 0;
 };
 
+template <class Limits>
+struct CellClipWorkspaceT {
+    uint32_t boundaryNext[Limits::P];
+};
+
 using ConvexCellStorage = ConvexCellStorageT<DiscoveryLimits>;
 using ConvexCellOverflowStorage = ConvexCellStorageT<OverflowLimits>;
+using CellClipWorkspace = CellClipWorkspaceT<DiscoveryLimits>;
+using CellClipOverflowWorkspace = CellClipWorkspaceT<OverflowLimits>;
 
 struct ConvexCell {
     double4* planes = nullptr;
@@ -74,13 +80,14 @@ struct ConvexCell {
     int planeCount = 0;
     RVDStatus status = RVDStatus::Success;
 
-    template <typename StorageT>
+    template <typename StorageT, typename WorkspaceT>
     __device__ void attachStorage(StorageT& storage,
+                                  WorkspaceT& workspace,
                                   uint32_t planeLimit = DiscoveryLimits::P,
                                   uint32_t vertexLimit = DiscoveryLimits::V) {
         planes = storage.planes;
         planeNeighborIds = storage.planeNeighborIds;
-        boundaryNext = storage.boundaryNext;
+        boundaryNext = workspace.boundaryNext;
         vertices = storage.vertices;
         planeAreas = storage.planeAreas;
         planeAreaAbsSums = storage.planeAreaAbsSums;
@@ -488,8 +495,7 @@ __device__ inline bool accumulatePlaneMeasures(
         }
 
         const double3 anchor = cell.vertexPosition(startTriplet);
-        int currentVertex =
-            findFaceEdgeNeighbor(cell, uint32_t(plane), startEdge, startVertex);
+        int currentVertex = findFaceEdgeNeighbor(cell, uint32_t(plane), startEdge, startVertex);
         if (currentVertex < 0) {
             cell.fail(RVDStatus::InconsistentBoundary);
             return false;
@@ -499,35 +505,27 @@ __device__ inline bool accumulatePlaneMeasures(
         int visitedVertices = 2;
         double signedArea = 0.0;
         double3 relativeMoment = make_double3(0.0, 0.0, 0.0);
-        while (currentVertex != startVertex &&
-               visitedVertices <= faceVertexCount) {
+        while (currentVertex != startVertex && visitedVertices <= faceVertexCount) {
             const uint3 currentTriplet = cell.vertices[currentVertex];
-            const uint32_t outgoingEdge =
-                otherFacePlane(currentTriplet, uint32_t(plane), incomingEdge);
+            const uint32_t outgoingEdge = otherFacePlane(currentTriplet, uint32_t(plane), incomingEdge);
             if (outgoingEdge == InvalidId) {
                 cell.fail(RVDStatus::InconsistentBoundary);
                 return false;
             }
-            const int nextVertex = findFaceEdgeNeighbor(
-                cell, uint32_t(plane), outgoingEdge, currentVertex);
+            const int nextVertex = findFaceEdgeNeighbor(cell, uint32_t(plane), outgoingEdge, currentVertex);
             if (nextVertex < 0) {
                 cell.fail(RVDStatus::InconsistentBoundary);
                 return false;
             }
 
             if (nextVertex != startVertex) {
-                const double3 currentPosition =
-                    cell.vertexPosition(currentTriplet);
-                const double3 nextPosition =
-                    cell.vertexPosition(cell.vertices[nextVertex]);
+                const double3 currentPosition = cell.vertexPosition(currentTriplet);
+                const double3 nextPosition = cell.vertexPosition(cell.vertices[nextVertex]);
                 const double3 currentOffset = sub3(currentPosition, anchor);
                 const double3 nextOffset = sub3(nextPosition, anchor);
-                const double triangleArea = 0.5 * dot3(
-                    cross3(currentOffset, nextOffset), unitNormal);
+                const double triangleArea = 0.5 * dot3(cross3(currentOffset, nextOffset), unitNormal);
                 signedArea += triangleArea;
-                relativeMoment = add3(
-                    relativeMoment,
-                    mul3(add3(currentOffset, nextOffset), triangleArea / 3.0));
+                relativeMoment = add3(relativeMoment, mul3(add3(currentOffset, nextOffset), triangleArea / 3.0));
             }
 
             if (nextVertex != startVertex) ++visitedVertices;
@@ -543,8 +541,7 @@ __device__ inline bool accumulatePlaneMeasures(
         const double orientation = signedArea < 0.0 ? -1.0 : 1.0;
         const double faceArea = fabs(signedArea);
         if (!(faceArea > 0.0)) continue;
-        const double3 faceMoment = add3(
-            mul3(anchor, faceArea), mul3(relativeMoment, orientation));
+        const double3 faceMoment = add3(mul3(anchor, faceArea), mul3(relativeMoment, orientation));
         if (!isfinite(faceArea) || !isfinite(faceMoment.x) ||
             !isfinite(faceMoment.y) || !isfinite(faceMoment.z)) {
             cell.fail(RVDStatus::NonFiniteGeometry);
@@ -760,12 +757,13 @@ __device__ inline int clipPolygonByPlanes(
     const ClipVertexProvenance* inputProvenance = nullptr,
     bool inputIsTriangle = false) {
     if (inputCount < 3 || planeCount <= 0 || capacity < 3) return 0;
+    if (inputCount > MaxClippedPolygonVertices) return -1;
     double3 polygon[MaxClippedPolygonVertices];
     double3 clipped[MaxClippedPolygonVertices];
     ClipVertexProvenance polygonProvenance[MaxClippedPolygonVertices];
     ClipVertexProvenance clippedProvenance[MaxClippedPolygonVertices];
     bool clippedOnPlane[MaxClippedPolygonVertices];
-    const int initialCount = (inputCount < MaxClippedPolygonVertices) ? inputCount : MaxClippedPolygonVertices;
+    const int initialCount = inputCount;
     for (int i = 0; i < initialCount; ++i) {
         polygon[i] = input[i];
         polygonProvenance[i] = inputProvenance != nullptr

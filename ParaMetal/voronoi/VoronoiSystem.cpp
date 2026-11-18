@@ -35,17 +35,16 @@ void VoronoiSystem::setGlobalGeometry(
     const std::vector<std::vector<uint32_t>>& triangleIndices,
     const std::vector<std::vector<glm::vec3>>& surfacePositions,
     const std::vector<std::vector<uint32_t>>& surfaceTriangleIndices,
-    const std::vector<std::array<float, 16>>& worldToModel,
     float volumePadding) {
-    runtime.setGlobalGeometry(runtimeModelIds, positions, triangleIndices, surfacePositions, surfaceTriangleIndices, worldToModel, volumePadding);
+    runtime.setGlobalGeometry(runtimeModelIds, positions, triangleIndices, surfacePositions, surfaceTriangleIndices, volumePadding);
 }
 
 void VoronoiSystem::clearGeometry() {
     runtime.clearGeometry();
 }
 
-void VoronoiSystem::setParams(float cellSize, int voxelResolution) {
-    runtime.setParams(cellSize, voxelResolution);
+void VoronoiSystem::setParams(int voxelResolution) {
+    runtime.setParams(voxelResolution);
 }
 
 void VoronoiSystem::setLloydParams(

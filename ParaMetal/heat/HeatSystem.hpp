@@ -85,7 +85,7 @@ public:
             domainRuntime.advectionStagingCopyScheduled();
     }
 
-    void setGlobalVoronoiInput(
+    bool setGlobalVoronoiInput(
         const topology::GlobalDomain& domain,
         const std::unordered_map<uint32_t, std::array<float, 16>>& modelLocalToWorld);
 

@@ -22,9 +22,9 @@ static_assert(sizeof(FaceFluxVectors) == 24, "FaceFluxVectors must match GPU str
 
 struct CFDBoundaryFaceGpu {
     uint32_t cell = 0;
-    uint32_t boundaryCondition = UINT32_MAX; // 0..5 domain boundary, 6 embedded solid wall
+    uint32_t boundaryCondition = UINT32_MAX;
     glm::vec3 areaVector{0.0f};
-    float projectionWeight = 0.0f; // sum of constituent (area / distance)
+    float projectionWeight = 0.0f;
 };
 static_assert(sizeof(CFDBoundaryFaceGpu) == 24, "CFDBoundaryFaceGpu must match GPU stride");
 
@@ -48,5 +48,14 @@ struct LineVertex {
     glm::vec4 positionSpeed{0.0f};
 };
 static_assert(sizeof(LineVertex) == 16, "LineVertex must match GPU stride");
+
+struct SlicePushConstants {
+    glm::ivec4 viewport{0};
+    glm::uvec4 counts{0u};
+    glm::vec4 plane{0.0f};
+    glm::vec4 range{0.0f};
+    glm::uvec4 options{0u};
+};
+static_assert(sizeof(SlicePushConstants) == 80, "SlicePushConstants must match GPU block");
 
 }

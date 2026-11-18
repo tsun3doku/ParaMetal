@@ -65,7 +65,6 @@ void NodeVoronoi::execute(NodeKernelEval& eval) const {
         }
 
         VoronoiData voronoiData{};
-        voronoiData.cellSize = static_cast<float>(nodeParams.cellSize);
         voronoiData.voxelResolution = nodeParams.voxelResolution;
         voronoiData.volumePadding = static_cast<float>(nodeParams.volumePadding);
         voronoiData.contactRange = static_cast<float>(nodeParams.contactRange);
@@ -89,7 +88,6 @@ HashValues NodeVoronoi::computeOutputHashes(const NodeKernelHash& hash) const {
     HashNodeCache::combineOptionalSocketList(hashValue, hash, NodeGraphValueType::Remesh, HashDomain::Geometry);
 
     const VoronoiNodeParams nodeParams = readVoronoiNodeParams(hash.node);
-    HashBuilder::combineFloat(hashValue, static_cast<float>(nodeParams.cellSize));
     HashBuilder::combine(hashValue, static_cast<uint64_t>(nodeParams.voxelResolution));
     HashBuilder::combineFloat(hashValue, static_cast<float>(nodeParams.volumePadding));
     HashBuilder::combineFloat(hashValue, static_cast<float>(nodeParams.contactRange));

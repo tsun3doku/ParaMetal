@@ -82,15 +82,11 @@ inline bool sortPairs(
     cudaUtils::CudaBuffer<uint8_t> &scratch,
     cudaStream_t stream) {
   size_t bytes = 0;
-  if (cub::DeviceRadixSort::SortPairs(
-          nullptr, bytes, keysIn, keysOut, valuesIn, valuesOut,
-          count, 0, sizeof(KeyT) * 8, stream) != cudaSuccess) {
+  if (cub::DeviceRadixSort::SortPairs(nullptr, bytes, keysIn, keysOut, valuesIn, valuesOut, count, 0, sizeof(KeyT) * 8, stream) != cudaSuccess) {
     return false;
   }
   if (!ensureCapacity(scratch, bytes)) return false;
-  return cub::DeviceRadixSort::SortPairs(
-             scratch.get(), bytes, keysIn, keysOut, valuesIn, valuesOut,
-             count, 0, sizeof(KeyT) * 8, stream) == cudaSuccess;
+  return cub::DeviceRadixSort::SortPairs(scratch.get(), bytes, keysIn, keysOut, valuesIn, valuesOut, count, 0, sizeof(KeyT) * 8, stream) == cudaSuccess;
 }
 
 template <typename T, typename FlagT>
@@ -103,13 +99,11 @@ inline bool selectFlagged(
     cudaUtils::CudaBuffer<uint8_t> &scratch,
     cudaStream_t stream) {
   size_t bytes = 0;
-  if (cub::DeviceSelect::Flagged(
-          nullptr, bytes, input, flags, output, selectedCount, count, stream) != cudaSuccess) {
+  if (cub::DeviceSelect::Flagged(nullptr, bytes, input, flags, output, selectedCount, count, stream) != cudaSuccess) {
     return false;
   }
   if (!ensureCapacity(scratch, bytes)) return false;
-  return cub::DeviceSelect::Flagged(
-             scratch.get(), bytes, input, flags, output, selectedCount, count, stream) == cudaSuccess;
+  return cub::DeviceSelect::Flagged(scratch.get(), bytes, input, flags, output, selectedCount, count, stream) == cudaSuccess;
 }
 
 template <typename T>
@@ -179,10 +173,7 @@ inline bool fill(void *destination, int value, size_t bytes, cudaStream_t stream
   return cudaUtils::cudaCheck(cudaMemsetAsync(destination, value, bytes, stream), label);
 }
 
-inline bool readPackedError(
-    const cudaUtils::CudaBuffer<RvdPackedError> &deviceError,
-    cudaStream_t stream,
-    RvdPackedError &packedError) {
+inline bool readPackedError(const cudaUtils::CudaBuffer<RvdPackedError> &deviceError, cudaStream_t stream, RvdPackedError &packedError) {
   return copyToHost(&packedError, deviceError.get(), 1, stream, "read RVD packed error");
 }
 

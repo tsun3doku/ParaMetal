@@ -22,6 +22,8 @@ struct RenderSettings {
     BackgroundMode backgroundMode = BackgroundMode::Image;
     bool navigationCubeVisible = true;
     bool axisLabelsVisible = true;
+    float nearClipMeters = 0.01f;
+    bool cullLinesOnly = false;
 };
 
 } 

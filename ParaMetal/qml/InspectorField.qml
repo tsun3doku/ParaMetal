@@ -33,7 +33,7 @@ Item {
         return ""
     }
 
-    implicitHeight: 28
+    implicitHeight: 22
     visible: parameter !== null && parameter !== undefined
 
     RowLayout {
@@ -67,13 +67,14 @@ Item {
             id: textField
             visible: root.editor === "text"
             Layout.fillWidth: true
-            Layout.preferredHeight: 28
+            Layout.preferredHeight: 22
             text: root.parameter ? String(root.parameter.value) : ""
             color: root.theme.text
             selectionColor: root.theme.accent
             selectedTextColor: root.theme.onAccentText
             font: root.theme.regularFont
-            padding: 7
+            padding: 4
+            leftPadding: 7
             verticalAlignment: TextInput.AlignVCenter
             background: Rectangle {
                 radius: 3
@@ -100,7 +101,7 @@ Item {
             theme: root.theme
             visible: root.editor === "combo"
             Layout.fillWidth: visible
-            Layout.preferredHeight: 28
+            Layout.preferredHeight: 22
             model: root.choices.length > 0 ? root.choices : (root.parameter ? root.parameter.options : [])
             textRole: model && model.length > 0 && model[0].text !== undefined ? "text" : ""
             valueRole: model && model.length > 0 && model[0].value !== undefined ? "value" : ""

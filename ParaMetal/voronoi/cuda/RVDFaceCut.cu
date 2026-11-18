@@ -12,9 +12,7 @@
 
 namespace voronoi {
 
-namespace {
-
-__device__ inline void faceCutSortedPlanes(
+static __device__ inline void faceCutSortedPlanes(
     const FaceCutVertexKey &key, uint32_t planes[3]) {
   planes[0] = key.basePlaneA;
   planes[1] = key.basePlaneB;
@@ -30,7 +28,7 @@ __device__ inline void faceCutSortedPlanes(
   }
 }
 
-__device__ inline bool faceCutKeyEqual(
+static __device__ inline bool faceCutKeyEqual(
     const FaceCutVertexKey &a, const FaceCutVertexKey &b) {
   if (a.triangleId != b.triangleId || a.cadVertexId != b.cadVertexId ||
       a.cadEdgeVertexA != b.cadEdgeVertexA ||
@@ -44,7 +42,7 @@ __device__ inline bool faceCutKeyEqual(
          aPlanes[2] == bPlanes[2];
 }
 
-__device__ inline bool faceCutKeyLess(
+static __device__ inline bool faceCutKeyLess(
     const FaceCutVertexKey &a, const FaceCutVertexKey &b) {
   uint32_t aPlanes[3], bPlanes[3];
   faceCutSortedPlanes(a, aPlanes);
@@ -59,44 +57,34 @@ __device__ inline bool faceCutKeyLess(
   return a.cadEdgeVertexB < b.cadEdgeVertexB;
 }
 
-__global__ void assignFaceCutSegmentIdsKernel(
-    FaceBoundarySegment *segments,
-    uint32_t count) {
-  const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
-  if (i >= count) return;
-  segments[i].segmentId = i;
-}
-
 struct FaceCutEndpointRef {
   FaceCutVertexKey key;
   uint32_t segmentIndex = InvalidId;
   uint32_t endpoint = InvalidId;
-};
 
-struct FaceCutEndpointRefLess {
-  __device__ bool operator()(
-      const FaceCutEndpointRef &a, const FaceCutEndpointRef &b) const {
-    if (!faceCutKeyEqual(a.key, b.key)) {
-      return faceCutKeyLess(a.key, b.key);
+  __device__ bool operator<(const FaceCutEndpointRef &other) const {
+    if (!faceCutKeyEqual(key, other.key)) {
+      return faceCutKeyLess(key, other.key);
     }
-    if (a.segmentIndex != b.segmentIndex) {
-      return a.segmentIndex < b.segmentIndex;
+    if (segmentIndex != other.segmentIndex) {
+      return segmentIndex < other.segmentIndex;
     }
-    return a.endpoint < b.endpoint;
+    return endpoint < other.endpoint;
   }
 };
 
-__global__ void fillFaceCutEndpointRefsKernel(
-    const FaceBoundarySegment *segments,
+static __global__ void fillFaceCutEndpointRefsKernel(
+    FaceBoundarySegment *segments,
     uint32_t count,
     FaceCutEndpointRef *refs) {
   const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i >= count) return;
+  segments[i].segmentId = i;
   refs[2 * i] = {segments[i].keyA, i, 0u};
   refs[2 * i + 1] = {segments[i].keyB, i, 1u};
 }
 
-__global__ void markFaceCutRunsKernel(
+static __global__ void markFaceCutRunsKernel(
     const FaceCutEndpointRef *refs,
     uint32_t count,
     uint32_t *flags) {
@@ -107,7 +95,7 @@ __global__ void markFaceCutRunsKernel(
       : 0u;
 }
 
-__global__ void writeFaceCutCanonicalIdsKernel(
+static __global__ void writeCanonicalCuts(
     const FaceCutEndpointRef *refs,
     const uint32_t *runOffsets,
     const uint32_t *runStarts,
@@ -126,7 +114,7 @@ __global__ void writeFaceCutCanonicalIdsKernel(
   }
 }
 
-__global__ void validateFaceCutRunIdsKernel(
+static __global__ void verifyRunIds(
     const FaceCutEndpointRef *refs,
     const uint32_t *canonicalIds,
     uint32_t count,
@@ -143,7 +131,7 @@ __global__ void validateFaceCutRunIdsKernel(
   }
 }
 
-__global__ void validateFaceCutCanonicalizationKernel(
+static __global__ void verifyFaceCuts(
     const FaceBoundarySegment *segments,
     uint32_t count,
     uint32_t offset,
@@ -151,6 +139,7 @@ __global__ void validateFaceCutCanonicalizationKernel(
   const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i >= count) return;
   const FaceBoundarySegment &segment = segments[i];
+
   const bool valid =
       segment.canonicalA != InvalidId &&
       segment.canonicalB != InvalidId &&
@@ -167,8 +156,6 @@ __global__ void validateFaceCutCanonicalizationKernel(
         offset + i);
   }
 }
-
-} // namespace
 
 bool canonicalizeFaceCutVertices(
     std::vector<ModelRestriction> &models,
@@ -218,12 +205,6 @@ bool canonicalizeFaceCutVertices(
   }
 
   constexpr uint32_t BlockSize = 256;
-  assignFaceCutSegmentIdsKernel<<<
-      rvdHost::blockCount(segmentCount, BlockSize), BlockSize, 0, stream>>>(
-      allSegments.get(), segmentCount);
-  if (!rvdHost::checkLaunch("launch assignFaceCutSegmentIdsKernel")) {
-    return false;
-  }
   fillFaceCutEndpointRefsKernel<<<
       rvdHost::blockCount(segmentCount, BlockSize), BlockSize, 0, stream>>>(
       allSegments.get(), segmentCount, refs.get());
@@ -234,8 +215,7 @@ bool canonicalizeFaceCutVertices(
   thrust::sort(
       thrust::cuda::par.on(stream),
       thrust::device_ptr<FaceCutEndpointRef>(refs.get()),
-      thrust::device_ptr<FaceCutEndpointRef>(refs.get()) + endpointCount,
-      FaceCutEndpointRefLess{});
+      thrust::device_ptr<FaceCutEndpointRef>(refs.get()) + endpointCount);
 
   markFaceCutRunsKernel<<<
       rvdHost::blockCount(endpointCount, BlockSize), BlockSize, 0, stream>>>(
@@ -252,28 +232,37 @@ bool canonicalizeFaceCutVertices(
     return false;
   }
 
-  writeFaceCutCanonicalIdsKernel<<<
+  writeCanonicalCuts<<<
       rvdHost::blockCount(endpointCount, BlockSize), BlockSize, 0, stream>>>(
       refs.get(), canonicalIds.get(), flags.get(), canonicalIds.get(),
       endpointCount, allSegments.get());
-  if (!rvdHost::checkLaunch("launch writeFaceCutCanonicalIdsKernel")) {
+  if (!rvdHost::checkLaunch("launch writeCanonicalCuts")) {
     return false;
   }
 
-  validateFaceCutRunIdsKernel<<<
+  verifyRunIds<<<
       rvdHost::blockCount(endpointCount, BlockSize), BlockSize, 0, stream>>>(
       refs.get(), canonicalIds.get(), endpointCount, validationError.get());
-  if (!rvdHost::checkLaunch("launch validateFaceCutRunIdsKernel")) {
+  if (!rvdHost::checkLaunch("launch verifyRunIds")) {
     return false;
   }
+
+  verifyFaceCuts<<<
+      rvdHost::blockCount(segmentCount, BlockSize), BlockSize, 0, stream>>>(
+      allSegments.get(), segmentCount, 0, validationError.get());
+  if (!rvdHost::checkLaunch("launch verifyFaceCuts")) {
+    return false;
+  }
+
   RvdPackedError hostValidationError = 0;
   if (!rvdHost::readPackedError(
           validationError, stream, hostValidationError)) {
     return false;
   }
   if (hostValidationError != 0) {
-    std::cerr << "[RVD] face cut key-to-ID consistency failed segment="
-              << rvdErrorId(hostValidationError) << std::endl;
+    std::cerr << "[RVD] face cut validation failed code="
+              << rvdErrorCode(hostValidationError)
+              << " segment=" << rvdErrorId(hostValidationError) << std::endl;
     return false;
   }
 
@@ -292,41 +281,6 @@ bool canonicalizeFaceCutVertices(
     }
   }
   return true;
-}
-
-bool validateFaceCutCanonicalization(
-    const std::vector<ModelRestriction> &models,
-    cudaStream_t stream) {
-  cudaUtils::CudaBuffer<RvdPackedError> packedError;
-  if (!packedError.allocate(1) ||
-      !rvdHost::zero(
-          packedError.get(), sizeof(RvdPackedError), stream,
-          "clear face cut validation error")) {
-    return false;
-  }
-
-  uint32_t offset = 0;
-  constexpr uint32_t BlockSize = 256;
-  for (const ModelRestriction &model : models) {
-    const uint32_t count = uint32_t(model.devFaceSegments.size());
-    if (count == 0) continue;
-    validateFaceCutCanonicalizationKernel<<<
-        rvdHost::blockCount(count, BlockSize), BlockSize, 0, stream>>>(
-        model.devFaceSegments.get(), count, offset, packedError.get());
-    if (!rvdHost::checkLaunch(
-            "launch validateFaceCutCanonicalizationKernel")) {
-      return false;
-    }
-    offset += count;
-  }
-
-  RvdPackedError hostError = 0;
-  if (!rvdHost::readPackedError(packedError, stream, hostError)) return false;
-  if (hostError == 0) return true;
-
-  std::cerr << "[RVD] face cut canonicalization failed segment="
-            << rvdErrorId(hostError) << std::endl;
-  return false;
 }
 
 } // namespace voronoi

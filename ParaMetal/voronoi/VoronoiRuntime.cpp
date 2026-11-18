@@ -26,14 +26,12 @@ void VoronoiRuntime::setGlobalGeometry(
     const std::vector<std::vector<uint32_t>>& triangleIndices,
     const std::vector<std::vector<glm::vec3>>& surfacePositions,
     const std::vector<std::vector<uint32_t>>& surfaceTriangleIndices,
-    const std::vector<std::array<float, 16>>& worldToModel,
     float volumePadding) {
     globalRemeshRuntimeModelIds = runtimeModelIds;
     globalRemeshPositions = positions;
     globalRemeshTriangleIndices = triangleIndices;
     globalRemeshSurfacePositions = surfacePositions;
     globalRemeshSurfaceTriangleIndices = surfaceTriangleIndices;
-    globalRemeshWorldToModel = worldToModel;
     globalVolumePadding = volumePadding;
     voronoiReady = false;
 }
@@ -42,12 +40,11 @@ void VoronoiRuntime::clearGeometry() {
     invalidateMaterialization();
 }
 
-void VoronoiRuntime::setParams(float updatedCellSize, int updatedVoxelResolution) {
-    if (cellSize == updatedCellSize && voxelResolution == updatedVoxelResolution) {
+void VoronoiRuntime::setParams(int updatedVoxelResolution) {
+    if (voxelResolution == updatedVoxelResolution) {
         return;
     }
 
-    cellSize = updatedCellSize;
     voxelResolution = updatedVoxelResolution;
     invalidateMaterialization();
 }

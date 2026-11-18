@@ -15,11 +15,12 @@ constexpr uint32_t LloydBlockSize = 256;
 __global__ void updateLloydSeedsKernel(
     const float4 *seeds,
     const double4 *baseMoments,
+    DeviceBaseCells baseCells,
     uint32_t cellCount,
     double invBaseVolumeScale,
     double invBaseMomentScale,
     float damping,
-    double minVolumeThreshold,
+    double volumeThresholdFraction,
     float4 *outSeeds) {
   const uint32_t cell = blockIdx.x * blockDim.x + threadIdx.x;
   if (cell >= cellCount) return;
@@ -29,6 +30,28 @@ __global__ void updateLloydSeedsKernel(
   const double4 rawBaseMoment = baseMoments[cell];
   const double baseVolume = (rawBaseMoment.w / 6.0) * invBaseVolumeScale;
   const glm::dvec3 baseMoment = (glm::dvec3(rawBaseMoment.x, rawBaseMoment.y, rawBaseMoment.z) / 6.0) * invBaseMomentScale;
+
+  double minVolumeThreshold = 0.0;
+  if (volumeThresholdFraction > 0.0) {
+    double neighborVolumeSum = 0.0;
+    uint32_t neighborCount = 0;
+    const BaseCellArrays state = resolveBaseCell(baseCells, cell);
+    for (uint32_t p = 0; p < state.planeCount; ++p) {
+      const int tag = state.planeNeighborIds[p];
+      if (tag < 0 || uint32_t(tag) >= cellCount) continue;
+      const double volume = (baseMoments[tag].w / 6.0) * invBaseVolumeScale;
+      if (!(volume > 0.0) || !isfinite(volume)) continue;
+      neighborVolumeSum += volume;
+      ++neighborCount;
+    }
+    if (neighborCount == 0) {
+      outSeeds[cell] = seed;
+      return;
+    }
+    minVolumeThreshold =
+        volumeThresholdFraction * neighborVolumeSum / double(neighborCount);
+  }
+
   if (!(baseVolume > minVolumeThreshold) || !isfinite(baseVolume)) {
     outSeeds[cell] = seed;
     return;
@@ -76,12 +99,6 @@ bool updateLloydSeeds(
     return false;
   }
 
-  const double nominalCellSize = double(
-      baseDomain.nominalCellSize > 0.0f ? baseDomain.nominalCellSize
-                                        : input.nominalCellSize);
-  const double nominalVolume = nominalCellSize * nominalCellSize * nominalCellSize;
-  const double minVolumeThreshold = double(config.lloydVolumeThresholdFraction) * nominalVolume;
-
   cudaUtils::CudaBuffer<float4> outSeeds;
   if (!outSeeds.allocate(seedCount)) return false;
 
@@ -89,11 +106,12 @@ bool updateLloydSeeds(
   updateLloydSeedsKernel<<<blocks, LloydBlockSize, 0, stream>>>(
       knn.seeds,
       baseDomain.devBaseMoments.get(),
+      baseDomain.deviceView(),
       seedCount,
       baseDomain.invBaseVolumeScale,
       baseDomain.invBaseMomentScale,
       config.lloydDamping,
-      minVolumeThreshold,
+      double(config.lloydVolumeThresholdFraction),
       outSeeds.get());
   if (!cudaUtils::cudaCheck(
           cudaGetLastError(), "launch updateLloydSeedsKernel")) {

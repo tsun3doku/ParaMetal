@@ -79,7 +79,9 @@ public:
     }
 
     void reset() {
-        if (data) cudaFree(data);
+        if (data) {
+            cudaFree(data);
+        }
         data = nullptr;
         elementCount = 0;
     }

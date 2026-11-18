@@ -24,6 +24,7 @@ class NodeGraphUiModel final : public QAbstractListModel {
     Q_PROPERTY(QVariantList selectedNodeParameters READ selectedNodeParameters NOTIFY selectedNodeChanged)
     Q_PROPERTY(QVariantList serialPorts READ serialPorts NOTIFY serialPortsChanged)
     Q_PROPERTY(bool probePickingActive READ isProbePickingActive NOTIFY probePickingActiveChanged)
+    Q_PROPERTY(bool boundaryFaceSelectionActive READ isBoundaryFaceSelectionActive NOTIFY boundaryFaceSelectionActiveChanged)
     Q_PROPERTY(QStringList exportProductLabels READ exportProductLabels NOTIFY exportProductsChanged)
     Q_PROPERTY(int selectedExportProductIndex READ selectedExportProductIndex NOTIFY exportProductsChanged)
     Q_PROPERTY(QStringList exportProductFormats READ exportProductFormats NOTIFY exportProductsChanged)
@@ -34,6 +35,7 @@ class NodeGraphUiModel final : public QAbstractListModel {
 
 public:
     bool isProbePickingActive() const { return m_probePickingActive; }
+    bool isBoundaryFaceSelectionActive() const { return boundaryFaceSelectionActive; }
     enum Role {
         NodeIdRole = Qt::UserRole + 1,
         TitleRole,
@@ -87,6 +89,7 @@ public:
     Q_INVOKABLE void removeNode(int nodeId);
     Q_INVOKABLE void startProbePicking(int nodeId, int probeIndex = 0);
     Q_INVOKABLE void cancelProbePicking();
+    Q_INVOKABLE void setBoundaryFaceSelectionActive(bool active);
     Q_INVOKABLE void removeSelectedNodes();
     Q_INVOKABLE void resetToDefaultGraph();
     Q_INVOKABLE int addNode(const QString& typeId, qreal x, qreal y);
@@ -113,6 +116,8 @@ signals:
     void selectedNodeChanged();
     void selectionRequested(int nodeId);
     void probePickingRequested(int nodeId, int probeIndex);
+    void boundaryFaceEditingRequested(int nodeId, bool armed);
+    void boundaryFaceSelectionActiveChanged();
     void probePickingActiveChanged();
     void serialPortsChanged();
     void resetRequested();
@@ -135,6 +140,7 @@ private:
     void refresh();
     void rebuildNodeCategories();
     void rebuildSelectedNode();
+    void syncBoundaryFaceEditing(bool force);
     void notifySelectionChanged(bool requestRuntimeSelection);
     void requestCurrentExportProducts();
     WriteProductSelection currentWriteSelection() const;
@@ -153,6 +159,8 @@ private:
     std::vector<NodeGraphEditor::CopiedEdge> copiedEdges;
     std::vector<NodeTypeDefinition> typeDefinitions;
     int selectedId = 0;
+    int boundaryEditingNode = 0;
+    bool boundaryFaceSelectionActive = false;
     QString selectedTitle;
     QString selectedType;
     QVariantList selectedParameters;

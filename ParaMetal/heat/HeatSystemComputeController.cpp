@@ -25,7 +25,7 @@ HeatSystemComputeController::HeatSystemComputeController(VulkanDevice& vulkanDev
       maxFramesInFlight(maxFramesInFlight) {
 }
 
-void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const Config& config) {
+bool HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const Config& config) {
     system.clearGlobalVoronoiInput();
     if (config.hasFluid) {
         system.setHeatFluid(
@@ -47,8 +47,11 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
     } else {
         system.clearAdvectionInput();
     }
-    if (config.domainVoronoiProduct.isValid()) {
-        system.setGlobalVoronoiInput(config.domainVoronoiProduct, config.modelLocalToWorldByModelId);
+    if (config.hasDomainVoronoiProduct) {
+        if (!system.setGlobalVoronoiInput(
+                config.domainVoronoiProduct, config.modelLocalToWorldByModelId)) {
+            return false;
+        }
     }
     system.setHeatModels(
         config.modelSurfacePositions,
@@ -71,6 +74,7 @@ void HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
         config.domainBoundaryHeatTransferCoefficients,
         config.domainBoundaryInflowTemperaturesC);
     system.setGlobalSolverParameters(config.solverMaxIterations, config.solverConvergenceTolerance);
+    return true;
 }
 
 bool HeatSystemComputeController::apply(uint64_t socketKey, const Config& config) {
@@ -110,8 +114,7 @@ bool HeatSystemComputeController::apply(uint64_t socketKey, const Config& config
         return false;
     }
 
-    configureHeatSystem(*candidate, config);
-    if (!candidate->ensureConfigured()) {
+    if (!configureHeatSystem(*candidate, config) || !candidate->ensureConfigured()) {
         generationSlots[socketKey].retiring = std::move(candidate);
         failedComputeHashes[socketKey] = config.computeHash;
         return false;

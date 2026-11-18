@@ -364,7 +364,8 @@ bool StreamlineRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpas
 void StreamlineRenderer::render(
     VkCommandBuffer commandBuffer,
     uint32_t frameIndex,
-    const std::vector<RenderBinding>& lines) {
+    const std::vector<RenderBinding>& lines,
+    float cullDistance) {
     if (!initialized ||
         pipeline == VK_NULL_HANDLE ||
         pipelineLayout == VK_NULL_HANDLE ||
@@ -401,6 +402,7 @@ void StreamlineRenderer::render(
         pushConstants.minSpeed = line.minSpeed;
         pushConstants.maxSpeed = line.maxSpeed;
         pushConstants.palette = line.palette;
+        pushConstants.cullDistance = cullDistance;
         vkCmdPushConstants(
             commandBuffer,
             pipelineLayout,

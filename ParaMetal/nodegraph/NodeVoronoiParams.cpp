@@ -6,7 +6,6 @@
 #include <algorithm>
 
 VoronoiNodeParams readVoronoiNodeParams(const NodeGraphNode& node) {
-    constexpr double cellSize = 0.005;
     constexpr int voxelResolution = 128;
     constexpr double volumePadding = 0.01;
     constexpr int lloydIterations = int(voronoi::DefaultLloydIterations);
@@ -16,7 +15,6 @@ VoronoiNodeParams readVoronoiNodeParams(const NodeGraphNode& node) {
     constexpr double contactRange = voronoi::DefaultContactRange;
 
     VoronoiNodeParams params{};
-    params.cellSize = NodeParamUtils::readFloatParam(node, nodegraphparams::voronoi::CellSize, cellSize);
     params.voxelResolution = NodeParamUtils::readIntParam(node, nodegraphparams::voronoi::VoxelResolution, voxelResolution);
     params.volumePadding = NodeParamUtils::readFloatParam(node, nodegraphparams::voronoi::VolumePadding, volumePadding);
     params.contactRange = NodeParamUtils::readFloatParam(
@@ -28,7 +26,6 @@ VoronoiNodeParams readVoronoiNodeParams(const NodeGraphNode& node) {
         lloydVolumeThreshold);
     params.lloydDamping = NodeParamUtils::readFloatParam(
         node, nodegraphparams::voronoi::LloydDamping, lloydDamping);
-    if (params.cellSize <= 0.0) { params.cellSize = cellSize; }
     if (params.voxelResolution <= 0) { params.voxelResolution = voxelResolution; }
     if (params.volumePadding < 0.0) { params.volumePadding = 0.0; }
     if (params.contactRange < 0.0) { params.contactRange = contactRange; }
@@ -45,8 +42,7 @@ VoronoiNodeParams readVoronoiNodeParams(const NodeGraphNode& node) {
 }
 
 bool writeVoronoiNodeParams(NodeGraphEditor& editor, NodeGraphNodeId nodeId, const VoronoiNodeParams& params) {
-    return editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::CellSize, NodeGraphParamType::Float, params.cellSize}) &&
-        editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::VoxelResolution, NodeGraphParamType::Int, 0.0, params.voxelResolution}) &&
+    return editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::VoxelResolution, NodeGraphParamType::Int, 0.0, params.voxelResolution}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::VolumePadding, NodeGraphParamType::Float, params.volumePadding}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::ContactRange, NodeGraphParamType::Float, params.contactRange}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::voronoi::LloydIterations, NodeGraphParamType::Int, 0.0, params.lloydIterations}) &&

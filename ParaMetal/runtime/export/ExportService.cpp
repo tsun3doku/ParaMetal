@@ -27,14 +27,6 @@
 
 namespace {
 
-struct ProductKeyLess {
-    bool operator()(const ExportProductKey& a, const ExportProductKey& b) const {
-        if (a.producerNodeId.value != b.producerNodeId.value) return a.producerNodeId.value < b.producerNodeId.value;
-        if (a.outputSocketId.value != b.outputSocketId.value) return a.outputSocketId.value < b.outputSocketId.value;
-        return a.productId < b.productId;
-    }
-};
-
 const EvaluatedSocketValue* evaluatedOutput(const NodeGraphController& graph, NodeGraphNodeId nodeId, NodeGraphSocketId socketId) {
     return graph.evaluation().outputFor(NodeSocketKey(nodeId, socketId).value);
 }
@@ -86,7 +78,7 @@ bool ExportService::discoverProducts(
         if (edge) frontier.push_back(edge->fromNode);
     std::sort(frontier.begin(), frontier.end(), [](auto a, auto b) { return a.value < b.value; });
     std::unordered_set<uint32_t> visited;
-    std::set<ExportProductKey, ProductKeyLess> emitted;
+    std::set<ExportProductKey> emitted;
 
     while (!frontier.empty()) {
         std::vector<NodeGraphNodeId> next;

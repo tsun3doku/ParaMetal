@@ -27,6 +27,8 @@ public slots:
     void requestCameraFov(float degrees);
     void requestCameraZoomSpeed(float speed);
     void requestCameraPanSpeed(float speed);
+    void requestCameraNearClip(float meters);
+    void requestCullLinesOnly(bool linesOnly);
     void requestTimelinePlaying(bool playing);
     void requestTimelineReset();
     void requestTimelineScrub(uint32_t frame);
@@ -39,6 +41,7 @@ public slots:
     void requestVelocityPalette(int palette);
     void requestWorldUnit(int unit);
     void requestProbePicking(int nodeId, int probeIndex = 0);
+    void requestBoundaryFaceEditing(int nodeId, bool armed);
     void requestExport(int nodeId);
     void requestExportProducts(int nodeId, qulonglong requestId, qulonglong graphRevision);
     void applyViewportProjectState(const ProjectFile::Viewport& viewport);

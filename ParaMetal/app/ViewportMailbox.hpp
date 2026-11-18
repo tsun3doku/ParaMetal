@@ -38,6 +38,8 @@ public:
     void requestCameraFov(float degrees);
     void requestCameraZoomSpeed(float speed);
     void requestCameraPanSpeed(float speed);
+    void requestCameraNearClip(float meters);
+    void requestCullLinesOnly(bool linesOnly);
     void requestTimelinePlaying(bool playing);
     void requestTimelineReset();
     void requestTimelineScrub(uint32_t frame);
@@ -50,6 +52,7 @@ public:
     void requestVelocityPalette(int palette);
     void requestWorldUnit(int unit);
     void requestProbePicking(int nodeId, int probeIndex = 0);
+    void requestBoundaryFaceEditing(int nodeId, bool armed);
     void requestExport(int nodeId);
     void requestExportProducts(int nodeId, uint64_t requestId, uint64_t graphRevision);
     void replaceGraphState(const NodeGraphState& graphState);
@@ -58,6 +61,7 @@ public:
     void appendGraphDelta(const NodeGraphDelta& delta);
 
     bool takeProbePicking(int& outNodeId, int& outProbeIndex);
+    bool takeBoundaryFaceEditing(int& outNodeId, bool& outArmed, bool force = false);
     bool takeWireframeMode(app::WireframeMode& mode, bool force = false);
     bool takeGridEnabled(bool& enabled, bool force = false);
     bool takeBackgroundMode(app::BackgroundMode& mode, bool force = false);
@@ -68,6 +72,7 @@ public:
     bool takeCameraFov(float& degrees);
     bool takeCameraZoomSpeed(float& speed);
     bool takeCameraPanSpeed(float& speed);
+    bool takeCameraCull(float& meters, bool& linesOnly, bool force = false);
     bool takeTimelinePlaying(bool& playing, bool force = false);
     bool takeTimelineReset();
     int takeTimelineStep();
@@ -114,6 +119,9 @@ private:
     bool cameraZoomSpeedDirty = false;
     float requestedCameraPanSpeed = Camera::DefaultPanSpeed;
     bool cameraPanSpeedDirty = false;
+    float requestedCameraNearClip = Camera::DefaultNearClip;
+    bool requestedCullLinesOnly = false;
+    bool cameraCullDirty = false;
 
     bool requestedTimelinePlaying = false;
     bool timelinePlayingDirty = false;
@@ -129,6 +137,9 @@ private:
     int requestedProbePickingNode = 0;
     int requestedProbePickingIndex = 0;
     bool probePickingDirty = false;
+    int requestedBoundaryFaceNode = 0;
+    bool requestedBoundaryFaceArmed = false;
+    bool boundaryFaceDirty = false;
 
     float requestedHeatPaletteMin = 0.0f;
     float requestedHeatPaletteMax = 100.0f;

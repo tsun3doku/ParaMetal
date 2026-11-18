@@ -53,12 +53,11 @@ void CFDStreamlineStage::cleanup() {
         seedBuffer = VK_NULL_HANDLE;
         seedBufferOffset = 0;
     }
-    if (seedToFluidNodeBuffer != VK_NULL_HANDLE) {
-        freeBuffer(memoryAllocator, seedToFluidNodeBuffer, seedToFluidNodeBufferOffset);
-        seedToFluidNodeBuffer = VK_NULL_HANDLE;
-        seedToFluidNodeBufferOffset = 0;
-    }
+    seedToFluidNodeBuffer = VK_NULL_HANDLE;
+    seedToFluidNodeBufferOffset = 0;
     seedToFluidNodeCount = 0;
+    centroidsBuffer = VK_NULL_HANDLE;
+    centroidsBufferOffset = 0;
     if (outputBuffer != VK_NULL_HANDLE) {
         freeBuffer(memoryAllocator, outputBuffer, outputOffset);
         outputBuffer = VK_NULL_HANDLE;
@@ -70,7 +69,11 @@ void CFDStreamlineStage::cleanup() {
 bool CFDStreamlineStage::initialize(
     const topology::GlobalDomain& domain,
     const std::vector<glm::vec4>& seeds,
-    const std::vector<uint32_t>& globalFragmentToFluidNode) {
+    VkBuffer seedToFluidNodeBuffer,
+    VkDeviceSize seedToFluidNodeBufferOffset,
+    uint32_t seedToFluidNodeCount,
+    VkBuffer centroidBuffer,
+    VkDeviceSize centroidBufferOffset) {
     if (seeds.empty()) {
         std::cerr << "[CFDStreamlineStage] No streamline seeds; streamlines disabled." << std::endl;
         cleanup();
@@ -91,10 +94,6 @@ bool CFDStreamlineStage::initialize(
     domainMax = domain.domainMax;
 
     if (!createPipeline()) {
-        cleanup();
-        return false;
-    }
-    if (!updateSeedToFluidNode(domain, globalFragmentToFluidNode)) {
         cleanup();
         return false;
     }
@@ -119,59 +118,14 @@ bool CFDStreamlineStage::initialize(
         return false;
     }
 
+    this->seedToFluidNodeBuffer = seedToFluidNodeBuffer;
+    this->seedToFluidNodeBufferOffset = seedToFluidNodeBufferOffset;
+    this->seedToFluidNodeCount = seedToFluidNodeCount;
+    centroidsBuffer = centroidBuffer;
+    centroidsBufferOffset = centroidBufferOffset;
+
     seedCount = static_cast<uint32_t>(seeds.size());
     ready = true;
-    return true;
-}
-
-bool CFDStreamlineStage::updateSeedToFluidNode(
-    const topology::GlobalDomain& domain,
-    const std::vector<uint32_t>& globalFragmentToFluidNode) {
-    const size_t cellCount = domain.seedPositions.size();
-    if (domain.cellFragmentOffsets.size() != cellCount + 1 ||
-        domain.cellFragmentOffsets.back() != domain.cellFragments.size()) {
-        std::cerr << "[CFDStreamlineStage] cell-to-fragment CSR is invalid" << std::endl;
-        return false;
-    }
-
-    std::vector<uint32_t> seedToFluid(cellCount, 0xFFFFFFFFu);
-    for (size_t cell = 0; cell < cellCount; ++cell) {
-        uint32_t fluidFragment = 0xFFFFFFFFu;
-        for (uint32_t entry = domain.cellFragmentOffsets[cell];
-             entry < domain.cellFragmentOffsets[cell + 1]; ++entry) {
-            const uint32_t fragment = domain.cellFragments[entry];
-            if (fragment >= domain.fragments.size() ||
-                domain.fragments[fragment].instanceId != topology::InvalidInstanceId) {
-                continue;
-            }
-            if (fluidFragment != 0xFFFFFFFFu) {
-                std::cerr << "[CFDStreamlineStage] seed cell " << cell
-                          << " has multiple fluid components; point location "
-                             "requires fragment boundary geometry"
-                          << std::endl;
-                return false;
-            }
-            fluidFragment = fragment;
-        }
-        if (fluidFragment < globalFragmentToFluidNode.size()) {
-            seedToFluid[cell] = globalFragmentToFluidNode[fluidFragment];
-        }
-    }
-
-    if (uploadDeviceBuffer(
-            memoryAllocator,
-            commandPool,
-            seedToFluid.data(),
-            seedToFluid.size() * sizeof(uint32_t),
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-            vulkanDevice.getPhysicalDeviceProperties().limits.minStorageBufferOffsetAlignment,
-            seedToFluidNodeBuffer,
-            seedToFluidNodeBufferOffset) != VK_SUCCESS) {
-        std::cerr << "[CFDStreamlineStage] Failed to upload seedToFluidNode buffer." << std::endl;
-        return false;
-    }
-
-    seedToFluidNodeCount = static_cast<uint32_t>(seedToFluid.size());
     return true;
 }
 
@@ -194,8 +148,6 @@ bool CFDStreamlineStage::createOutputBuffer(uint32_t seeds) {
         return false;
     }
 
-    // Zeroed vertices are zero-length line segments, so the buffer is safe to
-    // draw before the first integration dispatch.
     VkCommandBuffer cmd = commandPool.beginCommands();
     if (cmd == VK_NULL_HANDLE) {
         memoryAllocator.free(buffer, offset);
@@ -215,7 +167,7 @@ bool CFDStreamlineStage::createOutputBuffer(uint32_t seeds) {
 bool CFDStreamlineStage::createPipeline() {
     VkDevice device = vulkanDevice.getDevice();
 
-    std::array<VkDescriptorSetLayoutBinding, 5> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 7> bindings{};
     for (uint32_t binding = 0; binding < bindings.size(); ++binding) {
         bindings[binding] = {binding, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
     }
@@ -315,6 +267,8 @@ void CFDStreamlineStage::recordCompute(
     VkDeviceSize fluidSeedGridOffset,
     VkBuffer velocityBuffer,
     VkDeviceSize velocityBufferOffset,
+    VkBuffer gradientsBuffer,
+    VkDeviceSize gradientsBufferOffset,
     uint32_t fluidNodeCount,
     float stepLength) {
     if (!ready ||
@@ -323,6 +277,8 @@ void CFDStreamlineStage::recordCompute(
         seedBuffer == VK_NULL_HANDLE ||
         seedToFluidNodeBuffer == VK_NULL_HANDLE ||
         velocityBuffer == VK_NULL_HANDLE ||
+        centroidsBuffer == VK_NULL_HANDLE ||
+        gradientsBuffer == VK_NULL_HANDLE ||
         outputBuffer == VK_NULL_HANDLE) {
         return;
     }
@@ -330,15 +286,17 @@ void CFDStreamlineStage::recordCompute(
     const uint32_t frameIdx = currentFrame % static_cast<uint32_t>(descriptorSets.size());
     VkDescriptorSet currentSet = descriptorSets[frameIdx];
 
-    const std::array<VkDescriptorBufferInfo, 5> bufferInfos = {{
+    const std::array<VkDescriptorBufferInfo, 7> bufferInfos = {{
         {fluidSeedGridBuffer, fluidSeedGridOffset, VK_WHOLE_SIZE},
         {seedToFluidNodeBuffer, seedToFluidNodeBufferOffset, VK_WHOLE_SIZE},
         {velocityBuffer, velocityBufferOffset, VK_WHOLE_SIZE},
         {seedBuffer, seedBufferOffset, VK_WHOLE_SIZE},
         {outputBuffer, outputOffset, VK_WHOLE_SIZE},
+        {centroidsBuffer, centroidsBufferOffset, VK_WHOLE_SIZE},
+        {gradientsBuffer, gradientsBufferOffset, VK_WHOLE_SIZE},
     }};
 
-    std::array<VkWriteDescriptorSet, 5> writes{};
+    std::array<VkWriteDescriptorSet, 7> writes{};
     for (uint32_t i = 0; i < writes.size(); ++i) {
         writes[i] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, currentSet, i, 0, 1,
                      VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &bufferInfos[i], nullptr};

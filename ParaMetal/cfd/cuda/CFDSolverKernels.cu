@@ -1,8 +1,12 @@
 #include "CFDSolverKernels.cuh"
+#include "../CFDReconstruction.hpp"
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 
 namespace cfd::fluidkernels {
+
+static constexpr float ViscousSafety = 0.5f;
+static constexpr float FallbackUpwindWeight = 0.20f;
 
 namespace {
 
@@ -59,7 +63,7 @@ __global__ void correctBoundaryFluxesKernel(
 
     const CFDBoundaryFaceGpu bf = boundaryFaces[idx];
     const BoundaryConditionGpu bc = boundaryConditions[bf.boundaryCondition];
-    if (bc.type == 2 /* PressureOutlet */) {
+    if (bc.type == BoundaryTypePressureOutlet) {
         boundaryFlux[idx] += bf.projectionWeight * psi[bf.cell];
     }
 }
@@ -110,6 +114,11 @@ __global__ void computeOutflowBoundaryKernel(
 __global__ void finalizeOutflowRateKernel(
     uint32_t cellCount,
     const float* __restrict__ cellVolumes,
+    const uint32_t* __restrict__ mergeTarget,
+    const float* __restrict__ mergeVolume,
+    const float* __restrict__ mergedViscousWeights,
+    const float* __restrict__ kinematicViscosity,
+    float targetCfl,
     float* __restrict__ outflowRates,
     uint32_t* __restrict__ invalid) {
     const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -117,12 +126,22 @@ __global__ void finalizeOutflowRateKernel(
 
     const float vol = cellVolumes[idx];
     if (vol > 0.0f && isfinite(vol)) {
-        outflowRates[idx] /= vol;
+        const float advectiveRate = outflowRates[idx] / vol;
+        const uint32_t group = mergeTarget[idx];
+        const float groupVol = mergeVolume[group] > 0.0f ? mergeVolume[group] : vol;
+        const float viscousRate = (*kinematicViscosity) * mergedViscousWeights[group] / groupVol;
+        outflowRates[idx] = advectiveRate / targetCfl + viscousRate / ViscousSafety;
     } else {
         outflowRates[idx] = 0.0f;
         if (invalid != nullptr) atomicOr(invalid, 1u);
     }
 }
+
+__global__ void aggregateViscousWeightKernel(uint32_t n,const float* in,const uint32_t* target,float* out) {
+    uint32_t i=blockIdx.x*blockDim.x+threadIdx.x;
+    if(i<n) atomicAdd(&out[target[i]],in[i]);
+}
+
 
 __global__ void zeroMaskedKernel(
     uint32_t cellCount,
@@ -148,13 +167,45 @@ __global__ void initializeVelocityKernel(
     }
 }
 
+__device__ inline glm::vec3 evaluateReconstructionFace(
+    const ReconFinalCoefficients& reconstruction,
+    const ReconCellGeometry& cellGeometry,
+    const ReconFaceGeometry& faceGeometry) {
+    const double inverseH = 1.0 / cellGeometry.h;
+    const double inverseH2 = inverseH * inverseH;
+    const double dx = (faceGeometry.centroid.x - cellGeometry.centroid.x) * inverseH;
+    const double dy = (faceGeometry.centroid.y - cellGeometry.centroid.y) * inverseH;
+    const double dz = (faceGeometry.centroid.z - cellGeometry.centroid.z) * inverseH;
+
+    const float basis[ReconQuadraticUnknownCount] = {
+        float(dx), float(dy), float(dz),
+        float(faceGeometry.m2[0] * inverseH2) + float(dx) * float(dx) - float(cellGeometry.m2[0] * inverseH2),
+        float(faceGeometry.m2[1] * inverseH2) + float(dx) * float(dy) - float(cellGeometry.m2[1] * inverseH2),
+        float(faceGeometry.m2[2] * inverseH2) + float(dx) * float(dz) - float(cellGeometry.m2[2] * inverseH2),
+        float(faceGeometry.m2[3] * inverseH2) + float(dy) * float(dy) - float(cellGeometry.m2[3] * inverseH2),
+        float(faceGeometry.m2[4] * inverseH2) + float(dy) * float(dz) - float(cellGeometry.m2[4] * inverseH2),
+        float(faceGeometry.m2[5] * inverseH2) + float(dz) * float(dz) - float(cellGeometry.m2[5] * inverseH2)};
+
+    float value[3] = {};
+    for (uint32_t component = 0u; component < 3u; ++component) {
+        for (uint32_t unknown = 0u; unknown < ReconQuadraticUnknownCount; ++unknown) {
+            value[component] += reconstruction.c[component][unknown] * basis[unknown];
+        }
+    }
+    return glm::vec3(value[0], value[1], value[2]);
+}
+
 __global__ void momentumInternalFacesKernel(
     uint32_t faceCount,
     const FaceTopology* __restrict__ faces,
     const float* __restrict__ faceFlux,
     const glm::vec4* __restrict__ velocity,
     const float* __restrict__ kinematicViscosity,
-    glm::vec3* __restrict__ momentumAccum) {
+    const ReconFinalCoefficients* __restrict__ reconstruction,
+    const ReconCellGeometry* __restrict__ cellGeometry,
+    const ReconFaceGeometry* __restrict__ faceGeometry,
+    glm::vec3* __restrict__ momentumAccum,
+    glm::vec3* __restrict__ viscousAccum) {
     const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= faceCount) return;
 
@@ -163,12 +214,33 @@ __global__ void momentumInternalFacesKernel(
     const glm::vec3 uA = glm::vec3(velocity[face.cellA]);
     const glm::vec3 uB = glm::vec3(velocity[face.cellB]);
 
+    const uint32_t upwind = (phi >= 0.0f) ? face.cellA : face.cellB;
     const glm::vec3 uUpwind = (phi >= 0.0f) ? uA : uB;
-    const glm::vec3 convection = phi * uUpwind;
+    const glm::vec3 uCentral = 0.5f * (uA + uB);
+
+    glm::vec3 uFace;
+    bool reconstructed = false;
+    if (reconstruction != nullptr && cellGeometry != nullptr &&
+        faceGeometry != nullptr && reconstruction[upwind].valid != 0u &&
+        cellGeometry[upwind].volume > 0.0 && cellGeometry[upwind].h > 0.0 &&
+        faceGeometry[idx].area > 0.0) {
+        const glm::vec3 uHighOrder = evaluateReconstructionFace(
+            reconstruction[upwind], cellGeometry[upwind], faceGeometry[idx]);
+        const glm::vec3 candidate = glm::vec3(velocity[upwind]) + uHighOrder;
+        if (isfinite(candidate.x) && isfinite(candidate.y) && isfinite(candidate.z)) {
+            uFace = candidate;
+            reconstructed = true;
+        }
+    }
+    if (!reconstructed) {
+        uFace = FallbackUpwindWeight * uUpwind + (1.0f - FallbackUpwindWeight) * uCentral;
+    }
+
+    const glm::vec3 convection = phi * uFace;
     const glm::vec3 diffusion = ((*kinematicViscosity) * face.projectionWeight) * (uB - uA);
 
-    const glm::vec3 netA = -convection + diffusion;
-    const glm::vec3 netB = convection - diffusion;
+    const glm::vec3 netA = -convection;
+    const glm::vec3 netB = convection;
 
     atomicAdd(&momentumAccum[face.cellA].x, netA.x);
     atomicAdd(&momentumAccum[face.cellA].y, netA.y);
@@ -177,6 +249,12 @@ __global__ void momentumInternalFacesKernel(
     atomicAdd(&momentumAccum[face.cellB].x, netB.x);
     atomicAdd(&momentumAccum[face.cellB].y, netB.y);
     atomicAdd(&momentumAccum[face.cellB].z, netB.z);
+    atomicAdd(&viscousAccum[face.cellA].x, diffusion.x);
+    atomicAdd(&viscousAccum[face.cellA].y, diffusion.y);
+    atomicAdd(&viscousAccum[face.cellA].z, diffusion.z);
+    atomicAdd(&viscousAccum[face.cellB].x, -diffusion.x);
+    atomicAdd(&viscousAccum[face.cellB].y, -diffusion.y);
+    atomicAdd(&viscousAccum[face.cellB].z, -diffusion.z);
 }
 
 __global__ void momentumBoundaryFacesKernel(
@@ -186,7 +264,8 @@ __global__ void momentumBoundaryFacesKernel(
     const float* __restrict__ boundaryFlux,
     const glm::vec4* __restrict__ velocity,
     const float* __restrict__ kinematicViscosity,
-    glm::vec3* __restrict__ momentumAccum) {
+    glm::vec3* __restrict__ momentumAccum,
+    glm::vec3* __restrict__ viscousAccum) {
     const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= boundaryFaceCount) return;
 
@@ -199,48 +278,93 @@ __global__ void momentumBoundaryFacesKernel(
     glm::vec3 convection(0.0f);
     glm::vec3 diffusion(0.0f);
 
-    if (bc.type == 1 /* VelocityInlet */) {
+    if (bc.type == BoundaryTypeVelocityInlet) {
         const glm::vec3 uInlet = bc.velocity;
         const glm::vec3 uUpwind = (phi < 0.0f) ? uInlet : uCell;
         convection = phi * uUpwind;
         diffusion = (viscosity * bf.projectionWeight) * (uInlet - uCell);
-    } else if (bc.type == 0 /* NoSlipWall / EmbeddedWall */) {
+    } else if (bc.type == BoundaryTypeNoSlipWall) {
         convection = glm::vec3(0.0f);
         diffusion = (viscosity * bf.projectionWeight) * (-uCell);
-    } else if (bc.type == 2 /* PressureOutlet */) {
+    } else if (bc.type == BoundaryTypePressureOutlet) {
         convection = phi * uCell;
         diffusion = glm::vec3(0.0f);
     }
 
-    const glm::vec3 net = -convection + diffusion;
+    const glm::vec3 net = -convection;
     atomicAdd(&momentumAccum[bf.cell].x, net.x);
     atomicAdd(&momentumAccum[bf.cell].y, net.y);
     atomicAdd(&momentumAccum[bf.cell].z, net.z);
+    atomicAdd(&viscousAccum[bf.cell].x, diffusion.x);
+    atomicAdd(&viscousAccum[bf.cell].y, diffusion.y);
+    atomicAdd(&viscousAccum[bf.cell].z, diffusion.z);
 }
 
-__global__ void applyMomentumPredictorKernel(
+__global__ void mergeViscousAccumKernel(uint32_t count, const glm::vec3* src,
+    const uint32_t* target, glm::vec3* dst) {
+    const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= count) return;
+    const uint32_t g = target[i];
+    atomicAdd(&dst[g].x, src[i].x); atomicAdd(&dst[g].y, src[i].y); atomicAdd(&dst[g].z, src[i].z);
+}
+
+__global__ void applyMomentumStageKernel(
     uint32_t cellCount,
     const float* __restrict__ cellVolumes,
-    const float* __restrict__ cellViscousWeights,
-    glm::vec4* __restrict__ velocity,
+    const glm::vec4* __restrict__ baseVelocity,
+    const glm::vec4* __restrict__ stageVelocity,
     const glm::vec3* __restrict__ momentumAccum,
-    glm::vec3* __restrict__ velocityStar,
-    const float* __restrict__ kinematicViscosity,
-    const cudaSubcycle::SubcycleTimestep* __restrict__ timestep) {
+    const glm::vec3* __restrict__ mergedViscousAccum,
+    const uint32_t* __restrict__ mergeTarget,
+    const float* __restrict__ mergeVolume,
+    float alphaBase,
+    float alphaStage,
+    float alphaRhs,
+    const cudaSubcycle::SubcycleTimestep* __restrict__ timestep,
+    glm::vec4* __restrict__ outVelocity,
+    glm::vec3* __restrict__ outVelocityStar) {
     const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= cellCount) return;
 
     const float dt = timestep->dt;
     const float vol = cellVolumes[idx];
-    const float viscWeight = cellViscousWeights ? cellViscousWeights[idx] : 0.0f;
-    const float effVol = vol + (dt * (*kinematicViscosity)) * viscWeight;
-    const float invEffVol = (effVol > 0.0f) ? (1.0f / effVol) : 0.0f;
-    const glm::vec3 uOld = glm::vec3(velocity[idx]);
+    const float invVol = (vol > 0.0f) ? (1.0f / vol) : 0.0f;
+    const glm::vec3 base = glm::vec3(baseVelocity[idx]);
+    const glm::vec3 stage = glm::vec3(stageVelocity[idx]);
     const glm::vec3 net = momentumAccum[idx];
-    const glm::vec3 uNew = uOld + (dt * invEffVol) * net;
+    const uint32_t group = mergeTarget[idx];
+    const float groupInvVol = mergeVolume[group] > 0.0f ? 1.0f / mergeVolume[group] : invVol;
+    const glm::vec3 viscous = mergedViscousAccum[group];
+    const glm::vec3 value = alphaBase * base + alphaStage * stage +
+        (alphaRhs * dt * invVol) * net + (alphaRhs * dt * groupInvVol) * viscous;
 
-    velocityStar[idx] = uNew;
-    velocity[idx] = glm::vec4(uNew, 0.0f);
+    if (outVelocity != nullptr) outVelocity[idx] = glm::vec4(value, 0.0f);
+    if (outVelocityStar != nullptr) outVelocityStar[idx] = value;
+}
+
+__global__ void validateVelocityStarKernel(
+    uint32_t cellCount,
+    const glm::vec3* __restrict__ velocityStar,
+    uint32_t* __restrict__ invalid) {
+    const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= cellCount) return;
+
+    const glm::vec3 value = velocityStar[idx];
+    if (!isfinite(value.x) || !isfinite(value.y) || !isfinite(value.z)) {
+        if (invalid != nullptr) atomicOr(invalid, 0x80000000u);
+    }
+}
+
+__global__ void validatePressureRhsKernel(
+    uint32_t cellCount,
+    const float* __restrict__ pressureRhs,
+    uint32_t* __restrict__ invalid) {
+    const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= cellCount) return;
+
+    if (!isfinite(pressureRhs[idx])) {
+        if (invalid != nullptr) atomicOr(invalid, 0x80000000u);
+    }
 }
 
 __global__ void provisionalInternalFluxKernel(
@@ -271,9 +395,9 @@ __global__ void provisionalBoundaryFluxKernel(
 
     const CFDBoundaryFaceGpu bf = boundaryFaces[idx];
     const BoundaryConditionGpu bc = boundaryConditions[bf.boundaryCondition];
-    if (bc.type == 1 /* VelocityInlet */) {
+    if (bc.type == BoundaryTypeVelocityInlet) {
         boundaryFlux[idx] = glm::dot(bc.velocity, bf.areaVector);
-    } else if (bc.type == 2 /* PressureOutlet */) {
+    } else if (bc.type == BoundaryTypePressureOutlet) {
         const glm::vec3 u = velocityStar[bf.cell];
         boundaryFlux[idx] = glm::dot(u, bf.areaVector);
     } else {
@@ -317,8 +441,7 @@ __global__ void accumulateBoundaryPressureImpulseKernel(
 
     const CFDBoundaryFaceGpu bf = boundaryFaces[idx];
     const BoundaryConditionGpu bc = boundaryConditions[bf.boundaryCondition];
-    // Dirichlet outlet reference contribution (psi = 0)
-    if (bc.type != 2 /* PressureOutlet */) return;
+    if (bc.type != BoundaryTypePressureOutlet) return;
 
     const float psiVal = psi[bf.cell];
     const glm::vec3 term = -psiVal * bf.areaVector;
@@ -346,6 +469,13 @@ __global__ void applyVelocityCorrectionKernel(
 
 
 } 
+void launchAggregateViscousWeights(uint32_t count,const float* weights,const uint32_t* target,
+    float* merged,cudaStream_t stream) {
+    if (!count || !weights || !target || !merged) return;
+    cudaMemsetAsync(merged, 0, size_t(count) * sizeof(float), stream);
+    aggregateViscousWeightKernel<<<(count + BlockSize - 1) / BlockSize, BlockSize, 0, stream>>>(count,weights,target,merged);
+}
+
 void launchBuildPressureRhs(
     uint32_t cellCount,
     uint32_t faceCount,
@@ -371,6 +501,17 @@ void launchBuildPressureRhs(
         buildPressureRhsBoundaryKernel<<<blocks, BlockSize, 0, stream>>>(
             boundaryFaceCount, d_boundaryFaces, d_boundaryFlux, d_pressureRhs);
     }
+}
+
+void launchValidatePressureRhs(
+    uint32_t cellCount,
+    const float* d_pressureRhs,
+    uint32_t* d_invalid,
+    cudaStream_t stream) {
+    if (cellCount == 0 || !d_pressureRhs) return;
+    const uint32_t blocks = (cellCount + BlockSize - 1) / BlockSize;
+    validatePressureRhsKernel<<<blocks, BlockSize, 0, stream>>>(
+        cellCount, d_pressureRhs, d_invalid);
 }
 
 void launchCorrectFluxes(
@@ -504,7 +645,7 @@ __global__ void publishFineBoundaryFluxKernel(
     const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= faceCount) return;
     const uint32_t dst = globalIndex[i];
-    if (dst == 0xFFFFFFFFu) return; // embedded solid wall not in published boundary space
+    if (dst == 0xFFFFFFFFu) return;
     outFlux[dst] = sourceFlux[i];
 }
 
@@ -556,6 +697,153 @@ void publishVelocity(
     publishVelocityKernel<<<blocks, BlockSize, 0, stream>>>(nodeCount, d_source, d_destination, d_publishGate);
 }
 
+__global__ void computeVelocityGradientsFacesKernel(
+    uint32_t faceCount,
+    const FaceTopology* __restrict__ faces,
+    const FaceFluxVectors* __restrict__ fluxVectors,
+    const glm::vec4* __restrict__ velocity,
+    glm::vec4* __restrict__ gradients) {
+    const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= faceCount) return;
+
+    const FaceTopology face = faces[idx];
+    const FaceFluxVectors fv = fluxVectors[idx];
+    const glm::vec3 areaVec = fv.fluxVectorA + fv.fluxVectorB;
+    const glm::vec3 uA = glm::vec3(velocity[face.cellA]);
+    const glm::vec3 uB = glm::vec3(velocity[face.cellB]);
+    const glm::vec3 uFace = 0.5f * (uA + uB);
+
+    const uint32_t baseA = face.cellA * 3u;
+    const uint32_t baseB = face.cellB * 3u;
+
+    const glm::vec3 termX = uFace.x * areaVec;
+    const glm::vec3 termY = uFace.y * areaVec;
+    const glm::vec3 termZ = uFace.z * areaVec;
+
+    atomicAdd(&gradients[baseA + 0u].x,  termX.x);
+    atomicAdd(&gradients[baseA + 0u].y,  termX.y);
+    atomicAdd(&gradients[baseA + 0u].z,  termX.z);
+
+    atomicAdd(&gradients[baseA + 1u].x,  termY.x);
+    atomicAdd(&gradients[baseA + 1u].y,  termY.y);
+    atomicAdd(&gradients[baseA + 1u].z,  termY.z);
+
+    atomicAdd(&gradients[baseA + 2u].x,  termZ.x);
+    atomicAdd(&gradients[baseA + 2u].y,  termZ.y);
+    atomicAdd(&gradients[baseA + 2u].z,  termZ.z);
+
+    atomicAdd(&gradients[baseB + 0u].x, -termX.x);
+    atomicAdd(&gradients[baseB + 0u].y, -termX.y);
+    atomicAdd(&gradients[baseB + 0u].z, -termX.z);
+
+    atomicAdd(&gradients[baseB + 1u].x, -termY.x);
+    atomicAdd(&gradients[baseB + 1u].y, -termY.y);
+    atomicAdd(&gradients[baseB + 1u].z, -termY.z);
+
+    atomicAdd(&gradients[baseB + 2u].x, -termZ.x);
+    atomicAdd(&gradients[baseB + 2u].y, -termZ.y);
+    atomicAdd(&gradients[baseB + 2u].z, -termZ.z);
+}
+
+__global__ void computeVelocityGradientsBoundaryKernel(
+    uint32_t boundaryFaceCount,
+    const CFDBoundaryFaceGpu* __restrict__ boundaryFaces,
+    const BoundaryConditionGpu* __restrict__ boundaryConditions,
+    const glm::vec4* __restrict__ velocity,
+    glm::vec4* __restrict__ gradients) {
+    const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= boundaryFaceCount) return;
+
+    const CFDBoundaryFaceGpu bf = boundaryFaces[idx];
+    const BoundaryConditionGpu bc = boundaryConditions[bf.boundaryCondition];
+    const glm::vec3 areaVec = bf.areaVector;
+
+    glm::vec3 uFace(0.0f);
+    if (bc.type == BoundaryTypeVelocityInlet) {
+        uFace = bc.velocity;
+    } else if (bc.type == BoundaryTypePressureOutlet) {
+        uFace = glm::vec3(velocity[bf.cell]);
+    } else {
+        return;
+    }
+
+    const uint32_t base = bf.cell * 3u;
+    const glm::vec3 termX = uFace.x * areaVec;
+    const glm::vec3 termY = uFace.y * areaVec;
+    const glm::vec3 termZ = uFace.z * areaVec;
+
+    atomicAdd(&gradients[base + 0u].x, termX.x);
+    atomicAdd(&gradients[base + 0u].y, termX.y);
+    atomicAdd(&gradients[base + 0u].z, termX.z);
+
+    atomicAdd(&gradients[base + 1u].x, termY.x);
+    atomicAdd(&gradients[base + 1u].y, termY.y);
+    atomicAdd(&gradients[base + 1u].z, termY.z);
+
+    atomicAdd(&gradients[base + 2u].x, termZ.x);
+    atomicAdd(&gradients[base + 2u].y, termZ.y);
+    atomicAdd(&gradients[base + 2u].z, termZ.z);
+}
+
+__global__ void finalizeVelocityGradientsKernel(
+    uint32_t cellCount,
+    const float* __restrict__ cellVolumes,
+    glm::vec4* __restrict__ gradients) {
+    const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= cellCount) return;
+
+    const float vol = cellVolumes[idx];
+    const float invVol = (vol > 0.0f) ? (1.0f / vol) : 0.0f;
+
+    const uint32_t base = idx * 3u;
+    gradients[base + 0u].x *= invVol;
+    gradients[base + 0u].y *= invVol;
+    gradients[base + 0u].z *= invVol;
+    gradients[base + 0u].w = 0.0f;
+
+    gradients[base + 1u].x *= invVol;
+    gradients[base + 1u].y *= invVol;
+    gradients[base + 1u].z *= invVol;
+    gradients[base + 1u].w = 0.0f;
+
+    gradients[base + 2u].x *= invVol;
+    gradients[base + 2u].y *= invVol;
+    gradients[base + 2u].z *= invVol;
+    gradients[base + 2u].w = 0.0f;
+}
+
+void launchReconstructVelocityGradients(
+    uint32_t cellCount,
+    uint32_t faceCount,
+    uint32_t boundaryFaceCount,
+    const FaceTopology* d_faces,
+    const FaceFluxVectors* d_fluxVectors,
+    const CFDBoundaryFaceGpu* d_boundaryFaces,
+    const BoundaryConditionGpu* d_boundaryConditions,
+    const float* d_cellVolumes,
+    const glm::vec4* d_velocity,
+    glm::vec4* d_gradients,
+    cudaStream_t stream) {
+    if (cellCount == 0 || !d_gradients || !d_cellVolumes || !d_velocity) return;
+
+    cudaMemsetAsync(d_gradients, 0, cellCount * 3u * sizeof(glm::vec4), stream);
+
+    if (faceCount > 0 && d_faces && d_fluxVectors) {
+        const uint32_t blocks = (faceCount + BlockSize - 1) / BlockSize;
+        computeVelocityGradientsFacesKernel<<<blocks, BlockSize, 0, stream>>>(
+            faceCount, d_faces, d_fluxVectors, d_velocity, d_gradients);
+    }
+    if (boundaryFaceCount > 0 && d_boundaryFaces && d_boundaryConditions) {
+        const uint32_t blocks = (boundaryFaceCount + BlockSize - 1) / BlockSize;
+        computeVelocityGradientsBoundaryKernel<<<blocks, BlockSize, 0, stream>>>(
+            boundaryFaceCount, d_boundaryFaces, d_boundaryConditions, d_velocity, d_gradients);
+    }
+
+    const uint32_t cellBlocks = (cellCount + BlockSize - 1) / BlockSize;
+    finalizeVelocityGradientsKernel<<<cellBlocks, BlockSize, 0, stream>>>(
+        cellCount, d_cellVolumes, d_gradients);
+}
+
 cudaError_t appendMomentumOutflowRate(
     cudaGraph_t graph,
     cudaGraphNode_t& prev,
@@ -567,6 +855,11 @@ cudaError_t appendMomentumOutflowRate(
     const float* d_faceFlux,
     const float* d_boundaryFlux,
     const float* d_cellVolumes,
+    const uint32_t* d_viscousMergeTarget,
+    const float* d_viscousMergeVolume,
+    const float* d_mergedViscousWeight,
+    const float* d_kinematicViscosity,
+    float targetCfl,
     float* d_outflowRates,
     float* d_maxRate,
     uint32_t* d_invalid) {
@@ -591,10 +884,21 @@ cudaError_t appendMomentumOutflowRate(
         if (result != cudaSuccess) return result;
     }
     result = appendKernel(graph, prev, (void*)finalizeOutflowRateKernel, dim3((cellCount + BlockSize - 1) / BlockSize), dim3(BlockSize),
-        cellCount, d_cellVolumes, d_outflowRates, d_invalid);
+        cellCount, d_cellVolumes, d_viscousMergeTarget, d_viscousMergeVolume,
+        d_mergedViscousWeight, d_kinematicViscosity, targetCfl,
+        d_outflowRates, d_invalid);
     if (result != cudaSuccess) return result;
-    return appendKernel(graph, prev, (void*)cudaSubcycle::reduceMaxRateKernel, dim3(64), dim3(256),
+    result = appendKernel(graph, prev, (void*)cudaSubcycle::reduceMaxRateKernel, dim3(64), dim3(256),
         cellCount, d_outflowRates, d_maxRate, d_invalid);
+    return result;
+}
+
+__global__ void stageStampKernel(uint64_t* stamps, uint32_t index) {
+    if (blockIdx.x == 0u && threadIdx.x == 0u) {
+        uint64_t t;
+        asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(t));
+        stamps[index] = t;
+    }
 }
 
 cudaError_t appendMomentumSubcycleBody(
@@ -609,30 +913,91 @@ cudaError_t appendMomentumSubcycleBody(
     const float* d_faceFlux,
     const float* d_boundaryFlux,
     const float* d_cellVolumes,
-    const float* d_cellViscousWeight,
     const float* d_kinematicViscosity,
+    const double* d_referenceVelocity,
     glm::vec3* d_momentumAccum,
+    glm::vec3* d_viscousAccum,
+    glm::vec3* d_mergedViscousAccum,
+    const uint32_t* d_viscousMergeTarget,
+    const float* d_viscousMergeVolume,
     glm::vec4* d_velocity,
+    glm::vec4* d_stageA,
+    glm::vec4* d_stageB,
     glm::vec3* d_velocityStar,
-    const cudaSubcycle::SubcycleTimestep* d_timestep) {
+    cudaSubcycle::SubcycleTimestep* d_timestep,
+    cfd::CFDReconstruction* d_reconstruction,
+    uint64_t* d_stageStamps) {
     using cudaGraphBuilder::appendKernel;
     using cudaGraphBuilder::appendMemset;
 
-    cudaError_t result = appendMemset(body, prev, d_momentumAccum, 0, cellCount * sizeof(glm::vec3));
-    if (result != cudaSuccess) return result;
+    const bool hasReconstruction = d_reconstruction != nullptr && d_reconstruction->ready();
+    const ReconFinalCoefficients* reconstruction =
+        hasReconstruction ? d_reconstruction->coefficients().get() : nullptr;
+    const ReconCellGeometry* cellGeometry =
+        hasReconstruction ? d_reconstruction->cellGeometry().get() : nullptr;
+    const ReconFaceGeometry* faceGeometry =
+        hasReconstruction ? d_reconstruction->faceGeometry().get() : nullptr;
 
-    if (faceCount > 0 && d_faces && d_faceFlux) {
-        result = appendKernel(body, prev, (void*)momentumInternalFacesKernel, dim3((faceCount + BlockSize - 1) / BlockSize), dim3(BlockSize),
-            faceCount, d_faces, d_faceFlux, d_velocity, d_kinematicViscosity, d_momentumAccum);
+    auto appendStage = [&](glm::vec4* state, glm::vec4* out, glm::vec3* outStar,
+                           float alphaBase, float alphaStage, float alphaRhs,
+                           bool measure) -> cudaError_t {
+        cudaError_t result = appendMemset(body, prev, d_momentumAccum, 0, cellCount * sizeof(glm::vec3));
         if (result != cudaSuccess) return result;
-    }
-    if (boundaryFaceCount > 0 && d_boundaryFaces && d_boundaryConditions && d_boundaryFlux) {
-        result = appendKernel(body, prev, (void*)momentumBoundaryFacesKernel, dim3((boundaryFaceCount + BlockSize - 1) / BlockSize), dim3(BlockSize),
-            boundaryFaceCount, d_boundaryFaces, d_boundaryConditions, d_boundaryFlux, d_velocity, d_kinematicViscosity, d_momentumAccum);
+        result = appendMemset(body, prev, d_viscousAccum, 0, cellCount * sizeof(glm::vec3));
         if (result != cudaSuccess) return result;
-    }
-    return appendKernel(body, prev, (void*)applyMomentumPredictorKernel, dim3((cellCount + BlockSize - 1) / BlockSize), dim3(BlockSize),
-        cellCount, d_cellVolumes, d_cellViscousWeight, d_velocity, d_momentumAccum, d_velocityStar, d_kinematicViscosity, d_timestep);
+        result = appendMemset(body, prev, d_mergedViscousAccum, 0, cellCount * sizeof(glm::vec3));
+        if (result != cudaSuccess) return result;
+        if (measure) {
+            result = appendKernel(body, prev, (void*)stageStampKernel, dim3(1), dim3(1), d_stageStamps, 0u);
+            if (result != cudaSuccess) return result;
+        }
+        if (hasReconstruction) {
+            result = d_reconstruction->appendCoefficientsNode(body, prev, state, d_referenceVelocity);
+            if (result != cudaSuccess) return result;
+        }
+        if (measure) {
+            result = appendKernel(body, prev, (void*)stageStampKernel, dim3(1), dim3(1), d_stageStamps, 1u);
+            if (result != cudaSuccess) return result;
+        }
+        if (faceCount > 0 && d_faces && d_faceFlux) {
+            result = appendKernel(body, prev, (void*)momentumInternalFacesKernel, dim3((faceCount + BlockSize - 1) / BlockSize), dim3(BlockSize),
+                faceCount, d_faces, d_faceFlux, state, d_kinematicViscosity,
+                reconstruction, cellGeometry, faceGeometry, d_momentumAccum, d_viscousAccum);
+            if (result != cudaSuccess) return result;
+        }
+        if (measure) {
+            result = appendKernel(body, prev, (void*)stageStampKernel, dim3(1), dim3(1), d_stageStamps, 2u);
+            if (result != cudaSuccess) return result;
+        }
+        if (boundaryFaceCount > 0 && d_boundaryFaces && d_boundaryConditions && d_boundaryFlux) {
+            result = appendKernel(body, prev, (void*)momentumBoundaryFacesKernel, dim3((boundaryFaceCount + BlockSize - 1) / BlockSize), dim3(BlockSize),
+                boundaryFaceCount, d_boundaryFaces, d_boundaryConditions, d_boundaryFlux, state, d_kinematicViscosity, d_momentumAccum, d_viscousAccum);
+            if (result != cudaSuccess) return result;
+        }
+        result = appendKernel(body, prev, (void*)mergeViscousAccumKernel, dim3((cellCount + BlockSize - 1) / BlockSize), dim3(BlockSize),
+            cellCount, d_viscousAccum, d_viscousMergeTarget, d_mergedViscousAccum);
+        if (result != cudaSuccess) return result;
+        result = appendKernel(body, prev, (void*)applyMomentumStageKernel, dim3((cellCount + BlockSize - 1) / BlockSize), dim3(BlockSize),
+            cellCount, d_cellVolumes, d_velocity, state, d_momentumAccum, d_mergedViscousAccum,
+            d_viscousMergeTarget, d_viscousMergeVolume,
+            alphaBase, alphaStage, alphaRhs, d_timestep, out, outStar);
+        if (result != cudaSuccess) return result;
+        if (measure) {
+            result = appendKernel(body, prev, (void*)stageStampKernel, dim3(1), dim3(1), d_stageStamps, 3u);
+            if (result != cudaSuccess) return result;
+        }
+        return result;
+    };
+
+    const bool measureStage = d_stageStamps != nullptr;
+    cudaError_t result = appendStage(d_velocity, d_stageA, static_cast<glm::vec3*>(nullptr), 1.0f, 0.0f, 1.0f, measureStage);
+    if (result != cudaSuccess) return result;
+    result = appendStage(d_stageA, d_stageB, static_cast<glm::vec3*>(nullptr), 0.75f, 0.25f, 0.25f, false);
+    if (result != cudaSuccess) return result;
+    result = appendStage(d_stageB, d_velocity, d_velocityStar, 1.0f / 3.0f, 2.0f / 3.0f, 2.0f / 3.0f, false);
+    if (result != cudaSuccess) return result;
+    return appendKernel(body, prev, (void*)validateVelocityStarKernel, dim3((cellCount + BlockSize - 1) / BlockSize), dim3(BlockSize),
+        cellCount, d_velocityStar, reinterpret_cast<uint32_t*>(&d_timestep->status));
 }
 
 } // namespace cfd::fluidkernels

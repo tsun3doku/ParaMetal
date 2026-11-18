@@ -36,6 +36,16 @@ bool CFDRuntime::initialize(
             cleanup();
             return false;
         }
+
+        const VkDeviceSize gradSize = static_cast<VkDeviceSize>(fluidNodeCount) * 3 * sizeof(glm::vec4);
+        if (!velocityGradients.initialize(device, gradSize, usage)) {
+            cleanup();
+            return false;
+        }
+        if (!velocityGradientsMapping.ensureMapped(velocityGradients, cudaDevice)) {
+            cleanup();
+            return false;
+        }
     }
 
     if (globalFaceCount > 0) {
@@ -67,10 +77,12 @@ bool CFDRuntime::initialize(
 
 void CFDRuntime::cleanup() {
     velocityMapping.cleanup();
+    velocityGradientsMapping.cleanup();
     faceFluxMapping.cleanup();
     boundaryFluxMapping.cleanup();
 
     velocity.cleanup();
+    velocityGradients.cleanup();
     faceFlux.cleanup();
     boundaryFlux.cleanup();
 

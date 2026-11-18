@@ -71,6 +71,7 @@ static QString graphIconFolder(const QString& typeId) {
     if (typeId == QStringLiteral("model")) return QStringLiteral("Model");
     if (typeId == QStringLiteral("heat_model")) return QStringLiteral("HeatModel");
     if (typeId == QStringLiteral("fluid")) return QStringLiteral("Fluid");
+    if (typeId == QStringLiteral("cfd")) return QStringLiteral("Cfd");
     if (typeId == QStringLiteral("remesh")) return QStringLiteral("Remesh");
     if (typeId == QStringLiteral("transform")) return QStringLiteral("Transform");
     if (typeId == QStringLiteral("voronoi")) return QStringLiteral("VoronoiSystem");
