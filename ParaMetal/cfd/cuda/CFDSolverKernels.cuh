@@ -3,7 +3,7 @@
 #include <glm/glm.hpp>
 #include <cuda_runtime.h>
 #include <cstdint>
-#include "../CFDTopology.hpp"
+#include "../CFDGpuStructs.hpp"
 #include "../CFDBoundaryConditions.hpp"
 #include "../../cuda/SubcycleTimestep.cuh"
 

@@ -1,6 +1,8 @@
 #include "RuntimeCFDComputeTransport.hpp"
 #include "runtime/RuntimeProductManager.hpp"
 
+#include <iostream>
+
 ComputeApplyResult RuntimeCFDComputeTransport::apply(
     uint64_t socketKey,
     const CFDPackage& package,
@@ -14,18 +16,16 @@ ComputeApplyResult RuntimeCFDComputeTransport::apply(
     }
 
     const uint64_t computeHash = package.hashes.simulation;
-    const VoronoiProduct* domainProduct = products->resolve<VoronoiProduct>(
+    const VoronoiProduct* voronoiProduct = products->resolve<VoronoiProduct>(
         package.domainVoronoiProduct);
-    const auto* currentConfig = controller->getConfig(socketKey);
-    if (currentConfig && domainProduct &&
+    if (voronoiProduct &&
         controller->getCurrentComputeHash(socketKey) == computeHash &&
-        currentConfig->geometryHash == domainProduct->hashes.geometry) {
+        controller->getCurrentGeometryHash(socketKey) == voronoiProduct->hashes.geometry) {
         return ComputeApplyResult::Unchanged;
     }
 
     cfd::CFDSystemComputeController::Config config{};
-    topology::GlobalDomain tempDomain;
-    if (!tryBuildConfig(socketKey, package, config, tempDomain)) {
+    if (!tryBuildConfig(socketKey, package, config)) {
         return ComputeApplyResult::Failed;
     }
 
@@ -65,19 +65,55 @@ void RuntimeCFDComputeTransport::remove(uint64_t socketKey) {
 bool RuntimeCFDComputeTransport::tryBuildConfig(
     uint64_t socketKey,
     const CFDPackage& package,
-    cfd::CFDSystemComputeController::Config& outConfig,
-    topology::GlobalDomain& outDomain) const {
+    cfd::CFDSystemComputeController::Config& outConfig) const {
 
     if (!products->isCurrent<VoronoiProduct>(package.domainVoronoiProduct)) {
         return false;
     }
-    const VoronoiProduct* domainProduct = products->resolve<VoronoiProduct>(
+    const VoronoiProduct* voronoiProduct = products->resolve<VoronoiProduct>(
         package.domainVoronoiProduct);
-    if (!domainProduct || !domainProduct->isValid()) {
+    if (!voronoiProduct || !voronoiProduct->isValid()) {
+        return false;
+    }
+    if (!voronoiProduct->hasUniqueSeedToSpaceMapping ||
+        voronoiProduct->seedToSpaceIndex == nullptr ||
+        voronoiProduct->spaceToFragmentIndex == nullptr) {
+        std::cerr << "[RuntimeCFDComputeTransport] CFD requires a unique seed-to-Space mapping for socket "
+                  << socketKey << std::endl;
         return false;
     }
 
     outConfig = {};
+    outConfig.fragmentInstanceIds = *voronoiProduct->fragmentInstanceIds;
+    outConfig.fragmentSeedIds = *voronoiProduct->fragmentSeedIds;
+    outConfig.fragmentCentroids = *voronoiProduct->fragmentCentroids;
+    outConfig.fragmentVolumes = *voronoiProduct->fragmentVolumes;
+    outConfig.faceFragmentA = *voronoiProduct->faceFragmentA;
+    outConfig.faceFragmentB = *voronoiProduct->faceFragmentB;
+    outConfig.faceAreasA = *voronoiProduct->faceAreasA;
+    outConfig.faceAreasB = *voronoiProduct->faceAreasB;
+    outConfig.faceAreaVectorsA = *voronoiProduct->faceAreaVectorsA;
+    outConfig.faceAreaVectorsB = *voronoiProduct->faceAreaVectorsB;
+    outConfig.faceMomentsA = *voronoiProduct->faceMomentsA;
+    outConfig.faceMomentsB = *voronoiProduct->faceMomentsB;
+    outConfig.faceTypes = *voronoiProduct->faceTypes;
+    outConfig.faceDomainFaces = *voronoiProduct->faceDomainFaces;
+    outConfig.boundaryFaceIndices = *voronoiProduct->boundaryFaceIndices;
+    outConfig.faceLoopOffsets = *voronoiProduct->faceLoopOffsets;
+    outConfig.loopVertexOffsets = *voronoiProduct->loopVertexOffsets;
+    outConfig.loopVertices = *voronoiProduct->loopVertices;
+    outConfig.domainMin = voronoiProduct->domainMin;
+    outConfig.domainMax = voronoiProduct->domainMax;
+    outConfig.volumeGridMin = voronoiProduct->volumeGridMin;
+    outConfig.volumeGridDim = voronoiProduct->volumeGridDim;
+    outConfig.volumeGridCellSize = voronoiProduct->volumeGridCellSize;
+
+    outConfig.seedIdGridBuffer = voronoiProduct->globalSeedIdGridBuffer;
+    outConfig.seedIdGridBufferOffset = voronoiProduct->globalSeedIdGridBufferOffset;
+    outConfig.seedToSpaceIndex = *voronoiProduct->seedToSpaceIndex;
+    outConfig.spaceToFragmentIndex = *voronoiProduct->spaceToFragmentIndex;
+    outConfig.spaceFragmentCount = voronoiProduct->spaceFragmentCount;
+    outConfig.hasUniqueSeedToSpaceMapping = true;
     outConfig.kinematicViscosity = package.fluid.kinematicViscosity;
     outConfig.initialVelocity = package.initialVelocity;
     outConfig.fixedTimeStep = package.fixedTimeStep;
@@ -86,64 +122,12 @@ bool RuntimeCFDComputeTransport::tryBuildConfig(
     outConfig.pressureTolerance = package.pressureTolerance;
     outConfig.simulationDuration = package.simulationDuration;
     outConfig.computeHash = package.hashes.simulation;
-    outConfig.geometryHash = domainProduct->hashes.geometry;
+    outConfig.geometryHash = voronoiProduct->hashes.geometry;
 
     for (uint32_t i = 0; i < 6; ++i) {
         outConfig.domainBoundaryTypes[i] = package.domainBoundaryTypes[i];
         outConfig.domainBoundaryVelocities[i] = package.domainBoundaryVelocities[i];
     }
-
-    topology::GlobalDomain& globalDomain = outDomain;
-    globalDomain.fragments.reserve(domainProduct->globalFragmentCount);
-    for (uint32_t fragmentId = 0; fragmentId < domainProduct->globalFragmentCount; ++fragmentId) {
-        topology::Fragment fragment{};
-        fragment.instanceId = domainProduct->fragmentInstanceIds[fragmentId];
-        fragment.seedId = domainProduct->fragmentSeedIds[fragmentId];
-        fragment.centroid = domainProduct->fragmentCentroids[fragmentId];
-        fragment.volume = domainProduct->fragmentVolumes[fragmentId];
-        globalDomain.fragments.push_back(fragment);
-    }
-
-    globalDomain.faces.reserve(domainProduct->globalFaceCount);
-    for (uint32_t faceId = 0; faceId < domainProduct->globalFaceCount; ++faceId) {
-        topology::Face face{};
-        face.fragmentA = domainProduct->faceFragmentA[faceId];
-        face.fragmentB = domainProduct->faceFragmentB[faceId];
-        face.areaA = domainProduct->faceAreasA[faceId];
-        face.areaVectorA = domainProduct->faceAreaVectorsA[faceId];
-        face.momentA = domainProduct->faceMomentsA[faceId];
-        face.areaB = domainProduct->faceAreasB[faceId];
-        face.areaVectorB = domainProduct->faceAreaVectorsB[faceId];
-        face.momentB = domainProduct->faceMomentsB[faceId];
-        face.type = static_cast<topology::FaceType>(domainProduct->faceTypes[faceId]);
-        face.domainFace = domainProduct->faceDomainFaces[faceId];
-        globalDomain.faces.push_back(face);
-    }
-
-    globalDomain.boundaryFaceIndices = domainProduct->boundaryFaceIndices;
-
-    globalDomain.instanceFragmentCounts = domainProduct->instanceFragmentCounts;
-    globalDomain.seedPositions.reserve(domainProduct->globalSeedPositions.size());
-    for (const glm::vec4& position : domainProduct->globalSeedPositions) {
-        globalDomain.seedPositions.push_back(glm::vec3(position));
-    }
-    globalDomain.cellFragmentOffsets = domainProduct->cellFragmentOffsets;
-    globalDomain.cellFragments = domainProduct->cellFragments;
-    globalDomain.faceLoopOffsets = domainProduct->faceLoopOffsets;
-    globalDomain.loopVertexOffsets = domainProduct->loopVertexOffsets;
-    globalDomain.loopVertices = domainProduct->loopVertices;
-    globalDomain.domainMin = domainProduct->globalDomainCorners[0];
-    globalDomain.domainMax = domainProduct->globalDomainCorners[0];
-    for (const glm::vec3& corner : domainProduct->globalDomainCorners) {
-        globalDomain.domainMin = glm::min(globalDomain.domainMin, corner);
-        globalDomain.domainMax = glm::max(globalDomain.domainMax, corner);
-    }
-    globalDomain.volumeGridMin = domainProduct->globalVolumeGridMin;
-    globalDomain.volumeGridDim = domainProduct->globalVolumeGridDim;
-    globalDomain.volumeGridCellSize = domainProduct->globalVolumeGridCellSize;
-    globalDomain.seedIdGridBuffer = domainProduct->globalSeedIdGridBuffer;
-    globalDomain.seedIdGridBufferOffset = domainProduct->globalSeedIdGridBufferOffset;
-
-    outConfig.domain = &globalDomain;
     return true;
 }
+

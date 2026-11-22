@@ -1,4 +1,4 @@
-#include "HeatDomainRuntime.hpp"
+﻿#include "HeatDomainRuntime.hpp"
 
 #include "heat/HeatGlobalSolver.hpp"
 #include "heat/HeatModelRuntime.hpp"
@@ -46,17 +46,159 @@ void HeatDomainRuntime::removeModel(uint32_t runtimeModelId) {
     activeModels.erase(runtimeModelId);
 }
 
-void HeatDomainRuntime::setGlobalDomain(topology::GlobalDomain domain) {
-    globalDomain = std::move(domain);
-    vemMeshCache = vem::VEMMesh{};
+bool HeatDomainRuntime::configureGlobalDomain(
+    const std::vector<uint32_t>& fragmentInstanceIds,
+    const std::vector<uint32_t>& fragmentSeedIds,
+    const std::vector<glm::dvec3>& fragmentCentroids,
+    const std::vector<double>& fragmentVolumes,
+    const std::vector<uint32_t>& faceFragmentA,
+    const std::vector<uint32_t>& faceFragmentB,
+    const std::vector<double>& faceAreasA,
+    const std::vector<double>& faceAreasB,
+    const std::vector<glm::dvec3>& faceAreaVectorsA,
+    const std::vector<glm::dvec3>& faceAreaVectorsB,
+    const std::vector<glm::dvec3>& faceMomentsA,
+    const std::vector<glm::dvec3>& faceMomentsB,
+    const std::vector<uint8_t>& faceTypes,
+    const std::vector<uint32_t>& faceDomainFaces,
+    const std::vector<uint32_t>& boundaryFaceIndices,
+    const std::vector<uint32_t>& contactFaceA,
+    const std::vector<uint32_t>& contactFragmentA,
+    const std::vector<uint32_t>& contactFaceB,
+    const std::vector<uint32_t>& contactFragmentB,
+    const std::vector<double>& contactAreas,
+    const std::vector<uint32_t>& newSeedToSpaceIndex,
+    const std::vector<uint32_t>& newSpaceToFragmentIndex,
+    bool newSeedMappingUnique,
+    VkBuffer newSeedIdGridBuffer,
+    VkDeviceSize newSeedIdGridBufferOffset,
+    const glm::ivec3& newVolumeGridDim) {
+    waitGlobalSolveIdle();
+    globalSolver.reset();
+
+    const size_t fragmentCount = fragmentInstanceIds.size();
+    const size_t faceCount = faceFragmentA.size();
+    if (fragmentCount == 0 || faceCount == 0 ||
+        fragmentSeedIds.size() != fragmentCount ||
+        fragmentCentroids.size() != fragmentCount ||
+        fragmentVolumes.size() != fragmentCount ||
+        faceFragmentB.size() != faceCount ||
+        faceAreasA.size() != faceCount ||
+        faceAreasB.size() != faceCount ||
+        faceAreaVectorsA.size() != faceCount ||
+        faceAreaVectorsB.size() != faceCount ||
+        faceMomentsA.size() != faceCount ||
+        faceMomentsB.size() != faceCount ||
+        faceTypes.size() != faceCount ||
+        faceDomainFaces.size() != faceCount ||
+        contactFaceA.size() != contactFaceB.size() ||
+        contactFaceA.size() != contactFragmentA.size() ||
+        contactFaceA.size() != contactFragmentB.size() ||
+        contactAreas.size() != contactFaceA.size()) {
+        return false;
+    }
+    for (size_t coupling = 0; coupling < contactFaceA.size(); ++coupling) {
+        if (!std::isfinite(contactAreas[coupling]) || !(contactAreas[coupling] > 0.0)) {
+            return false;
+        }
+    }
+    for (size_t face = 0; face < faceCount; ++face) {
+        if ((faceFragmentA[face] != UINT32_MAX && faceFragmentA[face] >= fragmentCount) ||
+            (faceFragmentB[face] != UINT32_MAX && faceFragmentB[face] >= fragmentCount)) {
+            return false;
+        }
+    }
+    size_t boundarySlot = 0;
+    for (size_t face = 0; face < faceCount; ++face) {
+        if (faceTypes[face] != 1u) continue;
+        if (boundarySlot >= boundaryFaceIndices.size() ||
+            boundaryFaceIndices[boundarySlot] != face) {
+            return false;
+        }
+        ++boundarySlot;
+    }
+    if (boundarySlot != boundaryFaceIndices.size()) {
+        return false;
+    }
+
+    vemMeshCache = vem::VEMMeshBuilder::buildFromArrays(
+        fragmentInstanceIds,
+        fragmentSeedIds,
+        fragmentCentroids,
+        fragmentVolumes,
+        faceFragmentA,
+        faceFragmentB,
+        faceAreasA,
+        faceAreasB,
+        faceAreaVectorsA,
+        faceAreaVectorsB,
+        faceMomentsA,
+        faceMomentsB,
+        faceTypes,
+        faceDomainFaces,
+        contactFaceA,
+        contactFragmentA,
+        contactFaceB,
+        contactFragmentB,
+        contactAreas);
+    if (vemMeshCache.cells.empty()) {
+        return false;
+    }
+
+    const uint32_t fragmentCount32 = static_cast<uint32_t>(fragmentCount);
+    advectionFaces.resize(faceFragmentA.size());
+    for (size_t i = 0; i < faceFragmentA.size(); ++i) {
+        advectionFaces[i].nodeA = faceFragmentA[i] < fragmentCount32
+            ? faceFragmentA[i]
+            : InvalidSolverNode;
+        advectionFaces[i].nodeB = faceFragmentB[i] < fragmentCount32
+            ? faceFragmentB[i]
+            : InvalidSolverNode;
+    }
+    advectionBoundaryFaces.resize(boundaryFaceIndices.size());
+    faceFragmentPairs.clear();
+    faceFragmentPairs.reserve(faceFragmentA.size());
+    for (size_t i = 0; i < faceFragmentA.size(); ++i) {
+        if (faceFragmentA[i] < fragmentCount && faceFragmentB[i] < fragmentCount) {
+            faceFragmentPairs.emplace_back(faceFragmentA[i], faceFragmentB[i]);
+        }
+    }
+    for (size_t i = 0; i < boundaryFaceIndices.size(); ++i) {
+        const uint32_t faceIndex = boundaryFaceIndices[i];
+        advectionBoundaryFaces[i].node = faceIndex < faceFragmentA.size() &&
+            faceFragmentA[faceIndex] < fragmentCount
+            ? faceFragmentA[faceIndex]
+            : InvalidSolverNode;
+        advectionBoundaryFaces[i].domainFace = faceIndex < faceDomainFaces.size()
+            ? faceDomainFaces[faceIndex]
+            : UINT32_MAX;
+    }
+
+    seedIdGridBuffer = newSeedIdGridBuffer;
+    seedIdGridBufferOffset = newSeedIdGridBufferOffset;
+    seedToSpaceIndex = newSeedToSpaceIndex;
+    spaceToFragmentIndex = newSpaceToFragmentIndex;
+    seedMappingUnique = newSeedMappingUnique;
+    volumeGridDim = newVolumeGridDim;
+    hasGlobalDomainFlag = true;
     globalTopologyDirtyFlag = true;
     globalValuesDirtyFlag = true;
     globalAdvectionDirtyFlag = true;
+    return true;
 }
 
 void HeatDomainRuntime::clearGlobalDomain() {
     waitGlobalSolveIdle();
-    globalDomain = topology::GlobalDomain{};
+    hasGlobalDomainFlag = false;
+    seedIdGridBuffer = VK_NULL_HANDLE;
+    seedIdGridBufferOffset = 0;
+    seedToSpaceIndex.clear();
+    spaceToFragmentIndex.clear();
+    seedMappingUnique = false;
+    volumeGridDim = glm::ivec3(0);
+    advectionFaces.clear();
+    advectionBoundaryFaces.clear();
+    faceFragmentPairs.clear();
     vemMeshCache = vem::VEMMesh{};
     globalSolver.reset();
     globalTopologyDirtyFlag = false;
@@ -127,50 +269,62 @@ bool HeatDomainRuntime::extractVEMInputs(
     std::vector<float>& fixedCellTemperatures,
     std::array<vem::BoundaryCondition, 6>& vemBcs) const {
 
-    if (!globalDomain.isValid() || globalDomain.fragments.empty()) {
+    if (!hasGlobalDomainFlag || vemMeshCache.cells.empty()) {
         return false;
     }
 
-    const uint32_t cellCount = static_cast<uint32_t>(globalDomain.fragments.size());
+    const uint32_t cellCount = static_cast<uint32_t>(vemMeshCache.cells.size());
     cellConductivity.assign(cellCount, 0.0f);
     cellCapacityOverDt.assign(cellCount, 0.0f);
     cellSourceAdditions.assign(cellCount, 0.0f);
     fixedCellTemperatures.assign(cellCount, std::numeric_limits<float>::quiet_NaN());
 
     for (uint32_t c = 0; c < cellCount; ++c) {
-        const topology::Fragment& frag = globalDomain.fragments[c];
+        const vem::CellGeometry& cell = vemMeshCache.cells[c];
         float k = 0.0f;
         float rho = 0.0f;
         float cp = 0.0f;
         float qVol = 0.0f;
         bool isFixed = false;
+        bool hasMaterial = false;
 
-        if (frag.instanceId != topology::InvalidInstanceId) {
-            const auto it = models.find(frag.instanceId);
-            if (it != models.end() && it->second) {
-                k = it->second->getConductivity();
-                rho = it->second->getDensity();
-                cp = it->second->getSpecificHeat();
-                qVol = it->second->getVolumetricPowerDensity();
-                if (it->second->hasPrescribedTemperature()) {
-                    isFixed = true;
-                    fixedCellTemperatures[c] = it->second->getPrescribedTemperatureC();
-                }
+        if (cell.ownerModelId != UINT32_MAX) {
+            const auto it = models.find(cell.ownerModelId);
+            if (it == models.end() || !it->second) {
+                std::cerr << "[HeatDomainRuntime] cell " << c
+                          << " references missing model " << cell.ownerModelId << std::endl;
+                return false;
             }
+            k = it->second->getConductivity();
+            rho = it->second->getDensity();
+            cp = it->second->getSpecificHeat();
+            qVol = it->second->getVolumetricPowerDensity();
+            if (it->second->hasPrescribedTemperature()) {
+                isFixed = true;
+                fixedCellTemperatures[c] = it->second->getPrescribedTemperatureC();
+            }
+            hasMaterial = true;
         } else if (fluidRuntime) {
             k = fluidRuntime->getConductivity();
             rho = fluidRuntime->getDensity();
             cp = fluidRuntime->getSpecificHeat();
+            hasMaterial = true;
         }
 
-        if (k <= 0.0f || !std::isfinite(k)) k = 1.0f;
-        if (rho <= 0.0f || !std::isfinite(rho)) rho = 1000.0f;
-        if (cp <= 0.0f || !std::isfinite(cp)) cp = 1000.0f;
+        if (!hasMaterial ||
+            !std::isfinite(k) || !(k > 0.0f) ||
+            !std::isfinite(rho) || !(rho > 0.0f) ||
+            !std::isfinite(cp) || !(cp > 0.0f)) {
+            std::cerr << "[HeatDomainRuntime] cell " << c
+                      << " has invalid material properties (k=" << k
+                      << ", rho=" << rho << ", cp=" << cp << ')' << std::endl;
+            return false;
+        }
 
         cellConductivity[c] = k;
-        cellCapacityOverDt[c] = static_cast<float>((double(rho) * double(cp) * double(frag.volume)) / double(fixedTimeStep));
+        cellCapacityOverDt[c] = static_cast<float>((double(rho) * double(cp) * double(cell.volume)) / double(fixedTimeStep));
         if (!isFixed && qVol != 0.0f && std::isfinite(qVol)) {
-            cellSourceAdditions[c] = qVol * frag.volume;
+            cellSourceAdditions[c] = static_cast<float>(double(qVol) * cell.volume);
         }
     }
 
@@ -208,7 +362,7 @@ bool HeatDomainRuntime::rebuildGlobalSolver(
     waitGlobalSolveIdle();
     globalSolver.reset();
 
-    if (!globalDomain.isValid() || globalDomain.fragments.empty()) {
+    if (!hasGlobalDomainFlag || vemMeshCache.cells.empty()) {
         return false;
     }
 
@@ -222,7 +376,6 @@ bool HeatDomainRuntime::rebuildGlobalSolver(
         return false;
     }
 
-    vemMeshCache = vem::VEMMeshBuilder::buildFromGlobalDomain(globalDomain);
     std::string meshValidationReason;
     if (!vem::validateMesh(vemMeshCache, cellConductivity, &meshValidationReason)) {
         std::cerr << "[HeatDomainRuntime] VEM mesh validation failed: "
@@ -234,7 +387,6 @@ bool HeatDomainRuntime::rebuildGlobalSolver(
     }
     const uint32_t cellCount = static_cast<uint32_t>(vemMeshCache.cells.size());
     if (cellCount == 0 || vemMeshCache.totalTraceCount == 0 ||
-        cellCount != globalDomain.fragments.size() ||
         cellCapacityOverDt.size() != cellCount) {
         return false;
     }
@@ -267,14 +419,14 @@ bool HeatDomainRuntime::rebuildGlobalSolver(
 
     std::vector<HeatGlobalSolver::TemperatureNodes> solverTemperatureNodes;
 
-    std::vector<uint32_t> localGlobalFragmentToFluidNode(globalDomain.fragments.size(), UINT32_MAX);
+    std::vector<uint32_t> localGlobalFragmentToFluidNode(cellCount, UINT32_MAX);
     std::vector<uint32_t> localFluidNodeToGlobalFragment;
-    std::vector<uint32_t> fragmentToModelLocalNode(globalDomain.fragments.size(), UINT32_MAX);
+    std::vector<uint32_t> fragmentToModelLocalNode(cellCount, UINT32_MAX);
 
     for (uint32_t runtimeModelId : modelIds) {
         uint32_t localNode = 0;
-        for (uint32_t fragment = 0; fragment < globalDomain.fragments.size(); ++fragment) {
-            if (globalDomain.fragments[fragment].instanceId == runtimeModelId) {
+        for (uint32_t fragment = 0; fragment < cellCount; ++fragment) {
+            if (vemMeshCache.cells[fragment].ownerModelId == runtimeModelId) {
                 fragmentToModelLocalNode[fragment] = localNode++;
             }
         }
@@ -320,14 +472,14 @@ bool HeatDomainRuntime::rebuildGlobalSolver(
 
         fluidBlock.gatherOffsets.push_back(0);
         uint32_t localFluidIdx = 0;
-        for (uint32_t fragment = 0; fragment < globalDomain.fragments.size(); ++fragment) {
-            if (globalDomain.fragments[fragment].instanceId != topology::InvalidInstanceId) continue;
+        for (uint32_t fragment = 0; fragment < cellCount; ++fragment) {
+            if (vemMeshCache.cells[fragment].ownerModelId != UINT32_MAX) continue;
             localGlobalFragmentToFluidNode[fragment] = localFluidIdx;
             localFluidNodeToGlobalFragment.push_back(fragment);
             ++localFluidIdx;
         }
         for (uint32_t c = 0; c < cellCount; ++c) {
-            if (vemMeshCache.cells[c].ownerModelId != topology::InvalidInstanceId) continue;
+            if (vemMeshCache.cells[c].ownerModelId != UINT32_MAX) continue;
             if (localGlobalFragmentToFluidNode[c] == UINT32_MAX) {
                 std::cerr << "[HeatDomainRuntime] fluid cells must remain one-to-one with RVD fragments\n";
                 return false;
@@ -410,31 +562,16 @@ bool HeatDomainRuntime::rebuildGlobalSolver(
             }
         }
 
-        // Shared-face advection topology from global domain
         {
-            const uint32_t fragmentCount = static_cast<uint32_t>(globalDomain.fragments.size());
-            std::vector<heat::AdvectionFace> faces(globalDomain.faces.size());
-            for (size_t i = 0; i < globalDomain.faces.size(); ++i) {
-                const uint32_t fragmentA = globalDomain.faces[i].fragmentA;
-                const uint32_t fragmentB = globalDomain.faces[i].fragmentB;
-                faces[i].nodeA = fragmentA < fragmentCount ? fragmentA : InvalidSolverNode;
-                faces[i].nodeB = fragmentB < fragmentCount ? fragmentB : InvalidSolverNode;
-            }
-            std::vector<heat::AdvectionBoundaryFace> boundaryFaces(globalDomain.boundaryFaceIndices.size());
-            for (size_t i = 0; i < globalDomain.boundaryFaceIndices.size(); ++i) {
-                const topology::Face& face = globalDomain.faces[globalDomain.boundaryFaceIndices[i]];
-                boundaryFaces[i].node = face.fragmentA;
-                boundaryFaces[i].domainFace = face.domainFace;
-            }
             std::vector<float> cellVolumes(cellCount, 0.0f);
             for (uint32_t c = 0; c < cellCount; ++c) {
                 cellVolumes[c] = static_cast<float>(vemMeshCache.cells[c].volume);
             }
 
             if (!globalSolver->configureAdvectionTopology(
-                    static_cast<uint32_t>(faces.size()),
-                    static_cast<uint32_t>(boundaryFaces.size()),
-                    faces, boundaryFaces,
+                    static_cast<uint32_t>(advectionFaces.size()),
+                    static_cast<uint32_t>(advectionBoundaryFaces.size()),
+                    advectionFaces, advectionBoundaryFaces,
                     reinterpret_cast<const float*>(advectionFaceFluxCuda.getPointer()),
                     reinterpret_cast<const float*>(advectionBoundaryFluxCuda.getPointer()),
                     cellVolumes)) {
@@ -656,3 +793,4 @@ void HeatDomainRuntime::releasePendingSolveWaitOnHost() {
     }
     pendingSolveReleaseValue = 0;
 }
+

@@ -1,4 +1,4 @@
-#include "CFDSystem.hpp"
+﻿#include "CFDSystem.hpp"
 #include "CFDStreamlineStage.hpp"
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/VulkanBuffer.hpp"
@@ -109,7 +109,29 @@ static double configuredReferenceVelocity(
 }
 
 bool CFDSystem::configure(
-    const topology::GlobalDomain& domain,
+    const std::vector<uint32_t>& fragmentInstanceIds,
+    const std::vector<uint32_t>& fragmentSeedIds,
+    const std::vector<glm::dvec3>& fragmentCentroids,
+    const std::vector<double>& fragmentVolumes,
+    const std::vector<uint32_t>& faceFragmentA,
+    const std::vector<uint32_t>& faceFragmentB,
+    const std::vector<double>& faceAreasA,
+    const std::vector<double>& faceAreasB,
+    const std::vector<glm::dvec3>& faceAreaVectorsA,
+    const std::vector<glm::dvec3>& faceAreaVectorsB,
+    const std::vector<glm::dvec3>& faceMomentsA,
+    const std::vector<glm::dvec3>& faceMomentsB,
+    const std::vector<uint8_t>& faceTypes,
+    const std::vector<uint32_t>& faceDomainFaces,
+    const std::vector<uint32_t>& boundaryFaceIndices,
+    const std::vector<uint32_t>& faceLoopOffsets,
+    const std::vector<uint32_t>& loopVertexOffsets,
+    const std::vector<glm::dvec3>& loopVertices,
+    const std::vector<uint32_t>& seedToSpaceIndex,
+    const std::vector<uint32_t>& spaceToFragmentIndex,
+    bool hasUniqueSeedToSpaceMapping,
+    VkBuffer seedIdGridBuffer,
+    VkDeviceSize seedIdGridBufferOffset,
     float kinematicViscosity,
     const glm::vec3& initialVelocity,
     const uint32_t* domainBoundaryTypes,
@@ -118,7 +140,22 @@ bool CFDSystem::configure(
     float targetCourant,
     int pressureIterations,
     float pressureTolerance,
-    float simulationDuration) {
+    float simulationDuration,
+    const glm::vec3& domainMin,
+    const glm::vec3& domainMax,
+    const glm::vec3& volumeGridMin,
+    const glm::ivec3& volumeGridDim,
+    float volumeGridCellSize) {
+    if (!hasUniqueSeedToSpaceMapping || seedToSpaceIndex.empty() ||
+        spaceToFragmentIndex.empty()) {
+        std::cerr << "[CFDSystem] Invalid seed-to-Space mapping input\n";
+        return false;
+    }
+
+    this->seedIdGridBuffer = seedIdGridBuffer;
+    this->seedIdGridBufferOffset = seedIdGridBufferOffset;
+    this->seedToSpaceIndex = seedToSpaceIndex;
+    this->spaceToFragmentIndex = spaceToFragmentIndex;
     this->kinematicViscosity = kinematicViscosity;
     this->initialVelocity = initialVelocity;
     this->fixedTimeStep = fixedTimeStep;
@@ -132,33 +169,33 @@ bool CFDSystem::configure(
     } else {
         boundaryConditions = createDefaultDomainBoundaries(initialVelocity);
     }
-
     solver.setReferenceVelocity(configuredReferenceVelocity(initialVelocity, boundaryConditions));
 
-    return rebuildTopology(domain);
-}
-
-bool CFDSystem::rebuildTopology(const topology::GlobalDomain& domain) {
-    if (!domain.isValid()) {
-        std::cerr << "[CFDSystem] Supplied domain is structurally invalid\n";
-        cleanup();
-        return false;
-    }
-    if (!topology::validateBoundaryFaceIndices(domain)) {
-        std::cerr << "[CFDSystem] Domain boundary validation failed\n";
-        cleanup();
-        return false;
-    }
-
-    fluidNodeToGlobalFragment.clear();
-    globalFragmentToFluidNode.assign(domain.fragments.size(), UINT32_MAX);
-
-    for (uint32_t fragIdx = 0; fragIdx < domain.fragments.size(); ++fragIdx) {
-        if (domain.fragments[fragIdx].instanceId == topology::InvalidInstanceId) {
-            const uint32_t fluidIdx = static_cast<uint32_t>(fluidNodeToGlobalFragment.size());
-            fluidNodeToGlobalFragment.push_back(fragIdx);
-            globalFragmentToFluidNode[fragIdx] = fluidIdx;
+    fluidNodeToGlobalFragment = spaceToFragmentIndex;
+    globalFragmentToFluidNode.assign(fragmentInstanceIds.size(), UINT32_MAX);
+    size_t fluidFragmentCount = 0;
+    for (uint32_t fragment = 0; fragment < fragmentInstanceIds.size(); ++fragment) {
+        if (fragmentInstanceIds[fragment] == 0xffffffffu) {
+            ++fluidFragmentCount;
         }
+    }
+    for (uint32_t fluidIndex = 0; fluidIndex < fluidNodeToGlobalFragment.size(); ++fluidIndex) {
+        const uint32_t fragment = fluidNodeToGlobalFragment[fluidIndex];
+        if (fragment >= fragmentInstanceIds.size() ||
+            fragmentInstanceIds[fragment] != 0xffffffffu ||
+            globalFragmentToFluidNode[fragment] != UINT32_MAX) {
+            std::cerr << "[CFDSystem] Invalid Space-to-fragment mapping at fluid node "
+                      << fluidIndex << std::endl;
+            cleanup();
+            return false;
+        }
+        globalFragmentToFluidNode[fragment] = fluidIndex;
+    }
+    if (fluidNodeToGlobalFragment.size() != fluidFragmentCount) {
+        std::cerr << "[CFDSystem] Space-to-fragment mapping does not cover all fluid fragments"
+                  << std::endl;
+        cleanup();
+        return false;
     }
 
     const uint32_t fluidCount = static_cast<uint32_t>(fluidNodeToGlobalFragment.size());
@@ -177,15 +214,52 @@ bool CFDSystem::rebuildTopology(const topology::GlobalDomain& domain) {
     solver.setPressureSolverParameters(pressureMaxIterations, pressureTolerance);
 
     if (!runtime.initialize(vulkanDevice, solver.getCudaDevice(), fluidCount,
-                           static_cast<uint32_t>(domain.faces.size()),
-                           static_cast<uint32_t>(domain.boundaryFaceIndices.size()))) {
+                            static_cast<uint32_t>(faceFragmentA.size()),
+                            static_cast<uint32_t>(boundaryFaceIndices.size()))) {
         std::cerr << "[CFDSystem] Failed to initialize CFDRuntime\n";
         cleanup();
         return false;
     }
 
+    if (!runtime.buildTopology(
+            fragmentInstanceIds,
+            fragmentSeedIds,
+            fragmentCentroids,
+            fragmentVolumes,
+            faceFragmentA,
+            faceFragmentB,
+            faceAreasA,
+            faceAreasB,
+            faceAreaVectorsA,
+            faceAreaVectorsB,
+            faceMomentsA,
+            faceMomentsB,
+            faceTypes,
+            faceDomainFaces,
+            boundaryFaceIndices,
+            faceLoopOffsets,
+            loopVertexOffsets,
+            loopVertices,
+            globalFragmentToFluidNode,
+            fluidNodeToGlobalFragment)) {
+        std::cerr << "[CFDSystem] Topology build failed" << std::endl;
+        cleanup();
+        return false;
+    }
+
     if (!solver.buildTopology(
-            domain,
+            runtime,
+            fragmentCentroids,
+            fragmentVolumes,
+            faceFragmentA,
+            faceFragmentB,
+            faceAreasA,
+            faceAreasB,
+            faceAreaVectorsA,
+            faceAreaVectorsB,
+            faceLoopOffsets,
+            loopVertexOffsets,
+            loopVertices,
             globalFragmentToFluidNode,
             fluidNodeToGlobalFragment)) {
         std::cerr << "[CFDSystem] CFDSolver::buildTopology failed\n";
@@ -196,9 +270,9 @@ bool CFDSystem::rebuildTopology(const topology::GlobalDomain& domain) {
     if (!solver.bindOutput(
             runtime.velocityCuda(),
             runtime.faceFluxCuda(),
-            static_cast<uint32_t>(domain.faces.size()),
+            static_cast<uint32_t>(faceFragmentA.size()),
             runtime.boundaryFluxCuda(),
-            static_cast<uint32_t>(domain.boundaryFaceIndices.size()),
+            static_cast<uint32_t>(boundaryFaceIndices.size()),
             runtime.velocityGradientsCuda())) {
         std::cerr << "[CFDSystem] CFDSolver::bindOutput failed\n";
         cleanup();
@@ -219,6 +293,7 @@ bool CFDSystem::rebuildTopology(const topology::GlobalDomain& domain) {
         cleanup();
         return false;
     }
+    runtime.releaseTopologyConstructionData();
 
     if (!solver.buildMomentumSubcycleGraph(targetCourant)) {
         std::cerr << "[CFDSystem] CFDSolver::buildMomentumSubcycleGraph failed\n";
@@ -226,44 +301,53 @@ bool CFDSystem::rebuildTopology(const topology::GlobalDomain& domain) {
         return false;
     }
 
-    seedIdGridBuffer = domain.seedIdGridBuffer;
-    seedIdGridBufferOffset = domain.seedIdGridBufferOffset;
-
-    // Generate one streamline seed per VelocityInlet boundary face along inward normal
     std::vector<glm::vec4> streamlineSeeds;
-    streamlineSeeds.reserve(domain.boundaryFaceIndices.size());
-    for (const uint32_t faceIndex : domain.boundaryFaceIndices) {
-        const topology::Face& face = domain.faces[faceIndex];
-        if (globalFragmentToFluidNode[face.fragmentA] == UINT32_MAX) {
+    streamlineSeeds.reserve(boundaryFaceIndices.size());
+    for (const uint32_t faceIndex : boundaryFaceIndices) {
+        const uint32_t fragmentA = faceFragmentA[faceIndex];
+        if (fragmentA >= globalFragmentToFluidNode.size() ||
+            globalFragmentToFluidNode[fragmentA] == UINT32_MAX) {
             continue;
         }
-        if (boundaryConditions[face.domainFace].type != BoundaryType::VelocityInlet) {
+        const uint32_t boundaryCondition = faceDomainFaces[faceIndex];
+        if (boundaryCondition >= 6 ||
+            boundaryConditions[boundaryCondition].type != BoundaryType::VelocityInlet) {
             continue;
         }
-        const glm::dvec3 centroid = face.momentA / face.areaA;
+        const double faceArea = faceAreasA[faceIndex];
+        if (!(faceArea > 0.0) || !std::isfinite(faceArea)) {
+            std::cerr << "[CFDSystem] Streamline seed face area is invalid on boundary face " << faceIndex << '\n';
+            cleanup();
+            return false;
+        }
+        const glm::dvec3 centroid = faceMomentsA[faceIndex] / faceArea;
         if (!std::isfinite(centroid.x) || !std::isfinite(centroid.y) || !std::isfinite(centroid.z)) {
             std::cerr << "[CFDSystem] Streamline seed centroid is not finite on boundary face " << faceIndex << '\n';
             cleanup();
             return false;
         }
-        const double ownerVolume = domain.fragments[face.fragmentA].volume;
+        const double ownerVolume = fragmentVolumes[fragmentA];
         if (!(ownerVolume > 0.0) || !std::isfinite(ownerVolume)) {
             std::cerr << "[CFDSystem] Streamline seed owner volume is invalid on boundary face " << faceIndex << '\n';
             cleanup();
             return false;
         }
         const float seedInset = 0.5f * static_cast<float>(std::cbrt(ownerVolume));
-        const glm::vec3 inward = -getDomainBoxNormal(face.domainFace);
-        streamlineSeeds.push_back(glm::vec4(glm::vec3(centroid) + inward * seedInset, 1.0f));
+        const glm::vec3 outward = glm::vec3(faceAreaVectorsA[faceIndex] / faceArea);
+        streamlineSeeds.push_back(glm::vec4(glm::vec3(centroid) - outward * seedInset, 1.0f));
     }
 
     double fluidVolumeSum = 0.0;
     for (const uint32_t fragmentIndex : fluidNodeToGlobalFragment) {
-        fluidVolumeSum += domain.fragments[fragmentIndex].volume;
+        fluidVolumeSum += fragmentVolumes[fragmentIndex];
     }
     streamlineStepLength = 0.5f * static_cast<float>(
         std::cbrt(fluidVolumeSum / static_cast<double>(fluidCount)));
-    if (!uploadFluidField(domain, globalFragmentToFluidNode, solver.getCellCentroids())) {
+    if (!uploadFluidField(
+            seedToSpaceIndex,
+            spaceToFragmentIndex,
+            globalFragmentToFluidNode,
+            solver.getCellCentroids())) {
         std::cerr << "[CFDSystem] Fluid field publication failed\n";
         cleanup();
         return false;
@@ -275,7 +359,11 @@ bool CFDSystem::rebuildTopology(const topology::GlobalDomain& domain) {
     if (streamlineSeeds.empty()) {
         streamlineStage->cleanup();
     } else if (!streamlineStage->initialize(
-            domain,
+            domainMin,
+            domainMax,
+            volumeGridMin,
+            volumeGridDim,
+            volumeGridCellSize,
             streamlineSeeds,
             seedToFluidNodeBuffer,
             seedToFluidNodeBufferOffset,
@@ -347,7 +435,6 @@ bool CFDSystem::rebuildTopology(const topology::GlobalDomain& domain) {
     initialized = true;
     return true;
 }
-
 bool CFDSystem::createSyncObjects() {
     if (cfdReadyVkSemaphore != VK_NULL_HANDLE && cfdVulkanReleaseVkSemaphore != VK_NULL_HANDLE) {
             return true;
@@ -466,6 +553,8 @@ void CFDSystem::cleanup() {
     streamlineStepLength = 0.0f;
     seedIdGridBuffer = VK_NULL_HANDLE;
     seedIdGridBufferOffset = 0;
+    seedToSpaceIndex.clear();
+    spaceToFragmentIndex.clear();
 
     solver.cleanup();
     runtime.cleanup();
@@ -547,7 +636,8 @@ uint32_t CFDSystem::getPlaybackAvailableFrame() const {
 }
 
 bool CFDSystem::uploadFluidField(
-    const topology::GlobalDomain& domain,
+    const std::vector<uint32_t>& seedToSpaceIndex,
+    const std::vector<uint32_t>& spaceToFragmentIndex,
     const std::vector<uint32_t>& globalFragmentToFluidNode,
     const std::vector<glm::vec4>& centroids) {
     if (seedToFluidNodeBuffer != VK_NULL_HANDLE) {
@@ -562,38 +652,29 @@ bool CFDSystem::uploadFluidField(
         fluidCentroidBufferOffset = 0;
     }
 
-    const size_t cellCount = domain.seedPositions.size();
-    if (domain.cellFragmentOffsets.size() != cellCount + 1 ||
-        domain.cellFragmentOffsets.back() != domain.cellFragments.size()) {
-        std::cerr << "[CFDSystem] cell-to-fragment CSR is invalid" << std::endl;
+    const size_t cellCount = seedToSpaceIndex.size();
+    if (cellCount == 0 || spaceToFragmentIndex.empty()) {
+        std::cerr << "[CFDSystem] seed-to-Space mapping size mismatch" << std::endl;
         return false;
     }
-
     std::vector<uint32_t> seedToFluid(cellCount, 0xFFFFFFFFu);
     for (size_t cell = 0; cell < cellCount; ++cell) {
-        uint32_t fluidFragment = 0xFFFFFFFFu;
-        for (uint32_t entry = domain.cellFragmentOffsets[cell];
-             entry < domain.cellFragmentOffsets[cell + 1]; ++entry) {
-            const uint32_t fragment = domain.cellFragments[entry];
-            if (fragment >= domain.fragments.size()) {
-                std::cerr << "[CFDSystem] seed cell " << cell
-                          << " references out-of-range fragment " << fragment << '\n';
-                return false;
-            }
-            if (domain.fragments[fragment].instanceId != topology::InvalidInstanceId) {
-                continue;
-            }
-            if (fluidFragment != 0xFFFFFFFFu) {
-                std::cerr << "[CFDSystem] seed cell " << cell
-                          << " contains multiple fluid fragments: "
-                          << fluidFragment << " and " << fragment << '\n';
-                return false;
-            }
-            fluidFragment = fragment;
+        const uint32_t spaceIndex = seedToSpaceIndex[cell];
+        if (spaceIndex == 0xFFFFFFFFu) {
+            continue;
         }
-        if (fluidFragment < globalFragmentToFluidNode.size()) {
-            seedToFluid[cell] = globalFragmentToFluidNode[fluidFragment];
+        if (spaceIndex >= spaceToFragmentIndex.size()) {
+            std::cerr << "[CFDSystem] seed cell " << cell
+                      << " references out-of-range Space fragment " << spaceIndex << '\n';
+            return false;
         }
+        const uint32_t fragment = spaceToFragmentIndex[spaceIndex];
+        if (fragment >= globalFragmentToFluidNode.size()) {
+            std::cerr << "[CFDSystem] Space fragment " << fragment
+                      << " has no CFD node\n";
+            return false;
+        }
+        seedToFluid[cell] = globalFragmentToFluidNode[fragment];
     }
 
     const VkDeviceSize alignment =
@@ -942,3 +1023,4 @@ ComputePass::Synchronization CFDSystem::getSynchronization() const {
 }
 
 } // namespace cfd
+

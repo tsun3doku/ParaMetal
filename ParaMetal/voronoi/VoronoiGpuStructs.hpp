@@ -31,4 +31,12 @@ struct Fragment {
     glm::dvec3 centroid{0.0};
 };
 
+struct ContactCoupling {
+    uint32_t faceA = 0xffffffffu;
+    uint32_t fragmentA = 0xffffffffu;
+    uint32_t faceB = 0xffffffffu;
+    uint32_t fragmentB = 0xffffffffu;
+    double couplingArea = 0.0;
+};
+
 }

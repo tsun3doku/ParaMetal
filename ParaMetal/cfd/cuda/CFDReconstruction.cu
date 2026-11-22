@@ -1974,7 +1974,12 @@ static void reportMomentConsistency(
 }
 
 bool CFDReconstruction::verifyReconstruction(
-    const topology::GlobalDomain& domain,
+    const std::vector<double>& faceAreasA,
+    const std::vector<double>& faceAreasB,
+    const std::vector<glm::dvec3>& faceAreaVectorsA,
+    const std::vector<glm::dvec3>& faceAreaVectorsB,
+    const std::vector<uint32_t>& faceLoopOffsets,
+    const std::vector<uint32_t>& loopVertexOffsets,
     const std::vector<double3>& cellCentroids,
     const std::vector<uint32_t>& faceNodeA,
     const std::vector<uint32_t>& faceNodeB,
@@ -2021,7 +2026,7 @@ bool CFDReconstruction::verifyReconstruction(
         cellCount, fineFaceCount, extent, cellGeometry, faceGeometry,
         coefficients, centralCounts, centralNeighbors, centralOps,
         faceNodeA, faceNodeB, fineFaceGlobal, faceNormals,
-        loopVertices, domain.faceLoopOffsets, domain.loopVertexOffsets};
+        loopVertices, faceLoopOffsets, loopVertexOffsets};
 
     cudaUtils::CudaBuffer<double> d_reference;
     cudaUtils::CudaBuffer<glm::vec4> d_averages;
@@ -2089,9 +2094,27 @@ bool CFDReconstruction::verifyReconstruction(
         cellOrigins[cell] = glm::dvec3(cellCentroids[cell].x, cellCentroids[cell].y,
                                        cellCentroids[cell].z);
     }
+    std::vector<glm::dvec3> loopVerticesGlm(loopVertices.size());
+    for (size_t i = 0; i < loopVertices.size(); ++i) {
+        loopVerticesGlm[i] = glm::dvec3(
+            loopVertices[i].x, loopVertices[i].y, loopVertices[i].z);
+    }
     std::vector<double> moments;
-    if (!domainMoments::buildCellMoments(domain, cellCount, cellFaceOffsets, cellFaces,
-                                         cellFaceSides, cellOrigins, moments)) {
+    if (!domainMoments::buildCellMoments(
+            static_cast<uint32_t>(faceAreasA.size()),
+            faceAreasA,
+            faceAreasB,
+            faceAreaVectorsA,
+            faceAreaVectorsB,
+            faceLoopOffsets,
+            loopVertexOffsets,
+            loopVerticesGlm,
+            cellCount,
+            cellFaceOffsets,
+            cellFaces,
+            cellFaceSides,
+            cellOrigins,
+            moments)) {
         std::cerr << "[CFDRecon] check moment build failed\n";
         return false;
     }
@@ -2116,28 +2139,39 @@ bool CFDReconstruction::verifyReconstruction(
 }
 
 bool CFDReconstruction::build(
-    const topology::GlobalDomain& domain,
+    const CFDRuntime& runtime,
+    const std::vector<glm::dvec3>& fragmentCentroids,
+    const std::vector<double>& fragmentVolumes,
+    const std::vector<uint32_t>& faceFragmentA,
+    const std::vector<uint32_t>& faceFragmentB,
+    const std::vector<double>& faceAreasA,
+    const std::vector<double>& faceAreasB,
+    const std::vector<glm::dvec3>& faceAreaVectorsA,
+    const std::vector<glm::dvec3>& faceAreaVectorsB,
+    const std::vector<uint32_t>& faceLoopOffsets,
+    const std::vector<uint32_t>& loopVertexOffsets,
+    const std::vector<glm::dvec3>& loopVertices,
     const std::vector<uint32_t>& globalFragmentToFluidNode,
     const std::vector<uint32_t>& fluidNodeToGlobalFragment,
-    const CFDTopology& topology,
     cudaStream_t stream) {
 
     reset();
 
     const uint32_t cellCount = uint32_t(fluidNodeToGlobalFragment.size());
-    const uint32_t domainFaceCount = uint32_t(domain.faces.size());
-    const uint32_t fineFaceCount = uint32_t(topology.faceTopology.size());
+    const uint32_t domainFaceCount = uint32_t(faceFragmentA.size());
+    const uint32_t fragmentCount = uint32_t(fragmentCentroids.size());
+    const uint32_t fineFaceCount = uint32_t(runtime.faceTopology().size());
     if (cellCount == 0u) return true;
-    if (domainFaceCount == 0u || topology.faceGlobalIndex.size() != fineFaceCount) {
+    if (domainFaceCount == 0u || runtime.faceGlobalIndex().size() != fineFaceCount) {
         std::cerr << "[CFDRecon] invalid topology sizes cells=" << cellCount
                   << " domainFaces=" << domainFaceCount
                   << " fineFaces=" << fineFaceCount << "\n";
         return false;
     }
-    if (domain.faceLoopOffsets.size() != size_t(domainFaceCount) + 1u ||
-        domain.loopVertexOffsets.empty() ||
-        domain.loopVertexOffsets.size() != size_t(domain.faceLoopOffsets.back()) + 1u ||
-        domain.loopVertices.size() != size_t(domain.loopVertexOffsets.back())) {
+    if (faceLoopOffsets.size() != size_t(domainFaceCount) + 1u ||
+        loopVertexOffsets.empty() ||
+        loopVertexOffsets.size() != size_t(faceLoopOffsets.back()) + 1u ||
+        loopVertices.size() != size_t(loopVertexOffsets.back())) {
         std::cerr << "[CFDRecon] face loop arrays invalid\n";
         return false;
     }
@@ -2146,21 +2180,21 @@ bool CFDReconstruction::build(
     std::vector<double> cellVolumes(cellCount);
     for (uint32_t cell = 0u; cell < cellCount; ++cell) {
         const uint32_t fragment = fluidNodeToGlobalFragment[cell];
-        if (fragment >= domain.fragments.size() ||
+        if (fragment >= fragmentCount ||
             globalFragmentToFluidNode[fragment] != cell) {
             std::cerr << "[CFDRecon] invalid fragment mapping cell=" << cell << "\n";
             return false;
         }
-        const topology::Fragment& source = domain.fragments[fragment];
-        if (!(source.volume > 0.0) || !isfinite(source.volume) ||
-            !isfinite(source.centroid.x) || !isfinite(source.centroid.y) ||
-            !isfinite(source.centroid.z)) {
+        const double volume = fragmentVolumes[fragment];
+        const glm::dvec3& centroid = fragmentCentroids[fragment];
+        if (!(volume > 0.0) || !isfinite(volume) ||
+            !isfinite(centroid.x) || !isfinite(centroid.y) ||
+            !isfinite(centroid.z)) {
             std::cerr << "[CFDRecon] invalid fragment geometry cell=" << cell << "\n";
             return false;
         }
-        cellCentroids[cell] = make_double3(
-            source.centroid.x, source.centroid.y, source.centroid.z);
-        cellVolumes[cell] = source.volume;
+        cellCentroids[cell] = make_double3(centroid.x, centroid.y, centroid.z);
+        cellVolumes[cell] = volume;
     }
 
     std::vector<uint32_t> faceNodeA(domainFaceCount, InvalidIndex);
@@ -2169,17 +2203,18 @@ bool CFDReconstruction::build(
     uint32_t expectedIncidenceCount = 0u;
     uint32_t expectedRingCount = 0u;
     for (uint32_t face = 0u; face < domainFaceCount; ++face) {
-        const topology::Face& source = domain.faces[face];
-        if (source.fragmentA < globalFragmentToFluidNode.size()) {
-            faceNodeA[face] = globalFragmentToFluidNode[source.fragmentA];
+        const uint32_t fragmentA = faceFragmentA[face];
+        const uint32_t fragmentB = faceFragmentB[face];
+        if (fragmentA < globalFragmentToFluidNode.size()) {
+            faceNodeA[face] = globalFragmentToFluidNode[fragmentA];
         }
-        if (source.fragmentB < globalFragmentToFluidNode.size()) {
-            faceNodeB[face] = globalFragmentToFluidNode[source.fragmentB];
+        if (fragmentB < globalFragmentToFluidNode.size()) {
+            faceNodeB[face] = globalFragmentToFluidNode[fragmentB];
         }
-        glm::dvec3 normal = source.areaVectorA;
+        glm::dvec3 normal = faceAreaVectorsA[face];
         double length = glm::length(normal);
         if (!(length > 0.0)) {
-            normal = -source.areaVectorB;
+            normal = -faceAreaVectorsB[face];
             length = glm::length(normal);
         }
         if (length > 0.0 && isfinite(length)) {
@@ -2198,19 +2233,21 @@ bool CFDReconstruction::build(
     std::vector<uint32_t> fineFaceGlobal(fineFaceCount);
     std::vector<double> fineFaceAreas(fineFaceCount);
     for (uint32_t face = 0u; face < fineFaceCount; ++face) {
-        if (topology.faceGlobalIndex[face] >= domainFaceCount) {
+        const uint32_t globalFace = runtime.faceGlobalIndex()[face];
+        if (globalFace >= domainFaceCount) {
             std::cerr << "[CFDRecon] fine face mapping invalid face=" << face << "\n";
             return false;
         }
-        fineFaceGlobal[face] = topology.faceGlobalIndex[face];
-        const topology::Face& source = domain.faces[fineFaceGlobal[face]];
-        fineFaceAreas[face] = source.areaA > 0.0 ? source.areaA : source.areaB;
+        fineFaceGlobal[face] = globalFace;
+        fineFaceAreas[face] = faceAreasA[globalFace] > 0.0
+            ? faceAreasA[globalFace]
+            : faceAreasB[globalFace];
     }
 
-    std::vector<double3> loopVertices(domain.loopVertices.size());
-    for (size_t i = 0u; i < domain.loopVertices.size(); ++i) {
-        const glm::dvec3& source = domain.loopVertices[i];
-        loopVertices[i] = make_double3(source.x, source.y, source.z);
+    std::vector<double3> loopVerticesD3(loopVertices.size());
+    for (size_t i = 0u; i < loopVertices.size(); ++i) {
+        const glm::dvec3& source = loopVertices[i];
+        loopVerticesD3[i] = make_double3(source.x, source.y, source.z);
     }
 
     cudaUtils::CudaBuffer<uint32_t> d_faceNodeA;
@@ -2237,9 +2274,9 @@ bool CFDReconstruction::build(
     if (!uploadVector(d_faceNodeA, faceNodeA, stream) ||
         !uploadVector(d_faceNodeB, faceNodeB, stream) ||
         !uploadVector(d_faceNormals, faceNormals, stream) ||
-        !uploadVector(d_faceLoopOffsets, domain.faceLoopOffsets, stream) ||
-        !uploadVector(d_loopVertexOffsets, domain.loopVertexOffsets, stream) ||
-        !uploadVector(d_loopVertices, loopVertices, stream) ||
+        !uploadVector(d_faceLoopOffsets, faceLoopOffsets, stream) ||
+        !uploadVector(d_loopVertexOffsets, loopVertexOffsets, stream) ||
+        !uploadVector(d_loopVertices, loopVerticesD3, stream) ||
         !uploadVector(d_cellCentroids, cellCentroids, stream) ||
         !uploadVector(d_cellVolumes, cellVolumes, stream) ||
         !uploadVector(d_fineFaceGlobal, fineFaceGlobal, stream) ||
@@ -2455,8 +2492,9 @@ bool CFDReconstruction::build(
     faceCount_ = fineFaceCount;
     domainFaceCount_ = domainFaceCount;
 
-    if (!verifyReconstruction(domain, cellCentroids, faceNodeA, faceNodeB, faceNormals,
-                              fineFaceGlobal, loopVertices, stream)) {
+    if (!verifyReconstruction(faceAreasA, faceAreasB, faceAreaVectorsA, faceAreaVectorsB,
+                               faceLoopOffsets, loopVertexOffsets, cellCentroids, faceNodeA,
+                               faceNodeB, faceNormals, fineFaceGlobal, loopVerticesD3, stream)) {
         reset();
         return false;
     }

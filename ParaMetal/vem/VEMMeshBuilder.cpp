@@ -1,5 +1,6 @@
-#include "VEMMeshBuilder.hpp"
+﻿#include "VEMMeshBuilder.hpp"
 
+#include <cmath>
 #include <iostream>
 
 namespace vem {
@@ -35,32 +36,71 @@ bool validateMesh(
     return true;
 }
 
-VEMMesh VEMMeshBuilder::buildFromGlobalDomain(const topology::GlobalDomain& domain) {
+VEMMesh VEMMeshBuilder::buildFromArrays(
+    const std::vector<uint32_t>& fragmentInstanceIds,
+    const std::vector<uint32_t>& fragmentSeedIds,
+    const std::vector<glm::dvec3>& fragmentCentroids,
+    const std::vector<double>& fragmentVolumes,
+    const std::vector<uint32_t>& faceFragmentA,
+    const std::vector<uint32_t>& faceFragmentB,
+    const std::vector<double>& faceAreasA,
+    const std::vector<double>& faceAreasB,
+    const std::vector<glm::dvec3>& faceAreaVectorsA,
+    const std::vector<glm::dvec3>& faceAreaVectorsB,
+    const std::vector<glm::dvec3>& faceMomentsA,
+    const std::vector<glm::dvec3>& faceMomentsB,
+    const std::vector<uint8_t>& faceTypes,
+    const std::vector<uint32_t>& faceDomainFaces,
+    const std::vector<uint32_t>& contactFaceA,
+    const std::vector<uint32_t>& contactFragmentA,
+    const std::vector<uint32_t>& contactFaceB,
+    const std::vector<uint32_t>& contactFragmentB,
+    const std::vector<double>& contactAreas) {
     VEMMesh mesh;
-    const size_t numFrags = domain.fragments.size();
-    const size_t numFaces = domain.faces.size();
+    const size_t numFrags = fragmentInstanceIds.size();
+    const size_t numFaces = faceFragmentA.size();
+    if (fragmentSeedIds.size() != numFrags || fragmentCentroids.size() != numFrags ||
+        fragmentVolumes.size() != numFrags || faceFragmentB.size() != numFaces ||
+        faceAreasA.size() != numFaces || faceAreasB.size() != numFaces ||
+        faceAreaVectorsA.size() != numFaces || faceAreaVectorsB.size() != numFaces ||
+        faceMomentsA.size() != numFaces || faceMomentsB.size() != numFaces ||
+        faceTypes.size() != numFaces || faceDomainFaces.size() != numFaces ||
+        contactFaceA.size() != contactFaceB.size() ||
+        contactFaceA.size() != contactFragmentA.size() ||
+        contactFaceA.size() != contactFragmentB.size() ||
+        contactAreas.size() != contactFaceA.size()) {
+        std::cerr << "[VEMMeshBuilder] flat topology input sizes are inconsistent" << std::endl;
+        return {};
+    }
+    for (size_t coupling = 0; coupling < contactFaceA.size(); ++coupling) {
+        if (!std::isfinite(contactAreas[coupling]) || !(contactAreas[coupling] > 0.0)) {
+            std::cerr << "[VEMMeshBuilder] invalid contact area on coupling "
+                      << coupling << std::endl;
+            return {};
+        }
+    }
 
     mesh.totalTraceCount = static_cast<uint32_t>(numFaces);
     mesh.faceSideToTrace.assign(numFaces * 2, UINT32_MAX);
     for (uint32_t face = 0; face < numFaces; ++face) {
-        if (domain.faces[face].fragmentA < numFrags) {
+        if (faceFragmentA[face] < numFrags) {
             mesh.faceSideToTrace[face * 2] = face;
         }
-        if (domain.faces[face].fragmentB < numFrags) {
+        if (faceFragmentB[face] < numFrags) {
             mesh.faceSideToTrace[face * 2 + 1] = face;
         }
     }
 
     std::vector<uint32_t> contactSolidFragment(numFaces, UINT32_MAX);
-    for (const auto& coupling : domain.contactCouplings) {
-        const uint32_t endpoints[2] = {coupling.faceA, coupling.faceB};
-        const uint32_t fragments[2] = {coupling.fragmentA, coupling.fragmentB};
+    const size_t couplingCount = contactFaceA.size();
+    for (size_t coupling = 0; coupling < couplingCount; ++coupling) {
+        const uint32_t endpoints[2] = { contactFaceA[coupling], contactFaceB[coupling] };
+        const uint32_t fragments[2] = { contactFragmentA[coupling], contactFragmentB[coupling] };
         for (int endpoint = 0; endpoint < 2; ++endpoint) {
             const uint32_t faceId = endpoints[endpoint];
             const uint32_t fragmentId = fragments[endpoint];
             if (faceId >= numFaces || fragmentId >= numFrags ||
-                (domain.faces[faceId].fragmentA != fragmentId &&
-                 domain.faces[faceId].fragmentB != fragmentId)) {
+                (faceFragmentA[faceId] != fragmentId && faceFragmentB[faceId] != fragmentId)) {
                 std::cerr << "[VEMMeshBuilder] invalid contact incidence "
                           << faceId << ':' << fragmentId << std::endl;
                 return {};
@@ -78,10 +118,9 @@ VEMMesh VEMMeshBuilder::buildFromGlobalDomain(const topology::GlobalDomain& doma
     for (uint32_t faceId = 0; faceId < numFaces; ++faceId) {
         const uint32_t contactFragment = contactSolidFragment[faceId];
         if (contactFragment == UINT32_MAX) continue;
-        const auto& face = domain.faces[faceId];
-        if (face.fragmentA >= numFrags || face.fragmentB >= numFrags) continue;
+        if (faceFragmentA[faceId] >= numFrags || faceFragmentB[faceId] >= numFrags) continue;
 
-        const uint32_t solidSide = face.fragmentA == contactFragment ? 0u : 1u;
+        const uint32_t solidSide = faceFragmentA[faceId] == contactFragment ? 0u : 1u;
         const uint32_t fluidSide = 1u - solidSide;
         const uint32_t solidTrace = mesh.faceSideToTrace[faceId * 2 + solidSide];
         const uint32_t otherTrace = mesh.totalTraceCount++;
@@ -91,11 +130,9 @@ VEMMesh VEMMeshBuilder::buildFromGlobalDomain(const topology::GlobalDomain& doma
     }
 
     std::vector<uint32_t> fragFaceCount(numFrags, 0);
-    for (const auto& face : domain.faces) {
-        const bool hasA = face.fragmentA < numFrags;
-        const bool hasB = face.fragmentB < numFrags;
-        if (hasA) fragFaceCount[face.fragmentA]++;
-        if (hasB) fragFaceCount[face.fragmentB]++;
+    for (uint32_t face = 0; face < numFaces; ++face) {
+        if (faceFragmentA[face] < numFrags) fragFaceCount[faceFragmentA[face]]++;
+        if (faceFragmentB[face] < numFrags) fragFaceCount[faceFragmentB[face]]++;
     }
 
     std::vector<uint32_t> fragFaceOffsets(numFrags + 1, 0);
@@ -110,70 +147,68 @@ VEMMesh VEMMeshBuilder::buildFromGlobalDomain(const topology::GlobalDomain& doma
     std::vector<uint32_t> currentFragOffset = fragFaceOffsets;
 
     for (uint32_t fIdx = 0; fIdx < numFaces; ++fIdx) {
-        const auto& face = domain.faces[fIdx];
-
-        if (face.fragmentA < numFrags) {
-            const uint32_t dst = currentFragOffset[face.fragmentA]++;
+        if (faceFragmentA[fIdx] < numFrags) {
+            const uint32_t dst = currentFragOffset[faceFragmentA[fIdx]]++;
             FaceGeometry& geometry = mesh.faceIncidences[dst];
             geometry.traceIndex = mesh.faceSideToTrace[fIdx * 2];
-            geometry.neighborCellId = face.fragmentB < numFrags ? face.fragmentB : UINT32_MAX;
+            geometry.neighborCellId = faceFragmentB[fIdx] < numFrags ? faceFragmentB[fIdx] : UINT32_MAX;
             if (geometry.neighborCellId < numFrags) {
-                geometry.neighborOwnerModelId = domain.fragments[geometry.neighborCellId].instanceId;
-                geometry.neighborSeedId = domain.fragments[geometry.neighborCellId].seedId;
+                geometry.neighborOwnerModelId = fragmentInstanceIds[geometry.neighborCellId];
+                geometry.neighborSeedId = fragmentSeedIds[geometry.neighborCellId];
             }
-            geometry.boundaryCondition = (face.type == topology::FaceType::DomainBoundary) ? face.domainFace : UINT32_MAX;
-            geometry.area = face.areaA;
-            geometry.areaVector = face.areaVectorA;
-            geometry.moment = face.momentA;
+            geometry.boundaryCondition = (faceTypes[fIdx] == 1u) ? faceDomainFaces[fIdx] : UINT32_MAX;
+            geometry.area = faceAreasA[fIdx];
+            geometry.areaVector = faceAreaVectorsA[fIdx];
+            geometry.moment = faceMomentsA[fIdx];
         }
 
-        if (face.fragmentB < numFrags) {
-            const uint32_t dst = currentFragOffset[face.fragmentB]++;
+        if (faceFragmentB[fIdx] < numFrags) {
+            const uint32_t dst = currentFragOffset[faceFragmentB[fIdx]]++;
             FaceGeometry& geometry = mesh.faceIncidences[dst];
             geometry.traceIndex = mesh.faceSideToTrace[fIdx * 2 + 1];
-            geometry.neighborCellId = face.fragmentA < numFrags ? face.fragmentA : UINT32_MAX;
+            geometry.neighborCellId = faceFragmentA[fIdx] < numFrags ? faceFragmentA[fIdx] : UINT32_MAX;
             if (geometry.neighborCellId < numFrags) {
-                geometry.neighborOwnerModelId = domain.fragments[geometry.neighborCellId].instanceId;
-                geometry.neighborSeedId = domain.fragments[geometry.neighborCellId].seedId;
+                geometry.neighborOwnerModelId = fragmentInstanceIds[geometry.neighborCellId];
+                geometry.neighborSeedId = fragmentSeedIds[geometry.neighborCellId];
             }
             geometry.boundaryCondition = UINT32_MAX;
-            geometry.area = face.areaB;
-            geometry.areaVector = face.areaVectorB;
-            geometry.moment = face.momentB;
+            geometry.area = faceAreasB[fIdx];
+            geometry.areaVector = faceAreaVectorsB[fIdx];
+            geometry.moment = faceMomentsB[fIdx];
         }
     }
 
-    mesh.traceCouplings.reserve(domain.contactCouplings.size());
-    for (const auto& coupling : domain.contactCouplings) {
+    mesh.traceCouplings.reserve(couplingCount);
+    for (size_t coupling = 0; coupling < couplingCount; ++coupling) {
         uint32_t traceA = UINT32_MAX;
         uint32_t traceB = UINT32_MAX;
-        if (coupling.faceA < numFaces) {
-            const auto& face = domain.faces[coupling.faceA];
-            if (face.fragmentA == coupling.fragmentA ||
-                face.fragmentB == coupling.fragmentA) {
-                const uint32_t side = face.fragmentA == coupling.fragmentA ? 0u : 1u;
-                traceA = mesh.faceSideToTrace[coupling.faceA * 2 + side];
+        if (contactFaceA[coupling] < numFaces) {
+            const uint32_t faceId = contactFaceA[coupling];
+            const uint32_t fragmentId = contactFragmentA[coupling];
+            if (faceFragmentA[faceId] == fragmentId || faceFragmentB[faceId] == fragmentId) {
+                const uint32_t side = faceFragmentA[faceId] == fragmentId ? 0u : 1u;
+                traceA = mesh.faceSideToTrace[faceId * 2 + side];
             }
         }
-        if (coupling.faceB < numFaces) {
-            const auto& face = domain.faces[coupling.faceB];
-            if (face.fragmentA == coupling.fragmentB ||
-                face.fragmentB == coupling.fragmentB) {
-                const uint32_t side = face.fragmentA == coupling.fragmentB ? 0u : 1u;
-                traceB = mesh.faceSideToTrace[coupling.faceB * 2 + side];
+        if (contactFaceB[coupling] < numFaces) {
+            const uint32_t faceId = contactFaceB[coupling];
+            const uint32_t fragmentId = contactFragmentB[coupling];
+            if (faceFragmentA[faceId] == fragmentId || faceFragmentB[faceId] == fragmentId) {
+                const uint32_t side = faceFragmentA[faceId] == fragmentId ? 0u : 1u;
+                traceB = mesh.faceSideToTrace[faceId * 2 + side];
             }
         }
         if (traceA == UINT32_MAX || traceB == UINT32_MAX) {
             std::cerr << "[VEMMeshBuilder] invalid contact side reference "
-                      << coupling.faceA << ':' << coupling.fragmentA
-                      << " -> " << coupling.faceB << ':' << coupling.fragmentB
+                      << contactFaceA[coupling] << ':' << contactFragmentA[coupling]
+                      << " -> " << contactFaceB[coupling] << ':' << contactFragmentB[coupling]
                       << std::endl;
-            continue;
+            return {};
         }
         TraceCoupling term{};
         term.traceA = traceA;
         term.traceB = traceB;
-        term.area = static_cast<float>(coupling.couplingArea);
+        term.area = static_cast<float>(contactAreas[coupling]);
         term.coefficientPerArea = 0.0f;
         mesh.traceCouplings.push_back(term);
     }
@@ -181,10 +216,10 @@ VEMMesh VEMMeshBuilder::buildFromGlobalDomain(const topology::GlobalDomain& doma
     mesh.cells.resize(numFrags);
     for (uint32_t c = 0; c < numFrags; ++c) {
         CellGeometry& cell = mesh.cells[c];
-        cell.ownerModelId = domain.fragments[c].instanceId;
-        cell.seedId = domain.fragments[c].seedId;
-        cell.volume = domain.fragments[c].volume;
-        cell.centroid = domain.fragments[c].centroid;
+        cell.ownerModelId = fragmentInstanceIds[c];
+        cell.seedId = fragmentSeedIds[c];
+        cell.volume = fragmentVolumes[c];
+        cell.centroid = fragmentCentroids[c];
         cell.faceOffset = fragFaceOffsets[c];
         cell.faceCount = fragFaceCount[c];
     }

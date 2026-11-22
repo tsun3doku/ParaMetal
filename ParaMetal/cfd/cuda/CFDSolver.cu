@@ -175,7 +175,18 @@ void CFDSolver::waitForIdle() {
 }
 
 bool CFDSolver::buildTopology(
-    const topology::GlobalDomain& domain,
+    const CFDRuntime& runtime,
+    const std::vector<glm::dvec3>& fragmentCentroids,
+    const std::vector<double>& fragmentVolumes,
+    const std::vector<uint32_t>& faceFragmentA,
+    const std::vector<uint32_t>& faceFragmentB,
+    const std::vector<double>& faceAreasA,
+    const std::vector<double>& faceAreasB,
+    const std::vector<glm::dvec3>& faceAreaVectorsA,
+    const std::vector<glm::dvec3>& faceAreaVectorsB,
+    const std::vector<uint32_t>& faceLoopOffsets,
+    const std::vector<uint32_t>& loopVertexOffsets,
+    const std::vector<glm::dvec3>& loopVertices,
     const std::vector<uint32_t>& globalFragmentToFluidNode,
     const std::vector<uint32_t>& fluidNodeToGlobalFragment) {
     if (!initialized || cudaDevice < 0) {
@@ -186,36 +197,43 @@ bool CFDSolver::buildTopology(
     clearTopology();
     cudaSetDevice(cudaDevice);
 
-    CFDTopology topology;
-    if (!buildCFDTopology(domain, globalFragmentToFluidNode, fluidNodeToGlobalFragment, topology)) {
-        std::cerr << "[CFDSolver] buildTopology FAILED: buildCFDTopology failed\n";
-        clearTopology();
-        return false;
-    }
-
-    fluidNodeCount = topology.fluidNodeCount;
-    faceCount = static_cast<uint32_t>(topology.faceTopology.size());
-    boundaryFaceCount = static_cast<uint32_t>(topology.boundaryFaces.size());
+    fluidNodeCount = runtime.getFluidNodeCount();
+    faceCount = static_cast<uint32_t>(runtime.faceTopology().size());
+    boundaryFaceCount = static_cast<uint32_t>(runtime.boundaryFaces().size());
 
     if (fluidNodeCount == 0) {
         return true;
     }
 
     cudaStream_t stream = reinterpret_cast<cudaStream_t>(flowStreamHandle);
-    if (!reconstruction.build(domain, globalFragmentToFluidNode,
-                              fluidNodeToGlobalFragment, topology, stream)) {
+    if (!reconstruction.build(
+            runtime,
+            fragmentCentroids,
+            fragmentVolumes,
+            faceFragmentA,
+            faceFragmentB,
+            faceAreasA,
+            faceAreasB,
+            faceAreaVectorsA,
+            faceAreaVectorsB,
+            faceLoopOffsets,
+            loopVertexOffsets,
+            loopVertices,
+            globalFragmentToFluidNode,
+            fluidNodeToGlobalFragment,
+            stream)) {
         std::cerr << "[CFDSolver] buildTopology FAILED: CFD reconstruction build failed\n";
         clearTopology();
         return false;
     }
 
-    this->hostFaceTopology = std::move(topology.faceTopology);
-    std::vector<FaceFluxVectors> hostFaceFluxVectors = std::move(topology.faceFluxVectors);
-    this->hostBoundaryFaces = std::move(topology.boundaryFaces);
-    this->hostCellVolumes = std::move(topology.cellVolumes);
-    this->hostCellCentroids = std::move(topology.cellCentroids);
-    this->component = std::move(topology.component);
-    this->componentCount = topology.componentCount;
+    this->hostFaceTopology = runtime.faceTopology();
+    std::vector<FaceFluxVectors> hostFaceFluxVectors = runtime.faceFluxVectors();
+    this->hostBoundaryFaces = runtime.boundaryFaces();
+    this->hostCellVolumes = runtime.cellVolumes();
+    this->hostCellCentroids = runtime.cellCentroids();
+    this->component = runtime.pressureComponents();
+    this->componentCount = runtime.pressureComponentCount();
 
     std::vector<uint32_t> mergeTarget(fluidNodeCount);
     std::vector<float> mergeVolume = this->hostCellVolumes;
@@ -317,7 +335,7 @@ bool CFDSolver::buildTopology(
     if (faceCount > 0) {
         if (!d_faceTopology.uploadAsync(this->hostFaceTopology.data(), faceCount, stream) ||
             !d_faceFluxVectors.uploadAsync(hostFaceFluxVectors.data(), faceCount, stream) ||
-            !d_faceGlobalIndex.uploadAsync(topology.faceGlobalIndex.data(), faceCount, stream) ||
+            !d_faceGlobalIndex.uploadAsync(runtime.faceGlobalIndex().data(), faceCount, stream) ||
             !cudaUtils::cudaCheck(cudaMemsetAsync(d_faceFlux.get(), 0, faceCount * sizeof(float), stream), "zero d_faceFlux")) {
             clearTopology();
             return false;
@@ -326,7 +344,7 @@ bool CFDSolver::buildTopology(
 
     if (boundaryFaceCount > 0) {
         if (!d_boundaryFaces.uploadAsync(this->hostBoundaryFaces.data(), boundaryFaceCount, stream) ||
-            !d_boundaryGlobalIndex.uploadAsync(topology.boundaryGlobalIndex.data(), boundaryFaceCount, stream) ||
+            !d_boundaryGlobalIndex.uploadAsync(runtime.boundaryGlobalIndex().data(), boundaryFaceCount, stream) ||
             !cudaUtils::cudaCheck(cudaMemsetAsync(d_boundaryFlux.get(), 0, boundaryFaceCount * sizeof(float), stream), "zero d_boundaryFlux")) {
             clearTopology();
             return false;

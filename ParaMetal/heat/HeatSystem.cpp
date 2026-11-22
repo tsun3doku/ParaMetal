@@ -23,7 +23,7 @@
 #include "vulkan/MemoryAllocator.hpp"
 #include "vulkan/VulkanBuffer.hpp"
 #include "vulkan/VulkanDevice.hpp"
-#include "voronoi/VoronoiNodeIndex.hpp"
+#include "spatial/SpatialNodeIndex.hpp"
 #include "util/GMLS.hpp"
 #include "util/GeometryUtils.hpp"
 #include "spatial/TriangleHashGrid.hpp"
@@ -221,7 +221,7 @@ void HeatSystem::setDomainBoundaryConditions(const heat::DomainBoundaryCondition
     if (formulationChanged || valuesChanged) {
         heatParamsDirty = true;
         domainRuntime.setDomainBoundaryConditions(domainBoundaries);
-        if (domainRuntime.isGlobalDomain()) {
+        if (domainRuntime.hasGlobalDomain()) {
             if (formulationChanged) {
                 domainRuntime.markGlobalTopologyDirty();
             } else if (valuesChanged) {
@@ -324,18 +324,70 @@ void HeatSystem::clearAdvectionInput() {
 }
 
 bool HeatSystem::setGlobalVoronoiInput(
-    const topology::GlobalDomain& domain,
-    const std::unordered_map<uint32_t, std::array<float, 16>>& modelLocalToWorld) {
-    if (!domain.isValid()) {
-        std::cerr << "[HeatSystem] Supplied domain is structurally invalid\n";
-        return false;
-    }
-    if (!topology::validateBoundaryFaceIndices(domain)) {
-        std::cerr << "[HeatSystem] Domain boundary validation failed\n";
+    const std::vector<uint32_t>& fragmentInstanceIds,
+    const std::vector<uint32_t>& fragmentSeedIds,
+    const std::vector<glm::dvec3>& fragmentCentroids,
+    const std::vector<double>& fragmentVolumes,
+    const std::vector<uint32_t>& faceFragmentA,
+    const std::vector<uint32_t>& faceFragmentB,
+    const std::vector<double>& faceAreasA,
+    const std::vector<double>& faceAreasB,
+    const std::vector<glm::dvec3>& faceAreaVectorsA,
+    const std::vector<glm::dvec3>& faceAreaVectorsB,
+    const std::vector<glm::dvec3>& faceMomentsA,
+    const std::vector<glm::dvec3>& faceMomentsB,
+    const std::vector<uint8_t>& faceTypes,
+    const std::vector<uint32_t>& faceDomainFaces,
+    const std::vector<uint32_t>& boundaryFaceIndices,
+    const std::vector<uint32_t>& contactFaceA,
+    const std::vector<uint32_t>& contactFragmentA,
+    const std::vector<uint32_t>& contactFaceB,
+    const std::vector<uint32_t>& contactFragmentB,
+    const std::vector<double>& contactAreas,
+    const std::unordered_map<uint32_t, std::array<float, 16>>& modelLocalToWorld,
+    VkBuffer seedIdGridBuffer,
+    VkDeviceSize seedIdGridBufferOffset,
+    const std::vector<uint32_t>& seedToSpaceIndex,
+    const std::vector<uint32_t>& spaceToFragmentIndex,
+    bool hasUniqueSeedToSpaceMapping,
+    const glm::ivec3& volumeGridDim) {
+    if (!hasUniqueSeedToSpaceMapping ||
+        seedToSpaceIndex.empty() ||
+        spaceToFragmentIndex.empty()) {
+        std::cerr << "[HeatSystem] Heat requires a unique seed-to-Space mapping\n";
         return false;
     }
     modelLocalToWorldByModelId = modelLocalToWorld;
-    domainRuntime.setGlobalDomain(domain);
+    if (!domainRuntime.configureGlobalDomain(
+            fragmentInstanceIds,
+            fragmentSeedIds,
+            fragmentCentroids,
+            fragmentVolumes,
+            faceFragmentA,
+            faceFragmentB,
+            faceAreasA,
+            faceAreasB,
+            faceAreaVectorsA,
+            faceAreaVectorsB,
+            faceMomentsA,
+            faceMomentsB,
+            faceTypes,
+            faceDomainFaces,
+            boundaryFaceIndices,
+            contactFaceA,
+            contactFragmentA,
+            contactFaceB,
+            contactFragmentB,
+            contactAreas,
+            seedToSpaceIndex,
+            spaceToFragmentIndex,
+            hasUniqueSeedToSpaceMapping,
+            seedIdGridBuffer,
+            seedIdGridBufferOffset,
+            volumeGridDim)) {
+        std::cerr << "[HeatSystem] Failed to configure VEM topology\n";
+        return false;
+    }
     domainDirty = true;
     voronoiConfigDirty = true;
     return true;
@@ -343,9 +395,9 @@ bool HeatSystem::setGlobalVoronoiInput(
 
 bool HeatSystem::fluidVolumeReady() const {
     return fluidVolumeStage && fluidVolumeStage->isValid() &&
-        domainRuntime.isGlobalDomain() &&
+        domainRuntime.hasGlobalDomain() &&
         fluidRuntime && fluidRuntime->getNodeCount() > 0 &&
-        domainRuntime.getGlobalDomain().seedIdGridBuffer != VK_NULL_HANDLE;
+        domainRuntime.getSeedIdGridBuffer() != VK_NULL_HANDLE;
 }
 
 void HeatSystem::update(const SimTickContext& context) {
@@ -362,7 +414,7 @@ void HeatSystem::update(const SimTickContext& context) {
     domainRuntime.resetAdvectionStagingCopySchedule();
     domainRuntime.setAdvectionConnected(boundInputConnectionId != 0);
 
-    if (domainRuntime.isGlobalDomain()) {
+    if (domainRuntime.hasGlobalDomain()) {
         bool completedDestinationIsA = false;
         if (domainRuntime.pollGlobalSolve(completedDestinationIsA)) {
             if (domainRuntime.hasSolveFailed()) {
@@ -395,7 +447,7 @@ void HeatSystem::update(const SimTickContext& context) {
     }
 
     const bool inputsValid = initialized &&
-        domainRuntime.isGlobalDomain() &&
+        domainRuntime.hasGlobalDomain() &&
         !domainRuntime.getActiveModels().empty() &&
         !physicsFailed;
     const bool completedBefore = inputsValid &&
@@ -447,7 +499,7 @@ void HeatSystem::update(const SimTickContext& context) {
 }
 
 ComputePass::Synchronization HeatSystem::getSynchronization() const {
-    if (!domainRuntime.isGlobalDomain()) {
+    if (!domainRuntime.hasGlobalDomain()) {
         return ComputePass::Synchronization{};
     }
     return domainRuntime.getGlobalSynchronization();
@@ -519,7 +571,7 @@ void HeatSystem::forwardSim(const SimTickContext& context) {
         const float simDelta = std::min(FixedTimeStep, remaining);
 
         playbackData->deltaTime = simDelta;
-        if (!domainRuntime.isGlobalDomain()) {
+        if (!domainRuntime.hasGlobalDomain()) {
             simulatedTime = std::min(simulationDuration, simulatedTime + simDelta);
             physicsAccumulator = std::max(0.0f, physicsAccumulator - FixedTimeStep);
         }
@@ -527,7 +579,7 @@ void HeatSystem::forwardSim(const SimTickContext& context) {
         playbackData->deltaTime = 0.0f;
     }
 
-    if (domainRuntime.isGlobalDomain() && physicsStepCompletedThisFrame) {
+    if (domainRuntime.hasGlobalDomain() && physicsStepCompletedThisFrame) {
         const float remaining = std::max(0.0f, simulationDuration - simulatedTime);
         const float simDelta = std::min(FixedTimeStep, remaining);
         simulatedTime = std::min(simulationDuration, simulatedTime + simDelta);
@@ -590,7 +642,7 @@ bool HeatSystem::ensureConfigured() {
         }
     }
 
-    const bool heatVoronoiReady = domainRuntime.isGlobalDomain() && rebuildGlobalThermalDomain();
+    const bool heatVoronoiReady = domainRuntime.hasGlobalDomain() && rebuildGlobalThermalDomain();
 
     configureGMLSSurfaceWeights(heatVoronoiReady);
 
@@ -617,7 +669,7 @@ bool HeatSystem::ensureConfigured() {
         return false;
     }
 
-    if (domainRuntime.isGlobalDomain()) {
+    if (domainRuntime.hasGlobalDomain()) {
         const auto& models = domainRuntime.getActiveModels();
         if (domainRuntime.globalTopologyDirty() || !domainRuntime.hasGlobalSolver()) {
             if (!domainRuntime.rebuildGlobalSolver(models, fluidRuntime.get(), vulkanDevice, FixedTimeStep)) {
@@ -637,9 +689,11 @@ bool HeatSystem::ensureConfigured() {
 
         if (fluidVolumeStage) {
             if (fluidRuntime && fluidRuntime->getNodeCount() > 0) {
-                const auto& domain = domainRuntime.getGlobalDomain();
-                if (!fluidVolumeStage->initialize(domain.volumeGridDim) ||
-                    !fluidVolumeStage->updateSeedToFluidNode(domain.seedPositions, domain, domainRuntime.getGlobalFragmentToFluidNode())) {
+                if (!fluidVolumeStage->initialize(domainRuntime.getVolumeGridDim()) ||
+                    !fluidVolumeStage->updateSeedToFluidNode(
+                        domainRuntime.getSeedToSpaceIndex(),
+                        domainRuntime.getSpaceToFragmentIndex(),
+                        domainRuntime.getGlobalFragmentToFluidNode())) {
                     std::cerr << "[HeatSystem-Diag] fluidVolumeStage configuration failed" << std::endl;
                 }
             } else {
@@ -848,12 +902,12 @@ bool HeatSystem::recreateDescriptorPools() {
 }
 
 void HeatSystem::configureModelSimResources() {
-    if (domainRuntime.isGlobalDomain()) {
-        const auto& domain = domainRuntime.getGlobalDomain();
+    if (domainRuntime.hasGlobalDomain()) {
+        const auto& vemMesh = domainRuntime.getVemMesh();
         const auto& models = domainRuntime.getActiveModels();
         std::unordered_map<uint32_t, uint32_t> fragmentCounts;
-        for (const auto& fragment : domain.fragments) {
-            fragmentCounts[fragment.instanceId] = fragmentCounts[fragment.instanceId] + 1;
+        for (const vem::CellGeometry& cell : vemMesh.cells) {
+            fragmentCounts[cell.ownerModelId] = fragmentCounts[cell.ownerModelId] + 1;
         }
 
         for (const auto& [runtimeModelId, heatModel] : models) {
@@ -1011,7 +1065,7 @@ bool HeatSystem::voronoiReady() const {
     if (!playbackRuntime.isInitialized() || modelRuntimeModelIds.empty()) {
         return false;
     }
-    if (domainRuntime.isGlobalDomain()) {
+    if (domainRuntime.hasGlobalDomain()) {
         return domainRuntime.hasGlobalSolver();
     }
     return false;
@@ -1245,7 +1299,6 @@ void HeatSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t r
         }
 
         if (fluidVolumeDirty && fluidVolumeReady()) {
-            const auto& domain = domainRuntime.getGlobalDomain();
             VkBuffer sourceBuf = VK_NULL_HANDLE;
             VkDeviceSize sourceOff = 0;
             if (replayFromHistory && fluidRuntime->getPlayback() && fluidRuntime->getPlayback()->getHistoryBuffer() != VK_NULL_HANDLE) {
@@ -1262,8 +1315,8 @@ void HeatSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t r
                 fluidVolumeStage->recordCompute(
                     commandBuffer,
                     renderFrameSlot,
-                    domain.seedIdGridBuffer,
-                    domain.seedIdGridBufferOffset,
+                    domainRuntime.getSeedIdGridBuffer(),
+                    domainRuntime.getSeedIdGridBufferOffset(),
                     sourceBuf,
                     sourceOff);
                 fluidVolumeDirty = false;
@@ -1275,11 +1328,11 @@ void HeatSystem::recordComputeCommands(VkCommandBuffer commandBuffer, uint32_t r
 }
 
 bool HeatSystem::rebuildGlobalThermalDomain() {
-    if (!domainRuntime.isGlobalDomain()) {
+    if (!domainRuntime.hasGlobalDomain()) {
         return false;
     }
-    const topology::GlobalDomain& domain = domainRuntime.getGlobalDomain();
-    if (domain.fragments.empty()) {
+    const vem::VEMMesh& vemMesh = domainRuntime.getVemMesh();
+    if (vemMesh.cells.empty()) {
         std::cerr << "[HeatSystem-Diag] rebuildGlobalThermalDomain FAILED: empty fragments" << std::endl;
         return false;
     }
@@ -1297,12 +1350,12 @@ bool HeatSystem::rebuildGlobalThermalDomain() {
 
     std::unordered_map<uint32_t, std::vector<uint32_t>> fragmentIdsByModelId;
     uint32_t unownedFragmentCount = 0;
-    for (uint32_t fragmentId = 0; fragmentId < domain.fragments.size(); ++fragmentId) {
-        const auto& frag = domain.fragments[fragmentId];
-        if (frag.instanceId == topology::InvalidInstanceId) {
+    for (uint32_t fragmentId = 0; fragmentId < vemMesh.cells.size(); ++fragmentId) {
+        const auto& cell = vemMesh.cells[fragmentId];
+        if (cell.ownerModelId == UINT32_MAX) {
             ++unownedFragmentCount;
         } else {
-            fragmentIdsByModelId[frag.instanceId].push_back(fragmentId);
+            fragmentIdsByModelId[cell.ownerModelId].push_back(fragmentId);
         }
     }
 
@@ -1351,13 +1404,13 @@ bool HeatSystem::rebuildGlobalThermalDomain() {
         std::vector<glm::vec3> fragmentPositions;
         fragmentPositions.reserve(fragmentIds.size());
         for (uint32_t fragmentId : fragmentIds) {
-            fragmentPositions.push_back(domain.fragments[fragmentId].centroid);
+            fragmentPositions.push_back(glm::vec3(vemMesh.cells[fragmentId].centroid));
         }
 
         const auto& surfacePositions = heatModelPtr->getSurfacePositions();
         const size_t surfaceVertexCount = surfacePositions.size();
 
-        VoronoiNodeIndex nodeIndex;
+        SpatialNodeIndex nodeIndex;
         nodeIndex.rebuild(fragmentPositions);
 
         constexpr uint32_t InvalidLocal = UINT32_MAX;
@@ -1366,25 +1419,21 @@ bool HeatSystem::rebuildGlobalThermalDomain() {
         const uint32_t fragmentCount = static_cast<uint32_t>(fragmentIds.size());
         const uint32_t targetSupportCount = std::min(SupportCount, fragmentCount);
 
-        std::vector<uint32_t> globalToLocal(domain.fragments.size(), InvalidLocal);
+        std::vector<uint32_t> globalToLocal(vemMesh.cells.size(), InvalidLocal);
         for (uint32_t local = 0; local < fragmentCount; ++local) {
             globalToLocal[fragmentIds[local]] = local;
         }
 
         std::vector<std::vector<uint32_t>> adjacency(fragmentCount);
-        for (const auto& face : domain.faces) {
-            if (face.fragmentA >= globalToLocal.size() ||
-                face.fragmentB >= globalToLocal.size()) {
+        for (const auto& pair : domainRuntime.getFaceFragmentPairs()) {
+            if (pair.first >= globalToLocal.size() || pair.second >= globalToLocal.size()) {
                 continue;
             }
-
-            const uint32_t a = globalToLocal[face.fragmentA];
-            const uint32_t b = globalToLocal[face.fragmentB];
-
-                    if (a == InvalidLocal || b == InvalidLocal) {
+            const uint32_t a = globalToLocal[pair.first];
+            const uint32_t b = globalToLocal[pair.second];
+            if (a == InvalidLocal || b == InvalidLocal) {
                 continue;
             }
-
             adjacency[a].push_back(b);
             adjacency[b].push_back(a);
         }
@@ -1645,9 +1694,19 @@ bool HeatSystem::rebuildGlobalThermalDomain() {
         modelGMLSSurfaceGradientWeightCountByModelId[runtimeModelId] = gradientWeights.size();
     }
 
+    std::vector<HeatProbeRuntime::FragmentCentroid> probeCentroids;
+    probeCentroids.reserve(vemMesh.cells.size());
+    for (const auto& [runtimeModelId, fragmentIds] : fragmentIdsByModelId) {
+        for (uint32_t local = 0; local < static_cast<uint32_t>(fragmentIds.size()); ++local) {
+            probeCentroids.push_back({
+                runtimeModelId,
+                local,
+                glm::vec3(vemMesh.cells[fragmentIds[local]].centroid)});
+        }
+    }
     for (auto& [key, runtime] : probeRuntimes) {
         if (runtime) {
-            runtime->rebuildWeights(domain, fragmentIdsByModelId, modelLocalToWorldByModelId);
+            runtime->rebuildWeights(probeCentroids, modelLocalToWorldByModelId);
         }
     }
 
@@ -1665,17 +1724,22 @@ void HeatSystem::syncHeatProbes(const std::unordered_map<uint64_t, HeatProbeData
         }
         runtime->configure(data.enabled, data.opcPort, data.items);
 
-        if ((isNew || runtime->hasDirtyWeights()) && domainRuntime.isGlobalDomain()) {
-            const topology::GlobalDomain& domain = domainRuntime.getGlobalDomain();
-            if (!domain.fragments.empty()) {
-                std::unordered_map<uint32_t, std::vector<uint32_t>> fragmentIdsByModelId;
-                for (uint32_t fragmentId = 0; fragmentId < domain.fragments.size(); ++fragmentId) {
-                    const auto& frag = domain.fragments[fragmentId];
-                    if (frag.instanceId != topology::InvalidInstanceId) {
-                        fragmentIdsByModelId[frag.instanceId].push_back(fragmentId);
+        if ((isNew || runtime->hasDirtyWeights()) && domainRuntime.hasGlobalDomain()) {
+            const vem::VEMMesh& vemMesh = domainRuntime.getVemMesh();
+            if (!vemMesh.cells.empty()) {
+                std::unordered_map<uint32_t, uint32_t> localCounts;
+                std::vector<HeatProbeRuntime::FragmentCentroid> centroids;
+                centroids.reserve(vemMesh.cells.size());
+                for (const vem::CellGeometry& cell : vemMesh.cells) {
+                    if (cell.ownerModelId == UINT32_MAX) {
+                        continue;
                     }
+                    centroids.push_back({
+                        cell.ownerModelId,
+                        localCounts[cell.ownerModelId]++,
+                        glm::vec3(cell.centroid)});
                 }
-                runtime->rebuildWeights(domain, fragmentIdsByModelId, modelLocalToWorldByModelId);
+                runtime->rebuildWeights(centroids, modelLocalToWorldByModelId);
             }
         }
     }
@@ -1813,3 +1877,6 @@ void HeatSystem::cleanup() {
     playbackRuntime.cleanup(memoryAllocator);
     domainRuntime.cleanup();
 }
+
+
+

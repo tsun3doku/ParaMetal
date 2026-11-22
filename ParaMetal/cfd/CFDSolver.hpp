@@ -4,11 +4,11 @@
 #include <vector>
 #include <cstdint>
 #include <cmath>
-#include "CFDTopology.hpp"
+#include "CFDGpuStructs.hpp"
 #include "CFDBoundaryConditions.hpp"
+#include "CFDRuntime.hpp"
 #include "CFDProjectionSolver.hpp"
 #include "CFDReconstruction.hpp"
-#include "../voronoi/GlobalDomainTopology.hpp"
 #include "../cuda/CudaBuffer.cuh"
 #include "../cuda/CudaEvent.cuh"
 #include "cuda/CFDSolverKernels.cuh"
@@ -25,7 +25,18 @@ public:
     bool initialize(VulkanDevice& vulkanDevice);
 
     bool buildTopology(
-        const topology::GlobalDomain& domain,
+        const CFDRuntime& runtime,
+        const std::vector<glm::dvec3>& fragmentCentroids,
+        const std::vector<double>& fragmentVolumes,
+        const std::vector<uint32_t>& faceFragmentA,
+        const std::vector<uint32_t>& faceFragmentB,
+        const std::vector<double>& faceAreasA,
+        const std::vector<double>& faceAreasB,
+        const std::vector<glm::dvec3>& faceAreaVectorsA,
+        const std::vector<glm::dvec3>& faceAreaVectorsB,
+        const std::vector<uint32_t>& faceLoopOffsets,
+        const std::vector<uint32_t>& loopVertexOffsets,
+        const std::vector<glm::dvec3>& loopVertices,
         const std::vector<uint32_t>& globalFragmentToFluidNode,
         const std::vector<uint32_t>& fluidNodeToGlobalFragment);
 

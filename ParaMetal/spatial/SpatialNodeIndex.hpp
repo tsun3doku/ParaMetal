@@ -7,13 +7,13 @@
 #include <glm/glm.hpp>
 #include <libs/nanoflann/include/nanoflann.hpp>
 
-class VoronoiNodeIndex {
+class SpatialNodeIndex {
 public:
-    VoronoiNodeIndex();
-    VoronoiNodeIndex(const VoronoiNodeIndex& other);
-    VoronoiNodeIndex& operator=(const VoronoiNodeIndex& other);
-    VoronoiNodeIndex(VoronoiNodeIndex&&) = delete;
-    VoronoiNodeIndex& operator=(VoronoiNodeIndex&&) = delete;
+    SpatialNodeIndex();
+    SpatialNodeIndex(const SpatialNodeIndex& other);
+    SpatialNodeIndex& operator=(const SpatialNodeIndex& other);
+    SpatialNodeIndex(SpatialNodeIndex&&) = delete;
+    SpatialNodeIndex& operator=(SpatialNodeIndex&&) = delete;
 
     void rebuild(const std::vector<glm::vec3>& updatedNodePositions);
 
@@ -39,3 +39,4 @@ private:
     Adapter adapter{&nodePositions};
     nanoflann::KDTreeSingleIndexAdaptor<nanoflann::L2_Simple_Adaptor<float, Adapter>, Adapter, 3> nodeTree;
 };
+

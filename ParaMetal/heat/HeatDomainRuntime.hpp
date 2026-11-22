@@ -1,19 +1,20 @@
 #pragma once
 
 #include "framegraph/ComputePass.hpp"
-#include "voronoi/GlobalDomainTopology.hpp"
 
 #include <cstdint>
 #include <glm/glm.hpp>
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 #include <vulkan/vulkan.h>
 
 #include "heat/HeatGlobalSolver.hpp"
 #include "heat/HeatSystemPresets.hpp"
 #include "heat/HeatBoundaryConditions.hpp"
+#include "heat/HeatGpuStructs.hpp"
 #include "vem/VEMMeshBuilder.hpp"
 #include "cuda/CudaExternalBuffer.hpp"
 #include "vulkan/VulkanExternalBuffer.hpp"
@@ -36,10 +37,46 @@ public:
 
     void cleanup();
 
-    const topology::GlobalDomain& getGlobalDomain() const { return globalDomain; }
-    bool isGlobalDomain() const { return globalDomain.isValid(); }
-    void setGlobalDomain(topology::GlobalDomain domain);
+    bool hasGlobalDomain() const { return hasGlobalDomainFlag; }
+    bool configureGlobalDomain(
+        const std::vector<uint32_t>& fragmentInstanceIds,
+        const std::vector<uint32_t>& fragmentSeedIds,
+        const std::vector<glm::dvec3>& fragmentCentroids,
+        const std::vector<double>& fragmentVolumes,
+        const std::vector<uint32_t>& faceFragmentA,
+        const std::vector<uint32_t>& faceFragmentB,
+        const std::vector<double>& faceAreasA,
+        const std::vector<double>& faceAreasB,
+        const std::vector<glm::dvec3>& faceAreaVectorsA,
+        const std::vector<glm::dvec3>& faceAreaVectorsB,
+        const std::vector<glm::dvec3>& faceMomentsA,
+        const std::vector<glm::dvec3>& faceMomentsB,
+        const std::vector<uint8_t>& faceTypes,
+        const std::vector<uint32_t>& faceDomainFaces,
+        const std::vector<uint32_t>& boundaryFaceIndices,
+        const std::vector<uint32_t>& contactFaceA,
+        const std::vector<uint32_t>& contactFragmentA,
+        const std::vector<uint32_t>& contactFaceB,
+        const std::vector<uint32_t>& contactFragmentB,
+        const std::vector<double>& contactAreas,
+        const std::vector<uint32_t>& seedToSpaceIndex,
+        const std::vector<uint32_t>& spaceToFragmentIndex,
+        bool hasUniqueSeedToSpaceMapping,
+        VkBuffer seedIdGridBuffer,
+        VkDeviceSize seedIdGridBufferOffset,
+        const glm::ivec3& volumeGridDim);
     void clearGlobalDomain();
+
+    VkBuffer getSeedIdGridBuffer() const { return seedIdGridBuffer; }
+    VkDeviceSize getSeedIdGridBufferOffset() const { return seedIdGridBufferOffset; }
+    const std::vector<uint32_t>& getSeedToSpaceIndex() const { return seedToSpaceIndex; }
+    const std::vector<uint32_t>& getSpaceToFragmentIndex() const { return spaceToFragmentIndex; }
+    bool hasUniqueSeedToSpaceMapping() const { return seedMappingUnique; }
+    const glm::ivec3& getVolumeGridDim() const { return volumeGridDim; }
+    const vem::VEMMesh& getVemMesh() const { return vemMeshCache; }
+    const std::vector<std::pair<uint32_t, uint32_t>>& getFaceFragmentPairs() const {
+        return faceFragmentPairs;
+    }
 
     bool hasGlobalSolver() const { return globalSolver != nullptr; }
     bool globalTopologyDirty() const { return globalTopologyDirtyFlag; }
@@ -142,7 +179,16 @@ private:
 
     std::unordered_map<uint32_t, std::unique_ptr<HeatModelRuntime>> activeModels;
 
-    topology::GlobalDomain globalDomain;
+    bool hasGlobalDomainFlag = false;
+    VkBuffer seedIdGridBuffer = VK_NULL_HANDLE;
+    VkDeviceSize seedIdGridBufferOffset = 0;
+    std::vector<uint32_t> seedToSpaceIndex;
+    std::vector<uint32_t> spaceToFragmentIndex;
+    bool seedMappingUnique = false;
+    glm::ivec3 volumeGridDim{0};
+    std::vector<heat::AdvectionFace> advectionFaces;
+    std::vector<heat::AdvectionBoundaryFace> advectionBoundaryFaces;
+    std::vector<std::pair<uint32_t, uint32_t>> faceFragmentPairs;
     // Cached VEM mesh from last topology build
     vem::VEMMesh vemMeshCache;
     heat::DomainBoundaryConditions domainBoundaries = heat::createDefaultDomainBoundaries(HeatSimDefaults::ambientTemperatureC);

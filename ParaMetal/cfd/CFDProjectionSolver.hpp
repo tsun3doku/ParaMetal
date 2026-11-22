@@ -5,7 +5,7 @@
 #include <glm/glm.hpp>
 #include <cuda_runtime.h>
 
-#include "CFDTopology.hpp"
+#include "CFDGpuStructs.hpp"
 #include "CFDBoundaryConditions.hpp"
 #include "cuda/CFDSolverKernels.cuh"
 #include "../cuda/CudaBuffer.cuh"

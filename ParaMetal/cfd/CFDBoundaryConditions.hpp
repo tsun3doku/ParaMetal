@@ -5,7 +5,6 @@
 #include <glm/glm.hpp>
 
 #include "CFDGpuStructs.hpp"
-#include "../voronoi/GlobalDomainTopology.hpp"
 
 namespace cfd {
 
@@ -27,7 +26,7 @@ struct BoundaryCondition {
 using DomainBoundaryConditions =
     std::array<BoundaryCondition, 6>;
 
-constexpr uint32_t DomainBoundaryCount = topology::DomainFaceCount;
+constexpr uint32_t DomainBoundaryCount = 6;
 constexpr uint32_t EmbeddedWallBoundary = 6;
 
 inline glm::vec3 getDomainBoxNormal(uint32_t domainFace) {

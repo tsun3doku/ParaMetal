@@ -15,16 +15,16 @@ public:
     explicit RemeshSystem(Remesher& remesher);
     ~RemeshSystem();
 
-    void setSourceGeometry(const std::vector<float>& pointPositions, const std::vector<uint32_t>& triangleIndices);
-    void setParams(int iterations, float minAngleDegrees, float maxEdgeLength, float stepSize);
+    void setSourceGeometry(const std::vector<float>& inPointPositions, const std::vector<uint32_t>& inTriangleIndices);
+    void setParams(int inIterations, float inMinAngleDegrees, float inMaxEdgeLength, float inStepSize);
     void setRuntimeModelId(uint32_t runtimeModelId);
 
     bool remesh();
 
-    const SupportingHalfedge::IntrinsicMesh& intrinsicMesh() const { return mesh; }
-    const std::vector<float>& sourcePositions() const { return pointPositions; }
-    const std::vector<uint32_t>& sourceTriangles() const { return triangleIndices; }
-    uint32_t runtimeModelId() const { return modelRuntimeId; }
+    const SupportingHalfedge::IntrinsicMesh& intrinsicMesh() const { return outMesh; }
+    const std::vector<float>& sourcePositions() const { return inPointPositions; }
+    const std::vector<uint32_t>& sourceTriangles() const { return inTriangleIndices; }
+    uint32_t runtimeModelId() const { return inRuntimeModelId; }
 
     void copyGpu(RemeshProduct& product) const;
 
@@ -33,14 +33,14 @@ private:
 
     Remesher& remesher;
 
-    std::vector<float> pointPositions;
-    std::vector<uint32_t> triangleIndices;
-    int iterations = 1;
-    float minAngleDegrees = 20.0f;
-    float maxEdgeLength = 0.1f;
-    float stepSize = 0.25f;
-    uint32_t modelRuntimeId = 0;
+    std::vector<float> inPointPositions;
+    std::vector<uint32_t> inTriangleIndices;
+    int inIterations = 1;
+    float inMinAngleDegrees = 20.0f;
+    float inMaxEdgeLength = 0.1f;
+    float inStepSize = 0.25f;
+    uint32_t inRuntimeModelId = 0;
 
-    SupportingHalfedge::IntrinsicMesh mesh;
-    SupportingHalfedge::GPUResources gpuResources{};
+    SupportingHalfedge::IntrinsicMesh outMesh;
+    SupportingHalfedge::GPUResources outGpuResources{};
 };

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <cstdint>
 #include <vector>
@@ -6,7 +6,7 @@
 #include <glm/glm.hpp>
 #include <vulkan/vulkan.h>
 
-#include "voronoi/GlobalDomainTopology.hpp"
+
 
 class VulkanDevice;
 class MemoryAllocator;
@@ -25,8 +25,8 @@ public:
     void cleanup();
 
     bool updateSeedToFluidNode(
-        const std::vector<glm::vec3>& seeds,
-        const topology::GlobalDomain& globalDomain,
+        const std::vector<uint32_t>& seedToSpaceIndex,
+        const std::vector<uint32_t>& spaceToFragmentIndex,
         const std::vector<uint32_t>& globalFragmentToFluidNode);
 
     void recordCompute(
@@ -75,3 +75,4 @@ private:
 
     bool ready = false;
 };
+

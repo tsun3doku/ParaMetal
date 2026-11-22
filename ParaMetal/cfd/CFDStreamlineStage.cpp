@@ -67,7 +67,11 @@ void CFDStreamlineStage::cleanup() {
 }
 
 bool CFDStreamlineStage::initialize(
-    const topology::GlobalDomain& domain,
+    const glm::vec3& domainMin,
+    const glm::vec3& domainMax,
+    const glm::vec3& volumeGridMin,
+    const glm::ivec3& volumeGridDim,
+    float volumeGridCellSize,
     const std::vector<glm::vec4>& seeds,
     VkBuffer seedToFluidNodeBuffer,
     VkDeviceSize seedToFluidNodeBufferOffset,
@@ -79,19 +83,20 @@ bool CFDStreamlineStage::initialize(
         cleanup();
         return false;
     }
-    if (!domain.isValid()) {
-        std::cerr << "[CFDStreamlineStage] Invalid simulation domain; streamlines disabled." << std::endl;
+    if (volumeGridDim.x < 2 || volumeGridDim.y < 2 || volumeGridDim.z < 2 ||
+        !(volumeGridCellSize > 0.0f)) {
+        std::cerr << "[CFDStreamlineStage] Invalid simulation grid; streamlines disabled." << std::endl;
         cleanup();
         return false;
     }
 
     cleanup();
 
-    gridMin = domain.volumeGridMin;
-    gridDim = domain.volumeGridDim;
-    cellSize = domain.volumeGridCellSize;
-    domainMin = domain.domainMin;
-    domainMax = domain.domainMax;
+    gridMin = volumeGridMin;
+    gridDim = volumeGridDim;
+    cellSize = volumeGridCellSize;
+    this->domainMin = domainMin;
+    this->domainMax = domainMax;
 
     if (!createPipeline()) {
         cleanup();

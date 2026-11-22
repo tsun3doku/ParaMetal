@@ -1,30 +1,30 @@
-#include "VoronoiNodeIndex.hpp"
+#include "SpatialNodeIndex.hpp"
 
-VoronoiNodeIndex::VoronoiNodeIndex()
+SpatialNodeIndex::SpatialNodeIndex()
     : adapter{&nodePositions},
       nodeTree(3, adapter, nanoflann::KDTreeSingleIndexAdaptorParams(10)) {
 }
 
-VoronoiNodeIndex::VoronoiNodeIndex(const VoronoiNodeIndex& other)
-    : VoronoiNodeIndex() {
+SpatialNodeIndex::SpatialNodeIndex(const SpatialNodeIndex& other)
+    : SpatialNodeIndex() {
     rebuild(other.nodePositions);
 }
 
-VoronoiNodeIndex& VoronoiNodeIndex::operator=(const VoronoiNodeIndex& other) {
+SpatialNodeIndex& SpatialNodeIndex::operator=(const SpatialNodeIndex& other) {
     if (this != &other) {
         rebuild(other.nodePositions);
     }
     return *this;
 }
 
-void VoronoiNodeIndex::rebuild(const std::vector<glm::vec3>& updatedNodePositions) {
+void SpatialNodeIndex::rebuild(const std::vector<glm::vec3>& updatedNodePositions) {
     nodePositions = updatedNodePositions;
     if (!nodePositions.empty()) {
         nodeTree.buildIndex();
     }
 }
 
-void VoronoiNodeIndex::findKNearest(
+void SpatialNodeIndex::findKNearest(
     const glm::vec3& point,
     uint32_t requestedCount,
     std::vector<uint32_t>& nodeIds,
@@ -49,3 +49,4 @@ void VoronoiNodeIndex::findKNearest(
         nodeIds[index] = static_cast<uint32_t>(nearestIndices[index]);
     }
 }
+

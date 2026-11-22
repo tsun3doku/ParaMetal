@@ -20,7 +20,6 @@
 #include <cmath>
 #include <iostream>
 #include <limits>
-#include <unordered_map>
 #include <utility>
 
 VoronoiSystemBuildStage::VoronoiSystemBuildStage(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, CommandPool& commandPool)
@@ -138,48 +137,50 @@ bool VoronoiSystemBuildStage::buildGlobalDomain(VoronoiRuntime& runtime) {
         return false;
     }
 
-    const size_t fragmentCount = result.fragments.size();
-    globalFragmentInstanceIds.resize(fragmentCount);
-    globalFragmentSeedIds.resize(fragmentCount);
-    globalFragmentCentroids.resize(fragmentCount);
-    globalFragmentVolumes.resize(fragmentCount);
-    for (size_t i = 0; i < fragmentCount; ++i) {
-        globalFragmentInstanceIds[i] = result.fragments[i].ownerModelId;
-        globalFragmentSeedIds[i] = result.fragments[i].cellId;
-        globalFragmentCentroids[i] = result.fragments[i].centroid;
-        globalFragmentVolumes[i] = result.fragments[i].volume;
+    if (result.seedPositions.empty()) {
+        result.seedPositions = seeds;
     }
-    globalCellFragmentOffsets = result.cellFragmentOffsets;
-    globalCellFragments = result.cellFragments;
+    const std::vector<glm::vec4> resolvedSeeds = result.seedPositions;
+    if (!runtime.materializeTopology(
+            std::move(result),
+            runtimeModelIds,
+            boundsMin,
+            boundsMax,
+            gridMin,
+            gridDim,
+            spacing)) {
+        std::cerr << "[VoronoiBuild] Runtime topology materialization failed" << std::endl;
+        return false;
+    }
 
-    globalSeedIdGridCuda.cleanup();
-    globalSeedIdGridExternal.cleanup();
-    globalSeedIdGridBuffer = VK_NULL_HANDLE;
-    globalSeedIdGridBufferOffset = 0;
+    outGlobalSeedIdGridCuda.cleanup();
+    outGlobalSeedIdGridExternal.cleanup();
+    outGlobalSeedIdGridBuffer = VK_NULL_HANDLE;
+    outGlobalSeedIdGridBufferOffset = 0;
 
     {
         const size_t totalVoxels =
             size_t(gridDim.x) * size_t(gridDim.y) * size_t(gridDim.z);
         if (totalVoxels > 0 && cudaDevice >= 0 &&
             cudaSetDevice(cudaDevice) == cudaSuccess &&
-            globalSeedIdGridExternal.initialize(
+            outGlobalSeedIdGridExternal.initialize(
                 vulkanDevice,
                 VkDeviceSize(totalVoxels) * sizeof(uint32_t),
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT) &&
-            globalSeedIdGridCuda.ensureMapped(globalSeedIdGridExternal, cudaDevice)) {
+            outGlobalSeedIdGridCuda.ensureMapped(outGlobalSeedIdGridExternal, cudaDevice)) {
             uint32_t* devSeedIds =
-                reinterpret_cast<uint32_t*>(globalSeedIdGridCuda.getPointer());
+                reinterpret_cast<uint32_t*>(outGlobalSeedIdGridCuda.getPointer());
             if (voronoi::buildSeedIdGrid(
                     knn->deviceKnn(),
                     devSolidMask.get(),
-                    seeds,
+                    resolvedSeeds,
                     gridMin,
                     gridDim,
                     spacing,
                     devSeedIds,
                     0)) {
-                globalSeedIdGridBuffer = globalSeedIdGridExternal.getBuffer();
-                globalSeedIdGridBufferOffset = 0;
+                outGlobalSeedIdGridBuffer = outGlobalSeedIdGridExternal.getBuffer();
+                outGlobalSeedIdGridBufferOffset = 0;
             } else {
                 std::cerr << "[VoronoiBuild] warning: buildSeedIdGrid failed; fluid volume visualization unavailable" << std::endl;
             }
@@ -188,85 +189,7 @@ bool VoronoiSystemBuildStage::buildGlobalDomain(VoronoiRuntime& runtime) {
         }
     }
 
-    const size_t totalFaces = result.fragmentFaces.size();
-    globalFaceFragmentA.resize(totalFaces);
-    globalFaceFragmentB.resize(totalFaces);
-    globalFaceAreasA.resize(totalFaces);
-    globalFaceAreaVectorsA.resize(totalFaces);
-    globalFaceMomentsA.resize(totalFaces);
-    globalFaceAreasB.resize(totalFaces);
-    globalFaceAreaVectorsB.resize(totalFaces);
-    globalFaceMomentsB.resize(totalFaces);
-    globalFaceTypes.resize(totalFaces);
-    globalFaceDomainFaces.resize(totalFaces);
-
-    globalBoundaryFaceIndices.clear();
-
-    for (size_t i = 0; i < totalFaces; ++i) {
-        const auto& f = result.fragmentFaces[i];
-        globalFaceFragmentA[i] = f.fragmentA;
-        globalFaceFragmentB[i] = f.fragmentB;
-        globalFaceAreasA[i] = f.areaA;
-        globalFaceAreaVectorsA[i] = f.areaVectorA;
-        globalFaceMomentsA[i] = f.momentA;
-        globalFaceAreasB[i] = f.areaB;
-        globalFaceAreaVectorsB[i] = f.areaVectorB;
-        globalFaceMomentsB[i] = f.momentB;
-        globalFaceTypes[i] = static_cast<uint8_t>(f.type);
-        globalFaceDomainFaces[i] = f.domainFace;
-
-        if (f.type == voronoi::FaceType::DomainBoundary) {
-            globalBoundaryFaceIndices.push_back(static_cast<uint32_t>(i));
-        }
-    }
-
-    globalFaceLoopOffsets = result.faceLoopOffsets;
-    globalLoopVertexOffsets = result.loopVertexOffsets;
-    globalLoopVertices = result.loopVertices;
-
-    const size_t couplingCount = result.contactCouplings.size();
-    globalContactCouplingFaceA.resize(couplingCount);
-    globalContactCouplingFragmentA.resize(couplingCount);
-    globalContactCouplingFaceB.resize(couplingCount);
-    globalContactCouplingFragmentB.resize(couplingCount);
-    globalContactCouplingAreas.resize(couplingCount);
-    for (size_t i = 0; i < couplingCount; ++i) {
-        globalContactCouplingFaceA[i] = result.contactCouplings[i].faceA;
-        globalContactCouplingFragmentA[i] = result.contactCouplings[i].fragmentA;
-        globalContactCouplingFaceB[i] = result.contactCouplings[i].faceB;
-        globalContactCouplingFragmentB[i] = result.contactCouplings[i].fragmentB;
-        globalContactCouplingAreas[i] = result.contactCouplings[i].couplingArea;
-    }
-
-    std::unordered_map<uint32_t, uint32_t> runtimeModelIdToInstanceIndex;
-    for (size_t i = 0; i < runtimeModelIds.size(); ++i) {
-        runtimeModelIdToInstanceIndex[runtimeModelIds[i]] = static_cast<uint32_t>(i);
-    }
-    globalInstanceFragmentCounts.assign(runtimeModelIds.size(), 0);
-    for (const auto& frag : result.fragments) {
-        if (frag.ownerModelId != voronoi::InvalidModelId) {
-            const auto it = runtimeModelIdToInstanceIndex.find(frag.ownerModelId);
-            if (it != runtimeModelIdToInstanceIndex.end()) {
-                globalInstanceFragmentCounts[it->second]++;
-            }
-        }
-    }
-
-    globalVolumeGridMin = gridMin;
-    globalVolumeGridDim = gridDim;
-    globalVolumeGridCellSize = spacing;
-    globalSeedPositions =
-        result.seedPositions.empty() ? seeds : result.seedPositions;
-    // RVD builds the physical domain from the AABB of the authored corners
-    std::array<glm::vec3, 8> aabbCorners{};
-    for (uint32_t corner = 0; corner < 8; ++corner) {
-        aabbCorners[corner] = glm::vec3(
-            (corner & 1u) ? boundsMax.x : boundsMin.x,
-            (corner & 2u) ? boundsMax.y : boundsMin.y,
-            (corner & 4u) ? boundsMax.z : boundsMin.z);
-    }
-    globalDomainCorners = aabbCorners;
-    runtime.setSeedPositions(globalSeedPositions, corners);
+    runtime.setSeedPositions(resolvedSeeds, corners);
 
     return true;
 }
@@ -284,13 +207,13 @@ bool VoronoiSystemBuildStage::buildGlobalDisplayCandidates(VoronoiRuntime& runti
         return false;
     }
 
-    candidateNodeCount = static_cast<uint32_t>(seeds.size());
-    const uint32_t neighborCount = std::min(uint32_t{50}, candidateNodeCount - 1u);
+    outCandidateNodeCount = static_cast<uint32_t>(seeds.size());
+    const uint32_t neighborCount = std::min(uint32_t{50}, outCandidateNodeCount - 1u);
     if (neighborCount == 0) return false;
 
     std::vector<uint32_t> knnRows;
-    knnRows.reserve(candidateNodeCount);
-    for (uint32_t cell = 0; cell < candidateNodeCount; ++cell) {
+    knnRows.reserve(outCandidateNodeCount);
+    for (uint32_t cell = 0; cell < outCandidateNodeCount; ++cell) {
         knnRows.push_back(cell);
     }
     if (!knn->buildNeighbors(neighborCount, knnRows)) return false;
@@ -381,35 +304,35 @@ bool VoronoiSystemBuildStage::uploadCandidateInputs(const std::vector<glm::vec4>
         return false;
     }
 
-    if (candidateNeighborIndicesBuffer != VK_NULL_HANDLE) {
-        freeBuffer(memoryAllocator, candidateNeighborIndicesBuffer, candidateNeighborIndicesBufferOffset);
+    if (outCandidateNeighborIndicesBuffer != VK_NULL_HANDLE) {
+        freeBuffer(memoryAllocator, outCandidateNeighborIndicesBuffer, outCandidateNeighborIndicesBufferOffset);
     }
-    if (seedPositionBuffer != VK_NULL_HANDLE) {
-        freeBuffer(memoryAllocator, seedPositionBuffer, seedPositionBufferOffset);
+    if (outSeedPositionBuffer != VK_NULL_HANDLE) {
+        freeBuffer(memoryAllocator, outSeedPositionBuffer, outSeedPositionBufferOffset);
     }
-    if (candidatePointVertexBuffer != VK_NULL_HANDLE) {
-        freeBuffer(memoryAllocator, candidatePointVertexBuffer, candidatePointVertexBufferOffset);
+    if (outCandidatePointVertexBuffer != VK_NULL_HANDLE) {
+        freeBuffer(memoryAllocator, outCandidatePointVertexBuffer, outCandidatePointVertexBufferOffset);
     }
 
-    candidateNeighborIndicesBuffer = newNeighborBuffer;
-    candidateNeighborIndicesBufferOffset = newNeighborOffset;
-    seedPositionBuffer = newSeedBuffer;
-    seedPositionBufferOffset = newSeedOffset;
-    candidatePointVertexBuffer = newPointVertexBuffer;
-    candidatePointVertexBufferOffset = newPointVertexOffset;
+    outCandidateNeighborIndicesBuffer = newNeighborBuffer;
+    outCandidateNeighborIndicesBufferOffset = newNeighborOffset;
+    outSeedPositionBuffer = newSeedBuffer;
+    outSeedPositionBufferOffset = newSeedOffset;
+    outCandidatePointVertexBuffer = newPointVertexBuffer;
+    outCandidatePointVertexBufferOffset = newPointVertexOffset;
     return true;
 }
 
 void VoronoiSystemBuildStage::copyGpu(VoronoiProduct& product) const {
-    product.candidateNodeCount = candidateNodeCount;
-    product.candidateNeighborIndicesBuffer = candidateNeighborIndicesBuffer;
-    product.candidateNeighborIndicesBufferOffset = candidateNeighborIndicesBufferOffset;
-    product.seedPositionBuffer = seedPositionBuffer;
-    product.seedPositionBufferOffset = seedPositionBufferOffset;
-    product.candidatePointVertexBuffer = candidatePointVertexBuffer;
-    product.candidatePointVertexBufferOffset = candidatePointVertexBufferOffset;
-    product.globalSeedIdGridBuffer = globalSeedIdGridBuffer;
-    product.globalSeedIdGridBufferOffset = globalSeedIdGridBufferOffset;
+    product.candidateNodeCount = outCandidateNodeCount;
+    product.candidateNeighborIndicesBuffer = outCandidateNeighborIndicesBuffer;
+    product.candidateNeighborIndicesBufferOffset = outCandidateNeighborIndicesBufferOffset;
+    product.seedPositionBuffer = outSeedPositionBuffer;
+    product.seedPositionBufferOffset = outSeedPositionBufferOffset;
+    product.candidatePointVertexBuffer = outCandidatePointVertexBuffer;
+    product.candidatePointVertexBufferOffset = outCandidatePointVertexBufferOffset;
+    product.globalSeedIdGridBuffer = outGlobalSeedIdGridBuffer;
+    product.globalSeedIdGridBufferOffset = outGlobalSeedIdGridBufferOffset;
 
     if (candidate) {
         candidate->copyGpu(product);
@@ -420,60 +343,32 @@ void VoronoiSystemBuildStage::cleanup() {
     if (knn) knn->cleanup();
     if (rvd) rvd->cleanup();
 
-    if (candidateNeighborIndicesBuffer != VK_NULL_HANDLE) {
-        freeBuffer(memoryAllocator, candidateNeighborIndicesBuffer, candidateNeighborIndicesBufferOffset);
-        candidateNeighborIndicesBuffer = VK_NULL_HANDLE;
-        candidateNeighborIndicesBufferOffset = 0;
+    if (outCandidateNeighborIndicesBuffer != VK_NULL_HANDLE) {
+        freeBuffer(memoryAllocator, outCandidateNeighborIndicesBuffer, outCandidateNeighborIndicesBufferOffset);
+        outCandidateNeighborIndicesBuffer = VK_NULL_HANDLE;
+        outCandidateNeighborIndicesBufferOffset = 0;
     }
-    if (seedPositionBuffer != VK_NULL_HANDLE) {
-        freeBuffer(memoryAllocator, seedPositionBuffer, seedPositionBufferOffset);
-        seedPositionBuffer = VK_NULL_HANDLE;
-        seedPositionBufferOffset = 0;
+    if (outSeedPositionBuffer != VK_NULL_HANDLE) {
+        freeBuffer(memoryAllocator, outSeedPositionBuffer, outSeedPositionBufferOffset);
+        outSeedPositionBuffer = VK_NULL_HANDLE;
+        outSeedPositionBufferOffset = 0;
     }
-    if (candidatePointVertexBuffer != VK_NULL_HANDLE) {
-        freeBuffer(memoryAllocator, candidatePointVertexBuffer, candidatePointVertexBufferOffset);
-        candidatePointVertexBuffer = VK_NULL_HANDLE;
-        candidatePointVertexBufferOffset = 0;
+    if (outCandidatePointVertexBuffer != VK_NULL_HANDLE) {
+        freeBuffer(memoryAllocator, outCandidatePointVertexBuffer, outCandidatePointVertexBufferOffset);
+        outCandidatePointVertexBuffer = VK_NULL_HANDLE;
+        outCandidatePointVertexBufferOffset = 0;
     }
-    globalSeedIdGridCuda.cleanup();
-    globalSeedIdGridExternal.cleanup();
-    globalSeedIdGridBuffer = VK_NULL_HANDLE;
-    globalSeedIdGridBufferOffset = 0;
+    outGlobalSeedIdGridCuda.cleanup();
+    outGlobalSeedIdGridExternal.cleanup();
+    outGlobalSeedIdGridBuffer = VK_NULL_HANDLE;
+    outGlobalSeedIdGridBufferOffset = 0;
 
     if (candidate) {
         candidate->cleanup();
     }
 
-    candidateNodeCount = 0;
-    globalFragmentInstanceIds.clear();
-    globalFragmentSeedIds.clear();
-    globalCellFragmentOffsets.clear();
-    globalCellFragments.clear();
-    globalFragmentCentroids.clear();
-    globalFragmentVolumes.clear();
-    globalFaceFragmentA.clear();
-    globalFaceFragmentB.clear();
-    globalFaceAreasA.clear();
-    globalFaceAreaVectorsA.clear();
-    globalFaceMomentsA.clear();
-    globalFaceAreasB.clear();
-    globalFaceAreaVectorsB.clear();
-    globalFaceMomentsB.clear();
-    globalFaceTypes.clear();
-    globalFaceDomainFaces.clear();
-    globalFaceLoopOffsets.clear();
-    globalLoopVertexOffsets.clear();
-    globalLoopVertices.clear();
-    globalContactCouplingFaceA.clear();
-    globalContactCouplingFragmentA.clear();
-    globalContactCouplingFaceB.clear();
-    globalContactCouplingFragmentB.clear();
-    globalContactCouplingAreas.clear();
-    globalBoundaryFaceIndices.clear();
-    globalInstanceFragmentCounts.clear();
-    globalVolumeGridMin = {};
-    globalVolumeGridDim = {};
-    globalVolumeGridCellSize = 0.0f;
-    globalSeedPositions.clear();
-    globalDomainCorners = {};
+    outCandidateNodeCount = 0;
 }
+
+
+

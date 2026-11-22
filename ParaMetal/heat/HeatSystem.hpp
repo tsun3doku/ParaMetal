@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "framegraph/ComputePass.hpp"
 #include "simgraph/SimNode.hpp"
@@ -10,7 +10,7 @@
 #include "HeatProbeRuntime.hpp"
 #include "domain/HeatProbeData.hpp"
 #include "heat/HeatFluidVolumeStage.hpp"
-#include "voronoi/GlobalDomainTopology.hpp"
+
 
 #include <memory>
 #include <string>
@@ -87,8 +87,33 @@ public:
     }
 
     bool setGlobalVoronoiInput(
-        const topology::GlobalDomain& domain,
-        const std::unordered_map<uint32_t, std::array<float, 16>>& modelLocalToWorld);
+        const std::vector<uint32_t>& fragmentInstanceIds,
+        const std::vector<uint32_t>& fragmentSeedIds,
+        const std::vector<glm::dvec3>& fragmentCentroids,
+        const std::vector<double>& fragmentVolumes,
+        const std::vector<uint32_t>& faceFragmentA,
+        const std::vector<uint32_t>& faceFragmentB,
+        const std::vector<double>& faceAreasA,
+        const std::vector<double>& faceAreasB,
+        const std::vector<glm::dvec3>& faceAreaVectorsA,
+        const std::vector<glm::dvec3>& faceAreaVectorsB,
+        const std::vector<glm::dvec3>& faceMomentsA,
+        const std::vector<glm::dvec3>& faceMomentsB,
+        const std::vector<uint8_t>& faceTypes,
+        const std::vector<uint32_t>& faceDomainFaces,
+        const std::vector<uint32_t>& boundaryFaceIndices,
+        const std::vector<uint32_t>& contactFaceA,
+        const std::vector<uint32_t>& contactFragmentA,
+        const std::vector<uint32_t>& contactFaceB,
+        const std::vector<uint32_t>& contactFragmentB,
+        const std::vector<double>& contactAreas,
+        const std::unordered_map<uint32_t, std::array<float, 16>>& modelLocalToWorld,
+        VkBuffer seedIdGridBuffer,
+        VkDeviceSize seedIdGridBufferOffset,
+        const std::vector<uint32_t>& seedToSpaceIndex,
+        const std::vector<uint32_t>& spaceToFragmentIndex,
+        bool hasUniqueSeedToSpaceMapping,
+        const glm::ivec3& volumeGridDim);
 
     void resetSimulationState();
     void setDomainBoundaryConditions(
@@ -243,3 +268,4 @@ private:
     bool surfaceDataDirty = true;
     uint64_t renderedFrameCounter = 0;
 };
+

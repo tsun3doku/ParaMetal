@@ -28,28 +28,33 @@ bool CFDSystemComputeController::apply(uint64_t socketKey, const Config& config)
         return false;
     }
 
-    const auto configIt = configuredConfigs.find(socketKey);
-    if (configIt != configuredConfigs.end() &&
-        configIt->second.computeHash == config.computeHash) {
+    const auto configIt = configuredHashes.find(socketKey);
+    if (configIt != configuredHashes.end() &&
+        configIt->second.first == config.geometryHash &&
+        configIt->second.second == config.computeHash) {
         cancelCandidate(socketKey);
         return true;
     }
 
-    const auto failedIt = failedComputeHashes.find(socketKey);
-    if (failedIt != failedComputeHashes.end() && failedIt->second == config.computeHash) {
+    const auto failedIt = failedHashes.find(socketKey);
+    if (failedIt != failedHashes.end() &&
+        failedIt->second.first == config.geometryHash &&
+        failedIt->second.second == config.computeHash) {
         return false;
     }
-    failedComputeHashes.erase(socketKey);
+    failedHashes.erase(socketKey);
 
     auto it = generationSlots.find(socketKey);
 
-    if (!config.domain) {
-        failedComputeHashes[socketKey] = config.computeHash;
+    if (it != generationSlots.end() &&
+        (it->second.retiring || it->second.candidate)) {
         return false;
     }
 
-    if (it != generationSlots.end() &&
-        (it->second.retiring || it->second.candidate)) {
+    if (!config.hasUniqueSeedToSpaceMapping) {
+        failedHashes[socketKey] = {config.geometryHash, config.computeHash};
+        std::cerr << "[CFDSystemComputeController] CFD requires a unique seed-to-Space mapping for socket "
+                  << socketKey << std::endl;
         return false;
     }
 
@@ -59,7 +64,29 @@ bool CFDSystemComputeController::apply(uint64_t socketKey, const Config& config)
         commandPool,
         maxFramesInFlight);
     if (!candidate->configure(
-            *config.domain,
+            config.fragmentInstanceIds,
+            config.fragmentSeedIds,
+            config.fragmentCentroids,
+            config.fragmentVolumes,
+            config.faceFragmentA,
+            config.faceFragmentB,
+            config.faceAreasA,
+            config.faceAreasB,
+            config.faceAreaVectorsA,
+            config.faceAreaVectorsB,
+            config.faceMomentsA,
+            config.faceMomentsB,
+            config.faceTypes,
+            config.faceDomainFaces,
+            config.boundaryFaceIndices,
+            config.faceLoopOffsets,
+            config.loopVertexOffsets,
+            config.loopVertices,
+            config.seedToSpaceIndex,
+            config.spaceToFragmentIndex,
+            config.hasUniqueSeedToSpaceMapping,
+            config.seedIdGridBuffer,
+            config.seedIdGridBufferOffset,
             config.kinematicViscosity,
             config.initialVelocity,
             config.domainBoundaryTypes,
@@ -68,24 +95,28 @@ bool CFDSystemComputeController::apply(uint64_t socketKey, const Config& config)
             config.targetCourant,
             config.pressureIterations,
             config.pressureTolerance,
-            config.simulationDuration)) {
+            config.simulationDuration,
+            config.domainMin,
+            config.domainMax,
+            config.volumeGridMin,
+            config.volumeGridDim,
+            config.volumeGridCellSize)) {
         generationSlots[socketKey].retiring = std::move(candidate);
-        failedComputeHashes[socketKey] = config.computeHash;
+        failedHashes[socketKey] = {config.geometryHash, config.computeHash};
         std::cerr << "[CFDSystemComputeController] Failed to configure CFDSystem for socket "
                   << socketKey << std::endl;
         return false;
     }
 
     GenerationSlot& slot = generationSlots[socketKey];
-    configuredConfigs.try_emplace(socketKey);
-    pendingConfigs[socketKey] = config;
-    pendingConfigs[socketKey].domain = nullptr;
+    configuredHashes.try_emplace(socketKey, 0u, 0u);
+    pendingHashes[socketKey] = {config.geometryHash, config.computeHash};
     slot.candidate = std::move(candidate);
     return true;
 }
 
 void CFDSystemComputeController::remove(uint64_t socketKey) {
-    failedComputeHashes.erase(socketKey);
+    failedHashes.erase(socketKey);
     retireCurrent(socketKey);
 }
 
@@ -101,7 +132,7 @@ void CFDSystemComputeController::clearAllRetiring() {
     for (auto it = generationSlots.begin(); it != generationSlots.end();) {
         GenerationSlot& slot = it->second;
         slot.retiring.reset();
-        if (configuredConfigs.find(it->first) == configuredConfigs.end()) {
+        if (configuredHashes.find(it->first) == configuredHashes.end()) {
             slot.current.reset();
             slot.candidate.reset();
         }
@@ -128,15 +159,15 @@ void CFDSystemComputeController::commitPending(uint64_t socketKey) {
         slot.current = std::move(slot.candidate);
     }
 
-    const auto pending = pendingConfigs.find(socketKey);
-    if (pending != pendingConfigs.end()) {
-        const auto committed = configuredConfigs.find(socketKey);
-        if (committed != configuredConfigs.end()) {
+    const auto pending = pendingHashes.find(socketKey);
+    if (pending != pendingHashes.end()) {
+        const auto committed = configuredHashes.find(socketKey);
+        if (committed != configuredHashes.end()) {
             committed->second = std::move(pending->second);
         }
-        pendingConfigs.erase(pending);
+        pendingHashes.erase(pending);
     }
-    failedComputeHashes.erase(socketKey);
+    failedHashes.erase(socketKey);
 }
 
 void CFDSystemComputeController::cancelCandidate(uint64_t socketKey) {
@@ -148,21 +179,21 @@ void CFDSystemComputeController::cancelCandidate(uint64_t socketKey) {
         }
     }
     const bool hasCurrent = it != generationSlots.end() && it->second.current;
-    const auto pending = pendingConfigs.find(socketKey);
-    if (pending != pendingConfigs.end()) {
-        pendingConfigs.erase(pending);
-        const auto committed = configuredConfigs.find(socketKey);
-        if (committed != configuredConfigs.end() &&
-            committed->second.computeHash == 0 &&
+    const auto pending = pendingHashes.find(socketKey);
+    if (pending != pendingHashes.end()) {
+        pendingHashes.erase(pending);
+        const auto committed = configuredHashes.find(socketKey);
+        if (committed != configuredHashes.end() &&
+            committed->second.second == 0 &&
             !hasCurrent) {
-            configuredConfigs.erase(committed);
+            configuredHashes.erase(committed);
         }
     }
 }
 
 void CFDSystemComputeController::retireCurrent(uint64_t socketKey) {
-    configuredConfigs.erase(socketKey);
-    pendingConfigs.erase(socketKey);
+    configuredHashes.erase(socketKey);
+    pendingHashes.erase(socketKey);
 
     const auto it = generationSlots.find(socketKey);
     if (it == generationSlots.end()) {
@@ -179,9 +210,9 @@ void CFDSystemComputeController::retireCurrent(uint64_t socketKey) {
 
 void CFDSystemComputeController::quiescedClear() noexcept {
     generationSlots.clear();
-    configuredConfigs.clear();
-    pendingConfigs.clear();
-    failedComputeHashes.clear();
+    configuredHashes.clear();
+    pendingHashes.clear();
+    failedHashes.clear();
 }
 
 void CFDSystemComputeController::releaseWaits() {
@@ -230,17 +261,18 @@ bool CFDSystemComputeController::buildProduct(uint64_t socketKey, CFDProduct& ou
     outProduct.boundaryFluxBufferOffset = 0;
     outProduct.boundaryFluxCount = runtime.getGlobalBoundaryFaceCount();
 
-    const Config* config = getBuildConfig(socketKey);
-    HashProduct::seal(
-        outProduct,
-        config ? config->geometryHash : 0,
-        config ? config->computeHash : 0);
+    uint64_t geometryHash = 0;
+    uint64_t simulationHash = 0;
+    if (!getBuildHashes(socketKey, geometryHash, simulationHash)) {
+        return false;
+    }
+    HashProduct::seal(outProduct, geometryHash, simulationHash);
 
     return outProduct.isValid();
 }
 
 const CFDSystem* CFDSystemComputeController::getSystem(uint64_t socketKey) const {
-    if (configuredConfigs.find(socketKey) == configuredConfigs.end()) {
+    if (configuredHashes.find(socketKey) == configuredHashes.end()) {
         return nullptr;
     }
     const auto it = generationSlots.find(socketKey);
@@ -248,25 +280,32 @@ const CFDSystem* CFDSystemComputeController::getSystem(uint64_t socketKey) const
 }
 
 CFDSystem* CFDSystemComputeController::getSystem(uint64_t socketKey) {
-    if (configuredConfigs.find(socketKey) == configuredConfigs.end()) {
+    if (configuredHashes.find(socketKey) == configuredHashes.end()) {
         return nullptr;
     }
     const auto it = generationSlots.find(socketKey);
     return it != generationSlots.end() ? it->second.current.get() : nullptr;
 }
 
-const CFDSystemComputeController::Config* CFDSystemComputeController::getConfig(uint64_t socketKey) const {
-    const auto it = configuredConfigs.find(socketKey);
-    return it != configuredConfigs.end() ? &it->second : nullptr;
-}
-
-const CFDSystemComputeController::Config* CFDSystemComputeController::getBuildConfig(uint64_t socketKey) const {
-    const auto pendingIt = pendingConfigs.find(socketKey);
-    if (pendingIt != pendingConfigs.end()) {
-        return &pendingIt->second;
+bool CFDSystemComputeController::getBuildHashes(
+    uint64_t socketKey,
+    uint64_t& geometryHash,
+    uint64_t& simulationHash) const {
+    const auto pendingIt = pendingHashes.find(socketKey);
+    if (pendingIt != pendingHashes.end()) {
+        geometryHash = pendingIt->second.first;
+        simulationHash = pendingIt->second.second;
+        return true;
     }
-    const auto configIt = configuredConfigs.find(socketKey);
-    return configIt != configuredConfigs.end() ? &configIt->second : nullptr;
+    const auto configuredIt = configuredHashes.find(socketKey);
+    if (configuredIt == configuredHashes.end()) {
+        return false;
+    }
+    geometryHash = configuredIt->second.first;
+    simulationHash = configuredIt->second.second;
+    return true;
 }
 
 } // namespace cfd
+
+

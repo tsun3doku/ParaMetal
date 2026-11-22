@@ -144,15 +144,15 @@ private:
                             else ++entry;
                         }
                         auto created = std::make_shared<cfd::CFDSliceGeometrySource>();
-                        created->faceFragmentA = voronoi->faceFragmentA;
-                        created->faceFragmentB = voronoi->faceFragmentB;
-                        created->faceAreaVectorA = voronoi->faceAreaVectorsA;
-                        created->faceAreaVectorB = voronoi->faceAreaVectorsB;
-                        created->faceLoopOffsets = voronoi->faceLoopOffsets;
-                        created->loopVertexOffsets = voronoi->loopVertexOffsets;
-                        created->loopVertices = voronoi->loopVertices;
+                        created->faceFragmentA = *voronoi->faceFragmentA;
+                        created->faceFragmentB = *voronoi->faceFragmentB;
+                        created->faceAreaVectorA = *voronoi->faceAreaVectorsA;
+                        created->faceAreaVectorB = *voronoi->faceAreaVectorsB;
+                        created->faceLoopOffsets = *voronoi->faceLoopOffsets;
+                        created->loopVertexOffsets = *voronoi->loopVertexOffsets;
+                        created->loopVertices = *voronoi->loopVertices;
                         created->globalFragmentToFluidNode = product->globalFragmentToFluidNode;
-                        created->fragmentCount = voronoi->globalFragmentCount;
+                        created->fragmentCount = static_cast<uint32_t>(voronoi->fragmentInstanceIds->size());
                         created->fluidNodeCount = product->fluidNodeCount;
                         created->geometryHash = geometryKey;
                         source = std::move(created);

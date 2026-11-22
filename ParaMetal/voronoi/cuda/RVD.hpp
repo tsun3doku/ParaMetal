@@ -1,6 +1,5 @@
 #pragma once
 
-#include "../GlobalDomainTopology.hpp"
 #include "../VoronoiConfig.hpp"
 #include "../VoronoiGpuStructs.hpp"
 
@@ -63,9 +62,24 @@ struct RestrictedSurface {
   uint32_t triangleId = InvalidId;
 };
 
-using FaceType = topology::FaceType;
-using FragmentFace = topology::Face;
-using ContactCoupling = topology::ContactCoupling;
+enum class FaceType : uint8_t {
+  Shared = 0,
+  DomainBoundary = 1,
+  MaterialBoundary = 2
+};
+
+struct FragmentFace {
+  uint32_t fragmentA = InvalidId;
+  uint32_t fragmentB = InvalidId;
+  double areaA = 0.0;
+  glm::dvec3 areaVectorA{0.0};
+  glm::dvec3 momentA{0.0};
+  double areaB = 0.0;
+  glm::dvec3 areaVectorB{0.0};
+  glm::dvec3 momentB{0.0};
+  FaceType type = FaceType::Shared;
+  uint32_t domainFace = InvalidId;
+};
 
 struct RVDResult {
   std::vector<Fragment> fragments;

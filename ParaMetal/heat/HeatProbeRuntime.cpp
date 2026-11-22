@@ -258,35 +258,13 @@ void HeatProbeRuntime::cleanup() {
 }
 
 bool HeatProbeRuntime::rebuildWeights(
-    const topology::GlobalDomain& domain,
-    const std::unordered_map<uint32_t, std::vector<uint32_t>>& fragmentIdsByModelId,
+    const std::vector<FragmentCentroid>& domainCentroids,
     const std::unordered_map<uint32_t, std::array<float, 16>>& modelLocalToWorld) {
-    if (!domain.isValid() || fragmentIdsByModelId.empty() || channels.empty()) {
+    if (domainCentroids.empty() || channels.empty()) {
         return false;
     }
-
-    struct CachedCentroid {
-        uint32_t runtimeModelId = 0;
-        uint32_t localIndex = 0;
-        glm::vec3 worldCentroid{0.0f};
-    };
 
     (void)modelLocalToWorld;
-
-    std::vector<CachedCentroid> domainCentroids;
-    for (const auto& [runtimeModelId, fragmentIds] : fragmentIdsByModelId) {
-        for (uint32_t local = 0; local < static_cast<uint32_t>(fragmentIds.size()); ++local) {
-            uint32_t globalFragId = fragmentIds[local];
-            if (globalFragId >= domain.fragments.size()) continue;
-
-            const glm::vec3 worldC = glm::vec3(domain.fragments[globalFragId].centroid);
-            domainCentroids.push_back({runtimeModelId, local, worldC});
-        }
-    }
-
-    if (domainCentroids.empty()) {
-        return false;
-    }
 
     bool anyRebuilt = false;
 

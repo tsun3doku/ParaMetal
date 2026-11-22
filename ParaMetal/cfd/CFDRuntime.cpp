@@ -12,14 +12,14 @@ CFDRuntime::~CFDRuntime() {
 bool CFDRuntime::initialize(
     VulkanDevice& device,
     int cudaDevice,
-    uint32_t inFluidNodeCount,
-    uint32_t inGlobalFaceCount,
-    uint32_t inGlobalBoundaryFaceCount) {
+    uint32_t fluidNodeCount,
+    uint32_t globalFaceCount,
+    uint32_t globalBoundaryFaceCount) {
     cleanup();
 
-    fluidNodeCount = inFluidNodeCount;
-    globalFaceCount = inGlobalFaceCount;
-    globalBoundaryFaceCount = inGlobalBoundaryFaceCount;
+    inFluidNodeCount = fluidNodeCount;
+    inGlobalFaceCount = globalFaceCount;
+    inGlobalBoundaryFaceCount = globalBoundaryFaceCount;
 
     constexpr VkBufferUsageFlags usage =
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
@@ -28,21 +28,21 @@ bool CFDRuntime::initialize(
 
     if (fluidNodeCount > 0) {
         const VkDeviceSize size = static_cast<VkDeviceSize>(fluidNodeCount) * sizeof(glm::vec4);
-        if (!velocity.initialize(device, size, usage)) {
+        if (!outVelocity.initialize(device, size, usage)) {
             cleanup();
             return false;
         }
-        if (!velocityMapping.ensureMapped(velocity, cudaDevice)) {
+        if (!outVelocityMapping.ensureMapped(outVelocity, cudaDevice)) {
             cleanup();
             return false;
         }
 
         const VkDeviceSize gradSize = static_cast<VkDeviceSize>(fluidNodeCount) * 3 * sizeof(glm::vec4);
-        if (!velocityGradients.initialize(device, gradSize, usage)) {
+        if (!outVelocityGradients.initialize(device, gradSize, usage)) {
             cleanup();
             return false;
         }
-        if (!velocityGradientsMapping.ensureMapped(velocityGradients, cudaDevice)) {
+        if (!outVelocityGradientsMapping.ensureMapped(outVelocityGradients, cudaDevice)) {
             cleanup();
             return false;
         }
@@ -50,11 +50,11 @@ bool CFDRuntime::initialize(
 
     if (globalFaceCount > 0) {
         const VkDeviceSize size = static_cast<VkDeviceSize>(globalFaceCount) * sizeof(float);
-        if (!faceFlux.initialize(device, size, usage)) {
+        if (!outFaceFlux.initialize(device, size, usage)) {
             cleanup();
             return false;
         }
-        if (!faceFluxMapping.ensureMapped(faceFlux, cudaDevice)) {
+        if (!outFaceFluxMapping.ensureMapped(outFaceFlux, cudaDevice)) {
             cleanup();
             return false;
         }
@@ -62,11 +62,11 @@ bool CFDRuntime::initialize(
 
     if (globalBoundaryFaceCount > 0) {
         const VkDeviceSize size = static_cast<VkDeviceSize>(globalBoundaryFaceCount) * sizeof(float);
-        if (!boundaryFlux.initialize(device, size, usage)) {
+        if (!outBoundaryFlux.initialize(device, size, usage)) {
             cleanup();
             return false;
         }
-        if (!boundaryFluxMapping.ensureMapped(boundaryFlux, cudaDevice)) {
+        if (!outBoundaryFluxMapping.ensureMapped(outBoundaryFlux, cudaDevice)) {
             cleanup();
             return false;
         }
@@ -76,19 +76,20 @@ bool CFDRuntime::initialize(
 }
 
 void CFDRuntime::cleanup() {
-    velocityMapping.cleanup();
-    velocityGradientsMapping.cleanup();
-    faceFluxMapping.cleanup();
-    boundaryFluxMapping.cleanup();
+    clearTopology();
+    outVelocityMapping.cleanup();
+    outVelocityGradientsMapping.cleanup();
+    outFaceFluxMapping.cleanup();
+    outBoundaryFluxMapping.cleanup();
 
-    velocity.cleanup();
-    velocityGradients.cleanup();
-    faceFlux.cleanup();
-    boundaryFlux.cleanup();
+    outVelocity.cleanup();
+    outVelocityGradients.cleanup();
+    outFaceFlux.cleanup();
+    outBoundaryFlux.cleanup();
 
-    fluidNodeCount = 0;
-    globalFaceCount = 0;
-    globalBoundaryFaceCount = 0;
+    inFluidNodeCount = 0;
+    inGlobalFaceCount = 0;
+    inGlobalBoundaryFaceCount = 0;
 }
 
 } // namespace cfd

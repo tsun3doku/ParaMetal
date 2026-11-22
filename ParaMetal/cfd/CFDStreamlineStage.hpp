@@ -5,8 +5,6 @@
 #include <glm/glm.hpp>
 #include <vulkan/vulkan.h>
 
-#include "voronoi/GlobalDomainTopology.hpp"
-
 class VulkanDevice;
 class MemoryAllocator;
 class CommandPool;
@@ -23,7 +21,11 @@ public:
     ~CFDStreamlineStage();
 
     bool initialize(
-        const topology::GlobalDomain& domain,
+        const glm::vec3& domainMin,
+        const glm::vec3& domainMax,
+        const glm::vec3& volumeGridMin,
+        const glm::ivec3& volumeGridDim,
+        float volumeGridCellSize,
         const std::vector<glm::vec4>& seeds,
         VkBuffer seedToFluidNodeBuffer,
         VkDeviceSize seedToFluidNodeBufferOffset,

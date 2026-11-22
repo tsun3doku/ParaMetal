@@ -38,6 +38,8 @@ public:
     bool ensureConfigured();
 
     VoronoiSystemBuildStage& getBuildStage() { return *voronoiSystemBuildStage; }
+    const VoronoiSystemBuildStage& getBuildStage() const { return *voronoiSystemBuildStage; }
+    const VoronoiRuntime& getRuntime() const { return runtime; }
 
 private:
     bool rebuildVoronoiRuntime();

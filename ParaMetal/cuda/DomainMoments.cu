@@ -3,6 +3,7 @@
 #include "CudaBuffer.cuh"
 #include "CudaCheck.cuh"
 #include "GeometryMoments.cuh"
+#include "../util/GeometryUtils.hpp"
 
 #include <iostream>
 #include <cmath>
@@ -19,10 +20,6 @@ static bool offsetsValid(const std::vector<uint32_t>& offsets, size_t entryCount
         if (offsets[i] < offsets[i - 1u]) return false;
     }
     return true;
-}
-
-static bool finiteVec3(const glm::dvec3& value) {
-    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
 }
 
 static __global__ void cellMomentsKernel(
@@ -66,7 +63,14 @@ static __global__ void cellMomentsKernel(
 }
 
 bool buildCellMoments(
-    const topology::GlobalDomain& domain,
+    uint32_t faceCount,
+    const std::vector<double>& faceAreasA,
+    const std::vector<double>& faceAreasB,
+    const std::vector<glm::dvec3>& faceAreaVectorsA,
+    const std::vector<glm::dvec3>& faceAreaVectorsB,
+    const std::vector<uint32_t>& faceLoopOffsets,
+    const std::vector<uint32_t>& loopVertexOffsets,
+    const std::vector<glm::dvec3>& loopVertices,
     uint32_t cellCount,
     const std::vector<uint32_t>& cellFaceOffsets,
     const std::vector<uint32_t>& cellFaces,
@@ -74,21 +78,24 @@ bool buildCellMoments(
     const std::vector<glm::dvec3>& cellOrigins,
     std::vector<double>& outMoments) {
 
-    const std::vector<topology::Face>& faces = domain.faces;
-    const size_t faceCount = faces.size();
     outMoments.assign(size_t(cellCount) * cudaMoments::monomialLimit, 0.0);
     if (cellCount == 0u) return true;
 
-    if (domain.faceLoopOffsets.empty() ||
-        !offsetsValid(domain.faceLoopOffsets, faceCount)) {
+    if (faceAreasA.size() != faceCount || faceAreasB.size() != faceCount ||
+        faceAreaVectorsA.size() != faceCount || faceAreaVectorsB.size() != faceCount) {
+        std::cerr << "[DomainMoments] face array sizes invalid faces=" << faceCount << "\n";
+        return false;
+    }
+    if (faceLoopOffsets.empty() ||
+        !offsetsValid(faceLoopOffsets, faceCount)) {
         std::cerr << "[DomainMoments] face loop offsets invalid faces=" << faceCount << "\n";
         return false;
     }
-    if (domain.loopVertexOffsets.empty() ||
-        !offsetsValid(domain.loopVertexOffsets, domain.faceLoopOffsets.back()) ||
-        domain.loopVertices.size() != domain.loopVertexOffsets.back()) {
+    if (loopVertexOffsets.empty() ||
+        !offsetsValid(loopVertexOffsets, faceLoopOffsets.back()) ||
+        loopVertices.size() != loopVertexOffsets.back()) {
         std::cerr << "[DomainMoments] loop vertex arrays incomplete loops="
-                  << domain.faceLoopOffsets.back() << "\n";
+                  << faceLoopOffsets.back() << "\n";
         return false;
     }
     if (cellFaceOffsets.empty() || !offsetsValid(cellFaceOffsets, cellCount) ||
@@ -99,7 +106,7 @@ bool buildCellMoments(
         return false;
     }
     for (uint32_t cell = 0; cell < cellCount; ++cell) {
-        if (!finiteVec3(cellOrigins[cell])) {
+        if (!GeometryUtils::isFinite(cellOrigins[cell])) {
             std::cerr << "[DomainMoments] non-finite centroid on cell " << cell << "\n";
             return false;
         }
@@ -123,37 +130,36 @@ bool buildCellMoments(
     std::vector<double3> faceNormals(faceCount, make_double3(0.0, 0.0, 0.0));
     for (size_t faceIndex = 0; faceIndex < faceCount; ++faceIndex) {
         if (!incident[faceIndex]) continue;
-        const uint32_t loopBegin = domain.faceLoopOffsets[faceIndex];
-        const uint32_t loopEnd = domain.faceLoopOffsets[faceIndex + 1u];
+        const uint32_t loopBegin = faceLoopOffsets[faceIndex];
+        const uint32_t loopEnd = faceLoopOffsets[faceIndex + 1u];
         if (loopBegin >= loopEnd) {
             std::cerr << "[DomainMoments] face " << faceIndex << " has no loops\n";
             return false;
         }
         for (uint32_t loop = loopBegin; loop < loopEnd; ++loop) {
-            if (domain.loopVertexOffsets[loop + 1u] < domain.loopVertexOffsets[loop] + 3u) {
+            if (loopVertexOffsets[loop + 1u] < loopVertexOffsets[loop] + 3u) {
                 std::cerr << "[DomainMoments] face " << faceIndex << " loop " << loop
                           << " has "
-                          << (domain.loopVertexOffsets[loop + 1u] - domain.loopVertexOffsets[loop])
+                          << (loopVertexOffsets[loop + 1u] - loopVertexOffsets[loop])
                           << " vertices\n";
                 return false;
             }
         }
-        const topology::Face& face = faces[faceIndex];
         glm::dvec3 normalA(0.0);
-        if (std::isfinite(face.areaA) && face.areaA > 0.0) {
-            normalA = face.areaVectorA / face.areaA;
-        } else if (std::isfinite(face.areaB) && face.areaB > 0.0) {
-            normalA = -face.areaVectorB / face.areaB;
+        if (std::isfinite(faceAreasA[faceIndex]) && faceAreasA[faceIndex] > 0.0) {
+            normalA = faceAreaVectorsA[faceIndex] / faceAreasA[faceIndex];
+        } else if (std::isfinite(faceAreasB[faceIndex]) && faceAreasB[faceIndex] > 0.0) {
+            normalA = -faceAreaVectorsB[faceIndex] / faceAreasB[faceIndex];
         } else {
             std::cerr << "[DomainMoments] face " << faceIndex
-                      << " has no positive area areaA=" << face.areaA
-                      << " areaB=" << face.areaB << "\n";
+                      << " has no positive area areaA=" << faceAreasA[faceIndex]
+                      << " areaB=" << faceAreasB[faceIndex] << "\n";
             return false;
         }
-        if (!finiteVec3(normalA)) {
+        if (!GeometryUtils::isFinite(normalA)) {
             std::cerr << "[DomainMoments] face " << faceIndex
-                      << " has non-finite normal areaA=" << face.areaA
-                      << " areaB=" << face.areaB << "\n";
+                      << " has non-finite normal areaA=" << faceAreasA[faceIndex]
+                      << " areaB=" << faceAreasB[faceIndex] << "\n";
             return false;
         }
         faceNormals[faceIndex] = make_double3(normalA.x, normalA.y, normalA.z);
@@ -178,12 +184,12 @@ bool buildCellMoments(
         !stage(deviceCellOrigins, reinterpret_cast<const double3*>(cellOrigins.data()),
                cellOrigins.size()) ||
         !stage(deviceFaceNormals, faceNormals.data(), faceNormals.size()) ||
-        !stage(deviceFaceLoopOffsets, domain.faceLoopOffsets.data(),
-               domain.faceLoopOffsets.size()) ||
-        !stage(deviceLoopVertexOffsets, domain.loopVertexOffsets.data(),
-               domain.loopVertexOffsets.size()) ||
-        !stage(deviceLoopVertices, reinterpret_cast<const double3*>(domain.loopVertices.data()),
-               domain.loopVertices.size()) ||
+        !stage(deviceFaceLoopOffsets, faceLoopOffsets.data(),
+               faceLoopOffsets.size()) ||
+        !stage(deviceLoopVertexOffsets, loopVertexOffsets.data(),
+               loopVertexOffsets.size()) ||
+        !stage(deviceLoopVertices, reinterpret_cast<const double3*>(loopVertices.data()),
+               loopVertices.size()) ||
         !deviceMoments.allocate(outMoments.size())) {
         std::cerr << "[DomainMoments] device upload failed cells=" << cellCount << "\n";
         return false;

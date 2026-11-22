@@ -9,10 +9,15 @@
 #include <memory>
 
 #include "domain/HeatProbeData.hpp"
-#include "voronoi/GlobalDomainTopology.hpp"
 
 class HeatProbeRuntime {
 public:
+    struct FragmentCentroid {
+        uint32_t runtimeModelId = 0;
+        uint32_t localIndex = 0;
+        glm::vec3 worldCentroid{0.0f};
+    };
+
     struct StencilEntry {
         uint32_t runtimeModelId = 0;
         uint32_t localIndex = 0;
@@ -41,8 +46,7 @@ public:
         const std::vector<HeatProbeItem>& items);
 
     bool rebuildWeights(
-        const topology::GlobalDomain& domain,
-        const std::unordered_map<uint32_t, std::vector<uint32_t>>& fragmentIdsByModelId,
+        const std::vector<FragmentCentroid>& domainCentroids,
         const std::unordered_map<uint32_t, std::array<float, 16>>& modelLocalToWorld);
 
     void sample(const std::unordered_map<uint32_t, std::vector<float>>& temperaturesByModel);

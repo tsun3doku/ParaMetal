@@ -145,9 +145,9 @@ private:
             if (voronoi && voronoi->isValid()) {
                 outConfig.globalDomainCorners = voronoi->globalDomainCorners;
                 outConfig.hasGlobalDomain = true;
-                outConfig.globalVolumeGridMin = voronoi->globalVolumeGridMin;
-                outConfig.globalVolumeGridDim = voronoi->globalVolumeGridDim;
-                outConfig.globalVolumeGridCellSize = voronoi->globalVolumeGridCellSize;
+                outConfig.globalVolumeGridMin = voronoi->volumeGridMin;
+                outConfig.globalVolumeGridDim = voronoi->volumeGridDim;
+                outConfig.globalVolumeGridCellSize = voronoi->volumeGridCellSize;
                 HashBuilder::combine(productDisplayHash, voronoi->hashes.geometry);
                 HashBuilder::combine(productDisplayHash, voronoi->hashes.display);
             }

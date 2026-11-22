@@ -9,7 +9,6 @@
 
 #include "vulkan/VulkanExternalBuffer.hpp"
 #include "cuda/CudaExternalBuffer.hpp"
-#include "voronoi/GlobalDomainTopology.hpp"
 
 class MemoryAllocator;
 class VulkanDevice;
@@ -32,41 +31,10 @@ class VoronoiSystemBuildStage {
     bool buildGlobalDisplayCandidates(VoronoiRuntime &runtime);
     void copyGpu(VoronoiProduct &product) const;
 
-    uint32_t getCandidateNodeCount() const { return candidateNodeCount; }
-    VkBuffer getSeedPositionBuffer() const { return seedPositionBuffer; }
-    VkDeviceSize getSeedPositionBufferOffset() const { return seedPositionBufferOffset; }
+    uint32_t getCandidateNodeCount() const { return outCandidateNodeCount; }
+    VkBuffer getSeedPositionBuffer() const { return outSeedPositionBuffer; }
+    VkDeviceSize getSeedPositionBufferOffset() const { return outSeedPositionBufferOffset; }
 
-    const std::vector<uint32_t>& getGlobalFragmentInstanceIds() const { return globalFragmentInstanceIds; }
-    const std::vector<uint32_t>& getGlobalFragmentSeedIds() const { return globalFragmentSeedIds; }
-    const std::vector<uint32_t>& getGlobalCellFragmentOffsets() const { return globalCellFragmentOffsets; }
-    const std::vector<uint32_t>& getGlobalCellFragments() const { return globalCellFragments; }
-    const std::vector<glm::dvec3>& getGlobalFragmentCentroids() const { return globalFragmentCentroids; }
-    const std::vector<double>& getGlobalFragmentVolumes() const { return globalFragmentVolumes; }
-    const std::vector<uint32_t>& getGlobalFaceFragmentA() const { return globalFaceFragmentA; }
-    const std::vector<uint32_t>& getGlobalFaceFragmentB() const { return globalFaceFragmentB; }
-    const std::vector<double>& getGlobalFaceAreasA() const { return globalFaceAreasA; }
-    const std::vector<glm::dvec3>& getGlobalFaceAreaVectorsA() const { return globalFaceAreaVectorsA; }
-    const std::vector<glm::dvec3>& getGlobalFaceMomentsA() const { return globalFaceMomentsA; }
-    const std::vector<double>& getGlobalFaceAreasB() const { return globalFaceAreasB; }
-    const std::vector<glm::dvec3>& getGlobalFaceAreaVectorsB() const { return globalFaceAreaVectorsB; }
-    const std::vector<glm::dvec3>& getGlobalFaceMomentsB() const { return globalFaceMomentsB; }
-    const std::vector<uint8_t>& getGlobalFaceTypes() const { return globalFaceTypes; }
-    const std::vector<uint32_t>& getGlobalFaceDomainFaces() const { return globalFaceDomainFaces; }
-    const std::vector<uint32_t>& getGlobalFaceLoopOffsets() const { return globalFaceLoopOffsets; }
-    const std::vector<uint32_t>& getGlobalLoopVertexOffsets() const { return globalLoopVertexOffsets; }
-    const std::vector<glm::dvec3>& getGlobalLoopVertices() const { return globalLoopVertices; }
-    const std::vector<uint32_t>& getGlobalContactCouplingFaceA() const { return globalContactCouplingFaceA; }
-    const std::vector<uint32_t>& getGlobalContactCouplingFragmentA() const { return globalContactCouplingFragmentA; }
-    const std::vector<uint32_t>& getGlobalContactCouplingFaceB() const { return globalContactCouplingFaceB; }
-    const std::vector<uint32_t>& getGlobalContactCouplingFragmentB() const { return globalContactCouplingFragmentB; }
-    const std::vector<double>& getGlobalContactCouplingAreas() const { return globalContactCouplingAreas; }
-    const std::vector<uint32_t>& getGlobalBoundaryFaceIndices() const { return globalBoundaryFaceIndices; }
-    const std::vector<uint32_t>& getGlobalInstanceFragmentCounts() const { return globalInstanceFragmentCounts; }
-    glm::vec3 getGlobalVolumeGridMin() const { return globalVolumeGridMin; }
-    glm::ivec3 getGlobalVolumeGridDim() const { return globalVolumeGridDim; }
-    float getGlobalVolumeGridCellSize() const { return globalVolumeGridCellSize; }
-    const std::vector<glm::vec4>& getGlobalSeedPositions() const { return globalSeedPositions; }
-    const std::array<glm::vec3, 8>& getGlobalDomainCorners() const { return globalDomainCorners; }
 
     const std::vector<uint32_t>& getGlobalDisplayFaceCounts() const;
     const std::vector<VkBuffer>& getGlobalDisplayVertexBuffers() const;
@@ -85,52 +53,23 @@ class VoronoiSystemBuildStage {
     MemoryAllocator &memoryAllocator;
     CommandPool &commandPool;
 
-    uint32_t candidateNodeCount = 0;
-    VkBuffer candidateNeighborIndicesBuffer = VK_NULL_HANDLE;
-    VkDeviceSize candidateNeighborIndicesBufferOffset = 0;
-    VkBuffer seedPositionBuffer = VK_NULL_HANDLE;
-    VkDeviceSize seedPositionBufferOffset = 0;
-    VkBuffer candidatePointVertexBuffer = VK_NULL_HANDLE;
-    VkDeviceSize candidatePointVertexBufferOffset = 0;
+    uint32_t outCandidateNodeCount = 0;
+    VkBuffer outCandidateNeighborIndicesBuffer = VK_NULL_HANDLE;
+    VkDeviceSize outCandidateNeighborIndicesBufferOffset = 0;
+    VkBuffer outSeedPositionBuffer = VK_NULL_HANDLE;
+    VkDeviceSize outSeedPositionBufferOffset = 0;
+    VkBuffer outCandidatePointVertexBuffer = VK_NULL_HANDLE;
+    VkDeviceSize outCandidatePointVertexBufferOffset = 0;
 
-    std::vector<uint32_t> globalFragmentInstanceIds;
-    std::vector<uint32_t> globalFragmentSeedIds;
-    std::vector<uint32_t> globalCellFragmentOffsets;
-    std::vector<uint32_t> globalCellFragments;
-    std::vector<glm::dvec3> globalFragmentCentroids;
-    std::vector<double> globalFragmentVolumes;
-    std::vector<uint32_t> globalFaceFragmentA;
-    std::vector<uint32_t> globalFaceFragmentB;
-    std::vector<double> globalFaceAreasA;
-    std::vector<glm::dvec3> globalFaceAreaVectorsA;
-    std::vector<glm::dvec3> globalFaceMomentsA;
-    std::vector<double> globalFaceAreasB;
-    std::vector<glm::dvec3> globalFaceAreaVectorsB;
-    std::vector<glm::dvec3> globalFaceMomentsB;
-    std::vector<uint8_t> globalFaceTypes;
-    std::vector<uint32_t> globalFaceDomainFaces;
-    std::vector<uint32_t> globalFaceLoopOffsets;
-    std::vector<uint32_t> globalLoopVertexOffsets;
-    std::vector<glm::dvec3> globalLoopVertices;
-    std::vector<uint32_t> globalContactCouplingFaceA;
-    std::vector<uint32_t> globalContactCouplingFragmentA;
-    std::vector<uint32_t> globalContactCouplingFaceB;
-    std::vector<uint32_t> globalContactCouplingFragmentB;
-    std::vector<double> globalContactCouplingAreas;
-    std::vector<uint32_t> globalBoundaryFaceIndices;
-    std::vector<uint32_t> globalInstanceFragmentCounts;
-    glm::vec3 globalVolumeGridMin{};
-    glm::ivec3 globalVolumeGridDim{};
-    float globalVolumeGridCellSize = 0.0f;
-    std::vector<glm::vec4> globalSeedPositions;
-    std::array<glm::vec3, 8> globalDomainCorners{};
 
-    VkBuffer globalSeedIdGridBuffer = VK_NULL_HANDLE;
-    VkDeviceSize globalSeedIdGridBufferOffset = 0;
-    VulkanExternalBuffer globalSeedIdGridExternal;
-    CudaExternalBuffer globalSeedIdGridCuda;
+
+    VkBuffer outGlobalSeedIdGridBuffer = VK_NULL_HANDLE;
+    VkDeviceSize outGlobalSeedIdGridBufferOffset = 0;
+    VulkanExternalBuffer outGlobalSeedIdGridExternal;
+    CudaExternalBuffer outGlobalSeedIdGridCuda;
 
     std::unique_ptr<voronoi::KNNNeighbors> knn;
     std::unique_ptr<voronoi::RVD> rvd;
     std::unique_ptr<voronoi::VoronoiCandidate> candidate;
 };
+

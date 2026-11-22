@@ -1,4 +1,4 @@
-#include "VoronoiSystemComputeController.hpp"
+﻿#include "VoronoiSystemComputeController.hpp"
 
 #include "voronoi/VoronoiSystem.hpp"
 #include "runtime/RuntimeProducts.hpp"
@@ -196,50 +196,18 @@ bool VoronoiSystemComputeController::buildProduct(uint64_t socketKey, VoronoiPro
         return false;
     }
 
+    const VoronoiRuntime& runtime = voronoiSystem->getRuntime();
+    runtime.publishTopology(outProduct);
+
     VoronoiSystemBuildStage& buildStage = voronoiSystem->getBuildStage();
-    outProduct.globalSeedPositions = buildStage.getGlobalSeedPositions();
-    outProduct.globalDomainCorners = buildStage.getGlobalDomainCorners();
-    outProduct.globalVolumeGridMin = buildStage.getGlobalVolumeGridMin();
-    outProduct.globalVolumeGridDim = buildStage.getGlobalVolumeGridDim();
-    outProduct.globalVolumeGridCellSize = buildStage.getGlobalVolumeGridCellSize();
-    outProduct.fragmentInstanceIds = buildStage.getGlobalFragmentInstanceIds();
-    outProduct.fragmentSeedIds = buildStage.getGlobalFragmentSeedIds();
-    outProduct.cellFragmentOffsets = buildStage.getGlobalCellFragmentOffsets();
-    outProduct.cellFragments = buildStage.getGlobalCellFragments();
-    outProduct.fragmentCentroids = buildStage.getGlobalFragmentCentroids();
-    outProduct.fragmentVolumes = buildStage.getGlobalFragmentVolumes();
-    outProduct.faceFragmentA = buildStage.getGlobalFaceFragmentA();
-    outProduct.faceFragmentB = buildStage.getGlobalFaceFragmentB();
-    outProduct.faceAreasA = buildStage.getGlobalFaceAreasA();
-    outProduct.faceAreaVectorsA = buildStage.getGlobalFaceAreaVectorsA();
-    outProduct.faceMomentsA = buildStage.getGlobalFaceMomentsA();
-    outProduct.faceAreasB = buildStage.getGlobalFaceAreasB();
-    outProduct.faceAreaVectorsB = buildStage.getGlobalFaceAreaVectorsB();
-    outProduct.faceMomentsB = buildStage.getGlobalFaceMomentsB();
-    outProduct.faceTypes = buildStage.getGlobalFaceTypes();
-    outProduct.faceDomainFaces = buildStage.getGlobalFaceDomainFaces();
-    outProduct.faceLoopOffsets = buildStage.getGlobalFaceLoopOffsets();
-    outProduct.loopVertexOffsets = buildStage.getGlobalLoopVertexOffsets();
-    outProduct.loopVertices = buildStage.getGlobalLoopVertices();
-    outProduct.contactCouplingFaceA = buildStage.getGlobalContactCouplingFaceA();
-    outProduct.contactCouplingFragmentA = buildStage.getGlobalContactCouplingFragmentA();
-    outProduct.contactCouplingFaceB = buildStage.getGlobalContactCouplingFaceB();
-    outProduct.contactCouplingFragmentB = buildStage.getGlobalContactCouplingFragmentB();
-    outProduct.contactCouplingAreas = buildStage.getGlobalContactCouplingAreas();
-    outProduct.boundaryFaceIndices = buildStage.getGlobalBoundaryFaceIndices();
-    outProduct.instanceFragmentCounts = buildStage.getGlobalInstanceFragmentCounts();
-    outProduct.globalFragmentCount = static_cast<uint32_t>(outProduct.fragmentInstanceIds.size());
-    outProduct.globalFaceCount = static_cast<uint32_t>(outProduct.faceAreasA.size());
-    outProduct.globalContactCouplingCount = static_cast<uint32_t>(outProduct.contactCouplingFaceA.size());
-    outProduct.globalBoundaryFaceCount = static_cast<uint32_t>(outProduct.boundaryFaceIndices.size());
+    buildStage.copyGpu(outProduct);
 
     if (!outProduct.isValid()) {
         outProduct = {};
         return false;
     }
 
-    buildStage.copyGpu(outProduct);
-
     HashProduct::seal(outProduct);
     return true;
 }
+

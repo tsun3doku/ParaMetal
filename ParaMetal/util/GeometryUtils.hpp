@@ -7,6 +7,22 @@
 #include <cmath>
 #include <algorithm>
 
+namespace GeometryUtils {
+
+inline bool isFinite(const glm::vec3& value) {
+	return std::isfinite(value.x) &&
+		std::isfinite(value.y) &&
+		std::isfinite(value.z);
+}
+
+inline bool isFinite(const glm::dvec3& value) {
+	return std::isfinite(value.x) &&
+		std::isfinite(value.y) &&
+		std::isfinite(value.z);
+}
+
+} // namespace GeometryUtils
+
 inline glm::vec3 safeNormalize(const glm::vec3& v) {
 	const float lengthSquared = glm::dot(v, v);
 	if (lengthSquared <= 1e-12f) {

@@ -409,8 +409,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="heat\HeatFluidRuntime.cpp" />
     <ClCompile Include="heat\HeatFluidVolumeStage.cpp" />
     <ClCompile Include="voronoi\VoronoiSystemBuildStage.cpp" />
-    <ClCompile Include="voronoi\GlobalDomainTopology.cpp" />
-    <ClCompile Include="voronoi\VoronoiNodeIndex.cpp" />
+    <ClCompile Include="spatial\SpatialNodeIndex.cpp" />
     <ClCompile Include="heat\HeatSystemPresets.cpp" />
     <ClCompile Include="heat\HeatSystemComputeController.cpp" />
     <ClCompile Include="heat\HeatSystem.cpp" />
@@ -824,7 +823,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="renderers\HeatBoxRenderer.hpp" />
     <ClInclude Include="renderers\ProbeMarkerRenderer.hpp" />
     <ClInclude Include="voronoi\VoronoiSystemBuildStage.hpp" />
-    <ClInclude Include="voronoi\VoronoiNodeIndex.hpp" />
+    <ClInclude Include="spatial\SpatialNodeIndex.hpp" />
     <ClInclude Include="voronoi\VoronoiConfig.hpp" />
     <ClInclude Include="voronoi\VoronoiGpuStructs.hpp" />
     <ClInclude Include="heat\HeatSystemPresets.hpp" />
@@ -835,7 +834,6 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="voronoi\VoronoiRuntime.hpp" />
     <ClInclude Include="voronoi\VoronoiSystemComputeController.hpp" />
     <ClInclude Include="heat\HeatDomainRuntime.hpp" />
-    <ClInclude Include="cfd\CFDTopology.hpp" />
     <ClInclude Include="cfd\CFDSliceGeometry.hpp" />
     <ClInclude Include="cfd\CFDReconstruction.hpp" />
     <ClInclude Include="cfd\CFDSolver.hpp" />
@@ -987,7 +985,6 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="vulkan\UniformBufferManager.hpp" />
     <ClInclude Include="vulkan\VulkanImage.hpp" />
     <ClInclude Include="py\PyInterpreter.hpp" />
-    <ClInclude Include="voronoi\GlobalDomainTopology.hpp" />
     <ClInclude Include="vem\VEMGeometry.hpp" />
     <ClInclude Include="vem\VEMDiffusion.hpp" />
   </ItemGroup>
@@ -1006,3 +1003,5 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <Copy SourceFiles="@(CudaRuntime)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>
 </Project>
+
+

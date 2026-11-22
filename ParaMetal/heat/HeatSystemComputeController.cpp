@@ -15,6 +15,54 @@
 #include <cassert>
 #include <unordered_set>
 
+static HeatSystemComputeController::Config makeRetainedConfig(
+    const HeatSystemComputeController::Config& config) {
+    HeatSystemComputeController::Config retained{};
+    retained.simulationDuration = config.simulationDuration;
+    retained.hasFluid = config.hasFluid;
+    retained.fluidDensity = config.fluidDensity;
+    retained.fluidSpecificHeat = config.fluidSpecificHeat;
+    retained.fluidConductivity = config.fluidConductivity;
+    retained.fluidInitialTemperatureC = config.fluidInitialTemperatureC;
+    retained.hasAdvection = config.hasAdvection;
+    retained.advectionFaceFluxBuffer = config.advectionFaceFluxBuffer;
+    retained.advectionFaceFluxBufferSize = config.advectionFaceFluxBufferSize;
+    retained.advectionBoundaryFluxBuffer = config.advectionBoundaryFluxBuffer;
+    retained.advectionBoundaryFluxBufferSize = config.advectionBoundaryFluxBufferSize;
+    retained.advectionFaceCount = config.advectionFaceCount;
+    retained.advectionBoundaryFaceCount = config.advectionBoundaryFaceCount;
+    for (size_t i = 0; i < 6; ++i) {
+        retained.domainBoundaryTypes[i] = config.domainBoundaryTypes[i];
+        retained.domainBoundaryTemperaturesC[i] = config.domainBoundaryTemperaturesC[i];
+        retained.domainBoundaryHeatFluxes[i] = config.domainBoundaryHeatFluxes[i];
+        retained.domainBoundaryHeatTransferCoefficients[i] = config.domainBoundaryHeatTransferCoefficients[i];
+        retained.domainBoundaryInflowTemperaturesC[i] = config.domainBoundaryInflowTemperaturesC[i];
+    }
+    retained.solverMaxIterations = config.solverMaxIterations;
+    retained.solverConvergenceTolerance = config.solverConvergenceTolerance;
+    retained.modelSurfacePositions = config.modelSurfacePositions;
+    retained.modelSurfaceNormals = config.modelSurfaceNormals;
+    retained.modelSurfaceTriangleIndices = config.modelSurfaceTriangleIndices;
+    retained.heatModelKeys = config.heatModelKeys;
+    retained.modelRuntimeModelIds = config.modelRuntimeModelIds;
+    retained.modelInitialTemperaturesCByRuntimeId = config.modelInitialTemperaturesCByRuntimeId;
+    retained.modelVolumetricPowerDensitiesByRuntimeId = config.modelVolumetricPowerDensitiesByRuntimeId;
+    retained.modelDensity = config.modelDensity;
+    retained.modelSpecificHeat = config.modelSpecificHeat;
+    retained.modelConductivity = config.modelConductivity;
+    retained.worldUnit = config.worldUnit;
+    retained.serialEnabledBySourceKey = config.serialEnabledBySourceKey;
+    retained.serialPortNamesBySourceKey = config.serialPortNamesBySourceKey;
+    retained.serialBaudRatesBySourceKey = config.serialBaudRatesBySourceKey;
+    retained.heatProbesBySourceKey = config.heatProbesBySourceKey;
+    retained.modelLocalToWorldByModelId = config.modelLocalToWorldByModelId;
+    retained.modelPrescribedTemperatureEnabledByRuntimeId = config.modelPrescribedTemperatureEnabledByRuntimeId;
+    retained.modelPrescribedTemperaturesCByRuntimeId = config.modelPrescribedTemperaturesCByRuntimeId;
+    retained.computeHash = config.computeHash;
+    retained.geometryHash = config.geometryHash;
+    return retained;
+}
+
 HeatSystemComputeController::HeatSystemComputeController(VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator,
     CommandPool& renderCommandPool,
     CommandPool& transferCommandPool,
@@ -48,9 +96,35 @@ bool HeatSystemComputeController::configureHeatSystem(HeatSystem& system, const 
     } else {
         system.clearAdvectionInput();
     }
-    if (config.hasDomainVoronoiProduct) {
+    if (!config.fragmentInstanceIds.empty()) {
         if (!system.setGlobalVoronoiInput(
-                config.domainVoronoiProduct, config.modelLocalToWorldByModelId)) {
+                config.fragmentInstanceIds,
+                config.fragmentSeedIds,
+                config.fragmentCentroids,
+                config.fragmentVolumes,
+                config.faceFragmentA,
+                config.faceFragmentB,
+                config.faceAreasA,
+                config.faceAreasB,
+                config.faceAreaVectorsA,
+                config.faceAreaVectorsB,
+                config.faceMomentsA,
+                config.faceMomentsB,
+                config.faceTypes,
+                config.faceDomainFaces,
+                config.boundaryFaceIndices,
+                config.contactCouplingFaceA,
+                config.contactCouplingFragmentA,
+                config.contactCouplingFaceB,
+                config.contactCouplingFragmentB,
+                config.contactCouplingAreas,
+                config.modelLocalToWorldByModelId,
+                config.seedIdGridBuffer,
+                config.seedIdGridBufferOffset,
+                config.seedToSpaceIndex,
+                config.spaceToFragmentIndex,
+                config.hasUniqueSeedToSpaceMapping,
+                config.volumeGridDim)) {
             return false;
         }
     }
@@ -124,7 +198,7 @@ bool HeatSystemComputeController::apply(uint64_t socketKey, const Config& config
 
     GenerationSlot& slot = generationSlots[socketKey];
     configuredConfigs.try_emplace(socketKey);
-    pendingConfigs[socketKey] = config;
+    pendingConfigs[socketKey] = makeRetainedConfig(config);
     slot.candidate = std::move(candidate);
 
     syncSerialInputs();
@@ -386,7 +460,7 @@ bool HeatSystemComputeController::buildProduct(uint64_t socketKey, HeatProduct& 
     outProduct.fluidTemperatureVolumeSampler = system.getFluidTemperatureVolumeSampler();
     outProduct.hasFluidVolume = (outProduct.fluidTemperatureVolumeView != VK_NULL_HANDLE);
 
-    HashProduct::seal(outProduct);
+    HashProduct::seal(outProduct, config->geometryHash, config->computeHash);
     return true;
 }
 

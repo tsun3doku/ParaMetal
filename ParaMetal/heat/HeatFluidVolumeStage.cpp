@@ -229,48 +229,33 @@ bool HeatFluidVolumeStage::createVolumeResources(const glm::ivec3& gridDim) {
 }
 
 bool HeatFluidVolumeStage::updateSeedToFluidNode(
-    const std::vector<glm::vec3>& seeds,
-    const topology::GlobalDomain& globalDomain,
+    const std::vector<uint32_t>& seedToSpaceIndex,
+    const std::vector<uint32_t>& spaceToFragmentIndex,
     const std::vector<uint32_t>& globalFragmentToFluidNode)
 {
-    if (seeds.empty() || !globalDomain.isValid()) {
+    if (seedToSpaceIndex.empty()) {
         return false;
     }
 
-    if (globalDomain.cellFragmentOffsets.size() != seeds.size() + 1 ||
-        globalDomain.cellFragmentOffsets.back() != globalDomain.cellFragments.size()) {
-        std::cerr << "[HeatFluidVolumeStage] cell-to-fragment CSR is invalid"
-                  << std::endl;
-        return false;
-    }
-
-    std::vector<uint32_t> seedToFluid(seeds.size(), 0xFFFFFFFFu);
-    for (size_t cell = 0; cell < seeds.size(); ++cell) {
-        uint32_t fluidFragment = 0xFFFFFFFFu;
-        for (uint32_t entry = globalDomain.cellFragmentOffsets[cell];
-             entry < globalDomain.cellFragmentOffsets[cell + 1]; ++entry) {
-            const uint32_t fragment = globalDomain.cellFragments[entry];
-            if (fragment >= globalDomain.fragments.size()) {
-                std::cerr << "[HeatFluidVolumeStage] seed cell " << cell
-                          << " references out-of-range fragment " << fragment << std::endl;
-                return false;
-            }
-            if (globalDomain.fragments[fragment].instanceId !=
-                topology::InvalidInstanceId) {
-                continue;
-            }
-            if (fluidFragment != 0xFFFFFFFFu) {
-                std::cerr << "[HeatFluidVolumeStage] seed cell " << cell
-                          << " has multiple fluid components; point location "
-                             "requires fragment boundary geometry"
-                          << std::endl;
-                return false;
-            }
-            fluidFragment = fragment;
+    std::vector<uint32_t> seedToFluid(seedToSpaceIndex.size(), 0xFFFFFFFFu);
+    for (size_t cell = 0; cell < seedToSpaceIndex.size(); ++cell) {
+        const uint32_t spaceIndex = seedToSpaceIndex[cell];
+        if (spaceIndex == 0xFFFFFFFFu) {
+            continue;
         }
-        if (fluidFragment < globalFragmentToFluidNode.size()) {
-            seedToFluid[cell] = globalFragmentToFluidNode[fluidFragment];
+        if (spaceIndex >= spaceToFragmentIndex.size()) {
+            std::cerr << "[HeatFluidVolumeStage] seed cell " << cell
+                      << " references out-of-range Space fragment " << spaceIndex
+                      << std::endl;
+            return false;
         }
+        const uint32_t fragment = spaceToFragmentIndex[spaceIndex];
+        if (fragment >= globalFragmentToFluidNode.size()) {
+            std::cerr << "[HeatFluidVolumeStage] Space fragment " << fragment
+                      << " has no heat fluid node" << std::endl;
+            return false;
+        }
+        seedToFluid[cell] = globalFragmentToFluidNode[fragment];
     }
 
     if (seedToFluidNodeBuffer != VK_NULL_HANDLE) {

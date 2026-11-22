@@ -31,8 +31,7 @@ private:
     bool tryBuildConfig(
         uint64_t socketKey,
         const CFDPackage& package,
-        cfd::CFDSystemComputeController::Config& outConfig,
-        topology::GlobalDomain& outDomain) const;
+        cfd::CFDSystemComputeController::Config& outConfig) const;
 
     cfd::CFDSystemComputeController* controller = nullptr;
     RuntimeProductManager* products = nullptr;

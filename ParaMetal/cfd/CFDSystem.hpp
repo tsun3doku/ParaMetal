@@ -6,7 +6,6 @@
 #include "cfd/CFDSystemPlayback.hpp"
 #include "cfd/CFDBoundaryConditions.hpp"
 #include "mesh/Polyline.hpp"
-#include "voronoi/GlobalDomainTopology.hpp"
 #include <cuda_runtime.h>
 #include <vulkan/vulkan.h>
 #include <vector>
@@ -31,16 +30,43 @@ public:
     ~CFDSystem() override;
 
     bool configure(
-        const topology::GlobalDomain& domain,
+        const std::vector<uint32_t>& fragmentInstanceIds,
+        const std::vector<uint32_t>& fragmentSeedIds,
+        const std::vector<glm::dvec3>& fragmentCentroids,
+        const std::vector<double>& fragmentVolumes,
+        const std::vector<uint32_t>& faceFragmentA,
+        const std::vector<uint32_t>& faceFragmentB,
+        const std::vector<double>& faceAreasA,
+        const std::vector<double>& faceAreasB,
+        const std::vector<glm::dvec3>& faceAreaVectorsA,
+        const std::vector<glm::dvec3>& faceAreaVectorsB,
+        const std::vector<glm::dvec3>& faceMomentsA,
+        const std::vector<glm::dvec3>& faceMomentsB,
+        const std::vector<uint8_t>& faceTypes,
+        const std::vector<uint32_t>& faceDomainFaces,
+        const std::vector<uint32_t>& boundaryFaceIndices,
+        const std::vector<uint32_t>& faceLoopOffsets,
+        const std::vector<uint32_t>& loopVertexOffsets,
+        const std::vector<glm::dvec3>& loopVertices,
+        const std::vector<uint32_t>& seedToSpaceIndex,
+        const std::vector<uint32_t>& spaceToFragmentIndex,
+        bool hasUniqueSeedToSpaceMapping,
+        VkBuffer seedIdGridBuffer,
+        VkDeviceSize seedIdGridBufferOffset,
         float kinematicViscosity,
         const glm::vec3& initialVelocity,
-        const uint32_t* domainBoundaryTypes = nullptr,
-        const glm::vec3* domainBoundaryVelocities = nullptr,
-        float fixedTimeStep = 1.0f / 60.0f,
-        float targetCourant = 0.5f,
-        int pressureIterations = 0,
-        float pressureTolerance = 0.0f,
-        float simulationDuration = 10.0f);
+        const uint32_t* domainBoundaryTypes,
+        const glm::vec3* domainBoundaryVelocities,
+        float fixedTimeStep,
+        float targetCourant,
+        int pressureIterations,
+        float pressureTolerance,
+        float simulationDuration,
+        const glm::vec3& domainMin,
+        const glm::vec3& domainMax,
+        const glm::vec3& volumeGridMin,
+        const glm::ivec3& volumeGridDim,
+        float volumeGridCellSize);
 
     void update(const SimTickContext& context) override;
     bool isSubmissionReady() const override;
@@ -91,7 +117,6 @@ public:
 
 private:
     void onEnteredInactive() override { pendingCfdReadyValue = 0; }
-    bool rebuildTopology(const topology::GlobalDomain& domain);
     bool createSyncObjects();
     bool createComputeCommandBuffers(uint32_t maxFramesInFlight);
     void cleanupSyncObjects();
@@ -99,7 +124,8 @@ private:
     uint32_t computeHistoryFrameCapacity() const { return computeTimelineFrameCount() + 1u; }
     void updateDisplayFrameState(const SimTickContext& context);
     bool uploadFluidField(
-        const topology::GlobalDomain& domain,
+        const std::vector<uint32_t>& seedToSpaceIndex,
+        const std::vector<uint32_t>& spaceToFragmentIndex,
         const std::vector<uint32_t>& globalFragmentToFluidNode,
         const std::vector<glm::vec4>& centroids);
 
@@ -115,6 +141,8 @@ private:
     std::unique_ptr<CFDStreamlineStage> streamlineStage;
     VkBuffer seedIdGridBuffer = VK_NULL_HANDLE;
     VkDeviceSize seedIdGridBufferOffset = 0;
+    std::vector<uint32_t> seedToSpaceIndex;
+    std::vector<uint32_t> spaceToFragmentIndex;
     VkBuffer displayVelocityBufferHandle = VK_NULL_HANDLE;
     VkDeviceSize displayVelocityOffset = 0;
     VkBuffer displayGradientBufferHandle = VK_NULL_HANDLE;

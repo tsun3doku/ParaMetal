@@ -23,6 +23,24 @@ static void combineVkSampler(uint64_t& hash, VkSampler handle) {
     HashBuilder::combine(hash, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(handle)));
 }
 
+static void combineVec3(uint64_t& hash, const glm::vec3& value) {
+    HashBuilder::combinePod(hash, value.x);
+    HashBuilder::combinePod(hash, value.y);
+    HashBuilder::combinePod(hash, value.z);
+}
+
+static void combineDVec3(uint64_t& hash, const glm::dvec3& value) {
+    HashBuilder::combinePod(hash, value.x);
+    HashBuilder::combinePod(hash, value.y);
+    HashBuilder::combinePod(hash, value.z);
+}
+
+static void combineIVec3(uint64_t& hash, const glm::ivec3& value) {
+    HashBuilder::combine(hash, static_cast<uint64_t>(value.x));
+    HashBuilder::combine(hash, static_cast<uint64_t>(value.y));
+    HashBuilder::combine(hash, static_cast<uint64_t>(value.z));
+}
+
 void HashProduct::seal(ModelProduct& p) {
     uint64_t geometryHash = HashBuilder::start();
     HashBuilder::combine(geometryHash, p.runtimeModelId);
@@ -99,63 +117,102 @@ void HashProduct::seal(RemeshProduct& p) {
 }
 
 void HashProduct::seal(VoronoiProduct& p) {
-    uint64_t hash = HashBuilder::start();
-    HashBuilder::combine(hash, p.candidateNodeCount);
-    combineVkBuffer(hash, p.candidateNeighborIndicesBuffer);
-    HashBuilder::combine(hash, p.candidateNeighborIndicesBufferOffset);
-    combineVkBuffer(hash, p.seedPositionBuffer);
-    HashBuilder::combine(hash, p.seedPositionBufferOffset);
-    combineVkBuffer(hash, p.candidatePointVertexBuffer);
-    HashBuilder::combine(hash, p.candidatePointVertexBufferOffset);
-    HashBuilder::combinePodVector(hash, p.globalSeedPositions);
-    HashBuilder::combinePodVector(hash, p.fragmentInstanceIds);
-    HashBuilder::combinePodVector(hash, p.fragmentSeedIds);
-    HashBuilder::combinePodVector(hash, p.cellFragmentOffsets);
-    HashBuilder::combinePodVector(hash, p.cellFragments);
-    HashBuilder::combinePodVector(hash, p.fragmentCentroids);
-    HashBuilder::combinePodVector(hash, p.fragmentVolumes);
-    HashBuilder::combinePodVector(hash, p.faceFragmentA);
-    HashBuilder::combinePodVector(hash, p.faceFragmentB);
-    HashBuilder::combinePodVector(hash, p.faceAreasA);
-    HashBuilder::combinePodVector(hash, p.faceAreaVectorsA);
-    HashBuilder::combinePodVector(hash, p.faceMomentsA);
-    HashBuilder::combinePodVector(hash, p.faceAreasB);
-    HashBuilder::combinePodVector(hash, p.faceAreaVectorsB);
-    HashBuilder::combinePodVector(hash, p.faceMomentsB);
-    HashBuilder::combinePodVector(hash, p.faceTypes);
-    HashBuilder::combinePodVector(hash, p.faceDomainFaces);
-    HashBuilder::combinePodVector(hash, p.faceLoopOffsets);
-    HashBuilder::combinePodVector(hash, p.loopVertexOffsets);
-    HashBuilder::combinePodVector(hash, p.loopVertices);
-    HashBuilder::combinePodVector(hash, p.contactCouplingFaceA);
-    HashBuilder::combinePodVector(hash, p.contactCouplingFragmentA);
-    HashBuilder::combinePodVector(hash, p.contactCouplingFaceB);
-    HashBuilder::combinePodVector(hash, p.contactCouplingFragmentB);
-    HashBuilder::combinePodVector(hash, p.contactCouplingAreas);
-    HashBuilder::combinePodVector(hash, p.boundaryFaceIndices);
-    HashBuilder::combinePodVector(hash, p.instanceFragmentCounts);
-    HashBuilder::combine(hash, uint64_t(p.globalFragmentCount));
-    HashBuilder::combine(hash, uint64_t(p.globalFaceCount));
-    HashBuilder::combine(hash, uint64_t(p.globalContactCouplingCount));
-    HashBuilder::combine(hash, uint64_t(p.globalBoundaryFaceCount));
-    HashBuilder::combinePod(hash, p.globalVolumeGridMin);
-    HashBuilder::combinePod(hash, p.globalVolumeGridDim);
-    HashBuilder::combineFloat(hash, p.globalVolumeGridCellSize);
-    HashBuilder::combine(hash, static_cast<uint64_t>(p.globalDisplayRuntimeModelIds.size()));
-    for (size_t i = 0; i < p.globalDisplayRuntimeModelIds.size(); ++i) {
-        HashBuilder::combine(hash, p.globalDisplayRuntimeModelIds[i]);
-        combineVkBuffer(hash, p.globalDisplayVertexBuffers[i]);
-        HashBuilder::combine(hash, p.globalDisplayVertexBufferOffsets[i]);
-        combineVkBuffer(hash, p.globalDisplayFaceIndexBuffers[i]);
-        HashBuilder::combine(hash, p.globalDisplayFaceIndexBufferOffsets[i]);
-        combineVkBuffer(hash, p.globalDisplayCandidateBuffers[i]);
-        HashBuilder::combine(hash, p.globalDisplayCandidateBufferOffsets[i]);
+    uint64_t geometryHash = HashBuilder::start();
+
+    if (p.fragmentInstanceIds != nullptr) {
+        const size_t fragmentCount = p.fragmentInstanceIds->size();
+        HashBuilder::combine(geometryHash, static_cast<uint64_t>(fragmentCount));
+        for (size_t i = 0; i < fragmentCount; ++i) {
+            HashBuilder::combine(geometryHash, (*p.fragmentInstanceIds)[i]);
+            HashBuilder::combine(geometryHash, (*p.fragmentSeedIds)[i]);
+            combineDVec3(geometryHash, (*p.fragmentCentroids)[i]);
+            HashBuilder::combinePod(geometryHash, (*p.fragmentVolumes)[i]);
+        }
+        const size_t faceCount = p.faceFragmentA->size();
+        HashBuilder::combine(geometryHash, static_cast<uint64_t>(faceCount));
+        for (size_t i = 0; i < faceCount; ++i) {
+            HashBuilder::combine(geometryHash, (*p.faceFragmentA)[i]);
+            HashBuilder::combine(geometryHash, (*p.faceFragmentB)[i]);
+            HashBuilder::combinePod(geometryHash, (*p.faceAreasA)[i]);
+            combineDVec3(geometryHash, (*p.faceAreaVectorsA)[i]);
+            combineDVec3(geometryHash, (*p.faceMomentsA)[i]);
+            HashBuilder::combinePod(geometryHash, (*p.faceAreasB)[i]);
+            combineDVec3(geometryHash, (*p.faceAreaVectorsB)[i]);
+            combineDVec3(geometryHash, (*p.faceMomentsB)[i]);
+            HashBuilder::combine(geometryHash, (*p.faceTypes)[i]);
+            HashBuilder::combine(geometryHash, (*p.faceDomainFaces)[i]);
+        }
+        HashBuilder::combinePodVector(geometryHash, *p.faceLoopOffsets);
+        HashBuilder::combinePodVector(geometryHash, *p.loopVertexOffsets);
+        HashBuilder::combine(geometryHash, static_cast<uint64_t>(p.loopVertices->size()));
+        for (const glm::dvec3& vertex : *p.loopVertices) {
+            combineDVec3(geometryHash, vertex);
+        }
+        HashBuilder::combine(
+            geometryHash, static_cast<uint64_t>(p.contactCouplingFaceA->size()));
+        for (size_t i = 0; i < p.contactCouplingFaceA->size(); ++i) {
+            HashBuilder::combine(geometryHash, (*p.contactCouplingFaceA)[i]);
+            HashBuilder::combine(geometryHash, (*p.contactCouplingFragmentA)[i]);
+            HashBuilder::combine(geometryHash, (*p.contactCouplingFaceB)[i]);
+            HashBuilder::combine(geometryHash, (*p.contactCouplingFragmentB)[i]);
+            HashBuilder::combinePod(geometryHash, (*p.contactCouplingAreas)[i]);
+        }
+        HashBuilder::combinePodVector(geometryHash, *p.boundaryFaceIndices);
+        HashBuilder::combinePodVector(geometryHash, *p.instanceFragmentCounts);
+        HashBuilder::combine(geometryHash, static_cast<uint64_t>(p.seedPositions->size()));
+        for (const glm::vec3& seed : *p.seedPositions) {
+            combineVec3(geometryHash, seed);
+        }
+        HashBuilder::combinePodVector(geometryHash, *p.cellFragmentOffsets);
+        HashBuilder::combinePodVector(geometryHash, *p.cellFragments);
+        combineVec3(geometryHash, p.domainMin);
+        combineVec3(geometryHash, p.domainMax);
+        combineVec3(geometryHash, p.volumeGridMin);
+        combineIVec3(geometryHash, p.volumeGridDim);
+        HashBuilder::combineFloat(geometryHash, p.volumeGridCellSize);
     }
 
-    p.hashes.full = hash;
-    p.hashes.geometry = hash;
-    p.hashes.simulation = hash;
-    p.hashes.display = hash;
+    HashBuilder::combine(geometryHash, p.spaceFragmentCount);
+    HashBuilder::combine(geometryHash,
+        static_cast<uint64_t>(p.hasUniqueSeedToSpaceMapping ? 1u : 0u));
+    if (p.fragmentToSpaceIndex != nullptr) {
+        HashBuilder::combinePodVector(geometryHash, *p.fragmentToSpaceIndex);
+    }
+    if (p.spaceToFragmentIndex != nullptr) {
+        HashBuilder::combinePodVector(geometryHash, *p.spaceToFragmentIndex);
+    }
+    if (p.seedToSpaceIndex != nullptr) {
+        HashBuilder::combinePodVector(geometryHash, *p.seedToSpaceIndex);
+    }
+
+    uint64_t displayHash = HashBuilder::start();
+    HashBuilder::combine(displayHash, p.candidateNodeCount);
+    combineVkBuffer(displayHash, p.candidateNeighborIndicesBuffer);
+    HashBuilder::combine(displayHash, p.candidateNeighborIndicesBufferOffset);
+    combineVkBuffer(displayHash, p.seedPositionBuffer);
+    HashBuilder::combine(displayHash, p.seedPositionBufferOffset);
+    combineVkBuffer(displayHash, p.candidatePointVertexBuffer);
+    HashBuilder::combine(displayHash, p.candidatePointVertexBufferOffset);
+    HashBuilder::combine(
+        displayHash, static_cast<uint64_t>(p.globalDisplayRuntimeModelIds.size()));
+    for (size_t i = 0; i < p.globalDisplayRuntimeModelIds.size(); ++i) {
+        HashBuilder::combine(displayHash, p.globalDisplayRuntimeModelIds[i]);
+        combineVkBuffer(displayHash, p.globalDisplayVertexBuffers[i]);
+        HashBuilder::combine(displayHash, p.globalDisplayVertexBufferOffsets[i]);
+        combineVkBuffer(displayHash, p.globalDisplayFaceIndexBuffers[i]);
+        HashBuilder::combine(displayHash, p.globalDisplayFaceIndexBufferOffsets[i]);
+        combineVkBuffer(displayHash, p.globalDisplayCandidateBuffers[i]);
+        HashBuilder::combine(displayHash, p.globalDisplayCandidateBufferOffsets[i]);
+    }
+
+    uint64_t fullHash = HashBuilder::start();
+    HashBuilder::combine(fullHash, geometryHash);
+    HashBuilder::combine(fullHash, displayHash);
+
+    p.hashes.full = fullHash;
+    p.hashes.geometry = geometryHash;
+    p.hashes.simulation = geometryHash;
+    p.hashes.display = displayHash;
     p.hashes.properties = 0;
 }
 
@@ -178,32 +235,47 @@ void HashProduct::seal(CFDProduct& p, uint64_t geometryHash, uint64_t simulation
     HashBuilder::combine(displayHash, static_cast<uint64_t>(p.streamlineVertexBufferOffset));
     HashBuilder::combine(displayHash, static_cast<uint64_t>(p.streamlineVertexCount));
 
-    p.hashes.full = simulationHash;
+    uint64_t fullHash = HashBuilder::start();
+    HashBuilder::combine(fullHash, geometryHash);
+    HashBuilder::combine(fullHash, simulationHash);
+    HashBuilder::combine(fullHash, displayHash);
+
+    p.hashes.full = fullHash;
     p.hashes.geometry = geometryHash;
     p.hashes.simulation = simulationHash;
     p.hashes.display = displayHash;
+    p.hashes.properties = 0;
 }
 
-void HashProduct::seal(HeatProduct& p) {
-    uint64_t hash = HashBuilder::start();
-    HashBuilder::combinePodVector(hash, p.modelRuntimeModelIds);
-    HashBuilder::combine(hash, static_cast<uint64_t>(p.modelSurfaceBuffers.size()));
+void HashProduct::seal(
+    HeatProduct& p,
+    uint64_t geometryHash,
+    uint64_t simulationHash) {
+    uint64_t displayHash = HashBuilder::start();
+    HashBuilder::combinePodVector(displayHash, p.modelRuntimeModelIds);
+    HashBuilder::combine(displayHash, static_cast<uint64_t>(p.modelSurfaceBuffers.size()));
     for (size_t i = 0; i < p.modelSurfaceBuffers.size(); ++i) {
-        combineVkBuffer(hash, p.modelSurfaceBuffers[i]);
-        HashBuilder::combine(hash, p.modelSurfaceBufferOffsets[i]);
+        combineVkBuffer(displayHash, p.modelSurfaceBuffers[i]);
+        HashBuilder::combine(displayHash, p.modelSurfaceBufferOffsets[i]);
     }
-    HashBuilder::combinePodVector(hash, p.modelSurfacePointCounts);
-    HashBuilder::combine(hash, static_cast<uint64_t>(p.modelSurfaceGradientBuffers.size()));
+    HashBuilder::combinePodVector(displayHash, p.modelSurfacePointCounts);
+    HashBuilder::combine(displayHash, static_cast<uint64_t>(p.modelSurfaceGradientBuffers.size()));
     for (size_t i = 0; i < p.modelSurfaceGradientBuffers.size(); ++i) {
-        combineVkBuffer(hash, p.modelSurfaceGradientBuffers[i]);
-        HashBuilder::combine(hash, p.modelSurfaceGradientBufferOffsets[i]);
+        combineVkBuffer(displayHash, p.modelSurfaceGradientBuffers[i]);
+        HashBuilder::combine(displayHash, p.modelSurfaceGradientBufferOffsets[i]);
     }
-    HashBuilder::combine(hash, static_cast<uint64_t>(p.hasFluidVolume ? 1u : 0u));
-    HashBuilder::combine(hash, reinterpret_cast<uint64_t>(p.fluidTemperatureVolumeView));
+    HashBuilder::combine(displayHash, static_cast<uint64_t>(p.hasFluidVolume ? 1u : 0u));
+    HashBuilder::combine(
+        displayHash, reinterpret_cast<uint64_t>(p.fluidTemperatureVolumeView));
 
-    p.hashes.full = hash;
-    p.hashes.simulation = hash;
-    p.hashes.geometry = hash;
-    p.hashes.display = hash;
+    uint64_t fullHash = HashBuilder::start();
+    HashBuilder::combine(fullHash, geometryHash);
+    HashBuilder::combine(fullHash, simulationHash);
+    HashBuilder::combine(fullHash, displayHash);
+
+    p.hashes.full = fullHash;
+    p.hashes.geometry = geometryHash;
+    p.hashes.simulation = simulationHash;
+    p.hashes.display = displayHash;
     p.hashes.properties = 0;
 }

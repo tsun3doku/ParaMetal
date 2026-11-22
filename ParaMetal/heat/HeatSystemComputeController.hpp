@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <vulkan/vulkan.h>
 
@@ -14,8 +14,7 @@
 #include "HeatSystem.hpp"
 #include "HeatGpuStructs.hpp"
 #include "HeatSystemPresets.hpp"
-#include "voronoi/VoronoiGpuStructs.hpp"
-#include "voronoi/GlobalDomainTopology.hpp"
+
 #include "serial/SerialTemperatureRuntime.hpp"
 #include "domain/FluidData.hpp"
 #include "domain/HeatProbeData.hpp"
@@ -80,12 +79,49 @@ public:
         std::unordered_map<uint64_t, std::string> serialPortNamesBySourceKey;
         std::unordered_map<uint64_t, uint32_t> serialBaudRatesBySourceKey;
         std::unordered_map<uint64_t, HeatProbeData> heatProbesBySourceKey;
-        topology::GlobalDomain domainVoronoiProduct;
-        bool hasDomainVoronoiProduct = false;
+        std::vector<uint32_t> fragmentInstanceIds;
+        std::vector<uint32_t> fragmentSeedIds;
+        std::vector<glm::dvec3> fragmentCentroids;
+        std::vector<double> fragmentVolumes;
+
+        std::vector<uint32_t> faceFragmentA;
+        std::vector<uint32_t> faceFragmentB;
+        std::vector<double> faceAreasA;
+        std::vector<double> faceAreasB;
+        std::vector<glm::dvec3> faceAreaVectorsA;
+        std::vector<glm::dvec3> faceAreaVectorsB;
+        std::vector<glm::dvec3> faceMomentsA;
+        std::vector<glm::dvec3> faceMomentsB;
+        std::vector<uint8_t> faceTypes;
+        std::vector<uint32_t> faceDomainFaces;
+
+        std::vector<uint32_t> boundaryFaceIndices;
+        std::vector<uint32_t> faceLoopOffsets;
+        std::vector<uint32_t> loopVertexOffsets;
+        std::vector<glm::dvec3> loopVertices;
+
+        std::vector<uint32_t> contactCouplingFaceA;
+        std::vector<uint32_t> contactCouplingFragmentA;
+        std::vector<uint32_t> contactCouplingFaceB;
+        std::vector<uint32_t> contactCouplingFragmentB;
+        std::vector<double> contactCouplingAreas;
+
+        glm::vec3 domainMin{0.0f};
+        glm::vec3 domainMax{0.0f};
+        glm::vec3 volumeGridMin{0.0f};
+        glm::ivec3 volumeGridDim{0, 0, 0};
+        float volumeGridCellSize = 0.0f;
+
+        VkBuffer seedIdGridBuffer = VK_NULL_HANDLE;
+        VkDeviceSize seedIdGridBufferOffset = 0;
+        std::vector<uint32_t> seedToSpaceIndex;
+        std::vector<uint32_t> spaceToFragmentIndex;
+        bool hasUniqueSeedToSpaceMapping = false;
         std::unordered_map<uint32_t, std::array<float, 16>> modelLocalToWorldByModelId;
         std::unordered_map<uint32_t, bool> modelPrescribedTemperatureEnabledByRuntimeId;
         std::unordered_map<uint32_t, float> modelPrescribedTemperaturesCByRuntimeId;
         uint64_t computeHash = 0;
+        uint64_t geometryHash = 0;
     };
 
     HeatSystemComputeController(
@@ -145,3 +181,4 @@ private:
     std::unordered_map<uint64_t, std::unique_ptr<SerialTemperatureRuntime>> serialRuntimes;
     std::unordered_map<uint64_t, uint64_t> lastSerialRevisions;
 };
+

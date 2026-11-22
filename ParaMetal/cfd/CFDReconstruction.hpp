@@ -7,8 +7,8 @@
 #include <glm/glm.hpp>
 
 #include "../cuda/CudaBuffer.cuh"
-#include "../voronoi/GlobalDomainTopology.hpp"
-#include "CFDTopology.hpp"
+#include "CFDGpuStructs.hpp"
+#include "CFDRuntime.hpp"
 
 namespace cfd {
 
@@ -42,10 +42,20 @@ struct ReconFinalCoefficients {
 class CFDReconstruction {
 public:
     bool build(
-        const topology::GlobalDomain& domain,
+        const CFDRuntime& runtime,
+        const std::vector<glm::dvec3>& fragmentCentroids,
+        const std::vector<double>& fragmentVolumes,
+        const std::vector<uint32_t>& faceFragmentA,
+        const std::vector<uint32_t>& faceFragmentB,
+        const std::vector<double>& faceAreasA,
+        const std::vector<double>& faceAreasB,
+        const std::vector<glm::dvec3>& faceAreaVectorsA,
+        const std::vector<glm::dvec3>& faceAreaVectorsB,
+        const std::vector<uint32_t>& faceLoopOffsets,
+        const std::vector<uint32_t>& loopVertexOffsets,
+        const std::vector<glm::dvec3>& loopVertices,
         const std::vector<uint32_t>& globalFragmentToFluidNode,
         const std::vector<uint32_t>& fluidNodeToGlobalFragment,
-        const CFDTopology& topology,
         cudaStream_t stream = nullptr);
 
     bool computeCoefficients(
@@ -79,7 +89,12 @@ public:
 
 private:
     bool verifyReconstruction(
-        const topology::GlobalDomain& domain,
+        const std::vector<double>& faceAreasA,
+        const std::vector<double>& faceAreasB,
+        const std::vector<glm::dvec3>& faceAreaVectorsA,
+        const std::vector<glm::dvec3>& faceAreaVectorsB,
+        const std::vector<uint32_t>& faceLoopOffsets,
+        const std::vector<uint32_t>& loopVertexOffsets,
         const std::vector<double3>& cellCentroids,
         const std::vector<uint32_t>& faceNodeA,
         const std::vector<uint32_t>& faceNodeB,

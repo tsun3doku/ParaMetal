@@ -711,7 +711,7 @@
     <ClCompile Include="heat\HeatFluidVolumeStage.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="voronoi\VoronoiNodeIndex.cpp">
+    <ClCompile Include="spatial\SpatialNodeIndex.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="nodegraph\NodeGraphInit.cpp">
@@ -1351,7 +1351,7 @@
     <ClInclude Include="heat\HeatSystemComputeController.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="voronoi\VoronoiNodeIndex.hpp">
+    <ClInclude Include="spatial\SpatialNodeIndex.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="heat\HeatGpuStructs.hpp">
@@ -2289,3 +2289,4 @@
     </ClInclude>
   </ItemGroup>
 </Project>
+

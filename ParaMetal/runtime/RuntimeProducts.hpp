@@ -9,7 +9,6 @@
 #include <vulkan/vulkan.h>
 
 #include "hash/HashValues.hpp"
-#include "voronoi/GlobalDomainTopology.hpp"
 
 
 // Borrowed view, owned by ModelRegistry
@@ -144,43 +143,51 @@ struct VoronoiProduct {
     VkBuffer globalSeedIdGridBuffer = VK_NULL_HANDLE;
     VkDeviceSize globalSeedIdGridBufferOffset = 0;
 
-    HashValues hashes{};
+    // Generation-owned flat topology published as borrowed views.
+    const std::vector<uint32_t>* fragmentInstanceIds = nullptr;
+    const std::vector<uint32_t>* fragmentSeedIds = nullptr;
+    const std::vector<glm::dvec3>* fragmentCentroids = nullptr;
+    const std::vector<double>* fragmentVolumes = nullptr;
 
-    std::vector<glm::vec4> globalSeedPositions;
+    const std::vector<uint32_t>* faceFragmentA = nullptr;
+    const std::vector<uint32_t>* faceFragmentB = nullptr;
+    const std::vector<double>* faceAreasA = nullptr;
+    const std::vector<double>* faceAreasB = nullptr;
+    const std::vector<glm::dvec3>* faceAreaVectorsA = nullptr;
+    const std::vector<glm::dvec3>* faceAreaVectorsB = nullptr;
+    const std::vector<glm::dvec3>* faceMomentsA = nullptr;
+    const std::vector<glm::dvec3>* faceMomentsB = nullptr;
+    const std::vector<uint8_t>* faceTypes = nullptr;
+    const std::vector<uint32_t>* faceDomainFaces = nullptr;
+
+    const std::vector<uint32_t>* boundaryFaceIndices = nullptr;
+    const std::vector<uint32_t>* faceLoopOffsets = nullptr;
+    const std::vector<uint32_t>* loopVertexOffsets = nullptr;
+    const std::vector<glm::dvec3>* loopVertices = nullptr;
+
+    const std::vector<uint32_t>* contactCouplingFaceA = nullptr;
+    const std::vector<uint32_t>* contactCouplingFragmentA = nullptr;
+    const std::vector<uint32_t>* contactCouplingFaceB = nullptr;
+    const std::vector<uint32_t>* contactCouplingFragmentB = nullptr;
+    const std::vector<double>* contactCouplingAreas = nullptr;
+
+    const std::vector<glm::vec3>* seedPositions = nullptr;
+    const std::vector<uint32_t>* cellFragmentOffsets = nullptr;
+    const std::vector<uint32_t>* cellFragments = nullptr;
+    const std::vector<uint32_t>* instanceFragmentCounts = nullptr;
+
+    uint32_t spaceFragmentCount = 0;
+    const std::vector<uint32_t>* fragmentToSpaceIndex = nullptr;
+    const std::vector<uint32_t>* spaceToFragmentIndex = nullptr;
+    const std::vector<uint32_t>* seedToSpaceIndex = nullptr;
+    bool hasUniqueSeedToSpaceMapping = false;
+
+    glm::vec3 domainMin{0.0f};
+    glm::vec3 domainMax{0.0f};
+    glm::vec3 volumeGridMin{0.0f};
+    glm::ivec3 volumeGridDim{0, 0, 0};
+    float volumeGridCellSize = 0.0f;
     std::array<glm::vec3, 8> globalDomainCorners{};
-    glm::vec3 globalVolumeGridMin{};
-    glm::ivec3 globalVolumeGridDim{};
-    float globalVolumeGridCellSize = 0.0f;
-    uint32_t globalFragmentCount = 0;
-    std::vector<uint32_t> fragmentInstanceIds;
-    std::vector<uint32_t> fragmentSeedIds;
-    std::vector<glm::dvec3> fragmentCentroids;
-    std::vector<double> fragmentVolumes;
-    std::vector<uint32_t> cellFragmentOffsets;
-    std::vector<uint32_t> cellFragments;
-    uint32_t globalFaceCount = 0;
-    std::vector<uint32_t> faceFragmentA;
-    std::vector<uint32_t> faceFragmentB;
-    std::vector<double> faceAreasA;
-    std::vector<glm::dvec3> faceAreaVectorsA;
-    std::vector<glm::dvec3> faceMomentsA;
-    std::vector<double> faceAreasB;
-    std::vector<glm::dvec3> faceAreaVectorsB;
-    std::vector<glm::dvec3> faceMomentsB;
-    std::vector<uint8_t> faceTypes;
-    std::vector<uint32_t> faceDomainFaces;
-    std::vector<uint32_t> faceLoopOffsets;
-    std::vector<uint32_t> loopVertexOffsets;
-    std::vector<glm::dvec3> loopVertices;
-    uint32_t globalContactCouplingCount = 0;
-    std::vector<uint32_t> contactCouplingFaceA;
-    std::vector<uint32_t> contactCouplingFragmentA;
-    std::vector<uint32_t> contactCouplingFaceB;
-    std::vector<uint32_t> contactCouplingFragmentB;
-    std::vector<double> contactCouplingAreas;
-    uint32_t globalBoundaryFaceCount = 0;
-    std::vector<uint32_t> boundaryFaceIndices;
-    std::vector<uint32_t> instanceFragmentCounts;
 
     std::vector<uint32_t> globalDisplayRuntimeModelIds;
     std::vector<VkBuffer> globalDisplayVertexBuffers;
@@ -190,37 +197,75 @@ struct VoronoiProduct {
     std::vector<VkBuffer> globalDisplayCandidateBuffers;
     std::vector<VkDeviceSize> globalDisplayCandidateBufferOffsets;
 
+    HashValues hashes{};
+
     bool isValid() const {
-        return !globalSeedPositions.empty() &&
-            globalVolumeGridDim.x >= 2 && globalVolumeGridDim.y >= 2 && globalVolumeGridDim.z >= 2 &&
-            fragmentInstanceIds.size() == globalFragmentCount &&
-            fragmentSeedIds.size() == globalFragmentCount &&
-            cellFragmentOffsets.size() == globalSeedPositions.size() + 1 &&
-            (!cellFragmentOffsets.empty() &&
-             cellFragmentOffsets.back() == cellFragments.size()) &&
-            fragmentCentroids.size() == globalFragmentCount &&
-            fragmentVolumes.size() == globalFragmentCount &&
-            faceFragmentA.size() == globalFaceCount &&
-            faceFragmentB.size() == globalFaceCount &&
-            faceAreasA.size() == globalFaceCount &&
-            faceAreaVectorsA.size() == globalFaceCount &&
-            faceMomentsA.size() == globalFaceCount &&
-            faceAreasB.size() == globalFaceCount &&
-            faceAreaVectorsB.size() == globalFaceCount &&
-            faceMomentsB.size() == globalFaceCount &&
-            faceTypes.size() == globalFaceCount &&
-            faceDomainFaces.size() == globalFaceCount &&
-            faceLoopOffsets.size() == size_t(globalFaceCount) + 1 &&
-            !faceLoopOffsets.empty() &&
-            loopVertexOffsets.size() == size_t(faceLoopOffsets.back()) + 1 &&
-            loopVertices.size() == loopVertexOffsets.back() &&
-            contactCouplingFaceA.size() == globalContactCouplingCount &&
-            contactCouplingFragmentA.size() == globalContactCouplingCount &&
-            contactCouplingFaceB.size() == globalContactCouplingCount &&
-            contactCouplingFragmentB.size() == globalContactCouplingCount &&
-            contactCouplingAreas.size() == globalContactCouplingCount &&
-            boundaryFaceIndices.size() == globalBoundaryFaceCount &&
-            !instanceFragmentCounts.empty();
+        if (fragmentInstanceIds == nullptr || fragmentSeedIds == nullptr ||
+            fragmentCentroids == nullptr || fragmentVolumes == nullptr ||
+            faceFragmentA == nullptr || faceFragmentB == nullptr ||
+            faceAreasA == nullptr || faceAreasB == nullptr ||
+            faceAreaVectorsA == nullptr || faceAreaVectorsB == nullptr ||
+            faceMomentsA == nullptr || faceMomentsB == nullptr ||
+            faceTypes == nullptr || faceDomainFaces == nullptr ||
+            boundaryFaceIndices == nullptr || faceLoopOffsets == nullptr ||
+            loopVertexOffsets == nullptr || loopVertices == nullptr ||
+            contactCouplingFaceA == nullptr || contactCouplingFragmentA == nullptr ||
+            contactCouplingFaceB == nullptr || contactCouplingFragmentB == nullptr ||
+            contactCouplingAreas == nullptr || seedPositions == nullptr ||
+            cellFragmentOffsets == nullptr || cellFragments == nullptr ||
+            instanceFragmentCounts == nullptr) {
+            return false;
+        }
+        const size_t fragmentCount = fragmentInstanceIds->size();
+        const size_t faceCount = faceFragmentA->size();
+        if (fragmentCount == 0 || faceCount == 0 ||
+            fragmentSeedIds->size() != fragmentCount ||
+            fragmentCentroids->size() != fragmentCount ||
+            fragmentVolumes->size() != fragmentCount ||
+            faceFragmentB->size() != faceCount ||
+            faceAreasA->size() != faceCount || faceAreasB->size() != faceCount ||
+            faceAreaVectorsA->size() != faceCount || faceAreaVectorsB->size() != faceCount ||
+            faceMomentsA->size() != faceCount || faceMomentsB->size() != faceCount ||
+            faceTypes->size() != faceCount || faceDomainFaces->size() != faceCount) {
+            return false;
+        }
+        if (instanceFragmentCounts->size() != globalDisplayRuntimeModelIds.size() ||
+            globalDisplayVertexBuffers.size() != globalDisplayRuntimeModelIds.size() ||
+            globalDisplayVertexBufferOffsets.size() != globalDisplayRuntimeModelIds.size() ||
+            globalDisplayFaceIndexBuffers.size() != globalDisplayRuntimeModelIds.size() ||
+            globalDisplayFaceIndexBufferOffsets.size() != globalDisplayRuntimeModelIds.size() ||
+            globalDisplayCandidateBuffers.size() != globalDisplayRuntimeModelIds.size() ||
+            globalDisplayCandidateBufferOffsets.size() != globalDisplayRuntimeModelIds.size()) {
+            return false;
+        }
+        if (faceLoopOffsets->size() != faceCount + 1u ||
+            loopVertexOffsets->empty() ||
+            loopVertexOffsets->size() != size_t(faceLoopOffsets->back()) + 1u ||
+            loopVertices->size() != loopVertexOffsets->back()) {
+            return false;
+        }
+        if (cellFragmentOffsets->size() != seedPositions->size() + 1u ||
+            cellFragmentOffsets->back() != cellFragments->size()) {
+            return false;
+        }
+        if (fragmentToSpaceIndex == nullptr || spaceToFragmentIndex == nullptr ||
+            fragmentToSpaceIndex->size() != fragmentCount ||
+            spaceToFragmentIndex->size() != spaceFragmentCount) {
+            return false;
+        }
+        if (hasUniqueSeedToSpaceMapping) {
+            if (seedToSpaceIndex == nullptr ||
+                seedToSpaceIndex->size() != seedPositions->size()) {
+                return false;
+            }
+        } else if (seedToSpaceIndex != nullptr) {
+            return false;
+        }
+        if (!(volumeGridDim.x >= 2 && volumeGridDim.y >= 2 && volumeGridDim.z >= 2) ||
+            !(volumeGridCellSize > 0.0f)) {
+            return false;
+        }
+        return true;
     }
 };
 
