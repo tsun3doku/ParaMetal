@@ -35,7 +35,8 @@ void bindRegistry(py::module_& m) {
         .value("Misc", NodeGraphNodeCategory::Misc);
 
     py::class_<NodeGraphSocketContract>(m, "SocketContract")
-        .def_readwrite("produced_payload_type", &NodeGraphSocketContract::producedPayloadType);
+        .def_readwrite("produced_payload_type", &NodeGraphSocketContract::producedPayloadType)
+        .def_readwrite("requires_runtime_package", &NodeGraphSocketContract::requiresRuntimePackage);
 
     py::class_<NodeSocketSignature>(m, "SocketSignature")
         .def_readwrite("name", &NodeSocketSignature::name)

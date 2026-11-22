@@ -1,4 +1,5 @@
 #include "NodeMerge.hpp"
+#include "NodeGraphDefinitionUtils.hpp"
 #include "NodeMergeParams.hpp"
 #include "hash/HashBuilder.hpp"
 #include "hash/HashNodeCache.hpp"
@@ -19,6 +20,29 @@
 #include <vector>
 #include <algorithm>
 
+static NodeTypeDefinition buildMergeNode() {
+    return {
+        nodegraphtypes::Merge,
+        "Merge",
+        NodeGraphNodeCategory::Meshing,
+        {
+            makePolymorphicInputSocket("Geometry", {NodeGraphValueType::Mesh, NodeGraphValueType::Points}, true),
+            makePolymorphicOutputSocket("Geometry", {NodeGraphValueType::Mesh, NodeGraphValueType::Points}, payloadtypes::None, true),
+        },
+        {
+            {nodegraphparams::merge::MergeDistance, "Merge Distance", NodeGraphParamType::Float, 0.0005, 0, false, "", false},
+        },
+    };
+}
+
+NodeTypeDefinition buildMergeDefinition() {
+    return buildMergeNode();
+}
+
+std::unique_ptr<NodeKernel> createMergeKernel() {
+    return std::make_unique<NodeMerge>();
+}
+
 const char* NodeMerge::typeId() const {
     return nodegraphtypes::Merge;
 }
@@ -36,172 +60,65 @@ void NodeMerge::execute(NodeKernelEval& eval) const {
 
     const std::vector<const NodeDataBlock*>& inputs = eval.inputs[geometrySocketIndex];
 
-    // Determine the dataType 
-    uint8_t dataType = payloadtypes::None;
+    bool hasPoints = false;
+    bool hasGeometry = false;
     for (const NodeDataBlock* block : inputs) {
-        if (block && block->payloadHandle.key != 0) {
-            if (block->dataType == payloadtypes::Points ||
-                block->dataType == payloadtypes::Geometry ||
-                block->dataType == payloadtypes::Remesh) {
-                dataType = block->dataType;
-                break;
-            }
+        if (!block || block->payloadHandle.key == 0) {
+            continue;
+        }
+        if (block->dataType == payloadtypes::Points) {
+            hasPoints = true;
+        } else if (block->dataType == payloadtypes::Geometry ||
+                   block->dataType == payloadtypes::Remesh) {
+            hasGeometry = true;
         }
     }
 
     NodeDataBlock& outputValue = eval.outputs[0];
     outputValue = {};
 
-    if (dataType == payloadtypes::None) {
+    if (!hasPoints && !hasGeometry) {
+        return;
+    }
+    if (hasPoints && hasGeometry) {
+        eval.error = "Merge cannot mix Points with Geometry or Remesh inputs.";
         return;
     }
 
-    if (dataType == payloadtypes::Points) {
-        std::vector<const PointData*> pointInputs;
-        std::vector<std::array<float, 16>> pointMatrices;
+    if (hasPoints) {
+        PointData payload{};
+        bool haveReference = false;
         for (const NodeDataBlock* block : inputs) {
-            if (block && block->dataType == payloadtypes::Points && block->payloadHandle.key != 0) {
-                const PointData* pointData = payloadRegistry->resolvePoints(block->payloadHandle);
-                std::array<float, 16> localToWorld{};
-                if (pointData && pointData->active && !pointData->positions.empty() &&
-                    payloadRegistry->resolveLocalToWorld(block->payloadHandle, localToWorld)) {
-                    pointInputs.push_back(pointData);
-                    pointMatrices.push_back(localToWorld);
+            if (!block || block->dataType != payloadtypes::Points || block->payloadHandle.key == 0) {
+                eval.error = "Point Merge requires valid Points inputs.";
+                return;
+            }
+            const PointData* pointData = payloadRegistry->resolvePoints(block->payloadHandle);
+            if (!pointData || !pointData->active) {
+                eval.error = "Point Merge received an inactive Point input.";
+                return;
+            }
+            payload.sources.push_back(block->payloadHandle);
+            if (!haveReference) {
+                if (!payloadRegistry->resolveLocalToWorld(
+                        block->payloadHandle,
+                        payload.localToWorld)) {
+                    eval.error = "Point Merge cannot resolve its reference placement.";
+                    return;
                 }
+                haveReference = true;
             }
         }
-
-        if (pointInputs.empty()) {
+        if (payload.sources.empty()) {
+            eval.error = "Point Merge has no valid point inputs.";
             return;
         }
-
-        const MergeNodeParams mergeParams = readMergeNodeParams(eval.node);
-        const float mergeDistance = mergeParams.mergeDistance;
-        const bool filterPoints = (mergeDistance > 0.0f && std::isfinite(mergeDistance));
-
-        PointData payload{};
-        payload.localToWorld = pointMatrices[0];
+        payload.mergeDistance = readMergeNodeParams(eval.node).mergeDistance;
         payload.active = true;
-        payload.domainMinimum = glm::vec3(std::numeric_limits<float>::max());
-        payload.domainMaximum = glm::vec3(std::numeric_limits<float>::lowest());
-
-        glm::mat4 referenceL2W = toMat4(payload.localToWorld);
-        glm::mat4 invReferenceL2W = glm::inverse(referenceL2W);
-
-        if (!filterPoints) {
-            for (size_t i = 0; i < pointInputs.size(); ++i) {
-                const PointData* input = pointInputs[i];
-                glm::mat4 inputL2W = toMat4(pointMatrices[i]);
-                glm::mat4 inputToReference = invReferenceL2W * inputL2W;
-
-                for (const auto& pos : input->positions) {
-                    payload.positions.push_back(inputToReference * pos);
-                }
-
-                // Preserve the existing transformed input union 
-                const glm::vec3& minimum = input->domainMinimum;
-                const glm::vec3& maximum = input->domainMaximum;
-                for (uint32_t corner = 0; corner < 8; ++corner) {
-                    const glm::vec4 point(
-                        (corner & 1u) ? maximum.x : minimum.x,
-                        (corner & 2u) ? maximum.y : minimum.y,
-                        (corner & 4u) ? maximum.z : minimum.z,
-                        1.0f);
-                    const glm::vec3 transformed = glm::vec3(inputToReference * point);
-                    payload.domainMinimum = glm::min(payload.domainMinimum, transformed);
-                    payload.domainMaximum = glm::max(payload.domainMaximum, transformed);
-                }
-            }
-        } else {
-            const float invCellSize = 1.0f / mergeDistance;
-            const float mergeDistanceSq = mergeDistance * mergeDistance;
-
-            struct CellKey {
-                int64_t x, y, z;
-                bool operator==(const CellKey& other) const noexcept {
-                    return x == other.x && y == other.y && z == other.z;
-                }
-            };
-
-            struct CellKeyHash {
-                std::size_t operator()(const CellKey& k) const noexcept {
-                    std::size_t h1 = std::hash<int64_t>{}(k.x);
-                    std::size_t h2 = std::hash<int64_t>{}(k.y);
-                    std::size_t h3 = std::hash<int64_t>{}(k.z);
-                    return h1 ^ (h2 * 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2))
-                              ^ (h3 * 0x517cc1b727220a95ULL + (h2 << 6) + (h2 >> 2));
-                }
-            };
-
-            std::unordered_map<CellKey, std::vector<uint32_t>, CellKeyHash> grid;
-            std::vector<glm::vec3> acceptedWorldPositions;
-
-            for (size_t i = 0; i < pointInputs.size(); ++i) {
-                const PointData* input = pointInputs[i];
-                glm::mat4 inputL2W = toMat4(pointMatrices[i]);
-                glm::mat4 inputToReference = invReferenceL2W * inputL2W;
-
-                for (const auto& pos : input->positions) {
-                    const glm::vec4 world = inputL2W * pos;
-                    if (!std::isfinite(world.x) || !std::isfinite(world.y) || !std::isfinite(world.z)) {
-                        continue;
-                    }
-
-                    const glm::vec3 wPos(world.x, world.y, world.z);
-                    const int64_t cx = static_cast<int64_t>(std::floor(wPos.x * invCellSize));
-                    const int64_t cy = static_cast<int64_t>(std::floor(wPos.y * invCellSize));
-                    const int64_t cz = static_cast<int64_t>(std::floor(wPos.z * invCellSize));
-
-                    bool tooClose = false;
-                    for (int64_t dz = -1; dz <= 1 && !tooClose; ++dz) {
-                        for (int64_t dy = -1; dy <= 1 && !tooClose; ++dy) {
-                            for (int64_t dx = -1; dx <= 1 && !tooClose; ++dx) {
-                                auto it = grid.find({cx + dx, cy + dy, cz + dz});
-                                if (it != grid.end()) {
-                                    for (uint32_t acceptedIdx : it->second) {
-                                        const glm::vec3& existingWorld = acceptedWorldPositions[acceptedIdx];
-                                        const float ddx = wPos.x - existingWorld.x;
-                                        const float ddy = wPos.y - existingWorld.y;
-                                        const float ddz = wPos.z - existingWorld.z;
-                                        if (ddx * ddx + ddy * ddy + ddz * ddz < mergeDistanceSq) {
-                                            tooClose = true;
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (!tooClose) {
-                        const glm::vec4 transformed = invReferenceL2W * world;
-                        const uint32_t newIdx = static_cast<uint32_t>(payload.positions.size());
-                        payload.positions.push_back(transformed);
-                        acceptedWorldPositions.push_back(wPos);
-                        grid[{cx, cy, cz}].push_back(newIdx);
-                    }
-                }
-
-                const glm::vec3& minimum = input->domainMinimum;
-                const glm::vec3& maximum = input->domainMaximum;
-                for (uint32_t corner = 0; corner < 8; ++corner) {
-                    const glm::vec4 point(
-                        (corner & 1u) ? maximum.x : minimum.x,
-                        (corner & 2u) ? maximum.y : minimum.y,
-                        (corner & 4u) ? maximum.z : minimum.z,
-                        1.0f);
-                    const glm::vec3 transformed = glm::vec3(inputToReference * point);
-                    payload.domainMinimum = glm::min(payload.domainMinimum, transformed);
-                    payload.domainMaximum = glm::max(payload.domainMaximum, transformed);
-                }
-            }
-        }
-
         const uint64_t payloadKey = NodeSocketKey(eval.node.id, eval.node.outputs[0].id);
         outputValue.dataType = payloadtypes::Points;
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, eval.outputHashes);
-
-    } else if (dataType == payloadtypes::Geometry || dataType == payloadtypes::Remesh) {
+    } else if (hasGeometry) {
         std::vector<const GeometryData*> geometryInputs;
         std::vector<std::array<float, 16>> geometryMatrices;
         for (const NodeDataBlock* block : inputs) {
@@ -210,7 +127,7 @@ void NodeMerge::execute(NodeKernelEval& eval) const {
                 block->payloadHandle.key != 0) {
                 const GeometryData* geometryData = payloadRegistry->resolveGeometry(block->payloadHandle);
                 std::array<float, 16> localToWorld{};
-                if (geometryData && !geometryData->pointPositions.empty() &&
+                if (geometryData && !geometryData->vertexPositions.empty() &&
                     payloadRegistry->resolveLocalToWorld(block->payloadHandle, localToWorld)) {
                     geometryInputs.push_back(geometryData);
                     geometryMatrices.push_back(localToWorld);
@@ -262,15 +179,15 @@ void NodeMerge::execute(NodeKernelEval& eval) const {
             glm::mat4 inputL2W = toMat4(geometryMatrices[i]);
             glm::mat4 inputToReference = invReferenceL2W * inputL2W;
 
-            const uint32_t vertexOffset = static_cast<uint32_t>(payload.pointPositions.size() / 3);
+            const uint32_t vertexOffset = static_cast<uint32_t>(payload.vertexPositions.size() / 3);
 
             // Merge vertex positions
-            for (size_t vIdx = 0; vIdx + 2 < input->pointPositions.size(); vIdx += 3) {
-                glm::vec4 localPos(input->pointPositions[vIdx], input->pointPositions[vIdx+1], input->pointPositions[vIdx+2], 1.0f);
+            for (size_t vIdx = 0; vIdx + 2 < input->vertexPositions.size(); vIdx += 3) {
+                glm::vec4 localPos(input->vertexPositions[vIdx], input->vertexPositions[vIdx+1], input->vertexPositions[vIdx+2], 1.0f);
                 glm::vec4 refPos = inputToReference * localPos;
-                payload.pointPositions.push_back(refPos.x);
-                payload.pointPositions.push_back(refPos.y);
-                payload.pointPositions.push_back(refPos.z);
+                payload.vertexPositions.push_back(refPos.x);
+                payload.vertexPositions.push_back(refPos.y);
+                payload.vertexPositions.push_back(refPos.z);
             }
 
             // Merge triangle indices

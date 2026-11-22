@@ -16,6 +16,7 @@
 
 struct PointData {
     std::vector<glm::vec4> positions;  // xyz local space, w = 1
+    std::vector<NodeDataHandle> sources;
     glm::vec3 domainMinimum{0.0f};
     glm::vec3 domainMaximum{0.0f};
     std::array<float, 16> localToWorld{
@@ -24,6 +25,7 @@ struct PointData {
         0.0f, 0.0f, 1.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f
     };
+    float mergeDistance = 0.0f;
     bool active = false;
 
 };

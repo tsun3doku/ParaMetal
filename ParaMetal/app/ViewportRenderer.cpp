@@ -5,7 +5,6 @@
 #include "ViewportItem.hpp"
 #include "ViewportMailbox.hpp"
 #include "nodegraph/NodeGraphController.hpp"
-#include "nodegraph/NodeGraphRegistry.hpp"
 #include "runtime/RuntimeInterfaces.hpp"
 #include "runtime/RuntimeSystems.hpp"
 #include "runtime/export/ExportTypes.hpp"
@@ -413,48 +412,9 @@ void ViewportRenderer::publishState() {
     const NodeGraphController* graphController = runtime.getNodeGraphController();
     if (graphController) {
         notifier.publishHeatSolveError(QString::fromStdString(graphController->lastPackageErrors()));
-
-        for (const auto& [nodeIdVal, node] : graphController->graphState().nodes) {
-            if (node.typeId == nodegraphtypes::HeatProbe) {
-                std::vector<float> temps;
-                if (query->getHeatProbeTemperatures(node.id.value, temps)) {
-                    notifier.publishHeatProbeTemperatures(static_cast<int>(node.id.value), temps);
-                }
-            } else if (node.typeId == nodegraphtypes::SerialTemperature && !node.outputs.empty()) {
-                SerialTemperatureRuntime::Status status;
-                const uint64_t sourceKey = NodeSocketKey(node.id, node.outputs.front().id).value;
-                if (!query->getSerialTemperatureStatus(sourceKey, status)) continue;
-
-                QString connectionText;
-                switch (status.connection) {
-                case SerialTemperatureRuntime::ConnectionState::Error:
-                    connectionText = QStringLiteral("Error: ") + QString::fromStdString(status.detail);
-                    break;
-                case SerialTemperatureRuntime::ConnectionState::DisconnectedHolding:
-                    connectionText = QStringLiteral("Disconnected - holding last reading: ") +
-                        QString::fromStdString(status.detail);
-                    break;
-                default:
-                    connectionText = QString::fromStdString(status.detail);
-                    break;
-                }
-
-                QString temperatureText = QStringLiteral("--");
-                QString pollingRateText = QStringLiteral("--");
-                if (status.latestReading) {
-                    temperatureText = QString::number(status.latestReading->temperatureC, 'f', 2) +
-                        QStringLiteral(" \u00B0C");
-                    pollingRateText = QString::number(status.latestReading->pollingRateHz, 'f', 1) +
-                        QStringLiteral(" Hz");
-                }
-                notifier.publishSerialStatus(
-                    static_cast<int>(node.id.value),
-                    connectionText,
-                    temperatureText,
-                    pollingRateText);
-            }
-        }
     }
+    runtime.publishProbeTelemetry(notifier);
+    runtime.publishSerialTelemetry(notifier);
 
     if (runtime.getInteractionContext().isInitialized()) {
         if (auto selection = runtime.getInteractionContext().domainFaceInteractionController().takePendingSelection()) {

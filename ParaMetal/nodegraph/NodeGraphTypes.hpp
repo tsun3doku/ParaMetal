@@ -43,6 +43,7 @@ using NodeTypeId = std::string;
 
 struct NodeGraphSocketContract {
     uint8_t producedPayloadType = 0;
+    bool requiresRuntimePackage = false;
 };
 
 struct NodeSocketSignature {

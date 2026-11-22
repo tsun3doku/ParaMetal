@@ -46,8 +46,6 @@ void NodeGraphDisplay::addDisplayKeys(
         return;
     }
 
-    // Packages declare the sockets their own view makes visible (upstream models,
-    // remeshes, domain products). NodeGraphDisplay only selects and collects them.
     if (const std::vector<uint64_t>* dependencyKeys =
             packages.displayDependencyKeysFor(socketKey)) {
         selectedKeys.insert(socketKey);
@@ -55,7 +53,7 @@ void NodeGraphDisplay::addDisplayKeys(
         return;
     }
 
-    // Fallback for non-package authoring nodes (e.g. previewing a HeatModel node directly)
+    // Fallback for non-package authoring nodes
     if (block && block->dataType == payloadtypes::HeatModel && payloadRegistry) {
         NodeDataHandle currentMeshHandle{};
         if (payloadRegistry->resolveRemesh(block->payloadHandle, &currentMeshHandle) &&

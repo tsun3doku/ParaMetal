@@ -13,6 +13,7 @@ ComputeApplyResult RuntimeVoronoiComputeTransport::apply(
     const uint64_t computeHash = package.hashes.simulation;
 
     if (package.pointPositions.empty() ||
+        !products->isCurrent<PointProduct>(package.pointsProduct) ||
         package.globalRemeshProducts.size() != package.globalRemeshLocalToWorld.size() ||
         package.globalRemeshProducts.size() != package.globalModelProducts.size()) {
         return ComputeApplyResult::Failed;
@@ -23,14 +24,14 @@ ComputeApplyResult RuntimeVoronoiComputeTransport::apply(
     }
 
     VoronoiSystemComputeController::Config config{};
-    config.voxelResolution = package.authored.voxelResolution;
-    config.lloydIterations = package.authored.lloydIterations;
-    config.lloydVolumeThreshold = package.authored.lloydVolumeThreshold;
-    config.lloydDamping = package.authored.lloydDamping;
-    config.contactRange = package.authored.contactRange;
+    config.voxelResolution = package.voxelResolution;
+    config.lloydIterations = package.lloydIterations;
+    config.lloydVolumeThreshold = package.lloydVolumeThreshold;
+    config.lloydDamping = package.lloydDamping;
+    config.contactRange = package.contactRange;
     config.pointDomainCorners = package.pointDomainCorners;
 
-    config.volumePadding = package.authored.volumePadding;
+    config.volumePadding = package.volumePadding;
     config.pointPositions = package.pointPositions;
     config.globalRemeshRuntimeModelIds.reserve(package.globalRemeshProducts.size());
     config.globalRemeshPositions.reserve(package.globalRemeshProducts.size());

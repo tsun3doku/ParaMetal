@@ -22,3 +22,15 @@ struct RemeshNodeParams {
 
 RemeshNodeParams readRemeshNodeParams(const NodeGraphNode& node);
 bool writeRemeshNodeParams(NodeGraphEditor& editor, NodeGraphNodeId nodeId, const RemeshNodeParams& params);
+
+namespace nodegraphparams::remesh {
+constexpr uint32_t Iterations = 1;
+constexpr uint32_t MinAngleDegrees = 2;
+constexpr uint32_t MaxEdgeLength = 3;
+constexpr uint32_t StepSize = 4;
+constexpr uint32_t RunRequested = 5;
+constexpr uint32_t ShowRemeshOverlay = 6;
+constexpr uint32_t ShowFaceNormals = 7;
+constexpr uint32_t ShowVertexNormals = 8;
+constexpr uint32_t NormalLength = 9;
+}

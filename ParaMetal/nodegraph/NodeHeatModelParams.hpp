@@ -19,3 +19,14 @@ struct HeatModelNodeParams {
 
 HeatModelNodeParams readHeatModelNodeParams(const NodeGraphNode& node);
 bool writeHeatModelNodeParams(NodeGraphEditor& editor, NodeGraphNodeId nodeId, const HeatModelNodeParams& params);
+
+namespace nodegraphparams::heatmodel {
+constexpr uint32_t Density = 1;
+constexpr uint32_t SpecificHeat = 2;
+constexpr uint32_t Conductivity = 3;
+constexpr uint32_t InitialTemperatureC = 4;
+constexpr uint32_t MaterialPreset = 7;
+constexpr uint32_t VolumetricPowerDensity = 10;
+constexpr uint32_t PrescribedTemperatureEnabled = 11;
+constexpr uint32_t PrescribedTemperatureC = 12;
+}

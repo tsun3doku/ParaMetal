@@ -26,15 +26,6 @@ struct SimTickResult {
     uint64_t completedStepCount = 0;
 };
 
-// Owns simulation scheduling: one node registry, the connection set, a cached
-// topological order, and recording/submission on the compute queue.
-//
-// Nodes are updated and recorded in topological order. Connections are bound to
-// their consumer immediately before that consumer updates, and only when the
-// producer has a publication available; the graph then attaches the producer's
-// ready wait to the consumer's submission and signals the producer's release
-// once, after the last consuming submission. Synchronization therefore follows
-// actual per-connection consumption rather than node activity.
 class SimGraphRuntime {
 public:
     ~SimGraphRuntime();
@@ -42,15 +33,9 @@ public:
     bool initialize(VulkanDevice& vulkanDevice, FrameSync& frameSync);
     void cleanup();
 
-    // Registrations are package-driven and persist across frames. A socket key is
-    // the identity of a node, so re-registering it with a new node replaces the
-    // old one.
     void registerNode(uint64_t socketKey, SimNode* node);
     void unregisterNode(uint64_t socketKey);
 
-    // Connections are the execution edges. The connection id is the identity of
-    // an edge, so re-registering an id rewires that edge. Self-connections,
-    // duplicate socket pairs and zero-copy mode are rejected.
     void connect(const SimConnection& connection);
     void disconnect(uint64_t connectionId);
 
@@ -88,7 +73,6 @@ private:
     std::vector<RegisteredNode> nodes;
     std::vector<SimConnection> connections;
 
-    // Cached execution state, rebuilt whenever registrations or connections change.
     std::unordered_map<uint64_t, size_t> nodeIndexBySocket;
     std::vector<size_t> topologicalOrder;
     std::vector<std::vector<size_t>> incomingConnectionsByNode;

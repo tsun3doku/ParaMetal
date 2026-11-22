@@ -18,6 +18,7 @@ public:
 
     void applyDelta(const NodeGraphDelta& delta);
     void execute(const NodeGraphCompiled& compiled);
+    bool isValid() const { return kernels.isValid(); }
 
     const NodeGraphState& state() const {
         return graphState;

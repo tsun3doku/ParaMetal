@@ -17,3 +17,9 @@ struct SerialTemperatureNodeParams {
 SerialTemperatureNodeParams readSerialTemperatureNodeParams(const NodeGraphNode& node);
 bool writeSerialTemperatureNodeParams(NodeGraphEditor& editor, NodeGraphNodeId nodeId,
     const SerialTemperatureNodeParams& params);
+
+namespace nodegraphparams::serialtemperature {
+constexpr uint32_t Enabled = 1;
+constexpr uint32_t Port = 2;
+constexpr uint32_t BaudRate = 3;
+}

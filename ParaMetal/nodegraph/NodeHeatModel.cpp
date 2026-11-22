@@ -1,4 +1,6 @@
 #include "NodeHeatModel.hpp"
+#include "NodeGraphDefinitionUtils.hpp"
+#include "NodeGraphParamUtils.hpp"
 #include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphDataTypes.hpp"
@@ -7,6 +9,41 @@
 #include "hash/HashNodeCache.hpp"
 #include "NodeHeatModelParams.hpp"
 #include "NodePayloadRegistry.hpp"
+#include "heat/HeatSystemPresets.hpp"
+
+static NodeTypeDefinition buildHeatModelNode() {
+    return {
+        nodegraphtypes::HeatModel,
+        "Heat Model",
+        NodeGraphNodeCategory::System,
+        {
+            makeInputSocket("Remesh", NodeGraphValueType::Remesh),
+            makeOutputSocket("HeatModel", NodeGraphValueType::HeatModel, payloadtypes::HeatModel),
+        },
+        {
+            makeEnumParamDefinition(
+                nodegraphparams::heatmodel::MaterialPreset,
+                "Material Preset",
+                "Custom",
+                {"Aluminum", "Copper", "Custom", "Iron", "Ceramic"}),
+            {nodegraphparams::heatmodel::Density, "Density", NodeGraphParamType::Float, HeatSimDefaults::density, 0, false, "", false},
+            {nodegraphparams::heatmodel::SpecificHeat, "Specific Heat", NodeGraphParamType::Float, HeatSimDefaults::specificHeat, 0, false, "", false},
+            {nodegraphparams::heatmodel::Conductivity, "Conductivity", NodeGraphParamType::Float, HeatSimDefaults::conductivity, 0, false, "", false},
+            {nodegraphparams::heatmodel::InitialTemperatureC, "Initial Temperature (C)", NodeGraphParamType::Float, HeatSimDefaults::ambientTemperatureC, 0, false, "", false},
+            {nodegraphparams::heatmodel::VolumetricPowerDensity, "Volumetric Power Density (W/m³)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::heatmodel::PrescribedTemperatureEnabled, "Fixed Temperature", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
+            {nodegraphparams::heatmodel::PrescribedTemperatureC, "Temperature (C)", NodeGraphParamType::Float, HeatSimDefaults::ambientTemperatureC, 0, false, "", false},
+        },
+    };
+}
+
+NodeTypeDefinition buildHeatModelDefinition() {
+    return buildHeatModelNode();
+}
+
+std::unique_ptr<NodeKernel> createHeatModelKernel() {
+    return std::make_unique<NodeHeatModel>();
+}
 
 const char* NodeHeatModel::typeId() const {
     return nodegraphtypes::HeatModel;
@@ -58,23 +95,23 @@ HashValues NodeHeatModel::computeOutputHashes(const NodeKernelHash& hash) const 
     HashBuilder::combineString(geometryHash, nodegraphtypes::HeatModel);
     HashNodeCache::combineSocket(geometryHash, hash, NodeGraphValueType::Remesh, HashDomain::Geometry);
 
-    uint64_t thermalHash = HashBuilder::start();
-    HashBuilder::combineFloat(thermalHash, static_cast<float>(params.density));
-    HashBuilder::combineFloat(thermalHash, static_cast<float>(params.specificHeat));
-    HashBuilder::combineFloat(thermalHash, static_cast<float>(params.conductivity));
-    HashBuilder::combineFloat(thermalHash, static_cast<float>(params.initialTemperatureC));
-    HashBuilder::combineFloat(thermalHash, static_cast<float>(params.volumetricPowerDensity));
-    HashBuilder::combine(thermalHash, params.prescribedTemperatureEnabled ? 1u : 0u);
-    HashBuilder::combineFloat(thermalHash, static_cast<float>(params.prescribedTemperatureC));
+    uint64_t propertiesHash = HashBuilder::start();
+    HashBuilder::combineFloat(propertiesHash, static_cast<float>(params.density));
+    HashBuilder::combineFloat(propertiesHash, static_cast<float>(params.specificHeat));
+    HashBuilder::combineFloat(propertiesHash, static_cast<float>(params.conductivity));
+    HashBuilder::combineFloat(propertiesHash, static_cast<float>(params.initialTemperatureC));
+    HashBuilder::combineFloat(propertiesHash, static_cast<float>(params.volumetricPowerDensity));
+    HashBuilder::combine(propertiesHash, params.prescribedTemperatureEnabled ? 1u : 0u);
+    HashBuilder::combineFloat(propertiesHash, static_cast<float>(params.prescribedTemperatureC));
 
     uint64_t simulationHash = HashBuilder::start();
     HashBuilder::combine(simulationHash, geometryHash);
-    HashBuilder::combine(simulationHash, thermalHash);
+    HashBuilder::combine(simulationHash, propertiesHash);
 
     HashValues values{};
     values.full = simulationHash;
     values.geometry = geometryHash;
-    values.thermal = thermalHash;
+    values.properties = propertiesHash;
     values.simulation = simulationHash;
     return values;
 }

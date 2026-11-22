@@ -115,8 +115,8 @@ private:
         outConfig.fluidVolumeOpacity = package.display.fluidVolumeOpacity;
         outConfig.fluxVectorScale = package.display.fluxVectorScale;
         outConfig.isocontourSpacingC = package.display.isocontourSpacingC;
-        outConfig.authoredActive = package.authored.active;
-        outConfig.active = package.authored.active;
+        outConfig.authoredActive = package.active;
+        outConfig.active = package.active;
         outConfig.canonicalToWorldScale = package.canonicalToWorldScale;
         if (computeProduct->hasFluidVolume) {
             outConfig.fluidTemperatureVolumeView = computeProduct->fluidTemperatureVolumeView;

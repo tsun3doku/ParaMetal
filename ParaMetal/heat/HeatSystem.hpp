@@ -24,6 +24,7 @@ class MemoryAllocator;
 class VulkanDevice;
 class CommandPool;
 class HeatSystemSurfaceStage;
+class TemperatureTelemetryReceiver;
 
 class HeatSystem : public SimNode {
 public:
@@ -142,7 +143,7 @@ public:
     }
 
     void syncHeatProbes(const std::unordered_map<uint64_t, HeatProbeData>& probes);
-    bool getHeatProbeTemperatures(uint64_t sourceKey, std::vector<float>& outTemperaturesC) const;
+    void publishProbeTelemetry(TemperatureTelemetryReceiver& receiver) const;
     bool readCurrentSurfaceTemperatures(
         std::vector<std::vector<float>>& temperaturesByModel,
         std::string& outError);

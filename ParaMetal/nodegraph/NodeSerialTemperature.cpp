@@ -1,11 +1,37 @@
 #include "NodeSerialTemperature.hpp"
 
+#include "NodeGraphDefinitionUtils.hpp"
 #include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodePayloadRegistry.hpp"
 #include "NodeSerialTemperatureParams.hpp"
 #include "domain/SerialTemperatureData.hpp"
 #include "hash/HashBuilder.hpp"
+
+static NodeTypeDefinition buildSerialTemperatureNode() {
+    return {
+        nodegraphtypes::SerialTemperature,
+        "Serial Temperature",
+        NodeGraphNodeCategory::System,
+        {
+            makeOutputSocket(
+                "Temperature", NodeGraphValueType::ScalarFloat, payloadtypes::SerialTemperature),
+        },
+        {
+            {nodegraphparams::serialtemperature::Enabled, "Enabled", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
+            {nodegraphparams::serialtemperature::Port, "Port", NodeGraphParamType::String, 0.0, 0, false, "", false},
+            {nodegraphparams::serialtemperature::BaudRate, "Baud Rate", NodeGraphParamType::Int, 0.0, 115200, false, "", false},
+        },
+    };
+}
+
+NodeTypeDefinition buildSerialTemperatureDefinition() {
+    return buildSerialTemperatureNode();
+}
+
+std::unique_ptr<NodeKernel> createSerialTemperatureKernel() {
+    return std::make_unique<NodeSerialTemperature>();
+}
 
 const char* NodeSerialTemperature::typeId() const { return nodegraphtypes::SerialTemperature; }
 
@@ -35,7 +61,7 @@ HashValues NodeSerialTemperature::computeOutputHashes(const NodeKernelHash& hash
     HashBuilder::combine(value, params.baudRate);
     HashValues hashes{};
     hashes.full = value;
-    hashes.thermal = value;
+    hashes.properties = value;
     hashes.simulation = value;
     return hashes;
 }

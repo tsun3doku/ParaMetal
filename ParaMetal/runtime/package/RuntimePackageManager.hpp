@@ -13,7 +13,7 @@ public:
     void beginCompile();
 
     template <typename PackageT>
-    void apply(uint64_t socketKey, const PackageT& package) {
+    void apply(uint64_t socketKey, PackageT&& package) {
         if (socketKey == 0 || package.hashes.full == 0) {
             return;
         }
@@ -27,7 +27,7 @@ public:
             !package.hasValidProduct() ||
             it->second.computeHash() != package.computeHash();
 
-        pending.insert_or_assign(socketKey, package);
+        pending.insert_or_assign(socketKey, std::forward<PackageT>(package));
         staleSockets.erase(socketKey);
 
         if (computeChanged) {
@@ -116,11 +116,11 @@ private:
     template <typename PackageT>
     static void commitProcessedInto(
         std::unordered_map<uint64_t, PackageT>& committed,
-        const std::unordered_map<uint64_t, PackageT>& pending,
+        std::unordered_map<uint64_t, PackageT>& pending,
         const std::unordered_set<uint64_t>& processedSockets) {
-        for (const auto& [socketKey, package] : pending) {
+        for (auto& [socketKey, package] : pending) {
             if (processedSockets.find(socketKey) != processedSockets.end()) {
-                committed.insert_or_assign(socketKey, package);
+                committed.insert_or_assign(socketKey, std::move(package));
             }
         }
     }

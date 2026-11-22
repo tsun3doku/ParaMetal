@@ -1,4 +1,5 @@
 #include "HeatSystemComputeController.hpp"
+#include "telemetry/RuntimeTelemetry.hpp"
 
 #include <iostream>
 #include "HeatSystem.hpp"
@@ -279,24 +280,28 @@ void HeatSystemComputeController::updateSerialInputs() {
     }
 }
 
-bool HeatSystemComputeController::getSerialTemperatureStatus(
-    uint64_t sourceKey, SerialTemperatureRuntime::Status& outStatus) const {
-    const auto it = serialRuntimes.find(sourceKey);
-    if (it == serialRuntimes.end() || !it->second) return false;
-    outStatus = it->second->status();
-    return true;
-}
-
-bool HeatSystemComputeController::getHeatProbeTemperatures(uint64_t sourceKey, std::vector<float>& outTemperaturesC) const {
+void HeatSystemComputeController::publishProbeTelemetry(TemperatureTelemetryReceiver& receiver) const {
     for (const auto& [socketKey, slot] : generationSlots) {
         if (configuredConfigs.find(socketKey) == configuredConfigs.end()) {
             continue;
         }
-        if (slot.current && slot.current->getHeatProbeTemperatures(sourceKey, outTemperaturesC)) {
-            return true;
+        if (slot.current) {
+            slot.current->publishProbeTelemetry(receiver);
         }
     }
-    return false;
+}
+
+void HeatSystemComputeController::publishSerialTelemetry(ConnectionTelemetryReceiver& receiver) const {
+    for (const auto& [sourceKey, runtime] : serialRuntimes) {
+        if (!runtime) {
+            continue;
+        }
+        TelemetryConnection telemetry;
+        // Serial source keys are packed NodeSocketKey values: (nodeId << 32) | socketId.
+        telemetry.nodeId = static_cast<uint32_t>(sourceKey >> 32);
+        telemetry.status = &runtime->status();
+        receiver.onConnection(telemetry);
+    }
 }
 
 std::unique_ptr<HeatSystem> HeatSystemComputeController::buildHeatSystem() {

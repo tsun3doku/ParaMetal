@@ -1,4 +1,5 @@
 #include "HeatSystem.hpp"
+#include "telemetry/RuntimeTelemetry.hpp"
 
 #include <algorithm>
 #include <array>
@@ -1687,13 +1688,18 @@ void HeatSystem::syncHeatProbes(const std::unordered_map<uint64_t, HeatProbeData
     }
 }
 
-bool HeatSystem::getHeatProbeTemperatures(uint64_t sourceKey, std::vector<float>& outTemperaturesC) const {
-    auto it = probeRuntimes.find(sourceKey);
-    if (it != probeRuntimes.end() && it->second) {
-        outTemperaturesC = it->second->getTemperatures();
-        return true;
+void HeatSystem::publishProbeTelemetry(TemperatureTelemetryReceiver& receiver) const {
+    for (const auto& [sourceKey, runtime] : probeRuntimes) {
+        if (!runtime) {
+            continue;
+        }
+        TelemetryTemperatures telemetry;
+        // Heat probe runtimes are keyed by the probe node id.
+        telemetry.nodeId = static_cast<uint32_t>(sourceKey);
+        telemetry.values = runtime->temperatureData();
+        telemetry.count = runtime->temperatureCount();
+        receiver.onTemperatures(telemetry);
     }
-    return false;
 }
 
 bool HeatSystem::readCurrentSurfaceTemperatures(

@@ -262,9 +262,9 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="nodegraph\NodeGraphRegistry.cpp" />
-    <ClCompile Include="nodegraph\NodeGraphTypeRegistry.cpp" />
     <ClCompile Include="nodegraph\NodeGraphNodeState.cpp" />
     <ClCompile Include="nodegraph\NodeGraphInit.cpp" />
+    <ClCompile Include="nodegraph\NodeGraphModules.cpp" />
     <ClCompile Include="nodegraph\NodeGraphParamUtils.cpp" />
     <ClCompile Include="nodegraph\NodeGraphUtils.cpp" />
     <ClCompile Include="py\PyGraphTypes.cpp" />
@@ -291,6 +291,12 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="runtime\RemeshSystem.cpp" />
     <ClCompile Include="runtime\RuntimeProductManager.cpp" />
     <ClCompile Include="runtime\package\RuntimePackageCompiler.cpp" />
+    <ClCompile Include="runtime\package\ModelPackageCompiler.cpp" />
+    <ClCompile Include="runtime\package\PointPackageCompiler.cpp" />
+    <ClCompile Include="runtime\package\RemeshPackageCompiler.cpp" />
+    <ClCompile Include="runtime\package\VoronoiPackageCompiler.cpp" />
+    <ClCompile Include="runtime\package\HeatPackageCompiler.cpp" />
+    <ClCompile Include="runtime\package\CFDPackageCompiler.cpp" />
     <ClCompile Include="runtime\package\RuntimePackageController.cpp" />
     <ClCompile Include="runtime\package\RuntimePackageManager.cpp" />
     <ClCompile Include="runtime\package\passes\ValidationPass.cpp" />
@@ -424,10 +430,8 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="nodegraph\NodeGraph.cpp" />
     <ClCompile Include="project\ProjectFile.cpp" />
     <ClCompile Include="nodegraph\NodeGraphEditor.cpp" />
-    <ClCompile Include="nodegraph\NodeGraphDataTypes.cpp" />
     <ClCompile Include="hash\HashBuilder.cpp" />
     <ClCompile Include="hash\HashNodeCache.cpp" />
-    <ClCompile Include="hash\HashPackage.cpp" />
     <ClCompile Include="hash\HashProduct.cpp" />
     <ClCompile Include="nodegraph\NodeGraphEdges.cpp" />
     <ClCompile Include="nodegraph\NodeGraphRuntime.cpp" />
@@ -517,6 +521,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="app\MainQuick.cpp" />
     <ClCompile Include="app\ViewportItem.cpp" />
     <ClCompile Include="app\ViewportRenderer.cpp" />
+    <ClCompile Include="app\RuntimeNotifier.cpp" />
     <ClCompile Include="app\RawMouseInput.cpp" />
     <ClCompile Include="app\ViewportMailbox.cpp" />
     <ClCompile Include="py\PyGraphBindings.cpp" />
@@ -686,8 +691,9 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="nodegraph\NodeGraphPayloadTypes.hpp" />
     <ClInclude Include="nodegraph\NodeGraphNodeState.hpp" />
     <ClInclude Include="nodegraph\NodeGraphRegistry.hpp" />
-    <ClInclude Include="nodegraph\NodeGraphTypeRegistry.hpp" />
     <ClInclude Include="nodegraph\NodeGraphInit.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphDefinitionUtils.hpp" />
+    <ClInclude Include="nodegraph\NodeGraphModules.hpp" />
     <ClInclude Include="nodegraph\NodeGraphParamUtils.hpp" />
     <ClInclude Include="nodegraph\NodeGraphUtils.hpp" />
     <ClInclude Include="nodegraph\NodePayloadRegistry.hpp" />
@@ -743,6 +749,13 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="runtime\RenderContext.hpp" />
     <ClInclude Include="runtime\RuntimeTransports.hpp" />
     <ClInclude Include="runtime\package\RuntimePackageCompiler.hpp" />
+    <ClInclude Include="runtime\package\PackageCompileContext.hpp" />
+    <ClInclude Include="runtime\package\ModelPackageCompiler.hpp" />
+    <ClInclude Include="runtime\package\PointPackageCompiler.hpp" />
+    <ClInclude Include="runtime\package\RemeshPackageCompiler.hpp" />
+    <ClInclude Include="runtime\package\VoronoiPackageCompiler.hpp" />
+    <ClInclude Include="runtime\package\HeatPackageCompiler.hpp" />
+    <ClInclude Include="runtime\package\CFDPackageCompiler.hpp" />
     <ClInclude Include="runtime\package\RuntimePackageController.hpp" />
     <ClInclude Include="runtime\package\passes\ValidationPass.hpp" />
     <ClInclude Include="runtime\package\passes\CoordinatePass.hpp" />
@@ -759,6 +772,8 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="simgraph\SimConnection.hpp" />
     <ClInclude Include="runtime\RuntimeSystems.hpp" />
     <ClInclude Include="runtime\RuntimeInterfaces.hpp" />
+    <ClInclude Include="telemetry\RuntimeTelemetry.hpp" />
+    <ClInclude Include="telemetry\TemperatureTelemetry.hpp" />
     <ClInclude Include="render\WindowRuntimeState.hpp" />
     <ClInclude Include="scene\SceneController.hpp" />
     <ClInclude Include="vulkan\MemoryPool.hpp" />
@@ -845,7 +860,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="nodegraph\NodeGraphEvaluation.hpp" />
     <ClInclude Include="hash\HashBuilder.hpp" />
     <ClInclude Include="hash\HashNodeCache.hpp" />
-    <ClInclude Include="hash\HashPackage.hpp" />
+    <ClInclude Include="hash\HashProductHandle.hpp" />
     <ClInclude Include="hash\HashProduct.hpp" />
     <ClInclude Include="hash\HashValues.hpp" />
     <ClInclude Include="nodegraph\NodeGraphRuntime.hpp" />

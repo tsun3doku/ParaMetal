@@ -17,7 +17,7 @@ class ModelRegistry;
 class ModelComputeController {
 public:
     struct Config {
-        std::vector<float> pointPositions;
+        std::vector<float> vertexPositions;
         std::vector<uint32_t> triangleIndices;
         std::vector<float> renderPositions;
         std::vector<float> renderNormals;

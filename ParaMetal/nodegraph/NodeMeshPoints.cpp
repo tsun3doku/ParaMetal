@@ -1,5 +1,6 @@
 #include "NodeMeshPoints.hpp"
 
+#include "NodeGraphDefinitionUtils.hpp"
 #include "hash/HashBuilder.hpp"
 #include "hash/HashNodeCache.hpp"
 #include "NodeGraphPayloadTypes.hpp"
@@ -9,7 +10,26 @@
 #include "domain/GeometryData.hpp"
 #include "domain/PointData.hpp"
 
-#include <limits>
+static NodeTypeDefinition buildMeshPointsNode() {
+    return {
+        nodegraphtypes::MeshPoints,
+        "Mesh Points",
+        NodeGraphNodeCategory::Geometry,
+        {
+            makePolymorphicInputSocket("Geometry", {NodeGraphValueType::Mesh, NodeGraphValueType::Remesh}),
+            makeOutputSocket("Points", NodeGraphValueType::Points, payloadtypes::Points, true),
+        },
+        {},
+    };
+}
+
+NodeTypeDefinition buildMeshPointsDefinition() {
+    return buildMeshPointsNode();
+}
+
+std::unique_ptr<NodeKernel> createMeshPointsKernel() {
+    return std::make_unique<NodeMeshPoints>();
+}
 
 const char* NodeMeshPoints::typeId() const {
     return nodegraphtypes::MeshPoints;
@@ -36,30 +56,22 @@ void NodeMeshPoints::execute(NodeKernelEval& eval) const {
             continue;
         }
 
-        const GeometryData* geometryData = payloadRegistry->resolveGeometry(inputData->payloadHandle);
-        if (!geometryData || geometryData->pointPositions.empty()) {
-            continue;
+        const bool isRemesh = payloadRegistry->resolveRemesh(inputData->payloadHandle) != nullptr;
+        const GeometryData* geometryData = isRemesh
+            ? nullptr
+            : payloadRegistry->resolveGeometry(inputData->payloadHandle);
+        if (!isRemesh && !geometryData) {
+            eval.error = "Mesh Points input is not Geometry or Remesh data.";
+            return;
         }
 
         PointData payload{};
-        const std::size_t vertexCount = geometryData->pointPositions.size() / 3;
-        payload.positions.reserve(vertexCount);
-        payload.domainMinimum = glm::vec3(std::numeric_limits<float>::max());
-        payload.domainMaximum = glm::vec3(std::numeric_limits<float>::lowest());
-        for (std::size_t i = 0; i < vertexCount; ++i) {
-            const glm::vec3 position(
-                geometryData->pointPositions[3 * i + 0],
-                geometryData->pointPositions[3 * i + 1],
-                geometryData->pointPositions[3 * i + 2]);
-            payload.positions.push_back(glm::vec4(position, 1.0f));
-            payload.domainMinimum = glm::min(payload.domainMinimum, position);
-            payload.domainMaximum = glm::max(payload.domainMaximum, position);
-        }
-
+        payload.sources.push_back(inputData->payloadHandle);
         if (!payloadRegistry->resolveLocalToWorld(
                 inputData->payloadHandle,
                 payload.localToWorld)) {
-            continue;
+            eval.error = "Mesh Points cannot resolve its source placement.";
+            return;
         }
         payload.active = true;
         const uint64_t payloadKey = NodeSocketKey(eval.node.id, outputSocket.id);

@@ -21,3 +21,15 @@ struct TransformNodeParams {
 TransformNodeParams readTransformNodeParams(const NodeGraphNode& node);
 bool writeTransformNodeParams(NodeGraph& bridge, NodeGraphNodeId nodeId, const TransformNodeParams& params);
 bool writeTransformNodeParams(NodeGraphEditor& editor, NodeGraphNodeId nodeId, const TransformNodeParams& params);
+
+namespace nodegraphparams::transform {
+constexpr uint32_t TranslateX = 1;
+constexpr uint32_t TranslateY = 2;
+constexpr uint32_t TranslateZ = 3;
+constexpr uint32_t RotateXDegrees = 4;
+constexpr uint32_t RotateYDegrees = 5;
+constexpr uint32_t RotateZDegrees = 6;
+constexpr uint32_t ScaleX = 7;
+constexpr uint32_t ScaleY = 8;
+constexpr uint32_t ScaleZ = 9;
+}

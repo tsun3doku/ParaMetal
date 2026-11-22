@@ -1,6 +1,7 @@
 #include "NodeGraph.hpp"
 #include "NodeGraphInit.hpp"
 #include "NodeGraphLayout.hpp"
+#include "NodeTransform.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
 #include "NodeGraphValidator.hpp"
@@ -12,8 +13,10 @@
 #include <utility>
 
 NodeGraph::NodeGraph() {
-    initNodeGraph(registry);
-    rebuildStateLocked();
+    registryValid = initNodeGraph(registry);
+    if (registryValid) {
+        rebuildStateLocked();
+    }
 }
 
 static void copySocketIdsByIndex(
@@ -39,6 +42,9 @@ static uint32_t maxSocketId(const NodeGraphNode& node) {
 }
 NodeGraphNodeId NodeGraph::addNode(const NodeTypeId& typeId, const std::string& title, float x, float y) {
     std::lock_guard<std::recursive_mutex> lock(mutex);
+    if (!registryValid) {
+        return {};
+    }
 
     const NodeTypeDefinition* definition = registry.findNodeType(typeId);
     if (!definition) {
@@ -389,6 +395,10 @@ bool NodeGraph::loadSerializedState(
     uint32_t serializedNextEdgeId,
     std::string& errorMessage) {
     std::lock_guard<std::recursive_mutex> lock(mutex);
+    if (!registryValid) {
+        errorMessage = "Node graph registry initialization failed.";
+        return false;
+    }
 
     NodeGraph candidate;
 

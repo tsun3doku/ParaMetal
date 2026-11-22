@@ -2,6 +2,11 @@
 
 #include "NodeGraphKernels.hpp"
 
+NodeTypeDefinition buildModelDefinition();
+std::unique_ptr<NodeKernel> createModelKernel();
+
+#include "NodeGraphKernels.hpp"
+
 #include <cstdint>
 #include <utility>
 
@@ -16,3 +21,7 @@ private:
     static bool loadGeometryFromModelPath(const std::string& modelPath, GeometryData& geometry);
     static std::vector<std::string> resolveCandidateModelPaths(const std::string& modelPath);
 };
+
+namespace nodegraphtypes {
+inline constexpr const char* Model = "model";
+}

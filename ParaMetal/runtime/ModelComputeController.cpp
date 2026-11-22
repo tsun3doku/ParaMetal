@@ -19,7 +19,7 @@ ModelComputeController::ModelComputeController(
 }
 
 bool ModelComputeController::apply(uint64_t socketKey, const Config& config) {
-    if (socketKey == 0 || config.pointPositions.empty() ||
+    if (socketKey == 0 || config.vertexPositions.empty() ||
         config.triangleIndices.empty() || config.computeHash == 0) {
         return false;
     }
@@ -104,7 +104,7 @@ bool ModelComputeController::rebuildModel(uint64_t socketKey, const Config& conf
 
     const bool hasRenderGeometry =
         !config.renderPositions.empty() && !config.renderIndices.empty();
-    model->setGeometry(config.pointPositions, config.triangleIndices);
+    model->setGeometry(config.vertexPositions, config.triangleIndices);
     if (hasRenderGeometry) {
         model->setRenderGeometry(
             config.renderPositions,

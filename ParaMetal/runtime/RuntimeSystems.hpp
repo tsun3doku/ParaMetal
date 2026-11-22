@@ -24,9 +24,11 @@
 #include "util/Units.hpp"
 
 class CameraController;
+class ConnectionTelemetryReceiver;
 enum class CameraProjectionMode : uint8_t;
 class ModelSelection;
 class NodeGraphController;
+class TemperatureTelemetryReceiver;
 struct WindowRuntimeState;
 
 class RuntimeSystems : public RuntimeQuery {
@@ -49,6 +51,8 @@ public:
     bool isInitialized() const;
 
     const RuntimeQuery* runtimeQuery() const;
+    void publishProbeTelemetry(TemperatureTelemetryReceiver& receiver) const;
+    void publishSerialTelemetry(ConnectionTelemetryReceiver& receiver) const;
     TimelineController* timelineController();
     void setWireframeMode(app::WireframeMode mode);
     void setGridEnabled(bool enabled);
@@ -93,8 +97,6 @@ private:
     uint32_t getTimelineEndDisplayFrame() const override;
     float getTimelineCurrentSeconds() const override;
     float getTimelineDurationSeconds() const override;
-    bool getSerialTemperatureStatus(uint64_t sourceKey, SerialTemperatureRuntime::Status& outStatus) const override;
-    bool getHeatProbeTemperatures(uint64_t sourceKey, std::vector<float>& outTemperaturesC) const override;
 
     WindowRuntimeState* windowRuntimeState = nullptr;
     bool initialized = false;

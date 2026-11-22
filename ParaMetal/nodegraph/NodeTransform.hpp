@@ -1,6 +1,11 @@
 #pragma once
 
 #include "NodeGraphKernels.hpp"
+
+NodeTypeDefinition buildTransformDefinition();
+std::unique_ptr<NodeKernel> createTransformKernel();
+
+#include "NodeGraphKernels.hpp"
 #include "NodeTransformParams.hpp"
 
 #include <array>
@@ -20,3 +25,7 @@ public:
 private:
     static void combineTransformParams(const NodeGraphNode& node, uint64_t& outHash);
 };
+
+namespace nodegraphtypes {
+inline constexpr const char* Transform = "transform";
+}

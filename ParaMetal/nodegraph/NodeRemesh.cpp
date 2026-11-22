@@ -1,4 +1,5 @@
 #include "NodeRemesh.hpp"
+#include "NodeGraphDefinitionUtils.hpp"
 #include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
@@ -8,6 +9,37 @@
 #include "hash/HashNodeCache.hpp"
 #include "NodeRemeshParams.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
+
+static NodeTypeDefinition buildRemeshNode() {
+    return {
+        nodegraphtypes::Remesh,
+        "Remesh",
+        NodeGraphNodeCategory::Meshing,
+        {
+            makeInputSocket("Mesh", NodeGraphValueType::Mesh),
+            makeOutputSocket("Remesh", NodeGraphValueType::Remesh, payloadtypes::Remesh, true),
+        },
+        {
+            {nodegraphparams::remesh::Iterations, "Iterations", NodeGraphParamType::Int, 0.0, 1, false, "", false},
+            {nodegraphparams::remesh::MinAngleDegrees, "Min Angle", NodeGraphParamType::Float, 20.0, 0, false, "", false},
+            {nodegraphparams::remesh::MaxEdgeLength, "Max Edge Length", NodeGraphParamType::Float, 0.1, 0, false, "", false},
+            {nodegraphparams::remesh::StepSize, "Step Size", NodeGraphParamType::Float, 0.25, 0, false, "", false},
+            {nodegraphparams::remesh::RunRequested, "Run Requested", NodeGraphParamType::Bool, 0.0, 0, false, "", true},
+            {nodegraphparams::remesh::ShowRemeshOverlay, "Show Remesh Overlay", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
+            {nodegraphparams::remesh::ShowFaceNormals, "Show Face Normals", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
+            {nodegraphparams::remesh::ShowVertexNormals, "Show Vertex Normals", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
+            {nodegraphparams::remesh::NormalLength, "Normal Length", NodeGraphParamType::Float, 0.05, 0, false, "", false},
+        },
+    };
+}
+
+NodeTypeDefinition buildRemeshDefinition() {
+    return buildRemeshNode();
+}
+
+std::unique_ptr<NodeKernel> createRemeshKernel() {
+    return std::make_unique<NodeRemesh>();
+}
 
 const char* NodeRemesh::typeId() const {
     return nodegraphtypes::Remesh;

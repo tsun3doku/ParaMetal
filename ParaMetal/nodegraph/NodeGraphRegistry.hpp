@@ -1,187 +1,17 @@
 #pragma once
 
 #include "NodeGraphTypes.hpp"
-#include "NodeGraphTypeRegistry.hpp"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <unordered_map>
 
-namespace nodegraphtypes {
-inline constexpr const char* Model = "model";
-inline constexpr const char* Transform = "transform";
-inline constexpr const char* Group = "group";
-inline constexpr const char* Remesh = "remesh";
-inline constexpr const char* HeatModel = "heat_model";
-inline constexpr const char* Fluid = "fluid";
-inline constexpr const char* Voronoi = "voronoi";
-inline constexpr const char* HeatSolve = "heat_solve";
-inline constexpr const char* Points = "points";
-inline constexpr const char* MeshPoints = "mesh_points";
-inline constexpr const char* Merge = "merge";
-inline constexpr const char* SerialTemperature = "serial_temperature";
-inline constexpr const char* CFD = "cfd";
-inline constexpr const char* HeatProbe = "heat_probe";
-inline constexpr const char* Write = "write";
-inline constexpr const char* BoundaryConditions = "boundary_conditions";
-}
-
-namespace nodegraphparams {
-namespace model {
-constexpr uint32_t Path = 1;
-constexpr uint32_t SourceUnit = 2;
-}
-
-namespace transform {
-constexpr uint32_t TranslateX = 1;
-constexpr uint32_t TranslateY = 2;
-constexpr uint32_t TranslateZ = 3;
-constexpr uint32_t RotateXDegrees = 4;
-constexpr uint32_t RotateYDegrees = 5;
-constexpr uint32_t RotateZDegrees = 6;
-constexpr uint32_t ScaleX = 7;
-constexpr uint32_t ScaleY = 8;
-constexpr uint32_t ScaleZ = 9;
-}
-
-namespace group {
-constexpr uint32_t Enabled = 1;
-constexpr uint32_t SourceName = 2;
-constexpr uint32_t TargetName = 3;
-constexpr uint32_t SourceType = 4;
-
-namespace sourcetype {
-constexpr int64_t Vertex = 0;
-}
-}
-
-namespace remesh {
-constexpr uint32_t Iterations = 1;
-constexpr uint32_t MinAngleDegrees = 2;
-constexpr uint32_t MaxEdgeLength = 3;
-constexpr uint32_t StepSize = 4;
-constexpr uint32_t RunRequested = 5;
-constexpr uint32_t ShowRemeshOverlay = 6;
-constexpr uint32_t ShowFaceNormals = 7;
-constexpr uint32_t ShowVertexNormals = 8;
-constexpr uint32_t NormalLength = 9;
-}
-
-namespace heatsolve {
-constexpr uint32_t Enabled = 1;
-constexpr uint32_t Paused = 2;
-constexpr uint32_t ResetRequested = 3;
-constexpr uint32_t ShowHeatOverlay = 5;
-constexpr uint32_t ShowFluxVectors = 7;
-constexpr uint32_t FluxVectorScale = 8;
-constexpr uint32_t ShowHeatPalette = 9;
-constexpr uint32_t RewindFrame = 10;
-constexpr uint32_t SimulationDuration = 11;
-constexpr uint32_t ShowDomainBox = 14;
-constexpr uint32_t ShowFluidVolume = 15;
-constexpr uint32_t FluidVolumeOpacity = 16;
-constexpr uint32_t SolverMaxIterations = 30;
-constexpr uint32_t SolverConvergenceTolerance = 31;
-constexpr uint32_t ShowIsocontours = 32;
-constexpr uint32_t IsocontourSpacingC = 34;
-}
-
-namespace boundaryconditions {
-inline constexpr uint32_t flowTypeParam(uint32_t face)           { return 100 + face * 10; }
-inline constexpr uint32_t velocityXParam(uint32_t face)          { return 101 + face * 10; }
-inline constexpr uint32_t velocityYParam(uint32_t face)          { return 102 + face * 10; }
-inline constexpr uint32_t velocityZParam(uint32_t face)          { return 103 + face * 10; }
-inline constexpr uint32_t thermalTypeParam(uint32_t face)        { return 104 + face * 10; }
-inline constexpr uint32_t temperatureParam(uint32_t face)        { return 105 + face * 10; }
-inline constexpr uint32_t heatFluxParam(uint32_t face)           { return 106 + face * 10; }
-inline constexpr uint32_t htcParam(uint32_t face)                { return 107 + face * 10; }
-inline constexpr uint32_t inflowTemperatureParam(uint32_t face)  { return 108 + face * 10; }
-}
-
-namespace voronoi {
-constexpr uint32_t VoxelResolution = 2;
-constexpr uint32_t ShowVoronoi = 3;
-constexpr uint32_t ShowPoints = 4;
-constexpr uint32_t VolumePadding = 5;
-constexpr uint32_t ContactRange = 6;
-constexpr uint32_t LloydIterations = 7;
-constexpr uint32_t LloydVolumeThreshold = 9;
-constexpr uint32_t LloydDamping = 10;
-}
-
-namespace heatmodel {
-constexpr uint32_t Density = 1;
-constexpr uint32_t SpecificHeat = 2;
-constexpr uint32_t Conductivity = 3;
-constexpr uint32_t InitialTemperatureC = 4;
-constexpr uint32_t MaterialPreset = 7;
-constexpr uint32_t VolumetricPowerDensity = 10;
-constexpr uint32_t PrescribedTemperatureEnabled = 11;
-constexpr uint32_t PrescribedTemperatureC = 12;
-}
-
-namespace serialtemperature {
-constexpr uint32_t Enabled = 1;
-constexpr uint32_t Port = 2;
-constexpr uint32_t BaudRate = 3;
-}
-
-namespace heatprobe {
-constexpr uint32_t Enabled = 1;
-constexpr uint32_t OpcPort = 2;
-constexpr uint32_t ProbesJson = 3;
-constexpr uint32_t ShowTemperature = 4;
-constexpr uint32_t ShowName = 5;
-}
-
-namespace points {
-constexpr uint32_t PointCount = 1;
-constexpr uint32_t DimX = 2;
-constexpr uint32_t DimY = 3;
-constexpr uint32_t DimZ = 4;
-constexpr uint32_t Distribution = 5;
-constexpr uint32_t Seed = 6;
-}
-
-namespace heatfluid {
-constexpr uint32_t Density = 1;
-constexpr uint32_t SpecificHeat = 2;
-constexpr uint32_t Conductivity = 3;
-constexpr uint32_t InitialTemperatureC = 4;
-constexpr uint32_t KinematicViscosity = 9;
-}
-namespace fluid = heatfluid;
-
-namespace merge {
-constexpr uint32_t MergeDistance = 1;
-}
-
-namespace cfd {
-constexpr uint32_t Enabled = 1;
-constexpr uint32_t TargetCourant = 2;
-constexpr uint32_t TimeStep = 3;
-constexpr uint32_t VelocityX = 4;
-constexpr uint32_t VelocityY = 5;
-constexpr uint32_t VelocityZ = 6;
-constexpr uint32_t PressureIterations = 7;
-constexpr uint32_t PressureTolerance = 8;
-constexpr uint32_t Duration = 9;
-
-// Preview
-constexpr uint32_t ShowDomainBox = 24;
-constexpr uint32_t ShowStreamlines = 28;
-constexpr uint32_t ShowVelocityPalette = 29;
-constexpr uint32_t ShowSlice = 30;
-constexpr uint32_t SliceAxis = 31;
-constexpr uint32_t SlicePosition = 32;
-constexpr uint32_t ShowSliceWireframe = 35;
-}
-
-namespace write {
-constexpr uint32_t FilePath = 1;
-constexpr uint32_t Product = 5;
-}
-}
+struct PayloadTypeDefinition {
+    uint8_t id = 0;
+    std::string name;
+    NodeGraphValueType displayType = NodeGraphValueType::None;
+};
 
 class NodeGraphRegistry {
 public:
@@ -191,14 +21,17 @@ public:
     NodeGraphValueType getPayloadDisplayType(uint8_t typeId) const;
     const std::string* getPayloadTypeName(uint8_t typeId) const;
 
-    void registerNodeType(NodeTypeDefinition definition);
+    bool registerNodeType(NodeTypeDefinition definition);
     const NodeTypeDefinition* findNodeType(const NodeTypeId& typeId) const;
     const std::vector<NodeTypeDefinition>& allNodeTypes() const;
-
-    const NodeGraphTypeRegistry& typeRegistry() const { return payloadTypes; }
+    bool isValid() const { return registrationValid; }
 
 private:
-    NodeGraphTypeRegistry payloadTypes;
-    std::unordered_map<std::string, NodeTypeDefinition> nodeTypes;
+    std::unordered_map<std::string, uint8_t> payloadNameToId;
+    std::vector<PayloadTypeDefinition> payloadTypes;
+    uint32_t nextPayloadTypeId = 1;
+
     std::vector<NodeTypeDefinition> nodeList;
+    std::unordered_map<NodeTypeId, size_t> nodeTypeToIndex;
+    bool registrationValid = true;
 };

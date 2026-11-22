@@ -1,5 +1,9 @@
 #pragma once
 
+#include "NodeGraphKernels.hpp"
+
+NodeTypeDefinition buildWriteDefinition();
+
 #include <string>
 #include <cstdint>
 
@@ -20,3 +24,12 @@ struct WriteNodeParams {
 };
 
 WriteNodeParams readWriteNodeParams(const NodeGraphNode& node);
+
+namespace nodegraphtypes {
+inline constexpr const char* Write = "write";
+}
+
+namespace nodegraphparams::write {
+constexpr uint32_t FilePath = 1;
+constexpr uint32_t Product = 5;
+}

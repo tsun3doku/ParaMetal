@@ -1,5 +1,7 @@
 #include "NodeCFD.hpp"
 #include "NodeCFDParams.hpp"
+#include "NodeGraphDefinitionUtils.hpp"
+#include "NodeGraphParamUtils.hpp"
 #include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
@@ -14,6 +16,47 @@
 
 #include <cstdint>
 #include <vector>
+
+static NodeTypeDefinition buildCFDNode() {
+    return {
+        nodegraphtypes::CFD,
+        "Superfluid",
+        NodeGraphNodeCategory::System,
+        {
+            makeInputSocket("Volume", NodeGraphValueType::Volume, false, true),
+            makeInputSocket("Fluid", NodeGraphValueType::Fluid, false, false),
+            makeInputSocket("Boundary", NodeGraphValueType::Boundary),
+            makeOutputSocket("CFD", NodeGraphValueType::Simulation, payloadtypes::CFD, true),
+        },
+        {
+            {nodegraphparams::cfd::Enabled, "Enabled", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
+            {nodegraphparams::cfd::TargetCourant, "Target Courant", NodeGraphParamType::Float, 0.5, 0, false, "", false},
+            {nodegraphparams::cfd::TimeStep, "Time Step (s)", NodeGraphParamType::Float, 1.0 / 60.0, 0, false, "", false},
+            {nodegraphparams::cfd::VelocityX, "Initial Velocity X (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::cfd::VelocityY, "Initial Velocity Y (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::cfd::VelocityZ, "Initial Velocity Z (m/s)", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::cfd::PressureIterations, "Pressure Iterations", NodeGraphParamType::Int, 200.0, 200, false, "", false},
+            {nodegraphparams::cfd::PressureTolerance, "Pressure Tolerance", NodeGraphParamType::Float, 1e-4, 0, false, "", false},
+            {nodegraphparams::cfd::Duration, "Simulation Duration (s)", NodeGraphParamType::Float, 10.0, 0, false, "", false},
+
+            {nodegraphparams::cfd::ShowStreamlines, "Show Streamlines", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
+            {nodegraphparams::cfd::ShowDomainBox, "Show Domain Box", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
+            {nodegraphparams::cfd::ShowVelocityPalette, "Show Velocity Palette", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
+            {nodegraphparams::cfd::ShowSlice, "Show Slice", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
+            makeEnumParamDefinition(nodegraphparams::cfd::SliceAxis, "Slice Axis", "X", {"X", "Y", "Z"}),
+            {nodegraphparams::cfd::SlicePosition, "Slice Position", NodeGraphParamType::Float, 0.5, 0, false, "", false},
+            {nodegraphparams::cfd::ShowSliceWireframe, "Show Slice Wireframe", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
+        },
+    };
+}
+
+NodeTypeDefinition buildCFDDefinition() {
+    return buildCFDNode();
+}
+
+std::unique_ptr<NodeKernel> createCFDKernel() {
+    return std::make_unique<NodeCFD>();
+}
 
 const char* NodeCFD::typeId() const {
     return nodegraphtypes::CFD;

@@ -1,31 +1,47 @@
 #include "NodeGraphKernels.hpp"
-#include "NodeGraphRegistry.hpp"
-#include "NodeGraphUtils.hpp"
 
-#include "NodeHeatModel.hpp"
-#include "NodeFluid.hpp"
-#include "NodeHeatSolve.hpp"
-#include "NodeMeshPoints.hpp"
-#include "NodePoints.hpp"
-#include "NodeVoronoi.hpp"
-#include "NodeGroup.hpp"
-#include "NodeModel.hpp"
-#include "NodeTransform.hpp"
-#include "NodeRemesh.hpp"
-#include "NodeMerge.hpp"
-#include "NodeSerialTemperature.hpp"
-#include "NodeHeatProbe.hpp"
-#include "NodeCFD.hpp"
-#include "NodeBoundaryConditions.hpp"
+#include "NodeGraphModules.hpp"
+#include "NodeGraphUtils.hpp"
 
 #include <utility>
 
 NodeGraphKernels::NodeGraphKernels() {
-    registerDefaultKernels();
+    registrationValid = registerNodeKernels(*this);
 }
 
 bool NodeGraphKernels::hasKernel(const NodeTypeId& typeId) const {
-    return kernelByTypeId.find(getNodeTypeId(typeId)) != kernelByTypeId.end();
+    const auto it = kernels.find(getNodeTypeId(typeId));
+    return it != kernels.end() && it->second != nullptr;
+}
+
+bool NodeGraphKernels::registerKernel(std::unique_ptr<NodeKernel> kernel) {
+    if (!kernel || !kernel->typeId() || kernel->typeId()[0] == '\0') {
+        registrationValid = false;
+        return false;
+    }
+
+    const NodeTypeId canonicalTypeId = getNodeTypeId(kernel->typeId());
+    if (kernels.find(canonicalTypeId) != kernels.end() ||
+        kernellessTypeIds.find(canonicalTypeId) != kernellessTypeIds.end()) {
+        registrationValid = false;
+        return false;
+    }
+    kernels.emplace(canonicalTypeId, std::move(kernel));
+    return true;
+}
+
+bool NodeGraphKernels::registerKernellessNode(const NodeTypeId& typeId) {
+    const NodeTypeId canonicalTypeId = getNodeTypeId(typeId);
+    if (kernels.find(canonicalTypeId) != kernels.end() ||
+        !kernellessTypeIds.insert(canonicalTypeId).second) {
+        registrationValid = false;
+        return false;
+    }
+    return true;
+}
+
+bool NodeGraphKernels::requiresKernel(const NodeTypeId& typeId) const {
+    return kernellessTypeIds.find(getNodeTypeId(typeId)) == kernellessTypeIds.end();
 }
 
 HashValues NodeGraphKernels::computeOutputHashes(
@@ -33,8 +49,8 @@ HashValues NodeGraphKernels::computeOutputHashes(
     const NodeKernelRuntime& runtime,
     const std::vector<std::vector<const NodeDataBlock*>>& inputs) const {
     const NodeTypeId canonicalTypeId = getNodeTypeId(node.typeId);
-    const auto kernelIt = kernelByTypeId.find(canonicalTypeId);
-    if (kernelIt == kernelByTypeId.end() || !kernelIt->second) {
+    const auto kernelIt = kernels.find(canonicalTypeId);
+    if (kernelIt == kernels.end() || !kernelIt->second) {
         return {};
     }
 
@@ -47,43 +63,16 @@ void NodeGraphKernels::executeNode(
     const NodeKernelRuntime& runtime,
     const std::vector<std::vector<const NodeDataBlock*>>& inputs,
     std::vector<NodeDataBlock>& outputs,
-    HashValues outputHashes) const {
+    HashValues outputHashes,
+    std::string& error) const {
     const NodeTypeId canonicalTypeId = getNodeTypeId(node.typeId);
-    const auto kernelIt = kernelByTypeId.find(canonicalTypeId);
-    if (kernelIt == kernelByTypeId.end() || !kernelIt->second) {
+    const auto kernelIt = kernels.find(canonicalTypeId);
+    if (kernelIt == kernels.end() || !kernelIt->second) {
         return;
     }
 
     NodeKernelEval eval{node, inputs, outputs, runtime, outputHashes};
 
     kernelIt->second->execute(eval);
+    error = std::move(eval.error);
 }
-
-void NodeGraphKernels::registerDefaultKernels() {
-    registerKernel(std::make_unique<NodeModel>());
-    registerKernel(std::make_unique<NodeTransform>());
-    registerKernel(std::make_unique<NodeGroup>());
-    registerKernel(std::make_unique<NodeRemesh>());
-    registerKernel(std::make_unique<NodeHeatModel>());
-    registerKernel(std::make_unique<NodeFluid>());
-    registerKernel(std::make_unique<NodeVoronoi>());
-    registerKernel(std::make_unique<NodeHeatSolve>());
-    registerKernel(std::make_unique<NodeMeshPoints>());
-    registerKernel(std::make_unique<NodePoints>());
-    registerKernel(std::make_unique<NodeMerge>());
-    registerKernel(std::make_unique<NodeSerialTemperature>());
-    registerKernel(std::make_unique<NodeHeatProbe>());
-    registerKernel(std::make_unique<NodeCFD>());
-    registerKernel(std::make_unique<NodeBoundaryConditions>());
-}
-
-void NodeGraphKernels::registerKernel(std::unique_ptr<NodeKernel> kernel) {
-    if (!kernel || !kernel->typeId() || kernel->typeId()[0] == '\0') {
-        return;
-    }
-
-    const NodeTypeId canonicalTypeId = getNodeTypeId(kernel->typeId());
-    kernelByTypeId[canonicalTypeId] = kernel.get();
-    kernels.push_back(std::move(kernel));
-}
-

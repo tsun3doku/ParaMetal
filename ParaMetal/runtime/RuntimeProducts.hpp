@@ -39,7 +39,8 @@ struct ModelProduct {
 
 };
 
-// Borrowed view, owned by RemeshSystem
+// Runtime view owned by RemeshSystem. GPU buffers are borrowed; CPU geometry
+// arrays are generation-owned output and remain valid while this product is published.
 struct RemeshProduct {
     uint32_t runtimeModelId = 0;
     std::vector<glm::vec3> geometryPositions;
@@ -129,7 +130,8 @@ struct RemeshProduct {
 
 };
 
-// Borrowed view, owned by VoronoiSystem
+// Runtime view owned by VoronoiSystem. GPU buffers are borrowed; CPU topology
+// arrays are generation-owned output and remain valid while this product is published.
 struct VoronoiProduct {
     uint32_t candidateNodeCount = 0;
     VkBuffer candidateNeighborIndicesBuffer = VK_NULL_HANDLE;

@@ -14,3 +14,8 @@ struct ModelNodeParams {
 
 ModelNodeParams readModelNodeParams(const NodeGraphNode& node);
 bool writeModelNodeParams(NodeGraphEditor& editor, NodeGraphNodeId nodeId, const ModelNodeParams& params);
+
+namespace nodegraphparams::model {
+constexpr uint32_t Path = 1;
+constexpr uint32_t SourceUnit = 2;
+}

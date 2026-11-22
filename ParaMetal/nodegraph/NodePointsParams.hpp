@@ -23,3 +23,12 @@ struct PointsNodeParams {
 
 PointsNodeParams readPointsNodeParams(const NodeGraphNode& node);
 bool writePointsNodeParams(NodeGraphEditor& editor, NodeGraphNodeId nodeId, const PointsNodeParams& params);
+
+namespace nodegraphparams::points {
+constexpr uint32_t PointCount = 1;
+constexpr uint32_t DimX = 2;
+constexpr uint32_t DimY = 3;
+constexpr uint32_t DimZ = 4;
+constexpr uint32_t Distribution = 5;
+constexpr uint32_t Seed = 6;
+}

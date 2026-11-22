@@ -3,6 +3,8 @@
 #include "NodeGraphUiModel.hpp"
 #include "nodegraph/NodeGraphValidator.hpp"
 #include "nodegraph/NodeGraphRegistry.hpp"
+#include "nodegraph/NodeCFD.hpp"
+#include "nodegraph/NodeHeatSolve.hpp"
 #include "nodegraph/ui/scene/NodeGraphSceneStyle.hpp"
 #include "ui/UiPalette.hpp"
 #include "ui/UiTypography.hpp"

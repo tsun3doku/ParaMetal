@@ -1,6 +1,8 @@
 #include "ProjectFile.hpp"
 #include "nodegraph/NodeGraphRegistry.hpp"
 #include "nodegraph/NodeGraphUtils.hpp"
+#include "nodegraph/NodeModel.hpp"
+#include "nodegraph/NodeModelParams.hpp"
 
 #include <QFile>
 #include <QFileInfo>

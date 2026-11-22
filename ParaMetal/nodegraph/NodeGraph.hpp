@@ -81,6 +81,7 @@ private:
 
     mutable std::recursive_mutex mutex;
     NodeGraphRegistry registry;
+    bool registryValid = false;
     uint32_t nextNodeId = 1;
     uint32_t nextSocketId = 1;
     uint32_t nextEdgeId = 1;

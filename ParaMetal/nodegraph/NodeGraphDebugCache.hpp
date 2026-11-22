@@ -18,8 +18,6 @@ struct NodeGraphRuntimeSocketDebugInfo {
     bool hasValue = false;
     std::string error;
     std::string dataType = "none";
-    std::unordered_map<std::string, std::string> metadata;
-    std::vector<NodeGraphNodeId> lineageNodeIds;
 };
 
 struct NodeGraphRuntimeNodeDebugInfo {

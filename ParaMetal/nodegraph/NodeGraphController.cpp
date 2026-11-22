@@ -11,6 +11,7 @@
 #include "voronoi/VoronoiSystemComputeController.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
+#include "NodeTransform.hpp"
 #include "NodePayloadRegistry.hpp"
 #include "runtime/RuntimeHeatDisplayTransport.hpp"
 #include "runtime/RuntimeCFDDisplayTransport.hpp"
@@ -49,13 +50,15 @@ void NodeGraphController::rebuildForDelta(const NodeGraphDelta& delta) {
     if (!nonLayout) return;
 
     packageCompilationPending = true;
+    packageCompilationFailed = false;
     NodeGraphDebugCache::instance().setState(runtime.state(), &payloadRegistry);
     plan = NodeGraphCompiler::compile(runtime.state());
 }
 
 void NodeGraphController::tick() {
     if (plan.isValid && packageCompilationPending) {
-        if (compileRuntimePackages()) packageCompilationPending = false;
+        packageCompilationPending = false;
+        packageCompilationFailed = !compileRuntimePackages();
         // sync simulation nodes before sim graph run
         syncSimulationNodes();
     }
@@ -90,6 +93,8 @@ void NodeGraphController::quiescedClear() {
     packageController.quiescedClear();
     plan = {};
     plan.isValid = false;
+    packageCompilationPending = false;
+    packageCompilationFailed = false;
     simulationSockets.clear();
     lastDisplaySyncStateRevision = UINT64_MAX;
     lastDisplaySyncProductRevision = UINT64_MAX;
@@ -259,10 +264,6 @@ bool NodeGraphController::compileRuntimePackages() {
         return false;
     }
 
-    const RuntimeProductManager* products = packageController.products();
-    if (!products) {
-        return false;
-    }
     packageController.beginCompilation();
     for (NodeGraphNodeId nodeId : plan.executionOrder) {
         const NodeGraphNode* node = runtime.state().node(nodeId);
@@ -285,10 +286,10 @@ bool NodeGraphController::compileRuntimePackages() {
                 *node,
                 evaluation,
                 payloadRegistry,
-                *products,
                 activeWorldUnit,
                 frozenPackages,
                 packageController.packages(),
+                packageController.products(),
                 nodeErrors)) {
             packageController.invalidateOutputsForNode(*node);
             messages.insert(messages.end(), nodeErrors.begin(), nodeErrors.end());
@@ -302,7 +303,7 @@ bool NodeGraphController::compileRuntimePackages() {
             failed = true;
         }
     }
-    packageController.finishCompilation(/*success=*/true);
+    packageController.finishCompilation(!failed);
     publishPackageErrors(messages);
     if (failed) {
         return false;
@@ -329,6 +330,7 @@ void NodeGraphController::setWorldUnit(units::LengthUnit unit) {
     if (unit == activeWorldUnit) return;
     activeWorldUnit = unit;
     packageCompilationPending = true;
+    packageCompilationFailed = false;
     frozenPackageRebuildPending = true;
     ++packageCompileRevision;
 }

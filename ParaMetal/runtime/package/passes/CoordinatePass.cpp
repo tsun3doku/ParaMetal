@@ -8,8 +8,7 @@ void runtimepackage::CoordinatePass::run(ModelPackage& package, units::LengthUni
 
 void runtimepackage::CoordinatePass::run(RemeshPackage& package, units::LengthUnit worldUnit) const {
     const float factor = units::canonicalToWorldScale(worldUnit);
-    scalePositions(package.sourceGeometry.pointPositions, factor);
-    scalePositions(package.sourceGeometry.renderPositions, factor);
+    scalePositions(package.vertexPositions, factor);
     scaleTranslation(package.localToWorld, factor);
     package.maxEdgeLength *= factor;
     package.display.normalLength *= factor;
@@ -26,8 +25,8 @@ void runtimepackage::CoordinatePass::run(PointPackage& package, units::LengthUni
 void runtimepackage::CoordinatePass::run(VoronoiPackage& package, units::LengthUnit worldUnit) const {
     const float factor = units::canonicalToWorldScale(worldUnit);
     package.canonicalToWorldScale = factor;
-    package.authored.volumePadding *= factor;
-    package.authored.contactRange *= factor;
+    package.volumePadding *= factor;
+    package.contactRange *= factor;
 }
 
 void runtimepackage::CoordinatePass::run(HeatPackage& package, units::LengthUnit worldUnit) const {

@@ -9,7 +9,6 @@
 #include "app/RawMouseInput.hpp"
 #include "heat/HeatSystemComputeController.hpp"
 #include "nodegraph/NodeGraphController.hpp"
-#include "nodegraph/NodeGraphRegistry.hpp"
 #include "simgraph/SimGraphRuntime.hpp"
 #include "render/WindowRuntimeState.hpp"
 #include "render/RenderRuntime.hpp"
@@ -24,7 +23,6 @@
 #include "vulkan/ModelRegistry.hpp"
 
 #include <array>
-
 
 RuntimeController::RuntimeController() = default;
 
@@ -231,15 +229,8 @@ void RuntimeController::tick(
 
     if (render->runtime()) {
         if (auto* overlay = render->runtime()->getSceneRenderer().getHeatOverlayRenderer()) {
-            if (auto* heatCtrl = compute->heatSystemComputeController()) {
-                for (const auto& [nodeIdVal, node] : graphController->graphState().nodes) {
-                    if (node.typeId == nodegraphtypes::HeatProbe) {
-                        std::vector<float> temps;
-                        if (heatCtrl->getHeatProbeTemperatures(node.id.value, temps)) {
-                            overlay->updateProbeTemperatures(node.id.value, temps);
-                        }
-                    }
-                }
+            if (const auto* heatCtrl = compute->heatSystemComputeController()) {
+                heatCtrl->publishProbeTelemetry(*overlay);
             }
         }
     }

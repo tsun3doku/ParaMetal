@@ -32,8 +32,14 @@ struct ProductHandle {
             outputSocketKey == other.outputSocketKey &&
             hashes.full == other.hashes.full &&
             hashes.geometry == other.hashes.geometry &&
-            hashes.thermal == other.hashes.thermal &&
+            hashes.properties == other.hashes.properties &&
             hashes.simulation == other.hashes.simulation &&
             hashes.display == other.hashes.display;
     }
 };
+
+inline bool isSamePublication(const ProductHandle& a, const ProductHandle& b) {
+    return a.type == b.type &&
+           a.outputSocketKey == b.outputSocketKey &&
+           a.publicationId == b.publicationId;
+}

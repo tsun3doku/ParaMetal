@@ -96,6 +96,24 @@
     <ClCompile Include="runtime\package\RuntimePackageCompiler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="runtime\package\ModelPackageCompiler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime\package\PointPackageCompiler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime\package\RemeshPackageCompiler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime\package\VoronoiPackageCompiler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime\package\HeatPackageCompiler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime\package\CFDPackageCompiler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="runtime\package\RuntimePackageController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -507,16 +525,10 @@
     <ClCompile Include="nodegraph\NodeGraphEditor.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="nodegraph\NodeGraphDataTypes.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="hash\HashBuilder.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="hash\HashNodeCache.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="hash\HashPackage.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="hash\HashProduct.cpp">
@@ -702,10 +714,10 @@
     <ClCompile Include="voronoi\VoronoiNodeIndex.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="nodegraph\NodeGraphTypeRegistry.cpp">
+    <ClCompile Include="nodegraph\NodeGraphInit.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="nodegraph\NodeGraphInit.cpp">
+    <ClCompile Include="nodegraph\NodeGraphModules.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="py\PyGraphBindings.cpp">
@@ -823,6 +835,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="app\ViewportRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\RuntimeNotifier.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="vem\VEMDiffusion.cpp">
@@ -1183,6 +1198,27 @@
     <ClInclude Include="runtime\package\RuntimePackageCompiler.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="runtime\package\PackageCompileContext.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\package\ModelPackageCompiler.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\package\PointPackageCompiler.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\package\RemeshPackageCompiler.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\package\VoronoiPackageCompiler.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\package\HeatPackageCompiler.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\package\CFDPackageCompiler.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="runtime\package\RuntimePackageController.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1235,6 +1271,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="runtime\RuntimeInterfaces.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="telemetry\RuntimeTelemetry.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="telemetry\TemperatureTelemetry.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="scene\SceneController.hpp">
@@ -1612,7 +1654,7 @@
     <ClInclude Include="hash\HashNodeCache.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="hash\HashPackage.hpp">
+    <ClInclude Include="hash\HashProductHandle.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="hash\HashProduct.hpp">
@@ -1909,9 +1951,6 @@
     <ClInclude Include="vulkan\VulkanExternalBuffer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="nodegraph\NodeGraphTypeRegistry.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="nodegraph\NodeGraphInit.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -2066,9 +2105,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="vulkan\VulkanExternalBuffer.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="nodegraph\NodeGraphTypeRegistry.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\NodeGraphInit.hpp">
@@ -2243,5 +2279,13 @@
     <CudaCompile Include="voronoi\cuda\RVDRestriction.cu" />
     <CudaCompile Include="voronoi\cuda\RVDBaseFacePartition.cu" />
     <CudaCompile Include="voronoi\cuda\RVDContact.cu" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="nodegraph\NodeGraphDefinitionUtils.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nodegraph\NodeGraphModules.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

@@ -18,7 +18,8 @@ ComputeApplyResult RuntimePointComputeTransport::apply(
 
     PointComputeRuntime::Config config{};
     config.socketKey = socketKey;
-    config.positions = package.positions;
+    config.positions = package.positions.data();
+    config.positionCount = package.positions.size();
     config.modelMatrix = toMat4(package.localToWorld);
     config.computeHash = inputHash;
 

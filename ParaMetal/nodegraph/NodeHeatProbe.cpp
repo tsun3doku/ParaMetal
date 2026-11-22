@@ -1,5 +1,6 @@
 #include "NodeHeatProbe.hpp"
 
+#include "NodeGraphDefinitionUtils.hpp"
 #include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
@@ -8,6 +9,33 @@
 #include "domain/HeatProbeData.hpp"
 #include "hash/HashBuilder.hpp"
 #include "hash/HashNodeCache.hpp"
+
+static NodeTypeDefinition buildHeatProbeNode() {
+    return {
+        nodegraphtypes::HeatProbe,
+        "Heat Probe",
+        NodeGraphNodeCategory::System,
+        {
+            makeInputSocket("Heat", NodeGraphValueType::Simulation, false, true),
+            makeOutputSocket("Heat", NodeGraphValueType::Simulation, payloadtypes::Heat),
+        },
+        {
+            {nodegraphparams::heatprobe::Enabled, "Enabled", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
+            {nodegraphparams::heatprobe::OpcPort, "Port", NodeGraphParamType::Int, 0.0, 4840, false, "", false},
+            {nodegraphparams::heatprobe::ProbesJson, "Probes", NodeGraphParamType::String, 0.0, 0, false, R"([{"id":1,"name":"Probe_1","x":0.0,"y":0.0,"z":0.0,"enabled":true}])", false},
+            {nodegraphparams::heatprobe::ShowTemperature, "Show Temperature", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
+            {nodegraphparams::heatprobe::ShowName, "Show Name", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
+        },
+    };
+}
+
+NodeTypeDefinition buildHeatProbeDefinition() {
+    return buildHeatProbeNode();
+}
+
+std::unique_ptr<NodeKernel> createHeatProbeKernel() {
+    return std::make_unique<NodeHeatProbe>();
+}
 
 const char* NodeHeatProbe::typeId() const { return nodegraphtypes::HeatProbe; }
 
@@ -52,7 +80,7 @@ HashValues NodeHeatProbe::computeOutputHashes(const NodeKernelHash& hash) const 
 
     HashValues hashes{};
     hashes.full = fullValue;
-    hashes.thermal = fullValue;
+    hashes.properties = fullValue;
     hashes.simulation = fullValue;
     return hashes;
 }

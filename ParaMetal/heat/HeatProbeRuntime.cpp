@@ -225,6 +225,10 @@ void HeatProbeRuntime::configure(
     }
 
     channels = std::move(updatedChannels);
+    temperaturesC.resize(channels.size());
+    for (size_t i = 0; i < channels.size(); ++i) {
+        temperaturesC[i] = channels[i].currentTemperatureC;
+    }
 
     if (!enabled) {
         stopServer();
@@ -250,6 +254,7 @@ void HeatProbeRuntime::cleanup() {
     stopServer();
     server.reset();
     channels.clear();
+    temperaturesC.clear();
 }
 
 bool HeatProbeRuntime::rebuildWeights(
@@ -381,28 +386,36 @@ bool HeatProbeRuntime::rebuildWeights(
 }
 
 void HeatProbeRuntime::sample(const std::unordered_map<uint32_t, std::vector<float>>& temperaturesByModel) {
-    if (!enabled || channels.empty()) {
+    if (channels.empty()) {
+        temperaturesC.clear();
         return;
     }
 
-    for (auto& ch : channels) {
-        if (!ch.enabled || ch.stencilWeights.empty()) {
-            continue;
-        }
+    if (enabled) {
+        for (auto& ch : channels) {
+            if (!ch.enabled || ch.stencilWeights.empty()) {
+                continue;
+            }
 
-        float sampledTemp = 0.0f;
-        float weightSum = 0.0f;
-        for (const auto& entry : ch.stencilWeights) {
-            auto it = temperaturesByModel.find(entry.runtimeModelId);
-            if (it != temperaturesByModel.end() && entry.localIndex < it->second.size()) {
-                sampledTemp += entry.weight * it->second[entry.localIndex];
-                weightSum += entry.weight;
+            float sampledTemp = 0.0f;
+            float weightSum = 0.0f;
+            for (const auto& entry : ch.stencilWeights) {
+                auto it = temperaturesByModel.find(entry.runtimeModelId);
+                if (it != temperaturesByModel.end() && entry.localIndex < it->second.size()) {
+                    sampledTemp += entry.weight * it->second[entry.localIndex];
+                    weightSum += entry.weight;
+                }
+            }
+
+            if (std::abs(weightSum) > 1e-5f) {
+                ch.currentTemperatureC = sampledTemp / weightSum;
             }
         }
+    }
 
-        if (std::abs(weightSum) > 1e-5f) {
-            ch.currentTemperatureC = sampledTemp / weightSum;
-        }
+    temperaturesC.resize(channels.size());
+    for (size_t i = 0; i < channels.size(); ++i) {
+        temperaturesC[i] = channels[i].currentTemperatureC;
     }
 }
 

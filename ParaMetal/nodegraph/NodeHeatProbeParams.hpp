@@ -19,3 +19,15 @@ std::string serializeHeatProbesJson(const std::vector<HeatProbeItem>& items);
 std::vector<HeatProbeItem> deserializeHeatProbesJson(const std::string& json);
 
 HeatProbeNodeParams readHeatProbeNodeParams(const NodeGraphNode& node);
+
+namespace nodegraphtypes {
+inline constexpr const char* HeatProbe = "heat_probe";
+}
+
+namespace nodegraphparams::heatprobe {
+constexpr uint32_t Enabled = 1;
+constexpr uint32_t OpcPort = 2;
+constexpr uint32_t ProbesJson = 3;
+constexpr uint32_t ShowTemperature = 4;
+constexpr uint32_t ShowName = 5;
+}

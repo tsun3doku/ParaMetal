@@ -24,8 +24,8 @@ ComputeApplyResult RuntimeRemeshComputeTransport::apply(
     }
 
     RemeshController::Config config{};
-    config.pointPositions = package.sourceGeometry.pointPositions;
-    config.triangleIndices = package.sourceGeometry.triangleIndices;
+    config.pointPositions = package.vertexPositions;
+    config.triangleIndices = package.triangleIndices;
     config.iterations = package.iterations;
     config.minAngleDegrees = package.minAngleDegrees;
     config.maxEdgeLength = package.maxEdgeLength;

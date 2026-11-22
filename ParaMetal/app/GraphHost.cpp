@@ -1,6 +1,7 @@
 #include "GraphHost.hpp"
 
 #include "nodegraph/NodeGraphUtils.hpp"
+#include "nodegraph/NodeHeatSolve.hpp"
 #include "nodegraph/NodeHeatSolveParams.hpp"
 #include "runtime/TimelineRuntime.hpp"
 

@@ -331,11 +331,13 @@ void HeatOverlayRenderer::updateProbePosition(uint32_t probeId, int probeIndex, 
     }
 }
 
-void HeatOverlayRenderer::updateProbeTemperatures(uint64_t nodeId, const std::vector<float>& temps) {
-    size_t tempIdx = 0;
+void HeatOverlayRenderer::onTemperatures(const TelemetryTemperatures& telemetry) {
+    const float* temps = telemetry.values;
+    std::size_t count = temps ? telemetry.count : 0;
+    std::size_t tempIdx = 0;
     for (auto& binding : probeBindings) {
-        if (binding.nodeId == nodeId || binding.nodeId == 0) {
-            if (tempIdx < temps.size()) {
+        if (binding.nodeId == telemetry.nodeId || binding.nodeId == 0) {
+            if (tempIdx < count) {
                 binding.currentTemperatureC = temps[tempIdx++];
             }
         }

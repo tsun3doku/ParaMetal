@@ -99,9 +99,9 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(uint64_t socketKey, const HeatP
 
     outConfig = {};
     outConfig.worldUnit = package.worldUnit;
-    outConfig.simulationDuration = package.authored.simulationDuration;
-    outConfig.solverMaxIterations = package.authored.solverMaxIterations;
-    outConfig.solverConvergenceTolerance = package.authored.solverConvergenceTolerance;
+    outConfig.simulationDuration = package.simulationDuration;
+    outConfig.solverMaxIterations = package.solverMaxIterations;
+    outConfig.solverConvergenceTolerance = package.solverConvergenceTolerance;
     outConfig.hasFluid = package.hasFluid;
     outConfig.fluidDensity = package.fluidDensity;
     outConfig.fluidSpecificHeat = package.fluidSpecificHeat;

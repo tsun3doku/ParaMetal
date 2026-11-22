@@ -103,8 +103,6 @@ NodeGraphRuntimeSocketDebugInfo NodeGraphDebugCache::socketInfo(const NodeGraphS
     const NodeDataBlock* block = &value->data;
     info.hasValue = true;
     info.dataType = "payload:" + std::to_string(block->dataType);
-    info.metadata = block->metadata;
-    info.lineageNodeIds = block->lineageNodeIds;
 
     return info;
 }

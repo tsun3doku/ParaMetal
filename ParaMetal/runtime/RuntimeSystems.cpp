@@ -1,4 +1,5 @@
 #include "RuntimeSystems.hpp"
+#include "telemetry/RuntimeTelemetry.hpp"
 
 #include "cuda/CudaVulkanDevice.hpp"
 #include "cfd/CFDSystemComputeController.hpp"
@@ -279,17 +280,20 @@ const RuntimeQuery* RuntimeSystems::runtimeQuery() const {
     return this;
 }
 
-bool RuntimeSystems::getSerialTemperatureStatus(uint64_t sourceKey, SerialTemperatureRuntime::Status& outStatus) const {
+void RuntimeSystems::publishProbeTelemetry(TemperatureTelemetryReceiver& receiver) const {
     const HeatSystemComputeController* controller =
         compute.heatSystemComputeController();
-    return controller &&
-        controller->getSerialTemperatureStatus(sourceKey, outStatus);
+    if (controller) {
+        controller->publishProbeTelemetry(receiver);
+    }
 }
 
-bool RuntimeSystems::getHeatProbeTemperatures(uint64_t sourceKey, std::vector<float>& outTemperaturesC) const {
+void RuntimeSystems::publishSerialTelemetry(ConnectionTelemetryReceiver& receiver) const {
     const HeatSystemComputeController* controller =
         compute.heatSystemComputeController();
-    return controller && controller->getHeatProbeTemperatures(sourceKey, outTemperaturesC);
+    if (controller) {
+        controller->publishSerialTelemetry(receiver);
+    }
 }
 
 void RuntimeSystems::startProbePicking(uint32_t targetNodeId, int probeIndex) {

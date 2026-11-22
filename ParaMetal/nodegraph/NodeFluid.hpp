@@ -2,6 +2,11 @@
 
 #include "NodeGraphKernels.hpp"
 
+NodeTypeDefinition buildFluidDefinition();
+std::unique_ptr<NodeKernel> createFluidKernel();
+
+#include "NodeGraphKernels.hpp"
+
 class NodeFluid final : public NodeKernel {
 public:
     const char* typeId() const override;
@@ -10,3 +15,7 @@ public:
 };
 
 using NodeHeatFluid = NodeFluid;
+
+namespace nodegraphtypes {
+inline constexpr const char* Fluid = "fluid";
+}

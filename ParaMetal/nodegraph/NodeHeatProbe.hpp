@@ -1,6 +1,10 @@
 #pragma once
 
 #include "NodeGraphKernels.hpp"
+#include "NodeHeatProbeParams.hpp"
+
+NodeTypeDefinition buildHeatProbeDefinition();
+std::unique_ptr<NodeKernel> createHeatProbeKernel();
 
 class NodeHeatProbe final : public NodeKernel {
 public:

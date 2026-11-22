@@ -1,36 +1,18 @@
 #include "RuntimePackageCompiler.hpp"
 
-#include "domain/BoundaryData.hpp"
-#include "domain/FluidData.hpp"
-#include "domain/HeatModelData.hpp"
-#include "domain/PointData.hpp"
-#include "hash/HashPackage.hpp"
+#include "CFDPackageCompiler.hpp"
+#include "HeatPackageCompiler.hpp"
+#include "ModelPackageCompiler.hpp"
+#include "PackageCompileContext.hpp"
+#include "PointPackageCompiler.hpp"
+#include "RemeshPackageCompiler.hpp"
+#include "VoronoiPackageCompiler.hpp"
 #include "nodegraph/NodeGraphEvaluation.hpp"
 #include "nodegraph/NodeGraphPayloadTypes.hpp"
-#include "nodegraph/NodeGraphRegistry.hpp"
 #include "nodegraph/NodeGraphState.hpp"
-#include "nodegraph/NodeGraphUtils.hpp"
-#include "nodegraph/NodeHeatSolveParams.hpp"
-#include "nodegraph/NodeCFDParams.hpp"
-#include "nodegraph/NodeHeatProbeParams.hpp"
-#include "domain/HeatProbeData.hpp"
-#include "nodegraph/NodeMergeParams.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
-#include "nodegraph/NodeRemeshParams.hpp"
-#include "nodegraph/NodeTransform.hpp"
-#include "nodegraph/NodeVoronoiParams.hpp"
-#include "runtime/RuntimeProductManager.hpp"
-#include "runtime/RuntimeProducts.hpp"
 #include "runtime/package/RuntimePackageManager.hpp"
-#include "runtime/package/passes/CoordinatePass.hpp"
 #include "runtime/package/passes/ValidationPass.hpp"
-#include "util/GeometryUtils.hpp"
-
-#include <cmath>
-#include <cstdint>
-#include <limits>
-#include <unordered_map>
-#include <unordered_set>
 
 bool RuntimePackageCompiler::validate(
     const NodeGraphState& graph,
@@ -43,35 +25,28 @@ bool RuntimePackageCompiler::validate(
     return validationPass.run(graph, graphPlan, evaluation, payloads, errors);
 }
 
-HashValues RuntimePackageCompiler::resolveHandleHashes(
-    const NodePayloadRegistry& payloads,
-    const NodeDataHandle& handle) {
-    if (handle.key == 0) return {};
-    HashValues values{};
-    values.full = payloads.resolveHash(handle, HashDomain::Full);
-    values.geometry = payloads.resolveHash(handle, HashDomain::Geometry);
-    values.thermal = payloads.resolveHash(handle, HashDomain::Thermal);
-    values.simulation = payloads.resolveHash(handle, HashDomain::Simulation);
-    values.display = payloads.resolveHash(handle, HashDomain::Display);
-    return values;
-}
-
 bool RuntimePackageCompiler::compileNode(
     const NodeGraphState& graph,
     const NodeGraphNode& node,
     const NodeGraphEvaluation& evaluation,
     const NodePayloadRegistry& payloads,
-    const RuntimeProductManager& products,
     units::LengthUnit worldUnit,
     FrozenPackages frozenPackages,
     RuntimePackageManager& packages,
+    const RuntimeProductManager* products,
     std::vector<std::string>& errors) const {
-    const NodeTypeId typeId = getNodeTypeId(node.typeId);
     for (const NodeGraphSocket& outputSocket : node.outputs) {
         const uint64_t outputSocketKey = NodeSocketKey(node.id, outputSocket.id).value;
+        const bool requiresRuntimePackage = outputSocket.contract.requiresRuntimePackage;
         const EvaluatedSocketValue* evaluated = evaluation.outputFor(outputSocketKey);
         if (!evaluated || evaluated->status != EvaluatedSocketStatus::Value ||
             evaluated->data.payloadHandle.key == 0) {
+            if (requiresRuntimePackage) {
+                errors.push_back(
+                    "Runtime output '" + outputSocket.name + "' on node '" +
+                    node.title + "' was not evaluated.");
+                return false;
+            }
             continue;
         }
 
@@ -80,742 +55,42 @@ bool RuntimePackageCompiler::compileNode(
             continue;
         }
 
+        const runtimepackage::PackageCompileContext context{
+            graph,
+            node,
+            output,
+            outputSocketKey,
+            payloads,
+            worldUnit,
+            packages,
+            errors
+        };
+
         bool compiled = true;
-        if (typeId == nodegraphtypes::Remesh)
-            compiled = compileRemeshPackage(node, outputSocketKey, output, payloads, worldUnit, packages, errors);
-        else if (typeId == nodegraphtypes::Voronoi)
-            compiled = compileVoronoiPackage(node, outputSocketKey, output, payloads, worldUnit, packages, errors);
-        else if (typeId == nodegraphtypes::HeatSolve)
-            compiled = compileHeatPackage(graph, node, outputSocketKey, output, payloads, worldUnit, packages, errors);
-        else if (typeId == nodegraphtypes::CFD)
-            compiled = compileCFDPackage(node, outputSocketKey, output, payloads, worldUnit, packages, errors);
-        else if (output.dataType == payloadtypes::Points)
-            compiled = compilePointPackage(graph, node, outputSocketKey, output, payloads, products, worldUnit, packages, errors);
+        if (requiresRuntimePackage && output.dataType == payloadtypes::Remesh)
+            compiled = runtimepackage::compileRemeshPackage(context);
+        else if (requiresRuntimePackage && output.dataType == payloadtypes::Voronoi)
+            compiled = runtimepackage::compileVoronoiPackage(context);
+        else if (requiresRuntimePackage && output.dataType == payloadtypes::Heat)
+            compiled = runtimepackage::compileHeatPackage(context);
+        else if (requiresRuntimePackage && output.dataType == payloadtypes::CFD)
+            compiled = runtimepackage::compileCFDPackage(context);
+        else if (output.dataType == payloadtypes::Points) {
+            if (!products) {
+                errors.push_back("Point package compilation requires runtime product access.");
+                return false;
+            }
+            compiled = runtimepackage::compilePointPackage(context, *products);
+        }
         else if (output.dataType == payloadtypes::Geometry)
-            compiled = compileModelPackage(outputSocketKey, output, payloads, worldUnit, packages);
+            compiled = runtimepackage::compileModelPackage(context);
+        else if (requiresRuntimePackage) {
+            errors.push_back("No package compiler is registered for runtime output type " +
+                std::to_string(output.dataType) + ".");
+            return false;
+        }
         if (!compiled) return false;
     }
 
-    return true;
-}
-
-bool RuntimePackageCompiler::compileModelPackage(
-    uint64_t outputSocketKey,
-    const NodeDataBlock& output,
-    const NodePayloadRegistry& payloads,
-    units::LengthUnit worldUnit,
-    RuntimePackageManager& packages) const {
-    NodeDataHandle sourceGeometryHandle{};
-    const GeometryData* geometry = payloads.resolveGeometry(
-        output.payloadHandle, &sourceGeometryHandle);
-    if (!geometry || sourceGeometryHandle.key == 0 ||
-        geometry->pointPositions.empty() || geometry->triangleIndices.empty()) return true;
-    const HashValues* sourceHashes = payloads.findHashes(sourceGeometryHandle);
-    if (!sourceHashes || sourceHashes->geometry == 0) return true;
-    ModelPackage package{};
-    const ModelPackage* previous = packages.findStored<ModelPackage>(outputSocketKey);
-    package.productHandle = previous ? previous->productHandle : ProductHandle{};
-    package.geometryHandle = sourceGeometryHandle;
-    if (!payloads.resolveLocalToWorld(output.payloadHandle, package.localToWorld)) return true;
-    runtimepackage::CoordinatePass{}.run(package, worldUnit);
-    HashPackage::seal(package, *sourceHashes, output.hashes);
-    const bool computeChanged =
-        !previous || !previous->productHandle.isValid() ||
-        previous->computeHash() != package.computeHash();
-    if (computeChanged) {
-        package.sourceGeometry = *geometry;
-        runtimepackage::CoordinatePass::scalePositions(
-            package.sourceGeometry.pointPositions, package.canonicalToWorldScale);
-        runtimepackage::CoordinatePass::scalePositions(
-            package.sourceGeometry.renderPositions, package.canonicalToWorldScale);
-    }
-    packages.apply<ModelPackage>(outputSocketKey, package);
-    return true;
-}
-
-bool RuntimePackageCompiler::compileRemeshPackage(
-    const NodeGraphNode& node,
-    uint64_t outputSocketKey,
-    const NodeDataBlock& output,
-    const NodePayloadRegistry& payloads,
-    units::LengthUnit worldUnit,
-    RuntimePackageManager& packages,
-    std::vector<std::string>& errors) const {
-    const RemeshData* remesh = payloads.get<RemeshData>(output.payloadHandle);
-    if (!remesh || !remesh->active || remesh->sourceMeshHandle.key == 0) return true;
-    const GeometryData* geometry = payloads.resolveGeometry(remesh->sourceMeshHandle);
-    const ModelPackage* model = packages.findAny<ModelPackage>(remesh->sourceMeshHandle.key);
-    if (!geometry || geometry->pointPositions.empty() || geometry->triangleIndices.empty() ||
-        !model || !model->productHandle.isValid()) {
-        errors.push_back("Remesh package is missing its upstream model product.");
-        return false;
-    }
-
-    const RemeshNodeParams params = readRemeshNodeParams(node);
-    RemeshPackage package{};
-    const RemeshPackage* previous = packages.findStored<RemeshPackage>(outputSocketKey);
-    package.productHandle = previous ? previous->productHandle : ProductHandle{};
-    package.sourceGeometry = *geometry;
-    if (!payloads.resolveLocalToWorld(remesh->sourceMeshHandle, package.localToWorld)) {
-        errors.push_back("Remesh package cannot resolve source placement.");
-        return false;
-    }
-    package.iterations = remesh->iterations;
-    package.minAngleDegrees = remesh->minAngleDegrees;
-    package.maxEdgeLength = remesh->maxEdgeLength;
-    package.stepSize = remesh->stepSize;
-    package.display.showRemeshOverlay = params.preview.showRemeshOverlay;
-    package.display.showFaceNormals = params.preview.showFaceNormals;
-    package.display.showVertexNormals = params.preview.showVertexNormals;
-    package.display.normalLength = static_cast<float>(params.normalLength);
-    package.remeshHandle = output.payloadHandle;
-    package.sourceMeshHandle = remesh->sourceMeshHandle;
-    package.sourceModelProduct = model->productHandle;
-    package.displayDependencyKeys.push_back(model->productHandle.outputSocketKey);
-    runtimepackage::CoordinatePass{}.run(package, worldUnit);
-    HashPackage::seal(package, resolveHandleHashes(payloads, remesh->sourceMeshHandle));
-    packages.apply<RemeshPackage>(outputSocketKey, package);
-    return true;
-}
-
-bool RuntimePackageCompiler::compileVoronoiPackage(
-    const NodeGraphNode& node,
-    uint64_t outputSocketKey,
-    const NodeDataBlock& output,
-    const NodePayloadRegistry& payloads,
-    units::LengthUnit worldUnit,
-    RuntimePackageManager& packages,
-    std::vector<std::string>& errors) const {
-    const VoronoiData* voronoi = payloads.get<VoronoiData>(output.payloadHandle);
-    if (!voronoi || !voronoi->active) return true;
-    const PointPackage* points = packages.findAny<PointPackage>(voronoi->pointsPayloadHandle.key);
-    if (!points || points->positions.empty()) {
-        errors.push_back("Voronoi package is missing its upstream point package.");
-        return false;
-    }
-
-    VoronoiPackage package{};
-    const VoronoiPackage* previous = packages.findStored<VoronoiPackage>(outputSocketKey);
-    package.productHandle = previous ? previous->productHandle : ProductHandle{};
-    package.authored = *voronoi;
-    package.voronoiHandle = output.payloadHandle;
-    package.pointsPayloadHandle = voronoi->pointsPayloadHandle;
-    const VoronoiNodeParams params = readVoronoiNodeParams(node);
-    package.display.showVoronoi = params.preview.showVoronoi;
-    package.display.showPoints = params.preview.showPoints;
-
-    if (voronoi->modelMeshHandles.empty()) {
-        errors.push_back("Voronoi domain requires at least one unique Remeshes input.");
-        return false;
-    }
-    std::unordered_set<uint64_t> seenRemeshKeys;
-    for (const NodeDataHandle& remeshHandle : voronoi->modelMeshHandles) {
-        if (remeshHandle.key == 0 ||
-            !seenRemeshKeys.insert(remeshHandle.key).second) {
-            errors.push_back("Voronoi domain contains an empty or duplicate remesh payload.");
-            return false;
-        }
-        const RemeshPackage* remesh = packages.findAny<RemeshPackage>(remeshHandle.key);
-        const ModelPackage* model = remesh
-            ? packages.findAny<ModelPackage>(remesh->sourceMeshHandle.key)
-            : nullptr;
-        if (!remesh || !model ||
-            !remesh->productHandle.isValid() || !model->productHandle.isValid()) {
-            errors.push_back("Voronoi domain is missing an upstream remesh product.");
-            return false;
-        }
-        package.globalRemeshHandles.push_back(remeshHandle);
-        package.globalRemeshProducts.push_back(remesh->productHandle);
-        package.globalModelProducts.push_back(model->productHandle);
-        package.displayDependencyKeys.push_back(remesh->productHandle.outputSocketKey);
-        package.displayDependencyKeys.push_back(model->productHandle.outputSocketKey);
-    }
-
-    runtimepackage::CoordinatePass{}.run(package, worldUnit);
-    const glm::mat4 pointTransform = toMat4(points->localToWorld);
-    package.pointPositions = points->positions;
-    for (glm::vec4& position : package.pointPositions) {
-        position = pointTransform * position;
-    }
-
-    glm::vec3 worldDomainMin(std::numeric_limits<float>::max());
-    glm::vec3 worldDomainMax(-std::numeric_limits<float>::max());
-    for (uint32_t corner = 0; corner < 8; ++corner) {
-        const glm::vec3 localCorner(
-            (corner & 1u) ? points->domainMaximum.x : points->domainMinimum.x,
-            (corner & 2u) ? points->domainMaximum.y : points->domainMinimum.y,
-            (corner & 4u) ? points->domainMaximum.z : points->domainMinimum.z);
-        const glm::vec3 worldCorner = glm::vec3(pointTransform * glm::vec4(localCorner, 1.0f));
-        package.pointDomainCorners[corner] = worldCorner;
-        worldDomainMin = glm::min(worldDomainMin, worldCorner);
-        worldDomainMax = glm::max(worldDomainMax, worldCorner);
-    }
-
-    if (package.authored.voxelResolution < 2) {
-        errors.push_back("Voronoi domain requires voxelResolution >= 2.");
-        return false;
-    }
-    const glm::vec3 physicalExtent = worldDomainMax - worldDomainMin;
-    const float longestExtent = std::max(std::max(physicalExtent.x, physicalExtent.y), physicalExtent.z);
-    const float spacing = longestExtent /
-        static_cast<float>(package.authored.voxelResolution - 1);
-    const float domainVolume = physicalExtent.x * physicalExtent.y * physicalExtent.z;
-    if (package.pointPositions.empty() || !(domainVolume > 0.0f)) {
-        errors.push_back("Voronoi domain has no point set to size the voxel resolution against.");
-        return false;
-    }
-    const float pointSpacing = std::cbrt(
-        domainVolume / static_cast<float>(package.pointPositions.size()));
-    if (spacing > 0.5f * pointSpacing) {
-        errors.push_back(
-            "Voronoi domain violates the resolution rule: spacing (" +
-            std::to_string(spacing) +
-            ") must be <= 0.5 * point spacing (" +
-            std::to_string(0.5f * pointSpacing) + ").");
-        return false;
-    }
-
-    const glm::mat4 worldToPoint = glm::inverse(pointTransform);
-    constexpr float epsilon = 1e-4f;
-    const glm::vec3 localDomainMin = points->domainMinimum - glm::vec3(epsilon);
-    const glm::vec3 localDomainMax = points->domainMaximum + glm::vec3(epsilon);
-
-    for (std::size_t i = 0; i < package.globalRemeshHandles.size(); ++i) {
-        std::array<float, 16> remeshToWorld{};
-        if (!payloads.resolveLocalToWorld(package.globalRemeshHandles[i], remeshToWorld)) {
-            errors.push_back("Voronoi domain cannot resolve a model placement.");
-            return false;
-        }
-        package.globalRemeshLocalToWorld.push_back(remeshToWorld);
-        const RemeshPackage* remesh = packages.findAny<RemeshPackage>(
-            package.globalRemeshHandles[i].key);
-        if (!remesh) {
-            errors.push_back("Voronoi domain cannot resolve remesh package.");
-            return false;
-        }
-
-        const glm::mat4 remeshToWorldMat = toMat4(remeshToWorld);
-        const glm::mat4 remeshToPointLocal = worldToPoint * remeshToWorldMat;
-        const std::vector<float>& positions = remesh->sourceGeometry.pointPositions;
-
-        for (std::size_t p = 0; p + 2 < positions.size(); p += 3) {
-            const glm::vec3 pointLocalPos = glm::vec3(
-                remeshToPointLocal * glm::vec4(positions[p], positions[p + 1], positions[p + 2], 1.0f));
-
-            if (glm::any(glm::lessThan(pointLocalPos, localDomainMin)) ||
-                glm::any(glm::greaterThan(pointLocalPos, localDomainMax))) {
-                errors.push_back(
-                    "Voronoi domain remesh " + std::to_string(package.globalRemeshHandles[i].key) +
-                    " lies outside the PointData domain bounds.");
-                return false;
-            }
-        }
-    }
-    HashPackage::seal(package, output.hashes);
-    packages.apply<VoronoiPackage>(outputSocketKey, package);
-    return true;
-}
-
-bool RuntimePackageCompiler::compileHeatPackage(
-    const NodeGraphState& graph,
-    const NodeGraphNode& node,
-    uint64_t outputSocketKey,
-    const NodeDataBlock& output,
-    const NodePayloadRegistry& payloads,
-    units::LengthUnit worldUnit,
-    RuntimePackageManager& packages,
-    std::vector<std::string>& errors) const {
-    const HeatData* heat = payloads.get<HeatData>(output.payloadHandle);
-    if (!heat) return true;
-
-    HeatPackage package{};
-    const HeatPackage* previous = packages.findStored<HeatPackage>(outputSocketKey);
-    package.productHandle = previous ? previous->productHandle : ProductHandle{};
-    package.authored = *heat;
-    package.heatHandle = output.payloadHandle;
-    package.domainVoronoiHandle = heat->domainVoronoiHandle;
-
-    std::vector<NodeGraphNodeId> scanQueue = { node.id };
-    std::unordered_set<uint32_t> visited = { node.id.value };
-
-    while (!scanQueue.empty()) {
-        const NodeGraphNodeId currentId = scanQueue.back();
-        scanQueue.pop_back();
-
-        for (const auto& [edgeId, edge] : graph.edges) {
-            if (edge.fromNode == currentId) {
-                const NodeGraphNode* downstreamNode = graph.node(edge.toNode);
-                if (downstreamNode && getNodeTypeId(downstreamNode->typeId) == nodegraphtypes::HeatProbe) {
-                    if (visited.insert(downstreamNode->id.value).second) {
-                        const auto probeParams = readHeatProbeNodeParams(*downstreamNode);
-                        HeatProbeData probeData{};
-                        probeData.enabled = probeParams.enabled;
-                        probeData.opcPort = probeParams.opcPort;
-                        probeData.showTemperature = probeParams.showTemperature;
-                        probeData.showName = probeParams.showName;
-                        probeData.items = probeParams.items;
-                        package.resolvedHeatProbes[downstreamNode->id.value] = probeData;
-                        scanQueue.push_back(downstreamNode->id);
-                    }
-                }
-            }
-        }
-    }
-    const HeatSolveNodeParams params = readHeatSolveNodeParams(node);
-    package.display.showHeatOverlay = params.preview.showHeatOverlay;
-    package.display.showFluxVectors = params.preview.showFluxVectors;
-    package.display.showHeatPalette = params.preview.showHeatPalette;
-    package.display.showIsocontours = params.preview.showIsocontours;
-    package.display.showDomainBox = params.preview.showDomainBox;
-    package.display.showFluidVolume = params.preview.showFluidVolume;
-    package.display.fluidVolumeOpacity = static_cast<float>(params.preview.fluidVolumeOpacity);
-    package.display.fluxVectorScale = static_cast<float>(params.preview.fluxVectorScale);
-    package.display.isocontourSpacingC = params.isocontourSpacingC;
-
-    const BoundaryData* boundary = heat->boundaryHandle.key != 0
-        ? payloads.get<BoundaryData>(heat->boundaryHandle)
-        : nullptr;
-    if (boundary) {
-        for (uint32_t face = 0; face < 6; ++face) {
-            const BoundaryData::Face& authored = boundary->faces[face];
-            package.domainBoundaryTypes[face] = static_cast<uint32_t>(authored.thermalType);
-            package.domainBoundaryTemperaturesC[face] = authored.temperatureC;
-            package.domainBoundaryHeatFluxes[face] = authored.heatFlux;
-            package.domainBoundaryHeatTransferCoefficients[face] = authored.htc;
-            package.domainBoundaryInflowTemperaturesC[face] = authored.inflowTemperatureC;
-        }
-    }
-
-    struct AuthoredHeatModel {
-        const HeatModelData* data = nullptr;
-        uint64_t handleKey = 0;
-    };
-    std::unordered_map<uint64_t, AuthoredHeatModel> modelsByRemesh;
-    for (const NodeDataHandle& handle : heat->heatModelHandles) {
-        const HeatModelData* model = payloads.get<HeatModelData>(handle);
-        if (model && model->meshHandle.key != 0) {
-            modelsByRemesh.emplace(model->meshHandle.key, AuthoredHeatModel{model, handle.key});
-        }
-    }
-
-    const bool canResolveDomain = heat->domainVoronoiHandle.key != 0 &&
-        heat->activeVoronoiCount == 1;
-
-    if (heat->active) {
-        if (!boundary) {
-            errors.push_back("HeatSolve requires a Boundary Conditions input.");
-            return false;
-        }
-
-        if (!canResolveDomain) {
-            errors.push_back("HeatSolve requires exactly one active Voronoi input.");
-            return false;
-        }
-
-        const VoronoiData* voronoi = payloads.get<VoronoiData>(heat->domainVoronoiHandle);
-        if (!voronoi || !voronoi->active) {
-            errors.push_back("HeatSolve's domain Voronoi input is invalid.");
-            return false;
-        }
-    }
-
-    const VoronoiPackage* domainPackage = canResolveDomain
-        ? packages.findAny<VoronoiPackage>(heat->domainVoronoiHandle.key)
-        : nullptr;
-    if (canResolveDomain && (!domainPackage || !domainPackage->productHandle.isValid())) {
-        if (heat->active) {
-            errors.push_back("HeatSolve is missing its Voronoi domain product.");
-            return false;
-        }
-        domainPackage = nullptr;
-    }
-
-    if (heat->active) {
-        if (modelsByRemesh.empty()) {
-            errors.push_back("HeatSolve requires at least one heat model.");
-            return false;
-        }
-
-        std::unordered_set<uint64_t> domainRemeshKeys;
-        for (const NodeDataHandle& handle : domainPackage->globalRemeshHandles) {
-            domainRemeshKeys.insert(handle.key);
-        }
-        if (domainRemeshKeys.size() != modelsByRemesh.size()) {
-            errors.push_back("Heat package requires the heat-model remesh set to exactly equal the global Voronoi domain's Remeshes set.");
-            return false;
-        }
-    }
-
-    for (const auto& [remeshKey, authoredModel] : modelsByRemesh) {
-        (void)remeshKey;
-        const HeatModelData* model = authoredModel.data;
-        const RemeshPackage* remeshPackage = packages.findAny<RemeshPackage>(model->meshHandle.key);
-        const ModelPackage* modelPackage = remeshPackage
-            ? packages.findAny<ModelPackage>(remeshPackage->sourceMeshHandle.key)
-            : nullptr;
-        if (!modelPackage || !remeshPackage ||
-            !modelPackage->productHandle.isValid() ||
-            !remeshPackage->productHandle.isValid()) {
-            if (heat->active) {
-                errors.push_back("Heat package is missing an upstream runtime product.");
-                return false;
-            }
-            continue;
-        }
-        if (heat->active) {
-            bool inDomain = false;
-            for (const ProductHandle& handle : domainPackage->globalRemeshProducts) {
-                inDomain = inDomain || isSamePublication(handle, remeshPackage->productHandle);
-            }
-            if (!inDomain) {
-                errors.push_back("Heat package contains a heat model outside the global Voronoi domain.");
-                return false;
-            }
-        }
-
-        HeatModelPackage compiledModel{};
-        compiledModel.heatModelKey = authoredModel.handleKey;
-        compiledModel.modelProduct = modelPackage->productHandle;
-        compiledModel.remeshProduct = remeshPackage->productHandle;
-        compiledModel.localToWorld = modelPackage->localToWorld;
-        if (!payloads.resolveLocalToWorld(model->meshHandle, compiledModel.remeshLocalToWorld)) {
-            if (heat->active) {
-                errors.push_back("Heat package is missing the remesh placement for a heat model.");
-                return false;
-            }
-            continue;
-        }
-        compiledModel.density = model->density;
-        compiledModel.specificHeat = model->specificHeat;
-        compiledModel.conductivity = model->conductivity;
-        compiledModel.initialTemperatureC = model->initialTemperatureC;
-        compiledModel.volumetricPowerDensity =
-            model->volumetricHeatSource.powerDensity;
-        compiledModel.prescribedTemperatureEnabled =
-            model->prescribedTemperatureEnabled;
-        compiledModel.prescribedTemperatureC =
-            model->prescribedTemperatureC;
-
-        package.models.push_back(compiledModel);
-    }
-
-    package.hasFluid = false;
-    if (heat->hasFluid && heat->heatFluidHandle.key != 0) {
-        const FluidData* fluid = payloads.get<FluidData>(heat->heatFluidHandle);
-        if (fluid) {
-            package.hasFluid = true;
-            package.fluidDensity = fluid->density;
-            package.fluidSpecificHeat = fluid->specificHeat;
-            package.fluidConductivity = fluid->conductivity;
-            package.fluidInitialTemperatureC = fluid->initialTemperatureC;
-        }
-    }
-    if (heat->cfdHandle.key != 0) {
-        const CFDPackage* cfdPackage = packages.findAny<CFDPackage>(heat->cfdHandle.key);
-        if (cfdPackage && cfdPackage->productHandle.isValid()) {
-            if (domainPackage && isSamePublication(cfdPackage->domainVoronoiProduct, domainPackage->productHandle)) {
-                package.cfdProduct = cfdPackage->productHandle;
-            } else if (domainPackage) {
-                errors.push_back("Heat package CFD input does not share the same Voronoi domain as Heat.");
-                return false;
-            }
-            if (heat->heatFluidHandle.key != 0 && cfdPackage->fluidHandle.key != 0 &&
-                heat->heatFluidHandle.key != cfdPackage->fluidHandle.key) {
-                errors.push_back("Heat and CFD must share the same Fluid input.");
-                return false;
-            }
-            if (heat->boundaryHandle.key != 0 && cfdPackage->boundaryHandle.key != 0 &&
-                heat->boundaryHandle.key != cfdPackage->boundaryHandle.key) {
-                errors.push_back("Heat and CFD must share the same Boundary Conditions input.");
-                return false;
-            }
-        }
-    }
-
-    runtimepackage::CoordinatePass{}.run(package, worldUnit);
-    if (domainPackage) {
-        package.domainVoronoiProduct = domainPackage->productHandle;
-    }
-    for (const HeatModelPackage& model : package.models) {
-        package.displayDependencyKeys.push_back(model.modelProduct.outputSocketKey);
-        package.displayDependencyKeys.push_back(model.remeshProduct.outputSocketKey);
-    }
-    if (package.domainVoronoiProduct.isValid()) {
-        package.displayDependencyKeys.push_back(package.domainVoronoiProduct.outputSocketKey);
-    }
-    if (package.cfdProduct.isValid()) {
-        package.displayDependencyKeys.push_back(package.cfdProduct.outputSocketKey);
-    }
-    HashPackage::seal(package, output.hashes);
-    packages.apply<HeatPackage>(outputSocketKey, package);
-    return true;
-}
-
-bool RuntimePackageCompiler::compileCFDPackage(
-    const NodeGraphNode& node,
-    uint64_t outputSocketKey,
-    const NodeDataBlock& output,
-    const NodePayloadRegistry& payloads,
-    units::LengthUnit worldUnit,
-    RuntimePackageManager& packages,
-    std::vector<std::string>& errors) const {
-    const CFDNodeParams params = readCFDNodeParams(node);
-    const CFDData* cfd = payloads.get<CFDData>(output.payloadHandle);
-    if (!cfd) return true;
-
-    CFDPackage package{};
-    const CFDPackage* previous = packages.findStored<CFDPackage>(outputSocketKey);
-    package.productHandle = previous ? previous->productHandle : ProductHandle{};
-    package.domainVoronoiHandle = cfd->domainVoronoiHandle;
-    package.fluidHandle = cfd->fluidHandle;
-    package.boundaryHandle = cfd->boundaryHandle;
-    package.initialVelocity = cfd->initialVelocity;
-    package.fixedTimeStep = cfd->fixedTimeStep;
-    package.targetCourant = cfd->targetCourant;
-    package.pressureIterations = cfd->pressureIterations;
-    package.pressureTolerance = cfd->pressureTolerance;
-    package.simulationDuration = cfd->simulationDuration;
-    package.active = cfd->active;
-    package.canonicalToWorldScale = units::canonicalToWorldScale(worldUnit);
-    package.display.showStreamlines = params.preview.showStreamlines;
-    package.display.showDomainBox = params.preview.showDomainBox;
-    package.display.showVelocityPalette = params.preview.showVelocityPalette;
-    package.display.showSlice = params.preview.showSlice;
-    package.display.sliceAxis = params.preview.sliceAxis;
-    package.display.slicePosition = static_cast<float>(params.preview.slicePosition);
-    package.display.showSliceWireframe = params.preview.showSliceWireframe;
-
-    const BoundaryData* boundary = cfd->boundaryHandle.key != 0
-        ? payloads.get<BoundaryData>(cfd->boundaryHandle)
-        : nullptr;
-    if (boundary) {
-        for (uint32_t i = 0; i < 6; ++i) {
-            package.domainBoundaryTypes[i] = static_cast<uint32_t>(boundary->faces[i].flowType);
-            package.domainBoundaryVelocities[i] = boundary->faces[i].velocity;
-        }
-    }
-
-    const bool canResolveDomain = cfd->domainVoronoiHandle.key != 0;
-    if (cfd->active) {
-        if (!boundary) {
-            errors.push_back("CFD requires a Boundary Conditions input.");
-            return false;
-        }
-
-        if (!canResolveDomain) {
-            errors.push_back("CFD requires an active Voronoi domain input.");
-            return false;
-        }
-
-        const VoronoiData* voronoi = payloads.get<VoronoiData>(cfd->domainVoronoiHandle);
-        if (!voronoi || !voronoi->active) {
-            errors.push_back("CFD's domain Voronoi input is invalid.");
-            return false;
-        }
-
-        if (!cfd->hasFluid || cfd->fluidHandle.key == 0) {
-            errors.push_back("CFD requires a Fluid input.");
-            return false;
-        }
-    }
-
-    const VoronoiPackage* domainPackage = canResolveDomain
-        ? packages.findAny<VoronoiPackage>(cfd->domainVoronoiHandle.key)
-        : nullptr;
-    if (canResolveDomain && (!domainPackage || !domainPackage->productHandle.isValid())) {
-        if (cfd->active) {
-            errors.push_back("CFD is missing its Voronoi domain product.");
-            return false;
-        }
-        domainPackage = nullptr;
-    }
-
-    if (domainPackage) {
-        package.domainVoronoiProduct = domainPackage->productHandle;
-        package.displayDependencyKeys.push_back(domainPackage->productHandle.outputSocketKey);
-        for (const ProductHandle& handle : domainPackage->globalRemeshProducts) {
-            package.displayDependencyKeys.push_back(handle.outputSocketKey);
-        }
-        for (const ProductHandle& handle : domainPackage->globalModelProducts) {
-            package.displayDependencyKeys.push_back(handle.outputSocketKey);
-        }
-    }
-
-    if (cfd->hasFluid && cfd->fluidHandle.key != 0) {
-        const FluidData* fluid = payloads.get<FluidData>(cfd->fluidHandle);
-        if (fluid) {
-            package.fluid = *fluid;
-        }
-    }
-
-    HashPackage::seal(package, output.hashes);
-    packages.apply<CFDPackage>(outputSocketKey, package);
-    return true;
-}
-
-bool RuntimePackageCompiler::compilePointPackage(
-    const NodeGraphState& graph,
-    const NodeGraphNode& node,
-    uint64_t outputSocketKey,
-    const NodeDataBlock& output,
-    const NodePayloadRegistry& payloads,
-    const RuntimeProductManager& products,
-    units::LengthUnit worldUnit,
-    RuntimePackageManager& packages,
-    std::vector<std::string>& errors) const {
-    const PointData* points = payloads.resolvePoints(output.payloadHandle);
-    if (!points || !points->active) return true;
-    const NodeTypeId typeId = getNodeTypeId(node.typeId);
-    const runtimepackage::CoordinatePass coordinatePass{};
-    PointPackage package{};
-    const PointPackage* previous = packages.findStored<PointPackage>(outputSocketKey);
-    package.productHandle = previous ? previous->productHandle : ProductHandle{};
-    package.pointsPayloadHandle = output.payloadHandle;
-    package.domainMinimum = points->domainMinimum;
-    package.domainMaximum = points->domainMaximum;
-
-    if (typeId == nodegraphtypes::MeshPoints) {
-        if (node.inputs.empty()) {
-            errors.push_back("Mesh Points node has no remesh input.");
-            return false;
-        }
-        const uint64_t upstreamKey = graph.edges.upstream(node.id, node.inputs.front().id).value;
-        const RemeshPackage* remeshPackage = packages.findAny<RemeshPackage>(upstreamKey);
-        const RemeshProduct* remeshProduct = remeshPackage
-            ? products.resolve<RemeshProduct>(remeshPackage->productHandle)
-            : nullptr;
-        if (!remeshProduct || !remeshProduct->isValid()) {
-            errors.push_back("Mesh Points package is missing its remesh product.");
-            return false;
-        }
-        package.localToWorld = points->localToWorld;
-        coordinatePass.run(package, worldUnit);
-        package.positions.reserve(remeshProduct->surfacePositions.size());
-        for (const glm::vec3& position : remeshProduct->surfacePositions) {
-            package.positions.emplace_back(position, 1.0f);
-        }
-    } else if (typeId == nodegraphtypes::Transform) {
-        if (!payloads.resolveLocalToWorld(output.payloadHandle, package.localToWorld)) {
-            errors.push_back("Point Transform has no resolvable placement.");
-            return false;
-        }
-        package.positions = points->positions;
-        coordinatePass.run(package, worldUnit);
-    } else if (typeId == nodegraphtypes::Merge) {
-        const PointPackage* reference = nullptr;
-        for (const NodeGraphSocket& input : node.inputs) {
-            for (NodeSocketKey key : graph.edges.upstreams(node.id, input.id)) {
-                const PointPackage* upstream = packages.findAny<PointPackage>(key.value);
-                if (upstream && !upstream->positions.empty()) {
-                    reference = upstream;
-                    break;
-                }
-            }
-            if (reference) break;
-        }
-        if (!reference) {
-            errors.push_back("Point Merge package has no valid point input.");
-            return false;
-        }
-        package.localToWorld = reference->localToWorld;
-        package.domainMinimum = glm::vec3(std::numeric_limits<float>::max());
-        package.domainMaximum = glm::vec3(std::numeric_limits<float>::lowest());
-        const glm::mat4 referenceL2W = toMat4(package.localToWorld);
-        const glm::mat4 inverseReference = glm::inverse(referenceL2W);
-        const float mergeDistance =
-            readMergeNodeParams(node).mergeDistance *
-            units::canonicalToWorldScale(worldUnit);
-        const bool filterPoints = (mergeDistance > 0.0f && std::isfinite(mergeDistance));
-        const float invCellSize = filterPoints ? 1.0f / mergeDistance : 0.0f;
-        const float mergeDistanceSq = mergeDistance * mergeDistance;
-        std::unordered_map<uint64_t, std::vector<uint32_t>> grid;
-        std::vector<glm::vec3> acceptedWorldPositions;
-
-        for (const NodeGraphSocket& input : node.inputs) {
-            for (NodeSocketKey key : graph.edges.upstreams(node.id, input.id)) {
-                const PointPackage* upstream = packages.findAny<PointPackage>(key.value);
-                if (!upstream || upstream->positions.empty()) continue;
-                const glm::mat4 upstreamToReference =
-                    inverseReference * toMat4(upstream->localToWorld);
-                for (const glm::vec4& position : upstream->positions) {
-                    const glm::vec4 transformed = upstreamToReference * position;
-                    if (filterPoints) {
-                        const glm::vec4 world = referenceL2W * transformed;
-                        if (!std::isfinite(world.x) || !std::isfinite(world.y) || !std::isfinite(world.z)) {
-                            continue;
-                        }
-
-                        const glm::vec3 worldPosition(world.x, world.y, world.z);
-                        const int64_t cx = static_cast<int64_t>(std::floor(worldPosition.x * invCellSize));
-                        const int64_t cy = static_cast<int64_t>(std::floor(worldPosition.y * invCellSize));
-                        const int64_t cz = static_cast<int64_t>(std::floor(worldPosition.z * invCellSize));
-
-                        bool tooClose = false;
-                        for (int64_t dz = -1; dz <= 1 && !tooClose; ++dz) {
-                            for (int64_t dy = -1; dy <= 1 && !tooClose; ++dy) {
-                                for (int64_t dx = -1; dx <= 1 && !tooClose; ++dx) {
-                                    const uint64_t neighborKey =
-                                        static_cast<uint64_t>(cx + dx) * 0x9e3779b97f4a7c15ULL ^
-                                        static_cast<uint64_t>(cy + dy) * 0xc2b2ae3d27d4eb4fULL ^
-                                        static_cast<uint64_t>(cz + dz) * 0x165667b19e3779f9ULL;
-                                    const auto it = grid.find(neighborKey);
-                                    if (it == grid.end()) {
-                                        continue;
-                                    }
-                                    for (uint32_t acceptedIndex : it->second) {
-                                        const glm::vec3& existing = acceptedWorldPositions[acceptedIndex];
-                                        const float ddx = worldPosition.x - existing.x;
-                                        const float ddy = worldPosition.y - existing.y;
-                                        const float ddz = worldPosition.z - existing.z;
-                                        if (ddx * ddx + ddy * ddy + ddz * ddz < mergeDistanceSq) {
-                                            tooClose = true;
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        if (tooClose) {
-                            continue;
-                        }
-
-                        const uint64_t cellKey =
-                            static_cast<uint64_t>(cx) * 0x9e3779b97f4a7c15ULL ^
-                            static_cast<uint64_t>(cy) * 0xc2b2ae3d27d4eb4fULL ^
-                            static_cast<uint64_t>(cz) * 0x165667b19e3779f9ULL;
-                        grid[cellKey].push_back(static_cast<uint32_t>(acceptedWorldPositions.size()));
-                        acceptedWorldPositions.push_back(worldPosition);
-                    }
-                    package.positions.push_back(transformed);
-                }
-                for (uint32_t corner = 0; corner < 8; ++corner) {
-                    const glm::vec4 point(
-                        (corner & 1u) ? upstream->domainMaximum.x : upstream->domainMinimum.x,
-                        (corner & 2u) ? upstream->domainMaximum.y : upstream->domainMinimum.y,
-                        (corner & 4u) ? upstream->domainMaximum.z : upstream->domainMinimum.z,
-                        1.0f);
-                    const glm::vec3 transformed = glm::vec3(upstreamToReference * point);
-                    package.domainMinimum = glm::min(package.domainMinimum, transformed);
-                    package.domainMaximum = glm::max(package.domainMaximum, transformed);
-                }
-            }
-        }
-    } else {
-        package.positions = points->positions;
-        if (!payloads.resolveLocalToWorld(output.payloadHandle, package.localToWorld)) {
-            errors.push_back("Point package has no resolvable placement.");
-            return false;
-        }
-        coordinatePass.run(package, worldUnit);
-    }
-
-    if (package.positions.empty()) {
-        errors.push_back("Point package contains no positions.");
-        return false;
-    }
-    package.pointCount = static_cast<uint32_t>(package.positions.size());
-    HashPackage::seal(package, output.hashes);
-    packages.apply<PointPackage>(outputSocketKey, package);
     return true;
 }

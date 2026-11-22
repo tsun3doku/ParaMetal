@@ -91,6 +91,10 @@ bool NodeGraphContext::initialize(
 
     nodeGraphControllerState = std::make_unique<NodeGraphController>(
         *payloadRegistryState, compute, transports);
+    if (!nodeGraphControllerState->isValid()) {
+        shutdown();
+        return false;
+    }
 
     initialized = true;
     return true;

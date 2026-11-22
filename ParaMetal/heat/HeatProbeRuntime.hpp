@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -57,14 +58,8 @@ public:
         return (index < channels.size()) ? channels[index].currentTemperatureC : 20.0f;
     }
 
-    std::vector<float> getTemperatures() const {
-        std::vector<float> temps;
-        temps.reserve(channels.size());
-        for (const auto& ch : channels) {
-            temps.push_back(ch.currentTemperatureC);
-        }
-        return temps;
-    }
+    const float* temperatureData() const { return temperaturesC.data(); }
+    std::size_t temperatureCount() const { return temperaturesC.size(); }
 
     bool hasDirtyWeights() const {
         for (const auto& ch : channels) {
@@ -80,6 +75,7 @@ private:
     bool enabled = true;
     uint32_t opcPort = 4840;
     std::vector<ProbeChannel> channels;
+    std::vector<float> temperaturesC;
 
     class ServerImpl;
     std::unique_ptr<ServerImpl> server;

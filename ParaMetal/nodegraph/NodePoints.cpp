@@ -1,5 +1,7 @@
 #include "NodePoints.hpp"
 
+#include "NodeGraphDefinitionUtils.hpp"
+#include "NodeGraphParamUtils.hpp"
 #include "hash/HashBuilder.hpp"
 #include "hash/HashNodeCache.hpp"
 #include "NodeGraphPayloadTypes.hpp"
@@ -221,6 +223,33 @@ void generateBlueNoise(
 }
 
 } // namespace
+
+static NodeTypeDefinition buildPointsNode() {
+    return {
+        nodegraphtypes::Points,
+        "Points",
+        NodeGraphNodeCategory::Geometry,
+        {
+            makeOutputSocket("Points", NodeGraphValueType::Points, payloadtypes::Points, true),
+        },
+        {
+            {nodegraphparams::points::PointCount, "Point Count", NodeGraphParamType::Int, 0.0, 1000, false, "", false},
+            {nodegraphparams::points::DimX, "Dim X", NodeGraphParamType::Float, 1.0, 0, false, "", false},
+            {nodegraphparams::points::DimY, "Dim Y", NodeGraphParamType::Float, 1.0, 0, false, "", false},
+            {nodegraphparams::points::DimZ, "Dim Z", NodeGraphParamType::Float, 1.0, 0, false, "", false},
+            makeEnumParamDefinition(nodegraphparams::points::Distribution, "Distribution", "Blue Noise", {"Uniform Grid", "Blue Noise"}),
+            {nodegraphparams::points::Seed, "Seed", NodeGraphParamType::Int, 0.0, 1, false, "", false},
+        },
+    };
+}
+
+NodeTypeDefinition buildPointsDefinition() {
+    return buildPointsNode();
+}
+
+std::unique_ptr<NodeKernel> createPointsKernel() {
+    return std::make_unique<NodePoints>();
+}
 
 const char* NodePoints::typeId() const {
     return nodegraphtypes::Points;

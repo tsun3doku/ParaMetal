@@ -11,3 +11,7 @@ struct MergeNodeParams {
 
 MergeNodeParams readMergeNodeParams(const NodeGraphNode& node);
 bool writeMergeNodeParams(NodeGraphEditor& editor, NodeGraphNodeId nodeId, const MergeNodeParams& params);
+
+namespace nodegraphparams::merge {
+constexpr uint32_t MergeDistance = 1;
+}

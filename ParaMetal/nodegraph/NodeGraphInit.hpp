@@ -2,4 +2,4 @@
 
 class NodeGraphRegistry;
 
-void initNodeGraph(NodeGraphRegistry& registry);
+bool initNodeGraph(NodeGraphRegistry& registry);

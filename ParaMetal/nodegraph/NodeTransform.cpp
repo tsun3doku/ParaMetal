@@ -1,4 +1,5 @@
 #include "NodeTransform.hpp"
+#include "NodeGraphDefinitionUtils.hpp"
 #include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
@@ -14,6 +15,37 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <utility>
+
+static NodeTypeDefinition buildTransformNode() {
+    return {
+        nodegraphtypes::Transform,
+        "Transform",
+        NodeGraphNodeCategory::Meshing,
+        {
+            makePolymorphicInputSocket("Geometry", {NodeGraphValueType::Mesh, NodeGraphValueType::Points}, false, false),
+            makePolymorphicOutputSocket("Geometry", {NodeGraphValueType::Mesh, NodeGraphValueType::Points}, payloadtypes::None),
+        },
+        {
+            {nodegraphparams::transform::TranslateX, "Translate X", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::transform::TranslateY, "Translate Y", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::transform::TranslateZ, "Translate Z", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::transform::RotateXDegrees, "Rotate X", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::transform::RotateYDegrees, "Rotate Y", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::transform::RotateZDegrees, "Rotate Z", NodeGraphParamType::Float, 0.0, 0, false, "", false},
+            {nodegraphparams::transform::ScaleX, "Scale X", NodeGraphParamType::Float, 1.0, 0, false, "", false},
+            {nodegraphparams::transform::ScaleY, "Scale Y", NodeGraphParamType::Float, 1.0, 0, false, "", false},
+            {nodegraphparams::transform::ScaleZ, "Scale Z", NodeGraphParamType::Float, 1.0, 0, false, "", false},
+        },
+    };
+}
+
+NodeTypeDefinition buildTransformDefinition() {
+    return buildTransformNode();
+}
+
+std::unique_ptr<NodeKernel> createTransformKernel() {
+    return std::make_unique<NodeTransform>();
+}
 
 const char* NodeTransform::typeId() const {
     return nodegraphtypes::Transform;
@@ -39,8 +71,7 @@ void NodeTransform::execute(NodeKernelEval& eval) const {
             payloadRegistry->resolveLocalToWorld(inputData->payloadHandle, sourceLocalToWorld)) {
             TransformData transform{};
             transform.sourceHandle = inputData->payloadHandle;
-            transform.localToWorld = toMatrixArray(
-                toMat4(sourceLocalToWorld) * toMat4(localTransform));
+            transform.localToWorld = toMatrixArray(toMat4(sourceLocalToWorld) * toMat4(localTransform));
             const uint64_t payloadKey = NodeSocketKey(eval.node.id, eval.node.outputs[0].id);
             outputValue.dataType = inputData->dataType;
             outputValue.payloadHandle = payloadRegistry->store(payloadKey, transform, eval.outputHashes);

@@ -22,6 +22,7 @@ public:
         ComputeContext& compute,
         const RuntimeTransports& transports);
 
+    bool isValid() const { return runtime.isValid(); }
     void tick();
     void resetGraph(const NodeGraphState& state);
     bool applyGraphDelta(const NodeGraphDelta& delta);
@@ -34,7 +35,10 @@ public:
     void quiescedClear();
     void setWorldUnit(units::LengthUnit unit);
     units::LengthUnit worldUnit() const { return activeWorldUnit; }
-    bool runtimeCompilationPending() const { return packageCompilationPending; }
+    bool runtimeCompilationPending() const {
+        return packageCompilationPending || packageCompilationFailed;
+    }
+    bool runtimeCompilationFailed() const { return packageCompilationFailed; }
     const NodeGraphCompiled& compiledState() const;
     bool runtimeModelIdsForNode(NodeGraphNodeId nodeId, std::vector<uint32_t>& outIds) const;
     bool hasRetiringGenerations() const;
@@ -59,6 +63,7 @@ private:
     RuntimeTransports transports{};
     NodeGraphRuntime runtime;
     bool packageCompilationPending = false;
+    bool packageCompilationFailed = false;
     bool frozenPackageRebuildPending = false;
     uint64_t packageCompileRevision = 0;
     uint64_t lastDisplaySyncStateRevision = UINT64_MAX;

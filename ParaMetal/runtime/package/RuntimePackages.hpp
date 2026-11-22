@@ -7,14 +7,11 @@
 
 #include <glm/glm.hpp>
 
-#include "domain/GeometryData.hpp"
-#include "domain/HeatData.hpp"
 #include "domain/FluidData.hpp"
-#include "domain/RemeshData.hpp"
-#include "domain/VoronoiData.hpp"
 #include "domain/SerialTemperatureData.hpp"
 #include "domain/HeatProbeData.hpp"
 #include "heat/HeatSystemPresets.hpp"
+#include "voronoi/VoronoiConfig.hpp"
 #include "hash/HashValues.hpp"
 #include "nodegraph/NodeGraphCoreTypes.hpp"
 #include "nodegraph/NodeGraphProductTypes.hpp"
@@ -26,7 +23,12 @@ struct ModelPackage {
     ProductHandle productHandle{};
     std::vector<uint64_t> displayDependencyKeys;
     NodeDataHandle geometryHandle{};
-    GeometryData sourceGeometry;
+    std::vector<float> vertexPositions;
+    std::vector<uint32_t> triangleIndices;
+    std::vector<float> renderPositions;
+    std::vector<float> renderNormals;
+    std::vector<float> renderTexcoords;
+    std::vector<uint32_t> renderIndices;
     std::array<float, 16> localToWorld{
         1.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 1.0f, 0.0f, 0.0f,
@@ -55,7 +57,8 @@ struct RemeshPackage {
     HashValues hashes{};
     ProductHandle productHandle{};
     std::vector<uint64_t> displayDependencyKeys;
-    GeometryData sourceGeometry;
+    std::vector<float> vertexPositions;
+    std::vector<uint32_t> triangleIndices;
     int iterations = 1;
     float minAngleDegrees = 20.0f;
     float maxEdgeLength = 0.1f;
@@ -90,8 +93,14 @@ struct VoronoiPackage {
     HashValues hashes{};
     ProductHandle productHandle{};
     std::vector<uint64_t> displayDependencyKeys;
-    VoronoiData authored;
     NodeDataHandle voronoiHandle{};
+    bool active = false;
+    int voxelResolution = 128;
+    float volumePadding = 0.01f;
+    int lloydIterations = int(voronoi::DefaultLloydIterations);
+    float lloydVolumeThreshold = voronoi::DefaultLloydVolumeThresholdFraction;
+    float lloydDamping = voronoi::DefaultLloydDamping;
+    float contactRange = voronoi::DefaultContactRange;
     DisplaySettings display{};
     std::array<float, 16> localToWorld{
         1.0f, 0.0f, 0.0f, 0.0f,
@@ -100,6 +109,7 @@ struct VoronoiPackage {
         0.0f, 0.0f, 0.0f, 1.0f
     };
     NodeDataHandle pointsPayloadHandle{};
+    ProductHandle pointsProduct{};
     std::vector<glm::vec4> pointPositions;
     std::array<glm::vec3, 8> pointDomainCorners{};
     std::vector<NodeDataHandle> globalRemeshHandles;
@@ -180,8 +190,11 @@ struct HeatPackage {
     HashValues hashes{};
     ProductHandle productHandle{};
     std::vector<uint64_t> displayDependencyKeys;
-    HeatData authored;
     NodeDataHandle heatHandle{};
+    bool active = false;
+    float simulationDuration = 5.0f;
+    uint32_t solverMaxIterations = 0;
+    float solverConvergenceTolerance = 0.0f;
     units::LengthUnit worldUnit = units::defaultLengthUnit();
     float canonicalToWorldScale = 1.0f;
     DisplaySettings display{};

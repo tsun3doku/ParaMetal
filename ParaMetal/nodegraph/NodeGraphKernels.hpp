@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 class NodePayloadRegistry;
@@ -29,6 +30,7 @@ struct NodeKernelEval {
     std::vector<NodeDataBlock>& outputs;
     const NodeKernelRuntime& runtime;
     HashValues outputHashes{};
+    std::string error;
 };
 
 class NodeKernel {
@@ -44,6 +46,10 @@ public:
     NodeGraphKernels();
 
     bool hasKernel(const NodeTypeId& typeId) const;
+    bool registerKernel(std::unique_ptr<NodeKernel> kernel);
+    bool registerKernellessNode(const NodeTypeId& typeId);
+    bool requiresKernel(const NodeTypeId& typeId) const;
+    bool isValid() const { return registrationValid; }
     HashValues computeOutputHashes(
         const NodeGraphNode& node,
         const NodeKernelRuntime& runtime,
@@ -53,13 +59,12 @@ public:
         const NodeKernelRuntime& runtime,
         const std::vector<std::vector<const NodeDataBlock*>>& inputs,
         std::vector<NodeDataBlock>& outputs,
-        HashValues outputHashes) const;
+        HashValues outputHashes,
+        std::string& error) const;
 
 private:
-    void registerDefaultKernels();
-    void registerKernel(std::unique_ptr<NodeKernel> kernel);
-
-    std::vector<std::unique_ptr<NodeKernel>> kernels;
-    std::unordered_map<NodeTypeId, const NodeKernel*> kernelByTypeId;
+    std::unordered_map<NodeTypeId, std::unique_ptr<NodeKernel>> kernels;
+    std::unordered_set<NodeTypeId> kernellessTypeIds;
+    bool registrationValid = true;
 };
 

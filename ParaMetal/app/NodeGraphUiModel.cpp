@@ -2,7 +2,9 @@
 
 #include "nodegraph/NodeGraphUtils.hpp"
 #include "nodegraph/NodeGraphRegistry.hpp"
+#include "nodegraph/NodeBoundaryConditions.hpp"
 #include "nodegraph/NodeHeatMaterialPresets.hpp"
+#include "nodegraph/NodeHeatModelParams.hpp"
 #include "nodegraph/NodeParamUtils.hpp"
 #include "nodegraph/NodeGraphParamUtils.hpp"
 #include "nodegraph/NodeWriteParams.hpp"

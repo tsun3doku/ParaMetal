@@ -26,3 +26,15 @@ inline HeatFluidNodeParams readHeatFluidNodeParams(const NodeGraphNode& node) {
 inline bool writeHeatFluidNodeParams(NodeGraphEditor& editor, NodeGraphNodeId nodeId, const HeatFluidNodeParams& params) {
     return writeFluidNodeParams(editor, nodeId, params);
 }
+
+namespace nodegraphparams::heatfluid {
+constexpr uint32_t Density = 1;
+constexpr uint32_t SpecificHeat = 2;
+constexpr uint32_t Conductivity = 3;
+constexpr uint32_t InitialTemperatureC = 4;
+constexpr uint32_t KinematicViscosity = 9;
+}
+
+namespace nodegraphparams {
+namespace fluid = heatfluid;
+}

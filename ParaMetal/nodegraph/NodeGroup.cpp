@@ -1,4 +1,5 @@
 #include "NodeGroup.hpp"
+#include "NodeGraphDefinitionUtils.hpp"
 #include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
@@ -11,6 +12,32 @@
 #include <cctype>
 #include <limits>
 #include <unordered_set>
+
+static NodeTypeDefinition buildGroupNode() {
+    return {
+        nodegraphtypes::Group,
+        "Group",
+        NodeGraphNodeCategory::Meshing,
+        {
+            makeInputSocket("Mesh", NodeGraphValueType::Mesh),
+            makeOutputSocket("Mesh", NodeGraphValueType::Mesh, payloadtypes::Geometry, true),
+        },
+        {
+            {nodegraphparams::group::Enabled, "Enabled", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
+            {nodegraphparams::group::SourceType, "Source Type", NodeGraphParamType::Int, 0.0, nodegraphparams::group::sourcetype::Vertex, false, "", false},
+            {nodegraphparams::group::SourceName, "Source Name", NodeGraphParamType::String, 0.0, 0, false, "", false},
+            {nodegraphparams::group::TargetName, "Target Group Name", NodeGraphParamType::String, 0.0, 0, false, "", false},
+        },
+    };
+}
+
+NodeTypeDefinition buildGroupDefinition() {
+    return buildGroupNode();
+}
+
+std::unique_ptr<NodeKernel> createGroupKernel() {
+    return std::make_unique<NodeGroup>();
+}
 
 const char* NodeGroup::typeId() const {
     return nodegraphtypes::Group;

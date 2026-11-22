@@ -28,7 +28,7 @@ struct GeometryData {
         0.0f, 0.0f, 1.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f
     };
-    std::vector<float> pointPositions;
+    std::vector<float> vertexPositions;
     std::vector<uint32_t> triangleIndices;
     std::vector<float> renderPositions;
     std::vector<float> renderNormals;

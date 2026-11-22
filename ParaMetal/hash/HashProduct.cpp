@@ -41,7 +41,7 @@ void HashProduct::seal(ModelProduct& p) {
     p.hashes.geometry = geometryHash;
     p.hashes.simulation = geometryHash;
     p.hashes.display = geometryHash;
-    p.hashes.thermal = 0;
+    p.hashes.properties = 0;
 }
 
 void HashProduct::seal(RemeshProduct& p) {
@@ -95,7 +95,7 @@ void HashProduct::seal(RemeshProduct& p) {
     p.hashes.geometry = hash;
     p.hashes.simulation = hash;
     p.hashes.display = hash;
-    p.hashes.thermal = 0;
+    p.hashes.properties = 0;
 }
 
 void HashProduct::seal(VoronoiProduct& p) {
@@ -156,7 +156,7 @@ void HashProduct::seal(VoronoiProduct& p) {
     p.hashes.geometry = hash;
     p.hashes.simulation = hash;
     p.hashes.display = hash;
-    p.hashes.thermal = 0;
+    p.hashes.properties = 0;
 }
 
 void HashProduct::seal(PointProduct& p) {
@@ -205,5 +205,5 @@ void HashProduct::seal(HeatProduct& p) {
     p.hashes.simulation = hash;
     p.hashes.geometry = hash;
     p.hashes.display = hash;
-    p.hashes.thermal = 0;
+    p.hashes.properties = 0;
 }

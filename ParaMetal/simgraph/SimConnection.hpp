@@ -7,8 +7,6 @@ enum class SimConnectionMode : uint8_t {
     ZeroCopy
 };
 
-// One cross-simulation edge. Identity is the connection id; the socket pair must
-// also be unique, while several distinct connections may feed one consumer.
 struct SimConnection {
     uint64_t connectionId = 0;
     uint64_t producerSocket = 0;

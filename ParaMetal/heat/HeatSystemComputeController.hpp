@@ -24,6 +24,8 @@ class VulkanDevice;
 class MemoryAllocator;
 class CommandPool;
 class HeatModelRuntime;
+class TemperatureTelemetryReceiver;
+class ConnectionTelemetryReceiver;
 struct HeatProduct;
 
 class HeatSystemComputeController {
@@ -97,8 +99,8 @@ public:
     void remove(uint64_t socketKey);
     void syncSerialInputs();
     void updateSerialInputs();
-    bool getSerialTemperatureStatus(uint64_t sourceKey, SerialTemperatureRuntime::Status& outStatus) const;
-    bool getHeatProbeTemperatures(uint64_t sourceKey, std::vector<float>& outTemperaturesC) const;
+    void publishProbeTelemetry(TemperatureTelemetryReceiver& receiver) const;
+    void publishSerialTelemetry(ConnectionTelemetryReceiver& receiver) const;
 
     void waitIdle();
     void releaseWaits();

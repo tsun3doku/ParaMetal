@@ -1,4 +1,5 @@
 #include "NodeHeatSolve.hpp"
+#include "NodeGraphDefinitionUtils.hpp"
 #include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
@@ -6,6 +7,7 @@
 #include "hash/HashBuilder.hpp"
 #include "hash/HashNodeCache.hpp"
 #include "heat/HeatGpuStructs.hpp"
+#include "heat/HeatSystemPresets.hpp"
 #include "NodeHeatSolveParams.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
 #include "domain/BoundaryData.hpp"
@@ -15,6 +17,48 @@
 
 #include <cstdint>
 #include <vector>
+
+static NodeTypeDefinition buildHeatSolveNode() {
+    return {
+        nodegraphtypes::HeatSolve,
+        "Ember",
+        NodeGraphNodeCategory::System,
+        {
+            makeInputSocket("Volume", NodeGraphValueType::Volume),
+            makeInputSocket("HeatModel", NodeGraphValueType::HeatModel, true, false),
+            makeInputSocket("Fluid", NodeGraphValueType::Fluid, false, false),
+            makeInputSocket("CFD", NodeGraphValueType::Simulation, false, false),
+            makeInputSocket("Boundary", NodeGraphValueType::Boundary),
+            makeOutputSocket("Heat", NodeGraphValueType::Simulation, payloadtypes::Heat, true),
+        },
+        {
+            {nodegraphparams::heatsolve::Enabled, "Enabled", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
+            {nodegraphparams::heatsolve::Paused, "Paused", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
+            {nodegraphparams::heatsolve::ResetRequested, "Reset Requested", NodeGraphParamType::Int, 0.0, 0, false, "", false},
+            {nodegraphparams::heatsolve::ShowHeatOverlay, "Show Heat Overlay", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
+            {nodegraphparams::heatsolve::ShowFluxVectors, "Show Flux Vectors", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
+            {nodegraphparams::heatsolve::ShowHeatPalette, "Show Heat Palette", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
+            {nodegraphparams::heatsolve::ShowIsocontours, "Show Isocontours", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
+            {nodegraphparams::heatsolve::IsocontourSpacingC, "Isocontour Spacing (C)", NodeGraphParamType::Float, 10.0, 0, false, "", false},
+            {nodegraphparams::heatsolve::FluxVectorScale, "Flux Vector Scale", NodeGraphParamType::Float, 1.0, 0, false, "", false},
+            {nodegraphparams::heatsolve::RewindFrame, "Rewind Frame", NodeGraphParamType::Int, 0.0, static_cast<int64_t>(heat::NoRewindFrame), false, "", false},
+            {nodegraphparams::heatsolve::SimulationDuration, "Simulation Duration", NodeGraphParamType::Float, 10.0, 0, false, "", false},
+            {nodegraphparams::heatsolve::ShowDomainBox, "Show Domain Box", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
+            {nodegraphparams::heatsolve::ShowFluidVolume, "Show Fluid Volume", NodeGraphParamType::Bool, 0.0, 0, true, "", false},
+            {nodegraphparams::heatsolve::FluidVolumeOpacity, "Fluid Volume Opacity", NodeGraphParamType::Float, 0.25, 0, false, "", false},
+            {nodegraphparams::heatsolve::SolverMaxIterations, "Max PCG Iterations (0=default)", NodeGraphParamType::Int, 100.0, 100, false, "", false},
+            {nodegraphparams::heatsolve::SolverConvergenceTolerance, "PCG Tolerance (0=default)", NodeGraphParamType::Float, 3e-3, 0, false, "", false},
+        },
+    };
+}
+
+NodeTypeDefinition buildHeatSolveDefinition() {
+    return buildHeatSolveNode();
+}
+
+std::unique_ptr<NodeKernel> createHeatSolveKernel() {
+    return std::make_unique<NodeHeatSolve>();
+}
 
 const char* NodeHeatSolve::typeId() const {
     return nodegraphtypes::HeatSolve;

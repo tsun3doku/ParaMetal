@@ -110,7 +110,7 @@ public:
         p.supportedFormats = meshFormats;
         p.defaultFormat = ExportFormat::OBJ;
         p.available = error.empty() && geometry &&
-            !geometry->pointPositions.empty() && !geometry->triangleIndices.empty();
+            !geometry->vertexPositions.empty() && !geometry->triangleIndices.empty();
         if (!p.available) p.unavailableReason = error.empty() ? "Mesh has no triangle geometry" : error;
         out.push_back(std::move(p));
     }
@@ -121,7 +121,7 @@ public:
             ? graph.payloads().resolveGeometry(output.evaluated->data.payloadHandle) : nullptr;
         if (!geometry) return {false, "Mesh payload is unavailable", 0};
         const auto transform = transformFor(graph, output.evaluated->data.payloadHandle);
-        return writeGeometry(path, geometry->pointPositions, geometry->triangleIndices,
+        return writeGeometry(path, geometry->vertexPositions, geometry->triangleIndices,
                              geometry->renderNormals, format, &transform);
     }
 };
@@ -174,8 +174,13 @@ public:
     uint8_t payloadType() const noexcept override { return payloadtypes::Points; }
     void appendProducts(const ExportOutput& output, const NodeGraphController& graph,
                        std::vector<ExportProduct>& out) const override {
-        const PointData* points = hasValue(output)
-            ? graph.payloads().resolvePoints(output.evaluated->data.payloadHandle) : nullptr;
+        const uint64_t socketKey = NodeSocketKey(output.nodeId, output.socketId).value;
+        const RuntimePackageManager* packages = graph.getPackageManager();
+        const RuntimeProductManager* products = graph.getProductManager();
+        const PointPackage* package =
+            packages ? packages->findAny<PointPackage>(socketKey) : nullptr;
+        const bool current = package && packages->isPackageCurrent(socketKey) &&
+            products && products->isCurrent<PointProduct>(package->productHandle);
         const std::string error = evaluationError(output);
         ExportProduct p{};
         p.key = {output.nodeId, output.socketId, {}};
@@ -183,20 +188,35 @@ public:
         p.typeName = "point";
         p.supportedFormats = pointFormats;
         p.defaultFormat = ExportFormat::XYZ;
-        p.available = error.empty() && points && !points->positions.empty();
-        if (!p.available) p.unavailableReason = error.empty() ? "Point product is empty" : error;
+        p.available = error.empty() && current && !package->positions.empty();
+        if (!p.available) {
+            if (!error.empty()) {
+                p.unavailableReason = error;
+            } else if (!package) {
+                p.unavailableReason = "Point package is unavailable";
+            } else if (!current) {
+                p.unavailableReason = "Point runtime product is unavailable";
+            } else {
+                p.unavailableReason = "Point product is empty";
+            }
+        }
         out.push_back(std::move(p));
     }
     ExportResult writeProduct(const ExportOutput& output, const ExportProductKey&,
                               ExportFormat format, const std::string& path,
                               const NodeGraphController& graph) const override {
-        const PointData* points = hasValue(output)
-            ? graph.payloads().resolvePoints(output.evaluated->data.payloadHandle) : nullptr;
-        if (!points || points->positions.empty()) return {false, "Point product is unavailable or empty", 0};
-        const auto transform = transformFor(graph, output.evaluated->data.payloadHandle);
-        if (format == ExportFormat::CSV) return PointWriter::writeCSV(path, points->positions, &transform);
-        if (format == ExportFormat::PLY) return PointWriter::writePLY(path, points->positions, &transform);
-        if (format == ExportFormat::XYZ) return PointWriter::writeXYZ(path, points->positions, &transform);
+        const uint64_t socketKey = NodeSocketKey(output.nodeId, output.socketId).value;
+        const RuntimePackageManager* packages = graph.getPackageManager();
+        const RuntimeProductManager* products = graph.getProductManager();
+        const PointPackage* package =
+            packages ? packages->findAny<PointPackage>(socketKey) : nullptr;
+        if (!package || !packages->isPackageCurrent(socketKey) || package->positions.empty() ||
+            !products || !products->isCurrent<PointProduct>(package->productHandle)) {
+            return {false, "Point package is unavailable or empty", 0};
+        }
+        if (format == ExportFormat::CSV) return PointWriter::writeCSV(path, package->positions, &package->localToWorld);
+        if (format == ExportFormat::PLY) return PointWriter::writePLY(path, package->positions, &package->localToWorld);
+        if (format == ExportFormat::XYZ) return PointWriter::writeXYZ(path, package->positions, &package->localToWorld);
         return {false, "Unsupported point format", 0};
     }
 };

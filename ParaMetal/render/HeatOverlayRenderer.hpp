@@ -5,7 +5,9 @@
 #include "renderers/ProbeMarkerRenderer.hpp"
 #include "renderers/SurfaceVectorRenderer.hpp"
 #include "runtime/HeatDisplayController.hpp"
+#include "telemetry/TemperatureTelemetry.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
@@ -18,7 +20,7 @@ class CommandPool;
 
 namespace render {
 
-class HeatOverlayRenderer {
+class HeatOverlayRenderer : public TemperatureTelemetryReceiver {
 public:
     HeatOverlayRenderer(
         VulkanDevice& device,
@@ -40,7 +42,7 @@ public:
     void setSelectedProbe(uint32_t probeId, int probeIndex);
     void setBoundaryFaceHighlight(int selectedFace, int hoverFace, const std::array<glm::vec3, 8>& corners, bool valid);
     void updateProbePosition(uint32_t probeId, int probeIndex, const glm::vec3& newPos);
-    void updateProbeTemperatures(uint64_t nodeId, const std::vector<float>& temps);
+    void onTemperatures(const TelemetryTemperatures& telemetry) override;
     void setTextRenderer(ScreenTextRenderer* renderer);
     void renderSurface(VkCommandBuffer commandBuffer, uint32_t frameIndex, VkExtent2D extent);
     void renderOverlay(VkCommandBuffer commandBuffer, uint32_t frameIndex, VkExtent2D extent, const glm::mat4& viewProj);

@@ -1,4 +1,6 @@
 #include "NodeModel.hpp"
+#include "NodeGraphDefinitionUtils.hpp"
+#include "NodeGraphParamUtils.hpp"
 #include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphUtils.hpp"
@@ -17,6 +19,29 @@
 #include <utility>
 #include <vector>
 
+static NodeTypeDefinition buildModelNode() {
+    return {
+        nodegraphtypes::Model,
+        "Model",
+        NodeGraphNodeCategory::Geometry,
+        {
+            makeOutputSocket("Mesh", NodeGraphValueType::Mesh, payloadtypes::Geometry, true),
+        },
+        {
+            {nodegraphparams::model::Path, "Model Path", NodeGraphParamType::String, 0.0, 0, false, "", false},
+            makeEnumParamDefinition(nodegraphparams::model::SourceUnit, "Import Units", "Meters", {"Meters", "Centimeters", "Millimeters"}),
+        },
+    };
+}
+
+NodeTypeDefinition buildModelDefinition() {
+    return buildModelNode();
+}
+
+std::unique_ptr<NodeKernel> createModelKernel() {
+    return std::make_unique<NodeModel>();
+}
+
 const char* NodeModel::typeId() const {
     return nodegraphtypes::Model;
 }
@@ -32,7 +57,7 @@ void NodeModel::execute(NodeKernelEval& eval) const {
         hasGeometry = loadGeometryFromModelPath(modelPath, geometry);
         geometry.baseModelPath = modelPath;
         const float sourceToCanonical = units::sourceToCanonicalScale(params.sourceUnit);
-        for (float& coordinate : geometry.pointPositions) {
+        for (float& coordinate : geometry.vertexPositions) {
             coordinate *= sourceToCanonical;
         }
         for (float& coordinate : geometry.renderPositions) {
@@ -80,7 +105,7 @@ bool NodeModel::parseMeshGeometry(const std::string& modelPath, GeometryData& ge
         return false;
     }
 
-    geometry.pointPositions = importedMesh.positions;
+    geometry.vertexPositions = importedMesh.positions;
     geometry.triangleIndices.reserve(importedMesh.triangleCornerIndices.size());
     for (uint32_t cornerIndex : importedMesh.triangleCornerIndices) {
         geometry.triangleIndices.push_back(importedMesh.corners[cornerIndex].vertexIndex);

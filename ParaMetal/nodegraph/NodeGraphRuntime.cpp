@@ -5,8 +5,6 @@
 #include "NodePayloadRegistry.hpp"
 
 #include <algorithm>
-#include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -184,6 +182,18 @@ void NodeGraphRuntime::execute(const NodeGraphCompiled& compiled) {
             continue;
         }
 
+        const NodeTypeId typeId = getNodeTypeId(node.typeId);
+        if (!kernels.hasKernel(typeId)) {
+            if (kernels.requiresKernel(typeId)) {
+                publishBlockedOutputs(
+                    node,
+                    EvaluatedSocketStatus::Error,
+                    "No kernel registered for node type '" + typeId + "'.",
+                    state);
+            }
+            continue;
+        }
+
         // Evaluate inputs
         EvaluatedNodeInputs inputs = evaluateNodeInputs(node, graphState, state);
         if (!inputs.ready()) {
@@ -192,11 +202,6 @@ void NodeGraphRuntime::execute(const NodeGraphCompiled& compiled) {
         }
 
         // Live evaluation
-        const NodeTypeId typeId = getNodeTypeId(node.typeId);
-        if (!kernels.hasKernel(typeId)) {
-            continue;
-        }
-
         evaluateLiveNode(node, inputs, state);
     }
 }
@@ -225,38 +230,13 @@ void NodeGraphRuntime::evaluateLiveNode(
 
     std::vector<NodeDataBlock> outputValues(node.outputs.size());
 
-    {
-        std::unordered_map<std::string, std::string> mergedMetadata;
-        std::vector<NodeGraphNodeId> mergedLineage;
-        std::unordered_set<uint32_t> seenNodeIds;
-        for (const std::vector<const NodeDataBlock*>& socketInputs : inputs.values) {
-            for (const NodeDataBlock* input : socketInputs) {
-                if (!input) continue;
-                for (const auto& metadataEntry : input->metadata) {
-                    mergedMetadata[metadataEntry.first] = metadataEntry.second;
-                }
-                for (NodeGraphNodeId lineageNodeId : input->lineageNodeIds) {
-                    if (!lineageNodeId.isValid()) continue;
-                    if (seenNodeIds.insert(lineageNodeId.value).second) {
-                        mergedLineage.push_back(lineageNodeId);
-                    }
-                }
-            }
-        }
-        if (node.id.isValid() && seenNodeIds.insert(node.id.value).second) {
-            mergedLineage.push_back(node.id);
-        }
-        mergedMetadata["graph.producer_node_id"] = std::to_string(node.id.value);
-        mergedMetadata["graph.producer_type_id"] = getNodeTypeId(node.typeId);
-        mergedMetadata["graph.lineage_depth"] = std::to_string(mergedLineage.size());
-        for (NodeDataBlock& output : outputValues) {
-            output = {};
-            output.metadata = mergedMetadata;
-            output.lineageNodeIds = mergedLineage;
-        }
+    std::string kernelError;
+    kernels.executeNode(node, kernelRuntime, inputs.values, outputValues, outputHashes, kernelError);
+    if (!kernelError.empty()) {
+        cachedOutputsByNodeId.erase(node.id.value);
+        publishBlockedOutputs(node, EvaluatedSocketStatus::Error, kernelError, state);
+        return;
     }
-
-    kernels.executeNode(node, kernelRuntime, inputs.values, outputValues, outputHashes);
 
     for (NodeDataBlock& output : outputValues) {
         output.hashes = outputHashes;

@@ -89,7 +89,7 @@ bool RuntimePackageController::applyNode(const NodeGraphNode& node) {
         }
 
         if (const VoronoiPackage* voronoiPackage = packageManager.find<VoronoiPackage>(socketKey)) {
-            if (!voronoiPackage->authored.active) {
+            if (!voronoiPackage->active) {
                 removeNodeRuntime(socketKey);
                 processedSockets.insert(socketKey);
                 continue;
@@ -99,7 +99,7 @@ bool RuntimePackageController::applyNode(const NodeGraphNode& node) {
         }
 
         if (const HeatPackage* heatPackage = packageManager.findAny<HeatPackage>(socketKey)) {
-            if (!heatPackage->authored.active) {
+            if (!heatPackage->active) {
                 removeNodeRuntime(socketKey);
                 processedSockets.insert(socketKey);
                 continue;
@@ -121,7 +121,7 @@ bool RuntimePackageController::applyNode(const NodeGraphNode& node) {
 }
 
 bool RuntimePackageController::applyPackage(uint64_t socketKey, const ModelPackage& package) {
-    if (!transports.modelComputeTransport) return true;
+    if (!transports.modelComputeTransport) return false;
     ModelProduct product{};
     const ComputeApplyResult result = transports.modelComputeTransport->apply(socketKey, package, product);
     if (result == ComputeApplyResult::Unchanged) {
@@ -143,7 +143,7 @@ bool RuntimePackageController::applyPackage(uint64_t socketKey, const ModelPacka
 }
 
 bool RuntimePackageController::applyPackage(uint64_t socketKey, const PointPackage& package) {
-    if (!transports.pointComputeTransport) return true;
+    if (!transports.pointComputeTransport) return false;
     PointProduct product{};
     const ComputeApplyResult result = transports.pointComputeTransport->apply(socketKey, package, product);
     if (result == ComputeApplyResult::Unchanged) {
@@ -167,7 +167,7 @@ bool RuntimePackageController::applyPackage(uint64_t socketKey, const PointPacka
 }
 
 bool RuntimePackageController::applyPackage(uint64_t socketKey, const RemeshPackage& package) {
-    if (!transports.remeshComputeTransport) return true;
+    if (!transports.remeshComputeTransport) return false;
     RemeshProduct product{};
     const ComputeApplyResult result = transports.remeshComputeTransport->apply(socketKey, package, product);
     if (result == ComputeApplyResult::Unchanged) {
@@ -191,7 +191,7 @@ bool RuntimePackageController::applyPackage(uint64_t socketKey, const RemeshPack
 }
 
 bool RuntimePackageController::applyPackage(uint64_t socketKey, const VoronoiPackage& package) {
-    if (!transports.voronoiComputeTransport) return true;
+    if (!transports.voronoiComputeTransport) return false;
     VoronoiProduct product{};
     const ComputeApplyResult result = transports.voronoiComputeTransport->apply(socketKey, package, product);
     if (result == ComputeApplyResult::Unchanged) {
@@ -215,7 +215,7 @@ bool RuntimePackageController::applyPackage(uint64_t socketKey, const VoronoiPac
 }
 
 bool RuntimePackageController::applyPackage(uint64_t socketKey, const HeatPackage& package) {
-    if (!transports.heatComputeTransport) return true;
+    if (!transports.heatComputeTransport) return false;
     HeatProduct product{};
     const ComputeApplyResult result = transports.heatComputeTransport->apply(socketKey, package, product);
     if (result == ComputeApplyResult::Unchanged) {
@@ -239,7 +239,7 @@ bool RuntimePackageController::applyPackage(uint64_t socketKey, const HeatPackag
 }
 
 bool RuntimePackageController::applyPackage(uint64_t socketKey, const CFDPackage& package) {
-    if (!transports.cfdComputeTransport) return true;
+    if (!transports.cfdComputeTransport) return false;
     CFDProduct product{};
     const ComputeApplyResult result = transports.cfdComputeTransport->apply(socketKey, package, product);
     if (result == ComputeApplyResult::Unchanged) {

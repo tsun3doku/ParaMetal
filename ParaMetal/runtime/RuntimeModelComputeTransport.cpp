@@ -15,12 +15,12 @@ ComputeApplyResult RuntimeModelComputeTransport::apply(
     }
 
     ModelComputeController::Config config{};
-    config.pointPositions = package.sourceGeometry.pointPositions;
-    config.triangleIndices = package.sourceGeometry.triangleIndices;
-    config.renderPositions = package.sourceGeometry.renderPositions;
-    config.renderNormals = package.sourceGeometry.renderNormals;
-    config.renderTexcoords = package.sourceGeometry.renderTexcoords;
-    config.renderIndices = package.sourceGeometry.renderIndices;
+    config.vertexPositions = package.vertexPositions;
+    config.triangleIndices = package.triangleIndices;
+    config.renderPositions = package.renderPositions;
+    config.renderNormals = package.renderNormals;
+    config.renderTexcoords = package.renderTexcoords;
+    config.renderIndices = package.renderIndices;
     config.computeHash = package.hashes.geometry;
     if (!controller->apply(socketKey, config)) {
         return ComputeApplyResult::Failed;

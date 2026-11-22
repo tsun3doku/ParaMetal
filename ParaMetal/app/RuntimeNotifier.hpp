@@ -1,18 +1,25 @@
 #pragma once
 
 #include "UiRuntimeTypes.hpp"
+#include "telemetry/RuntimeTelemetry.hpp"
 
 #include <QMutex>
 #include <QObject>
 #include <QString>
 #include <QVariantList>
-#include <cmath>
+#include <cstdint>
+#include <string>
 
-class RuntimeNotifier final : public QObject {
+class RuntimeNotifier final : public QObject,
+                              public TemperatureTelemetryReceiver,
+                              public ConnectionTelemetryReceiver {
     Q_OBJECT
 
 public:
     explicit RuntimeNotifier(QObject* parent = nullptr) : QObject(parent) {}
+
+    void onTemperatures(const TelemetryTemperatures& telemetry) override;
+    void onConnection(const TelemetryConnection& telemetry) override;
 
     Q_INVOKABLE bool heatSolveActive() const {
         const QMutexLocker lock(&statusMutex);
@@ -98,33 +105,6 @@ public:
         emit exportProductsReady(nodeId, requestId, graphRevision, products, error);
     }
 
-    void publishHeatProbeTemperatures(int nodeId, const std::vector<float>& temps) {
-        bool changed = false;
-        QList<float> qtemps;
-        qtemps.reserve(static_cast<qsizetype>(temps.size()));
-        for (float t : temps) qtemps.append(t);
-
-        {
-            const QMutexLocker lock(&statusMutex);
-            auto it = heatProbeTemperaturesList.find(nodeId);
-            if (it == heatProbeTemperaturesList.end() || it->second.size() != qtemps.size()) {
-                heatProbeTemperaturesList[nodeId] = qtemps;
-                changed = true;
-            } else {
-                for (qsizetype i = 0; i < qtemps.size(); ++i) {
-                    if (std::abs(it->second[i] - qtemps[i]) > 0.001f) {
-                        it->second = qtemps;
-                        changed = true;
-                        break;
-                    }
-                }
-            }
-        }
-        if (changed) {
-            emit heatProbeTemperaturesChanged(nodeId, qtemps);
-        }
-    }
-
     void notifyProbePickingCompleted(int nodeId) {
         emit probePickingCompleted(nodeId);
     }
@@ -163,7 +143,9 @@ public:
             if (status.connection == connection &&
                 status.temperature == temperature &&
                 status.pollingRate == pollingRate) return;
-            status = {connection, temperature, pollingRate};
+            status.connection = connection;
+            status.temperature = temperature;
+            status.pollingRate = pollingRate;
         }
         emit serialStatusChanged(nodeId, connection, temperature, pollingRate);
     }
@@ -197,6 +179,14 @@ private:
         QString connection;
         QString temperature;
         QString pollingRate;
+        SerialTemperatureRuntime::ConnectionState connectionState =
+            SerialTemperatureRuntime::ConnectionState::Disabled;
+        std::string detail;
+        uint64_t readingRevision = 0;
+        float readingTemperatureC = 0.0f;
+        float readingPollingRateHz = 0.0f;
+        bool hasReading = false;
+        bool initialized = false;
     };
 
     mutable QMutex statusMutex;

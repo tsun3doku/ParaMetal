@@ -26,12 +26,6 @@ struct ProductSlot {
 
 // ProductHandle::operator== is content-based, so lifetime decisions must match
 // the publication identity explicitly.
-inline bool isSamePublication(const ProductHandle& a, const ProductHandle& b) {
-    return a.type == b.type &&
-           a.outputSocketKey == b.outputSocketKey &&
-           a.publicationId == b.publicationId;
-}
-
 class RuntimeProductManager {
 public:
     RuntimeProductManager() = default;
@@ -182,7 +176,10 @@ private:
         else if constexpr (std::is_same_v<ProductT, PointProduct>) return NodeProductType::Point;
         else if constexpr (std::is_same_v<ProductT, HeatProduct>) return NodeProductType::Heat;
         else if constexpr (std::is_same_v<ProductT, CFDProduct>) return NodeProductType::CFD;
-        else return NodeProductType::None;
+        else {
+            static_assert(!std::is_same_v<ProductT, ProductT>, "Unsupported product type");
+            return NodeProductType::None;
+        }
     }
 
     template <typename ProductT>
@@ -201,7 +198,10 @@ private:
         else if constexpr (std::is_same_v<ProductT, VoronoiProduct>) return voronoiProducts;
         else if constexpr (std::is_same_v<ProductT, PointProduct>) return pointProducts;
         else if constexpr (std::is_same_v<ProductT, CFDProduct>) return cfdProducts;
-        else return heatProducts;
+        else {
+            static_assert(std::is_same_v<ProductT, HeatProduct>, "Unsupported product type");
+            return heatProducts;
+        }
     }
 
     template <typename ProductT>
@@ -211,7 +211,10 @@ private:
         else if constexpr (std::is_same_v<ProductT, VoronoiProduct>) return voronoiProducts;
         else if constexpr (std::is_same_v<ProductT, PointProduct>) return pointProducts;
         else if constexpr (std::is_same_v<ProductT, CFDProduct>) return cfdProducts;
-        else return heatProducts;
+        else {
+            static_assert(std::is_same_v<ProductT, HeatProduct>, "Unsupported product type");
+            return heatProducts;
+        }
     }
 
     std::unordered_map<uint64_t, ProductSlot<ModelProduct>> modelProducts;

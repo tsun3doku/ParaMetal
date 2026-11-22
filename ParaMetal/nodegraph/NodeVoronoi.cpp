@@ -1,4 +1,6 @@
 #include "NodeVoronoi.hpp"
+#include "NodeGraphDefinitionUtils.hpp"
+#include "NodeGraphParamUtils.hpp"
 #include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
 #include "NodeGraphDataTypes.hpp"
@@ -9,8 +11,40 @@
 #include "NodePayloadRegistry.hpp"
 #include "NodeVoronoiParams.hpp"
 #include "domain/PointData.hpp"
+#include "voronoi/VoronoiConfig.hpp"
 
 #include <unordered_set>
+
+static NodeTypeDefinition buildVoronoiNode() {
+    return {
+        nodegraphtypes::Voronoi,
+        "Voronoi",
+        NodeGraphNodeCategory::System,
+        {
+            makeInputSocket("Remeshes", NodeGraphValueType::Remesh, true, false),
+            makeInputSocket("Points", NodeGraphValueType::Points, false, true),
+            makeOutputSocket("Volume", NodeGraphValueType::Volume, payloadtypes::Voronoi, true),
+        },
+        {
+            {nodegraphparams::voronoi::VoxelResolution, "Voxel Resolution", NodeGraphParamType::Int, 0.0, 128, false, "", false},
+            {nodegraphparams::voronoi::VolumePadding, "Volume Grid Padding", NodeGraphParamType::Float, 0.01, 0, false, "", false},
+            {nodegraphparams::voronoi::ContactRange, "Maximum Contact Gap", NodeGraphParamType::Float, voronoi::DefaultContactRange, 0, false, "", false},
+            {nodegraphparams::voronoi::LloydIterations, "Lloyd Iterations", NodeGraphParamType::Int, 0.0, int(voronoi::DefaultLloydIterations), false, "", false},
+            {nodegraphparams::voronoi::LloydVolumeThreshold, "Lloyd Volume Threshold", NodeGraphParamType::Float, voronoi::DefaultLloydVolumeThresholdFraction, 0, false, "", false},
+            {nodegraphparams::voronoi::LloydDamping, "Lloyd Damping", NodeGraphParamType::Float, voronoi::DefaultLloydDamping, 0, false, "", false},
+            {nodegraphparams::voronoi::ShowVoronoi, "Show Voronoi", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
+            {nodegraphparams::voronoi::ShowPoints, "Show Points", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
+        },
+    };
+}
+
+NodeTypeDefinition buildVoronoiDefinition() {
+    return buildVoronoiNode();
+}
+
+std::unique_ptr<NodeKernel> createVoronoiKernel() {
+    return std::make_unique<NodeVoronoi>();
+}
 
 const char* NodeVoronoi::typeId() const {
     return nodegraphtypes::Voronoi;
@@ -28,7 +62,8 @@ void NodeVoronoi::execute(NodeKernelEval& eval) const {
             ? eval.inputs[pointsSocketIndex].front() : nullptr;
     if (pointsData && pointsData->dataType == payloadtypes::Points && pointsData->payloadHandle.key != 0) {
         const PointData* pointData = payloadRegistry ? payloadRegistry->resolvePoints(pointsData->payloadHandle) : nullptr;
-        if (pointData && !pointData->positions.empty()) {
+        if (pointData && pointData->active &&
+            (!pointData->positions.empty() || !pointData->sources.empty())) {
             pointsPayloadHandle = pointsData->payloadHandle;
             active = true;
         }
