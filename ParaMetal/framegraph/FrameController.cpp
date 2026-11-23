@@ -29,14 +29,11 @@ FrameController::FrameController(
     SceneContext& scene,
     InteractionContext& interaction,
     ModelSelection& modelSelection,
-    WireframeRenderer& wireframeRenderer,
     std::atomic<bool>& isOperating,
     std::atomic<bool>& isShuttingDown)
     : windowState(windowState),
       viewportTarget(viewportTarget),
       sceneRenderer(sceneRenderer),
-      modelSelection(modelSelection),
-      wireframeRenderer(wireframeRenderer),
       frameSync(frameSync),
       frameStats(frameStats),
       cameraController(scene.cameraController()),
@@ -93,16 +90,9 @@ bool FrameController::drawFrame(VkCommandBuffer commandBuffer, uint32_t frameInd
     frameRequest.sceneView = sceneView;
     frameRequest.flags = flags;
 
-    render::RenderServices services{};
-    services.modelSelection = &modelSelection;
-    services.gizmoController = &interaction.gizmoController();
-    services.navigationGizmoController = &interaction.navigationGizmoController();
-    services.wireframeRenderer = &wireframeRenderer;
-
     if (!sceneRenderer.recordExternalCommandBuffer(
             commandBuffer,
             frameRequest,
-            services,
             computePresent,
             frameGraphRuntime.getComputeToGraphicsWaitDstStageMask())) {
         isShuttingDown.store(true, std::memory_order_release);

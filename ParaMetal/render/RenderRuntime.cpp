@@ -8,6 +8,7 @@
 #include "framegraph/FrameGraphVkTypes.hpp"
 #include "framegraph/FrameSync.hpp"
 #include "scene/IBLSystem.hpp"
+#include "interaction/InteractionContext.hpp"
 #include "scene/LightingSystem.hpp"
 #include "MainRenderGraph.hpp"
 #include "vulkan/MemoryAllocator.hpp"
@@ -113,6 +114,12 @@ bool RenderRuntime::initializeFrameController(SceneContext& scene, InteractionCo
         return false;
     }
 
+    sceneRenderer->setRenderServices(
+        *modelSelection,
+        interaction.gizmoController(),
+        interaction.navigationGizmoController(),
+        *wireframeRenderer);
+
     frameController = std::make_unique<FrameController>(
         windowState,
         vulkanDevice,
@@ -124,7 +131,6 @@ bool RenderRuntime::initializeFrameController(SceneContext& scene, InteractionCo
         scene,
         interaction,
         *modelSelection,
-        *wireframeRenderer,
         isOperating,
         isShuttingDown);
 
@@ -158,9 +164,11 @@ const FrameStats& RenderRuntime::getFrameStats() const {
 }
 
 bool RenderRuntime::updateViewportTarget(VkImage image, VkFormat format, VkExtent2D extent) {
-    if (!frameGraph || !frameGraphRuntime || !sceneRenderer) {
+    if (!frameGraph || !frameGraphRuntime || !sceneRenderer || !wireframeRenderer) {
         return false;
     }
+
+    const VkFormat previousFormat = viewportTarget.getImageFormat();
 
     vkDeviceWaitIdle(vulkanDevice.getDevice());
     frameGraphRuntime->cleanup(renderconfig::MaxFramesInFlight);
@@ -179,29 +187,42 @@ bool RenderRuntime::updateViewportTarget(VkImage image, VkFormat format, VkExten
             renderconfig::MaxFramesInFlight)) {
         return false;
     }
+    if (previousFormat != viewportTarget.getImageFormat()) {
+        const framegraph::PassId overlayPassId = frameGraph->getPassId(framegraph::passes::Overlay);
+        if (!overlayPassId.isValid() ||
+            !wireframeRenderer->recreatePipeline(
+                frameGraphRuntime->getRenderPass(),
+                framegraph::toIndex(overlayPassId))) {
+            return false;
+        }
+    }
     sceneRenderer->resize(extent);
     sceneRenderer->updateDescriptorSets();
     return true;
 }
 
 void RenderRuntime::cleanup() {
-    if (modelSelection) {
-        modelSelection->cleanup();
+    frameController.reset();
+    if (vulkanDevice.getDevice() != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(vulkanDevice.getDevice());
     }
-    if (frameGraphRuntime) {
-        frameGraphRuntime->cleanup(renderconfig::MaxFramesInFlight);
-    }
+
     if (sceneRenderer) {
         sceneRenderer->cleanup();
     }
     if (wireframeRenderer) {
         wireframeRenderer->cleanup();
     }
+    if (modelSelection) {
+        modelSelection->cleanup();
+    }
+    if (frameGraphRuntime) {
+        frameGraphRuntime->cleanup(renderconfig::MaxFramesInFlight);
+    }
 
-    frameController.reset();
+    sceneRenderer.reset();
     wireframeRenderer.reset();
     modelSelection.reset();
-    sceneRenderer.reset();
     frameGraphRuntime.reset();
     frameGraph.reset();
 }

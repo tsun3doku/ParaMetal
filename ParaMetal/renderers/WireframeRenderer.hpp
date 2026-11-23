@@ -27,6 +27,7 @@ public:
     
     VkPipelineLayout getPipelineLayout() const { return pipelineLayout; }
     
+    bool recreatePipeline(VkRenderPass renderPass, uint32_t subpass);
     void cleanup();
 
 private:

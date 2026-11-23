@@ -293,7 +293,6 @@ void SceneRenderer::recordPasses(
     const render::FrameContext& frameContext,
     const render::SceneView& sceneView,
     const render::RenderFlags& flags,
-    render::RenderServices& services,
     VkQueryPool passTimingQueryPool,
     uint32_t passTimingQueryBase) {
     for (size_t passIndex = 0; passIndex < orderedPasses.size(); ++passIndex) {
@@ -317,7 +316,7 @@ void SceneRenderer::recordPasses(
                 startQuery);
         }
 
-        pass->record(frameContext, sceneView, flags, services);
+        pass->record(frameContext, sceneView, flags, renderServices);
 
         if (passTimingQueryPool != VK_NULL_HANDLE) {
             const uint32_t endQuery = passTimingQueryBase + static_cast<uint32_t>(passIndex * 2 + 1);
@@ -451,16 +450,25 @@ void SceneRenderer::setWorldUnit(units::LengthUnit unit) {
     if (overlayPass) overlayPass->setWorldUnit(unit);
 }
 
+void SceneRenderer::setRenderServices(
+    ModelSelection& modelSelection,
+    GizmoController& gizmoController,
+    NavigationGizmoController& navigationGizmoController,
+    WireframeRenderer& wireframeRenderer) {
+    renderServices.modelSelection = &modelSelection;
+    renderServices.gizmoController = &gizmoController;
+    renderServices.navigationGizmoController = &navigationGizmoController;
+    renderServices.wireframeRenderer = &wireframeRenderer;
+}
+
 bool SceneRenderer::recordExternalCommandBuffer(
     VkCommandBuffer commandBuffer,
     const render::RenderFrameRequest& frameRequest,
-    render::RenderServices& services,
     bool insertComputeToGraphicsBarrier,
     VkPipelineStageFlags computeToGraphicsDstStageMask) {
     return recordCommands(
         commandBuffer,
         frameRequest,
-        services,
         insertComputeToGraphicsBarrier,
         computeToGraphicsDstStageMask);
 }
@@ -468,7 +476,6 @@ bool SceneRenderer::recordExternalCommandBuffer(
 bool SceneRenderer::recordCommands(
     VkCommandBuffer commandBuffer,
     const render::RenderFrameRequest& frameRequest,
-    render::RenderServices& services,
     bool insertComputeToGraphicsBarrier,
     VkPipelineStageFlags computeToGraphicsDstStageMask) {
     if (!ready) {
@@ -567,7 +574,6 @@ bool SceneRenderer::recordCommands(
         frameContext,
         frameRequest.sceneView,
         frameRequest.flags,
-        services,
         gpuTimingQueryPool,
         timingQueryBase + 2);
 
@@ -585,6 +591,7 @@ bool SceneRenderer::recordCommands(
 
 void SceneRenderer::cleanup() {
     ready = false;
+    renderServices = {};
     destroyGpuTimingQueryPool();
     destroyPasses();
     geometryPass = nullptr;

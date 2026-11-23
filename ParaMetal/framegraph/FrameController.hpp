@@ -21,7 +21,6 @@ class CameraController;
 class SceneContext;
 class InteractionContext;
 class ModelSelection;
-class WireframeRenderer;
 class VkFrameGraphRuntime;
 
 class FrameController {
@@ -37,7 +36,6 @@ public:
         SceneContext& scene,
         InteractionContext& interaction,
         ModelSelection& modelSelection,
-        WireframeRenderer& wireframeRenderer,
         std::atomic<bool>& isOperating,
         std::atomic<bool>& isShuttingDown);
 
@@ -50,8 +48,6 @@ private:
     const WindowRuntimeState& windowState;
     ViewportTarget& viewportTarget;
     SceneRenderer& sceneRenderer;
-    ModelSelection& modelSelection;
-    WireframeRenderer& wireframeRenderer;
     FrameSync& frameSync;
     FrameStats& frameStats;
     CameraController& cameraController;

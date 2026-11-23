@@ -26,6 +26,10 @@ class IntrinsicRenderer;
 class GizmoRenderer;
 class NavigationGizmoRenderer;
 class ScreenTextRenderer;
+class ModelSelection;
+class GizmoController;
+class NavigationGizmoController;
+class WireframeRenderer;
 
 namespace render { class CFDOverlayRenderer; }
 namespace render { class HeatOverlayRenderer; }
@@ -89,11 +93,15 @@ public:
     void setTimingOverlayLines(const std::vector<std::string>& lines);
     void updateGrid(uint32_t frameIndex, const render::SceneView& sceneView, const glm::vec3& sceneExtent);
     void setWorldUnit(units::LengthUnit unit);
+    void setRenderServices(
+        ModelSelection& modelSelection,
+        GizmoController& gizmoController,
+        NavigationGizmoController& navigationGizmoController,
+        WireframeRenderer& wireframeRenderer);
 
     bool recordExternalCommandBuffer(
         VkCommandBuffer commandBuffer,
         const render::RenderFrameRequest& frameRequest,
-        render::RenderServices& services,
         bool insertComputeToGraphicsBarrier,
         VkPipelineStageFlags computeToGraphicsDstStageMask);
 
@@ -117,7 +125,6 @@ private:
         const render::FrameContext& frameContext,
         const render::SceneView& sceneView,
         const render::RenderFlags& flags,
-        render::RenderServices& services,
         VkQueryPool passTimingQueryPool = VK_NULL_HANDLE,
         uint32_t passTimingQueryBase = 0);
     void destroyPasses();
@@ -127,7 +134,6 @@ private:
     bool recordCommands(
         VkCommandBuffer commandBuffer,
         const render::RenderFrameRequest& frameRequest,
-        render::RenderServices& services,
         bool insertComputeToGraphicsBarrier,
         VkPipelineStageFlags computeToGraphicsDstStageMask);
     
@@ -139,6 +145,7 @@ private:
     UniformBufferManager& uniformBufferManager;
     CommandPool& renderCommandPool;
     IBLSystem& iblSystem;
+    render::RenderServices renderServices;
 
     render::GeometryPass* geometryPass = nullptr;
     render::SurfacePass* surfacePass = nullptr;

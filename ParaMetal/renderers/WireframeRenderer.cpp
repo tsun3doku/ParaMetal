@@ -238,6 +238,12 @@ void WireframeRenderer::renderModel(
     vkCmdDrawIndexed(cmdBuffer, indexCount, 1, 0, 0, 0);
 }
 
+bool WireframeRenderer::recreatePipeline(VkRenderPass renderPass, uint32_t subpass) {
+    cleanup();
+    initialized = createPipeline(renderPass, subpass);
+    return initialized;
+}
+
 void WireframeRenderer::cleanup() {
     VkDevice device = vulkanDevice.getDevice();
     
