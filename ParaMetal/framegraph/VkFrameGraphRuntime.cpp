@@ -8,31 +8,34 @@
 #include "vulkan/VulkanDevice.hpp"
 #include "vulkan/VulkanImage.hpp"
 
+VkFrameGraphRuntime::VkFrameGraphRuntime(const VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator)
+    : vulkanDevice(vulkanDevice),
+      memoryAllocator(memoryAllocator) {
+}
+
 bool VkFrameGraphRuntime::rebuild(
-    const VulkanDevice& vulkanDevice,
-    MemoryAllocator& memoryAllocator,
     const framegraph::FrameGraphResult& result,
     const std::vector<VkImageView>& swapChainImageViews,
     VkExtent2D extent,
     uint32_t maxFramesInFlight) {
-    cleanup(vulkanDevice, memoryAllocator, maxFramesInFlight);
+    cleanup(maxFramesInFlight);
     loadResult(result);
     if (!createRenderPass(vulkanDevice)) {
-        cleanup(vulkanDevice, memoryAllocator, maxFramesInFlight);
+        cleanup(maxFramesInFlight);
         return false;
     }
     if (!createImageViews(vulkanDevice, memoryAllocator, maxFramesInFlight)) {
-        cleanup(vulkanDevice, memoryAllocator, maxFramesInFlight);
+        cleanup(maxFramesInFlight);
         return false;
     }
     if (!createFramebuffers(swapChainImageViews, extent, maxFramesInFlight, vulkanDevice)) {
-        cleanup(vulkanDevice, memoryAllocator, maxFramesInFlight);
+        cleanup(maxFramesInFlight);
         return false;
     }
     return true;
 }
 
-void VkFrameGraphRuntime::cleanup(const VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, uint32_t maxFramesInFlight) {
+void VkFrameGraphRuntime::cleanup(uint32_t maxFramesInFlight) {
     cleanupImages(vulkanDevice, memoryAllocator, maxFramesInFlight);
     if (renderPass != VK_NULL_HANDLE) {
         vkDestroyRenderPass(vulkanDevice.getDevice(), renderPass, nullptr);
@@ -79,38 +82,31 @@ VkFrameGraphRuntime::SyncState VkFrameGraphRuntime::usageToSync(const framegraph
     case framegraph::UsageType::Present:
         sync.stageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         sync.accessMask = use.write ? VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT : VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
-        sync.isWrite = use.write;
         break;
     case framegraph::UsageType::DepthStencilAttachment:
         sync.stageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
         sync.accessMask = use.write ? VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT : VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-        sync.isWrite = use.write;
         break;
     case framegraph::UsageType::InputAttachment:
         sync.stageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
         sync.accessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
-        sync.isWrite = false;
         break;
     case framegraph::UsageType::Sampled:
     case framegraph::UsageType::StorageRead:
         sync.stageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
         sync.accessMask = VK_ACCESS_SHADER_READ_BIT;
-        sync.isWrite = false;
         break;
     case framegraph::UsageType::StorageWrite:
         sync.stageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
         sync.accessMask = VK_ACCESS_SHADER_WRITE_BIT;
-        sync.isWrite = true;
         break;
     case framegraph::UsageType::TransferSrc:
         sync.stageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
         sync.accessMask = VK_ACCESS_TRANSFER_READ_BIT;
-        sync.isWrite = false;
         break;
     case framegraph::UsageType::TransferDst:
         sync.stageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
         sync.accessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        sync.isWrite = true;
         break;
     }
     return sync;
@@ -150,14 +146,14 @@ bool VkFrameGraphRuntime::buildVkAttachmentRef(
         std::cerr << "[VkFrameGraphRuntime] Missing attachment index mapping" << std::endl;
         return false;
     }
-    if (attachmentRef.resourceId >= buildContext.attachmentIndexByResource->size()) {
+    if (framegraph::toIndex(attachmentRef.resourceId) >= buildContext.attachmentIndexByResource->size()) {
         std::cerr << "[VkFrameGraphRuntime] Attachment resource index out of range" << std::endl;
         return false;
     }
 
     outRef = {};
     outRef.sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2;
-    outRef.attachment = (*buildContext.attachmentIndexByResource)[attachmentRef.resourceId];
+    outRef.attachment = (*buildContext.attachmentIndexByResource)[framegraph::toIndex(attachmentRef.resourceId)];
     outRef.layout = framegraph::vk::toVkImageLayout(attachmentRef.layout.value_or(buildContext.defaultLayout));
     outRef.aspectMask = framegraph::vk::toVkImageAspect(attachmentRef.aspectMask.value_or(buildContext.defaultAspect));
     return true;
@@ -197,35 +193,20 @@ bool VkFrameGraphRuntime::createRenderPass(const VulkanDevice& vulkanDevice) {
         return false;
     }
 
-    if (renderPass != VK_NULL_HANDLE) {
-        vkDestroyRenderPass(vulkanDevice.getDevice(), renderPass, nullptr);
-        renderPass = VK_NULL_HANDLE;
-    }
-
     const auto& resourceDecls = frameGraphResult.resources;
     const auto& passSyncEdges = frameGraphResult.passSyncEdges;
     const auto& attachmentResourceOrder = frameGraphResult.attachmentResourceOrder;
-    const auto& aliasGroupByResource = frameGraphResult.aliasGroupByResource;
-    const auto& aliasGroups = frameGraphResult.aliasGroups;
     const std::vector<framegraph::PassDescription>& planPasses = frameGraphResult.orderedPasses;
 
     std::vector<uint32_t> attachmentIndexByResource(resourceDecls.size(), VK_ATTACHMENT_UNUSED);
     std::vector<VkAttachmentDescription2> attachments(attachmentResourceOrder.size());
     for (size_t attachmentIndex = 0; attachmentIndex < attachmentResourceOrder.size(); ++attachmentIndex) {
-        const uint32_t resourceId = attachmentResourceOrder[attachmentIndex];
+        const uint32_t resourceId = framegraph::toIndex(attachmentResourceOrder[attachmentIndex]);
         attachmentIndexByResource[resourceId] = static_cast<uint32_t>(attachmentIndex);
 
         const framegraph::ResourceDefinition& resource = resourceDecls[resourceId];
         VkAttachmentDescription2 desc{};
         desc.sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2;
-        if (resourceId < aliasGroupByResource.size()) {
-            const int32_t groupIndex = aliasGroupByResource[resourceId];
-            if (groupIndex >= 0 &&
-                static_cast<size_t>(groupIndex) < aliasGroups.size() &&
-                aliasGroups[groupIndex].size() > 1) {
-                desc.flags |= VK_ATTACHMENT_DESCRIPTION_MAY_ALIAS_BIT;
-            }
-        }
         desc.format = framegraph::vk::toVkFormat(resource.format);
         desc.samples = framegraph::vk::toVkSampleCount(resource.samples);
         desc.loadOp = framegraph::vk::toVkAttachmentLoadOp(resource.loadOp);
@@ -273,11 +254,11 @@ bool VkFrameGraphRuntime::createRenderPass(const VulkanDevice& vulkanDevice) {
 
         data.inputs.reserve(passDesc.inputs.size());
         for (const framegraph::AttachmentReference& ref : passDesc.inputs) {
-            if (ref.resourceId >= resourceDecls.size()) {
+            if (framegraph::toIndex(ref.resourceId) >= resourceDecls.size()) {
                 std::cerr << "[VkFrameGraphRuntime] Input attachment resource index out of range" << std::endl;
                 return false;
             }
-            const framegraph::ResourceDefinition& resource = resourceDecls[ref.resourceId];
+            const framegraph::ResourceDefinition& resource = resourceDecls[framegraph::toIndex(ref.resourceId)];
             const framegraph::ResourceLayout layout = hasDepthOrStencilAspect(resource.viewAspect)
                 ? framegraph::ResourceLayout::DepthStencilReadOnly
                 : framegraph::ResourceLayout::ShaderReadOnly;
@@ -456,6 +437,11 @@ bool VkFrameGraphRuntime::createImageViews(const VulkanDevice& vulkanDevice, Mem
             storage.imageMemories[frameIndex] = memoryAllocator.allocateImageMemory(
                 storage.images[frameIndex],
                 framegraph::vk::toVkMemoryProperties(resource.memoryProperties));
+            if (storage.imageMemories[frameIndex] == VK_NULL_HANDLE) {
+                std::cerr << "[VkFrameGraphRuntime] Failed to allocate frame graph image memory for resource "
+                          << resourceId << std::endl;
+                return false;
+            }
 
             const VkFormat vkFormat = framegraph::vk::toVkFormat(resource.format);
             if (createImageView(
@@ -502,8 +488,6 @@ bool VkFrameGraphRuntime::createFramebuffers(
     VkExtent2D extent,
     uint32_t maxFramesInFlight,
     const VulkanDevice& vulkanDevice) {
-    cleanupFramebuffers(vulkanDevice);
-
     if (swapChainImageViews.empty()) {
         std::cerr << "[VkFrameGraphRuntime] Swapchain image views array is empty" << std::endl;
         return false;
@@ -525,7 +509,7 @@ bool VkFrameGraphRuntime::createFramebuffers(
             attachments.resize(attachmentResourceOrder.size(), VK_NULL_HANDLE);
 
             for (size_t attachmentIndex = 0; attachmentIndex < attachmentResourceOrder.size(); ++attachmentIndex) {
-                const uint32_t resourceId = attachmentResourceOrder[attachmentIndex];
+                const uint32_t resourceId = framegraph::toIndex(attachmentResourceOrder[attachmentIndex]);
                 if (resourceId >= resourceDecls.size() || resourceId >= resourceStorages.size()) {
                     std::cerr << "[VkFrameGraphRuntime] Attachment resource index out of range" << std::endl;
                     return false;

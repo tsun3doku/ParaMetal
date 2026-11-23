@@ -9,8 +9,6 @@
 
 namespace framegraph {
 
-using SizeBytes = uint64_t;
-
 enum class ResourceLifetime {
     Transient,
     External
@@ -139,10 +137,6 @@ struct ResourceId {
     constexpr bool isValid() const {
         return value != UINT32_MAX;
     }
-
-    constexpr operator uint32_t() const {
-        return value;
-    }
 };
 
 struct PassId {
@@ -154,10 +148,6 @@ struct PassId {
 
     constexpr bool isValid() const {
         return value != UINT32_MAX;
-    }
-
-    constexpr operator uint32_t() const {
-        return value;
     }
 };
 
@@ -256,8 +246,6 @@ struct FrameGraphResult {
     std::vector<PassSyncEdge> passSyncEdges;
     std::vector<ResourceDefinition> resources;
     std::vector<ResourceId> attachmentResourceOrder;
-    std::vector<int32_t> aliasGroupByResource;
-    std::vector<std::vector<uint32_t>> aliasGroups;
 };
 
 }

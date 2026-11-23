@@ -8,8 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "FrameGraphicsStage.hpp"
-#include "FrameTypes.hpp"
+#include "FramePass.hpp"
 #include "FrameUpdateStage.hpp"
 
 struct WindowRuntimeState;
@@ -23,7 +22,6 @@ class SceneContext;
 class InteractionContext;
 class ModelSelection;
 class WireframeRenderer;
-class VkFrameGraphBackend;
 class VkFrameGraphRuntime;
 
 class FrameController {
@@ -32,7 +30,7 @@ public:
         const WindowRuntimeState& windowState,
         VulkanDevice& vulkanDevice,
         ViewportTarget& viewportTarget,
-        VkFrameGraphBackend& frameGraphBackend,
+        VkFrameGraphRuntime& frameGraphRuntime,
         SceneRenderer& sceneRenderer,
         FrameSync& frameSync,
         FrameStats& frameStats,
@@ -52,6 +50,8 @@ private:
     const WindowRuntimeState& windowState;
     ViewportTarget& viewportTarget;
     SceneRenderer& sceneRenderer;
+    ModelSelection& modelSelection;
+    WireframeRenderer& wireframeRenderer;
     FrameSync& frameSync;
     FrameStats& frameStats;
     CameraController& cameraController;
@@ -60,7 +60,6 @@ private:
     std::atomic<bool>& isShuttingDown;
 
     FrameUpdateStage frameUpdateStage;
-    FrameGraphicsStage frameGraphicsStage;
 
     std::vector<std::string> buildFrameTimingLines(uint32_t frameIndex, std::optional<float> computeGpuMs);
     void updateTimingOverlay(std::vector<std::string>& timingLines, const render::RenderFlags& flags);

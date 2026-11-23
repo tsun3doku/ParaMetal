@@ -7,7 +7,7 @@
 #include "FrameSync.hpp"
 #include "render/SceneRenderer.hpp"
 #include "app/ViewportTarget.hpp"
-#include "VkFrameGraphBackend.hpp"
+#include "VkFrameGraphRuntime.hpp"
 #include "render/RenderConfig.hpp"
 #include "render/WindowRuntimeState.hpp"
 #include "vulkan/VulkanDevice.hpp"
@@ -22,7 +22,7 @@ FrameController::FrameController(
     const WindowRuntimeState& windowState,
     VulkanDevice& vulkanDevice,
     ViewportTarget& viewportTarget,
-    VkFrameGraphBackend& frameGraphBackend,
+    VkFrameGraphRuntime& frameGraphRuntime,
     SceneRenderer& sceneRenderer,
     FrameSync& frameSync,
     FrameStats& frameStats,
@@ -35,14 +35,14 @@ FrameController::FrameController(
     : windowState(windowState),
       viewportTarget(viewportTarget),
       sceneRenderer(sceneRenderer),
+      modelSelection(modelSelection),
+      wireframeRenderer(wireframeRenderer),
       frameSync(frameSync),
       frameStats(frameStats),
       cameraController(scene.cameraController()),
       interaction(interaction),
       isOperating(isOperating),
       isShuttingDown(isShuttingDown),
-      vulkanDevice(vulkanDevice),
-      frameGraphRuntime(frameGraphBackend.getRuntime()),
       frameUpdateStage(
           interaction,
           *scene.uniformBufferManager(),
@@ -51,11 +51,8 @@ FrameController::FrameController(
           *scene.materialSystem(),
           sceneRenderer,
           modelSelection),
-      frameGraphicsStage(
-          sceneRenderer,
-          modelSelection,
-          interaction,
-          wireframeRenderer) {
+      vulkanDevice(vulkanDevice),
+      frameGraphRuntime(frameGraphRuntime) {
 }
 
 bool FrameController::drawFrame(VkCommandBuffer commandBuffer, uint32_t frameIndex, const render::RenderFlags& flags) {
@@ -68,19 +65,15 @@ bool FrameController::drawFrame(VkCommandBuffer commandBuffer, uint32_t frameInd
         return false;
     }
 
-    FrameState frameState{};
-    frameState.frameIndex = frameIndex;
     std::vector<std::string> timingLines;
-    frameUpdateStage.processPicking(frameState.frameIndex);
+    frameUpdateStage.processPicking(frameIndex);
 
-    frameState.extent = extent;
-    interaction.setViewport(frameState.extent, windowState.devicePixelRatio.load(std::memory_order_acquire));
-    frameState.sceneView = cameraController.buildSceneView(frameState.extent);
-    frameState.flags = flags;
-    frameUpdateStage.updateFrameState(frameState.frameIndex, frameState.sceneView);
+    interaction.setViewport(extent, windowState.devicePixelRatio.load(std::memory_order_acquire));
+    const render::SceneView sceneView = cameraController.buildSceneView(extent);
+    frameUpdateStage.updateFrameState(frameIndex, sceneView);
 
     if (flags.drawTimingOverlay) {
-        timingLines = buildFrameTimingLines(frameState.frameIndex, frameStats.getComputeGpuMs());
+        timingLines = buildFrameTimingLines(frameIndex, frameStats.getComputeGpuMs());
     }
 
     const bool computePresent = frameSync.wasComputePresentedThisLap();
@@ -91,13 +84,27 @@ bool FrameController::drawFrame(VkCommandBuffer commandBuffer, uint32_t frameInd
         return false;
     }
 
-    FrameSyncState syncState{};
-    syncState.insertComputeToGraphicsBarrier = computePresent;
-    syncState.waitDstStageMask = frameGraphRuntime.getComputeToGraphicsWaitDstStageMask();
+    updateTimingOverlay(timingLines, flags);
 
-    updateTimingOverlay(timingLines, frameState.flags);
+    render::RenderFrameRequest frameRequest{};
+    frameRequest.frameIndex = frameIndex;
+    frameRequest.imageIndex = 0;
+    frameRequest.extent = extent;
+    frameRequest.sceneView = sceneView;
+    frameRequest.flags = flags;
 
-    if (!frameGraphicsStage.collectExternal(commandBuffer, frameState, syncState)) {
+    render::RenderServices services{};
+    services.modelSelection = &modelSelection;
+    services.gizmoController = &interaction.gizmoController();
+    services.navigationGizmoController = &interaction.navigationGizmoController();
+    services.wireframeRenderer = &wireframeRenderer;
+
+    if (!sceneRenderer.recordExternalCommandBuffer(
+            commandBuffer,
+            frameRequest,
+            services,
+            computePresent,
+            frameGraphRuntime.getComputeToGraphicsWaitDstStageMask())) {
         isShuttingDown.store(true, std::memory_order_release);
         return false;
     }

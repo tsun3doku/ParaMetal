@@ -105,8 +105,6 @@ void FrameGraph::rebuildFrameGraphResult() {
     frameGraphResult.passSyncEdges = passSyncEdges;
     frameGraphResult.resources = resourceDecls;
     frameGraphResult.attachmentResourceOrder = attachmentResourceOrder;
-    frameGraphResult.aliasGroupByResource = aliasGroupByResource;
-    frameGraphResult.aliasGroups = aliasGroups;
 }
 
 std::vector<std::string> FrameGraph::getPassNames() const {

@@ -18,7 +18,7 @@
 #include "SceneRenderer.hpp"
 #include "app/ViewportTarget.hpp"
 #include "vulkan/UniformBufferManager.hpp"
-#include "framegraph/VkFrameGraphBackend.hpp"
+#include "framegraph/VkFrameGraphRuntime.hpp"
 #include "vulkan/VulkanDevice.hpp"
 #include "renderers/WireframeRenderer.hpp"
 
@@ -58,11 +58,11 @@ bool RenderRuntime::initializeBase(VkFormat swapChainFormat, VkExtent2D extent, 
         return false;
     }
 
-    frameGraphBackend = std::make_unique<VkFrameGraphBackend>(vulkanDevice, allocator);
-    if (!frameGraphBackend) {
+    frameGraphRuntime = std::make_unique<VkFrameGraphRuntime>(vulkanDevice, allocator);
+    if (!frameGraphRuntime) {
         return false;
     }
-    if (!frameGraphBackend->rebuild(frameGraph->getFrameGraphResult(), viewportTarget.getImageViews(), extent, renderconfig::MaxFramesInFlight)) {
+    if (!frameGraphRuntime->rebuild(frameGraph->getFrameGraphResult(), viewportTarget.getImageViews(), extent, renderconfig::MaxFramesInFlight)) {
         return false;
     }
 
@@ -70,7 +70,7 @@ bool RenderRuntime::initializeBase(VkFormat swapChainFormat, VkExtent2D extent, 
         vulkanDevice,
         allocator,
         *frameGraph,
-        frameGraphBackend->getRuntime(),
+        *frameGraphRuntime,
         modelRegistry,
         ubo,
         renderconfig::MaxFramesInFlight,
@@ -86,7 +86,7 @@ bool RenderRuntime::initializeBase(VkFormat swapChainFormat, VkExtent2D extent, 
 
     modelSelection = std::make_unique<ModelSelection>(
         vulkanDevice,
-        frameGraphBackend->getRuntime(),
+        *frameGraphRuntime,
         modelRegistry,
         frameGraph->getResourceId(framegraph::resources::PickID));
     if (!modelSelection) {
@@ -99,7 +99,7 @@ bool RenderRuntime::initializeBase(VkFormat swapChainFormat, VkExtent2D extent, 
     wireframeRenderer = std::make_unique<WireframeRenderer>(
         vulkanDevice,
         sceneRenderer->getGbufferDescriptorSetLayout(),
-        frameGraphBackend->getRuntime().getRenderPass(),
+        frameGraphRuntime->getRenderPass(),
         framegraph::toIndex(frameGraph->getPassId(framegraph::passes::Overlay)));
     if (!wireframeRenderer) {
         return false;
@@ -109,7 +109,7 @@ bool RenderRuntime::initializeBase(VkFormat swapChainFormat, VkExtent2D extent, 
 }
 
 bool RenderRuntime::initializeFrameController(SceneContext& scene, InteractionContext& interaction) {
-    if (!modelSelection || !wireframeRenderer || !frameGraph || !frameGraphBackend || !sceneRenderer) {
+    if (!modelSelection || !wireframeRenderer || !frameGraph || !frameGraphRuntime || !sceneRenderer) {
         return false;
     }
 
@@ -117,7 +117,7 @@ bool RenderRuntime::initializeFrameController(SceneContext& scene, InteractionCo
         windowState,
         vulkanDevice,
         viewportTarget,
-        *frameGraphBackend,
+        *frameGraphRuntime,
         *sceneRenderer,
         frameSync,
         frameStats,
@@ -158,12 +158,12 @@ const FrameStats& RenderRuntime::getFrameStats() const {
 }
 
 bool RenderRuntime::updateViewportTarget(VkImage image, VkFormat format, VkExtent2D extent) {
-    if (!frameGraph || !frameGraphBackend || !sceneRenderer) {
+    if (!frameGraph || !frameGraphRuntime || !sceneRenderer) {
         return false;
     }
 
     vkDeviceWaitIdle(vulkanDevice.getDevice());
-    frameGraphBackend->cleanup(renderconfig::MaxFramesInFlight);
+    frameGraphRuntime->cleanup(renderconfig::MaxFramesInFlight);
     if (!viewportTarget.update(image, format, extent)) {
         return false;
     }
@@ -172,7 +172,7 @@ bool RenderRuntime::updateViewportTarget(VkImage image, VkFormat format, VkExten
             framegraph::vk::toFrameGraphExtent(extent))) {
         return false;
     }
-    if (!frameGraphBackend->rebuild(
+    if (!frameGraphRuntime->rebuild(
             frameGraph->getFrameGraphResult(),
             viewportTarget.getImageViews(),
             extent,
@@ -188,8 +188,8 @@ void RenderRuntime::cleanup() {
     if (modelSelection) {
         modelSelection->cleanup();
     }
-    if (frameGraphBackend) {
-        frameGraphBackend->cleanup(renderconfig::MaxFramesInFlight);
+    if (frameGraphRuntime) {
+        frameGraphRuntime->cleanup(renderconfig::MaxFramesInFlight);
     }
     if (sceneRenderer) {
         sceneRenderer->cleanup();
@@ -202,7 +202,7 @@ void RenderRuntime::cleanup() {
     wireframeRenderer.reset();
     modelSelection.reset();
     sceneRenderer.reset();
-    frameGraphBackend.reset();
+    frameGraphRuntime.reset();
     frameGraph.reset();
 }
 
@@ -215,11 +215,11 @@ const FrameGraph& RenderRuntime::getFrameGraph() const {
 }
 
 VkFrameGraphRuntime& RenderRuntime::getFrameGraphRuntime() {
-    return frameGraphBackend->getRuntime();
+    return *frameGraphRuntime;
 }
 
 const VkFrameGraphRuntime& RenderRuntime::getFrameGraphRuntime() const {
-    return frameGraphBackend->getRuntime();
+    return *frameGraphRuntime;
 }
 
 SceneRenderer& RenderRuntime::getSceneRenderer() {

@@ -63,13 +63,6 @@ inline framegraph::Extent2D toFrameGraphExtent(VkExtent2D extent) {
     return out;
 }
 
-inline VkExtent2D toVkExtent(framegraph::Extent2D extent) {
-    VkExtent2D out{};
-    out.width = extent.width;
-    out.height = extent.height;
-    return out;
-}
-
 inline VkSampleCountFlagBits toVkSampleCount(framegraph::SampleCount sampleCount) {
     switch (sampleCount) {
     case framegraph::SampleCount::Count1:

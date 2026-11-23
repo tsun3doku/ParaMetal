@@ -14,16 +14,14 @@ class MemoryAllocator;
 
 class VkFrameGraphRuntime {
 public:
-    VkFrameGraphRuntime() = default;
+    VkFrameGraphRuntime(const VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator);
 
     bool rebuild(
-        const VulkanDevice& vulkanDevice,
-        MemoryAllocator& memoryAllocator,
         const framegraph::FrameGraphResult& frameGraphResult,
         const std::vector<VkImageView>& swapChainImageViews,
         VkExtent2D extent,
         uint32_t maxFramesInFlight);
-    void cleanup(const VulkanDevice& vulkanDevice, MemoryAllocator& memoryAllocator, uint32_t maxFramesInFlight);
+    void cleanup(uint32_t maxFramesInFlight);
 
     const framegraph::FrameGraphResult& getFrameGraphResult() const {
         return frameGraphResult;
@@ -47,7 +45,6 @@ private:
     struct SyncState {
         VkPipelineStageFlags stageMask = 0;
         VkAccessFlags accessMask = 0;
-        bool isWrite = false;
     };
 
     struct ResourceStorage {
@@ -90,6 +87,8 @@ private:
     static const std::vector<VkImage>& emptyImages();
     static const std::vector<VkImageView>& emptyViews();
 
+    const VulkanDevice& vulkanDevice;
+    MemoryAllocator& memoryAllocator;
     framegraph::FrameGraphResult frameGraphResult{};
     std::vector<ResourceStorage> resourceStorages;
     std::vector<VkFramebuffer> framebuffers;

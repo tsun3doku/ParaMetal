@@ -274,7 +274,6 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="vulkan\CommandBufferManager.cpp" />
     <ClCompile Include="framegraph\FrameController.cpp" />
     <ClCompile Include="framegraph\FrameUpdateStage.cpp" />
-    <ClCompile Include="framegraph\FrameGraphicsStage.cpp" />
     <ClCompile Include="framegraph\FrameStats.cpp" />
     <ClCompile Include="render\RenderRuntime.cpp" />
     <ClCompile Include="runtime\VulkanCoreContext.cpp" />
@@ -368,7 +367,6 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="framegraph\FrameGraph.cpp" />
     <ClCompile Include="framegraph\FrameGraphCompile.cpp" />
     <ClCompile Include="framegraph\VkFrameGraphRuntime.cpp" />
-    <ClCompile Include="framegraph\VkFrameGraphBackend.cpp" />
     <ClCompile Include="util\GlyphText.cpp" />
     <ClCompile Include="render\SceneRenderer.cpp" />
     <ClCompile Include="render\HeatOverlayRenderer.cpp" />
@@ -732,10 +730,8 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="vem\VEMMeshBuilder.hpp" />
     <ClInclude Include="vulkan\CommandBufferManager.hpp" />
     <ClInclude Include="framegraph\FrameController.hpp" />
-    <ClInclude Include="framegraph\FrameTypes.hpp" />
     <ClInclude Include="framegraph\FrameUpdateStage.hpp" />
     <ClInclude Include="framegraph\ComputePass.hpp" />
-    <ClInclude Include="framegraph\FrameGraphicsStage.hpp" />
     <ClInclude Include="nodegraph\NodeGraphIconRegistry.hpp" />
     <ClInclude Include="framegraph\FrameStats.hpp" />
     <ClInclude Include="render\RenderConfig.hpp" />
@@ -783,7 +779,6 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="framegraph\FrameGraphTypes.hpp" />
     <ClInclude Include="framegraph\FrameGraphResources.hpp" />
     <ClInclude Include="framegraph\VkFrameGraphRuntime.hpp" />
-    <ClInclude Include="framegraph\VkFrameGraphBackend.hpp" />
     <ClInclude Include="render\MainRenderGraph.hpp" />
     <ClInclude Include="framegraph\FramePass.hpp" />
     <ClInclude Include="scene\SceneView.hpp" />

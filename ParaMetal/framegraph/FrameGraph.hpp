@@ -24,32 +24,16 @@ public:
     std::vector<std::string> getPassNames() const;
 
 private:
-    struct ResourceLifetimeRange {
-        int32_t firstPass = -1;
-        int32_t lastPass = -1;
-
-        bool isValid() const {
-            return firstPass >= 0 && lastPass >= firstPass;
-        }
-    };
-
     using ResourceDescription = framegraph::ResourceDefinition;
 
     bool buildGraph(framegraph::ImageFormat swapchainImageFormat, framegraph::Extent2D extent);
     bool cullUnusedGraph();
-
     bool compilePassDag();
-    void compileTransientAliasingPlan();
-
-    bool canAliasResources(uint32_t resourceA, uint32_t resourceB) const;
-    bool hasLifetimeOverlap(uint32_t resourceA, uint32_t resourceB) const;
 
     std::vector<framegraph::ResourceUse> buildPassResourceUses(const framegraph::PassDescription& passDesc) const;
     bool hasLivePasses(const std::vector<uint8_t>& livePasses) const;
     bool remapAttachmentRef(framegraph::AttachmentReference& ref, const std::vector<int32_t>& resourceRemap) const;
     void addDependencyEdge(std::vector<std::unordered_set<uint32_t>>& adjacency, std::vector<uint32_t>& indegree, uint32_t src, uint32_t dst) const;
-    bool isLifetimeEarlier(uint32_t lhsResourceId, uint32_t rhsResourceId) const;
-    void sortCandidatesByLifetime(std::vector<uint32_t>& candidates) const;
     framegraph::ResourceId addResourceDesc(ResourceDescription desc);
     void rebuildFrameGraphResult();
 
@@ -63,9 +47,6 @@ private:
 
     std::vector<framegraph::ResourceId> attachmentResourceOrder;
     std::vector<framegraph::PassSyncEdge> passSyncEdges;
-    std::vector<ResourceLifetimeRange> resourceLifetimes;
-    std::vector<int32_t> aliasGroupByResource;
-    std::vector<std::vector<uint32_t>> aliasGroups;
 
     framegraph::FrameGraphResult frameGraphResult;
 };

@@ -63,9 +63,6 @@
     <ClCompile Include="framegraph\FrameUpdateStage.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="framegraph\FrameGraphicsStage.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="render\RenderRuntime.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -292,9 +289,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="framegraph\VkFrameGraphRuntime.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="framegraph\VkFrameGraphBackend.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="render\MainRenderGraph.cpp">
@@ -1177,16 +1171,10 @@
     <ClInclude Include="framegraph\FrameController.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="framegraph\FrameTypes.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="framegraph\FrameUpdateStage.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="framegraph\ComputePass.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="framegraph\FrameGraphicsStage.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="render\RenderRuntime.hpp">
@@ -1394,9 +1382,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="framegraph\VkFrameGraphRuntime.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="framegraph\VkFrameGraphBackend.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="render\MainRenderGraph.hpp">

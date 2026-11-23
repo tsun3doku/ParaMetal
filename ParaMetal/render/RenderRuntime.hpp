@@ -26,7 +26,6 @@ class SceneRenderer;
 class ModelSelection;
 class WireframeRenderer;
 class FrameController;
-class VkFrameGraphBackend;
 class VkFrameGraphRuntime;
 
 class SceneContext;
@@ -81,7 +80,7 @@ private:
     FrameStats frameStats;
 
     std::unique_ptr<FrameGraph> frameGraph;
-    std::unique_ptr<VkFrameGraphBackend> frameGraphBackend;
+    std::unique_ptr<VkFrameGraphRuntime> frameGraphRuntime;
     std::unique_ptr<SceneRenderer> sceneRenderer;
     std::unique_ptr<ModelSelection> modelSelection;
     std::unique_ptr<WireframeRenderer> wireframeRenderer;

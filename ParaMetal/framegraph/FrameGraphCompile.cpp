@@ -19,11 +19,11 @@ bool FrameGraph::hasLivePasses(const std::vector<uint8_t>& livePasses) const {
 }
 
 bool FrameGraph::remapAttachmentRef(framegraph::AttachmentReference& ref, const std::vector<int32_t>& resourceRemap) const {
-    if (ref.resourceId >= resourceRemap.size()) {
+    if (framegraph::toIndex(ref.resourceId) >= resourceRemap.size()) {
         return false;
     }
 
-    const int32_t mapped = resourceRemap[ref.resourceId];
+    const int32_t mapped = resourceRemap[framegraph::toIndex(ref.resourceId)];
     if (mapped < 0) {
         return false;
     }
@@ -42,28 +42,6 @@ void FrameGraph::addDependencyEdge(
     }
     if (adjacency[src].insert(dst).second) {
         ++indegree[dst];
-    }
-}
-
-bool FrameGraph::isLifetimeEarlier(uint32_t lhsResourceId, uint32_t rhsResourceId) const {
-    const ResourceLifetimeRange& lhs = resourceLifetimes[lhsResourceId];
-    const ResourceLifetimeRange& rhs = resourceLifetimes[rhsResourceId];
-    if (lhs.firstPass != rhs.firstPass) {
-        return lhs.firstPass < rhs.firstPass;
-    }
-    return lhs.lastPass < rhs.lastPass;
-}
-
-void FrameGraph::sortCandidatesByLifetime(std::vector<uint32_t>& candidates) const {
-    for (size_t index = 1; index < candidates.size(); ++index) {
-        const uint32_t key = candidates[index];
-        size_t insertPos = index;
-
-        while (insertPos > 0 && isLifetimeEarlier(key, candidates[insertPos - 1])) {
-            candidates[insertPos] = candidates[insertPos - 1];
-            --insertPos;
-        }
-        candidates[insertPos] = key;
     }
 }
 
@@ -107,7 +85,6 @@ bool FrameGraph::buildGraph(framegraph::ImageFormat swapchainImageFormat, frameg
     if (!compilePassDag()) {
         return false;
     }
-    compileTransientAliasingPlan();
     return true;
 }
 
@@ -124,10 +101,10 @@ bool FrameGraph::cullUnusedGraph() {
     for (uint32_t passIndex = 0; passIndex < passCount; ++passIndex) {
         passUses[passIndex] = buildPassResourceUses(passDecls[passIndex]);
         for (const framegraph::ResourceUse& use : passUses[passIndex]) {
-            if (use.resourceId >= resourceCount || !use.write) {
+            if (framegraph::toIndex(use.resourceId) >= resourceCount || !use.write) {
                 continue;
             }
-            writersByResource[use.resourceId].push_back(passIndex);
+            writersByResource[framegraph::toIndex(use.resourceId)].push_back(passIndex);
         }
     }
 
@@ -143,16 +120,6 @@ bool FrameGraph::cullUnusedGraph() {
         resourceQueue.push_back(resourceId);
     }
 
-    if (resourceQueue.empty()) {
-        for (uint32_t resourceId = 0; resourceId < resourceCount; ++resourceId) {
-            if (resourceDecls[resourceId].lifetime != framegraph::ResourceLifetime::External) {
-                continue;
-            }
-            liveResources[resourceId] = 1;
-            resourceQueue.push_back(resourceId);
-        }
-    }
-
     while (!resourceQueue.empty()) {
         const uint32_t requiredResource = resourceQueue.front();
         resourceQueue.pop_front();
@@ -164,11 +131,11 @@ bool FrameGraph::cullUnusedGraph() {
 
             livePasses[writerPass] = 1;
             for (const framegraph::ResourceUse& use : passUses[writerPass]) {
-                if (use.resourceId >= resourceCount || liveResources[use.resourceId]) {
+                if (framegraph::toIndex(use.resourceId) >= resourceCount || liveResources[framegraph::toIndex(use.resourceId)]) {
                     continue;
                 }
-                liveResources[use.resourceId] = 1;
-                resourceQueue.push_back(use.resourceId);
+                liveResources[framegraph::toIndex(use.resourceId)] = 1;
+                resourceQueue.push_back(framegraph::toIndex(use.resourceId));
             }
         }
     }
@@ -251,10 +218,10 @@ bool FrameGraph::cullUnusedGraph() {
         std::vector<framegraph::ResourceUse> remappedAdditionalUses;
         remappedAdditionalUses.reserve(pass.additionalUses.size());
         for (framegraph::ResourceUse use : pass.additionalUses) {
-            if (use.resourceId >= resourceRemap.size()) {
+            if (framegraph::toIndex(use.resourceId) >= resourceRemap.size()) {
                 continue;
             }
-            const int32_t mapped = resourceRemap[use.resourceId];
+            const int32_t mapped = resourceRemap[framegraph::toIndex(use.resourceId)];
             if (mapped < 0) {
                 continue;
             }
@@ -360,7 +327,7 @@ bool FrameGraph::compilePassDag() {
             std::vector<framegraph::ResourceUse> usesForResource;
             usesForResource.reserve(4);
             for (const framegraph::ResourceUse& use : passUses[passIndex]) {
-                if (use.resourceId == resourceId) {
+                if (framegraph::toIndex(use.resourceId) == resourceId) {
                     usesForResource.push_back(use);
                 }
             }
@@ -519,144 +486,19 @@ bool FrameGraph::compilePassDag() {
             continue;
         }
 
-        bool duplicate = false;
-        for (const framegraph::PassSyncEdge& existing : passSyncEdges) {
-            if (framegraph::toIndex(existing.srcPass) == srcNew &&
-                framegraph::toIndex(existing.dstPass) == dstNew &&
-                framegraph::toIndex(existing.resourceId) == framegraph::toIndex(edge.resourceId) &&
-                existing.srcUsage == edge.srcUsage &&
-                existing.dstUsage == edge.dstUsage &&
-                existing.srcWrite == edge.srcWrite &&
-                existing.dstWrite == edge.dstWrite) {
-                duplicate = true;
-                break;
-            }
-        }
-
-        if (!duplicate) {
-            passSyncEdges.push_back({
-                framegraph::PassId(srcNew),
-                framegraph::PassId(dstNew),
-                edge.resourceId,
-                edge.srcUsage,
-                edge.dstUsage,
-                edge.srcWrite,
-                edge.dstWrite
-            });
-        }
+        passSyncEdges.push_back({
+            framegraph::PassId(srcNew),
+            framegraph::PassId(dstNew),
+            edge.resourceId,
+            edge.srcUsage,
+            edge.dstUsage,
+            edge.srcWrite,
+            edge.dstWrite
+        });
     }
 
     passDecls = std::move(sortedPasses);
     return true;
-}
-
-bool FrameGraph::canAliasResources(uint32_t resourceA, uint32_t resourceB) const {
-    if (resourceA >= resourceDecls.size() || resourceB >= resourceDecls.size()) {
-        return false;
-    }
-
-    const ResourceDescription& a = resourceDecls[resourceA];
-    const ResourceDescription& b = resourceDecls[resourceB];
-
-    if (a.lifetime != framegraph::ResourceLifetime::Transient || b.lifetime != framegraph::ResourceLifetime::Transient) {
-        return false;
-    }
-    if (a.memoryProperties != b.memoryProperties) {
-        return false;
-    }
-
-    // Keep image aliasing conservative around sample count and format.
-    return a.format == b.format &&
-        a.samples == b.samples;
-}
-
-bool FrameGraph::hasLifetimeOverlap(uint32_t resourceA, uint32_t resourceB) const {
-    if (resourceA >= resourceLifetimes.size() || resourceB >= resourceLifetimes.size()) {
-        return false;
-    }
-
-    const ResourceLifetimeRange& a = resourceLifetimes[resourceA];
-    const ResourceLifetimeRange& b = resourceLifetimes[resourceB];
-    if (!a.isValid() || !b.isValid()) {
-        return false;
-    }
-
-    return !(a.lastPass < b.firstPass || b.lastPass < a.firstPass);
-}
-
-void FrameGraph::compileTransientAliasingPlan() {
-    resourceLifetimes.assign(resourceDecls.size(), {});
-    aliasGroupByResource.assign(resourceDecls.size(), -1);
-    aliasGroups.clear();
-
-    for (size_t passIndex = 0; passIndex < passDecls.size(); ++passIndex) {
-        const std::vector<framegraph::ResourceUse> uses = buildPassResourceUses(passDecls[passIndex]);
-        for (const framegraph::ResourceUse& use : uses) {
-            if (use.resourceId >= resourceDecls.size()) {
-                continue;
-            }
-            if (resourceDecls[use.resourceId].lifetime != framegraph::ResourceLifetime::Transient) {
-                continue;
-            }
-
-            ResourceLifetimeRange& range = resourceLifetimes[use.resourceId];
-            if (range.firstPass < 0) {
-                range.firstPass = static_cast<int32_t>(passIndex);
-            }
-            range.lastPass = static_cast<int32_t>(passIndex);
-        }
-    }
-
-    std::vector<uint32_t> candidates;
-    candidates.reserve(resourceDecls.size());
-    for (uint32_t resourceId = 0; resourceId < resourceDecls.size(); ++resourceId) {
-        const ResourceDescription& resource = resourceDecls[resourceId];
-        if (resource.lifetime != framegraph::ResourceLifetime::Transient) {
-            continue;
-        }
-        if (!resourceLifetimes[resourceId].isValid()) {
-            continue;
-        }
-        candidates.push_back(resourceId);
-    }
-
-    sortCandidatesByLifetime(candidates);
-
-    for (uint32_t resourceId : candidates) {
-        int32_t selectedGroup = -1;
-
-        for (size_t groupIndex = 0; groupIndex < aliasGroups.size(); ++groupIndex) {
-            const std::vector<uint32_t>& group = aliasGroups[groupIndex];
-            if (group.empty()) {
-                continue;
-            }
-            if (!canAliasResources(resourceId, group.front())) {
-                continue;
-            }
-
-            bool overlap = false;
-            for (uint32_t groupMember : group) {
-                if (hasLifetimeOverlap(resourceId, groupMember)) {
-                    overlap = true;
-                    break;
-                }
-            }
-            if (!overlap) {
-                selectedGroup = static_cast<int32_t>(groupIndex);
-                break;
-            }
-        }
-
-        if (selectedGroup < 0) {
-            aliasGroups.push_back({ resourceId });
-            selectedGroup = static_cast<int32_t>(aliasGroups.size() - 1);
-        }
-        else {
-            aliasGroups[selectedGroup].push_back(resourceId);
-        }
-
-        aliasGroupByResource[resourceId] = selectedGroup;
-    }
 }
 
 std::vector<framegraph::ResourceUse> FrameGraph::buildPassResourceUses(const framegraph::PassDescription& passDesc) const {
@@ -682,7 +524,7 @@ std::vector<framegraph::ResourceUse> FrameGraph::buildPassResourceUses(const fra
     for (const framegraph::ResourceUse& use : passDesc.additionalUses) {
         bool duplicate = false;
         for (const framegraph::ResourceUse& existing : uses) {
-            if (existing.resourceId == use.resourceId &&
+            if (framegraph::toIndex(existing.resourceId) == framegraph::toIndex(use.resourceId) &&
                 existing.usage == use.usage &&
                 existing.write == use.write) {
                 duplicate = true;
