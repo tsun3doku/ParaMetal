@@ -7,16 +7,25 @@
 #include "NodeGraphValidator.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <sstream>
 #include <unordered_set>
 #include <utility>
 
+static uint64_t nextNodeInstanceId() {
+    static std::atomic<uint64_t> nextId{1};
+    return nextId.fetch_add(1, std::memory_order_relaxed);
+}
+
+static uint64_t nextGraphInstanceId() {
+    static std::atomic<uint64_t> nextId{1};
+    return nextId.fetch_add(1, std::memory_order_relaxed);
+}
+
 NodeGraph::NodeGraph() {
+    graphInstanceId = nextGraphInstanceId();
     registryValid = initNodeGraph(registry);
-    if (registryValid) {
-        rebuildStateLocked();
-    }
 }
 
 static void copySocketIdsByIndex(
@@ -53,6 +62,7 @@ NodeGraphNodeId NodeGraph::addNode(const NodeTypeId& typeId, const std::string& 
 
     NodeGraphNode node{};
     node.id = NodeGraphNodeId{nextNodeId++};
+    node.instanceId = nextNodeInstanceId();
     node.typeId = definition->id;
     node.category = definition->category;
     node.title = title.empty() ? definition->displayName : title;
@@ -71,7 +81,6 @@ NodeGraphNodeId NodeGraph::addNode(const NodeTypeId& typeId, const std::string& 
     NodeGraphChange change{NodeGraphChangeType::NodeUpsert};
     change.reason = NodeGraphChangeReason::Topology;
     change.node = nodes.at(id.value);
-    rebuildStateLocked();
     pushChangesLocked({change});
     return id;
 }
@@ -91,7 +100,6 @@ bool NodeGraph::removeNode(NodeGraphNodeId nodeId) {
     NodeGraphChange change{NodeGraphChangeType::NodeRemoved};
     change.reason = NodeGraphChangeReason::Topology;
     change.nodeId = nodeId;
-    rebuildStateLocked();
     pushChangesLocked({change});
     return true;
 }
@@ -118,7 +126,6 @@ bool NodeGraph::moveNode(NodeGraphNodeId nodeId, float x, float y) {
     NodeGraphChange change{NodeGraphChangeType::NodeUpsert};
     change.reason = NodeGraphChangeReason::Layout;
     change.node = *node;
-    rebuildStateLocked();
     pushChangesLocked({change});
     return true;
 }
@@ -146,7 +153,6 @@ bool NodeGraph::toggleNodeFrozen(NodeGraphNodeId nodeId) {
     NodeGraphChange change{NodeGraphChangeType::NodeUpsert};
     change.reason = NodeGraphChangeReason::State;
     change.node = nodes.at(nodeId.value);
-    rebuildStateLocked();
     pushChangesLocked({change});
     return true;
 }
@@ -154,19 +160,27 @@ bool NodeGraph::toggleNodeFrozen(NodeGraphNodeId nodeId) {
 bool NodeGraph::toggleNodeDisplay(NodeGraphNodeId nodeId) {
     std::lock_guard<std::recursive_mutex> lock(mutex);
 
+    std::vector<NodeGraphNodeId> affected;
+    affected.reserve(2);
+    for (const auto& [id, node] : nodes) {
+        if (id == nodeId.value || node.state.isPrimaryDisplay()) {
+            affected.push_back(node.id);
+        }
+    }
+
     if (!NodeGraphNodeState::toggleDisplay(nodes, nodeId)) {
         return false;
     }
 
     bumpRevision();
     std::vector<NodeGraphChange> changes;
-    for (const auto& [id, node] : nodes) {
+    changes.reserve(affected.size());
+    for (NodeGraphNodeId id : affected) {
         NodeGraphChange change{NodeGraphChangeType::NodeUpsert};
         change.reason = NodeGraphChangeReason::State;
-        change.node = node;
+        change.node = nodes.at(id.value);
         changes.push_back(std::move(change));
     }
-    rebuildStateLocked();
     pushChangesLocked(changes);
     return true;
 }
@@ -228,7 +242,6 @@ bool NodeGraph::setNodeParameters(NodeGraphNodeId nodeId, const std::vector<Node
     NodeGraphChange change{NodeGraphChangeType::NodeUpsert};
     change.reason = NodeGraphChangeReason::Parameter;
     change.node = *node;
-    rebuildStateLocked();
     pushChangesLocked({change});
     return true;
 }
@@ -256,37 +269,6 @@ bool NodeGraph::appendSocket(NodeGraphNodeId nodeId, const NodeSocketSignature& 
     NodeGraphChange change{NodeGraphChangeType::NodeUpsert};
     change.reason = NodeGraphChangeReason::Topology;
     change.node = *node;
-    rebuildStateLocked();
-    pushChangesLocked({change});
-    return true;
-}
-
-bool NodeGraph::addConnection(
-    NodeGraphNodeId fromNode,
-    NodeGraphSocketId fromSocket,
-    NodeGraphNodeId toNode,
-    NodeGraphSocketId toSocket,
-    NodeGraphEdgeId* outEdgeId) {
-    std::lock_guard<std::recursive_mutex> lock(mutex);
-
-    NodeGraphEdge edge{};
-    edge.id = NodeGraphEdgeId{nextEdgeId++};
-    edge.fromNode = fromNode;
-    edge.fromSocket = fromSocket;
-    edge.toNode = toNode;
-    edge.toSocket = toSocket;
-
-    edges.upsert(edge);
-    bumpRevision();
-
-    if (outEdgeId) {
-        *outEdgeId = edge.id;
-    }
-    NodeGraphChange change{NodeGraphChangeType::EdgeUpsert};
-    change.reason = NodeGraphChangeReason::Topology;
-    change.edge = edge;
-    change.edgeId = edge.id;
-    rebuildStateLocked();
     pushChangesLocked({change});
     return true;
 }
@@ -348,7 +330,6 @@ bool NodeGraph::connectSockets(
     changes.push_back(std::move(addedChange));
 
     bumpRevision();
-    rebuildStateLocked();
     pushChangesLocked(changes);
     return true;
 }
@@ -367,7 +348,6 @@ bool NodeGraph::removeConnection(NodeGraphEdgeId edgeId) {
     change.edgeId = edgeId;
     edges.remove(edgeId);
     bumpRevision();
-    rebuildStateLocked();
     pushChangesLocked({change});
     return true;
 }
@@ -380,11 +360,12 @@ void NodeGraph::clear() {
     nextNodeId = 1;
     nextSocketId = 1;
     nextEdgeId = 1;
+    graphInstanceId = nextGraphInstanceId();
     bumpRevision();
 
     NodeGraphChange resetChange{NodeGraphChangeType::Reset};
     resetChange.reason = NodeGraphChangeReason::Topology;
-    rebuildStateLocked();
+    changeLog.clear();
     pushChangesLocked({resetChange});
 }
 
@@ -420,6 +401,7 @@ bool NodeGraph::loadSerializedState(
 
         NodeGraphNode rebuiltNode{};
         rebuiltNode.id = savedNode.id;
+        rebuiltNode.instanceId = nextNodeInstanceId();
         rebuiltNode.typeId = definition->id;
         rebuiltNode.category = definition->category;
         rebuiltNode.title = savedNode.title.empty() ? definition->displayName : savedNode.title;
@@ -507,26 +489,27 @@ bool NodeGraph::loadSerializedState(
     nextNodeId = candidate.nextNodeId;
     nextSocketId = candidate.nextSocketId;
     nextEdgeId = candidate.nextEdgeId;
+    graphInstanceId = nextGraphInstanceId();
     revision = candidate.revision;
 
-    rebuildStateLocked();
     std::vector<NodeGraphChange> changes;
-    changes.reserve(1 + graphState.nodes.size() + graphState.edges.size());
+    changes.reserve(1 + nodes.size() + edges.size());
     NodeGraphChange resetChange{NodeGraphChangeType::Reset};
     resetChange.reason = NodeGraphChangeReason::Topology;
     changes.push_back(std::move(resetChange));
-    for (const auto& [id, node] : graphState.nodes) {
+    for (const auto& [id, node] : nodes) {
         NodeGraphChange change{NodeGraphChangeType::NodeUpsert};
         change.reason = NodeGraphChangeReason::Topology;
         change.node = node;
         changes.push_back(std::move(change));
     }
-    for (const auto& [id, edge] : graphState.edges) {
+    for (const auto& [id, edge] : edges) {
         NodeGraphChange change{NodeGraphChangeType::EdgeUpsert};
         change.reason = NodeGraphChangeReason::Topology;
         change.edge = edge;
         changes.push_back(std::move(change));
     }
+    changeLog.clear();
     pushChangesLocked(changes);
     return true;
 }
@@ -542,7 +525,7 @@ void NodeGraph::getNextIds(uint32_t& outNodeId, uint32_t& outSocketId, uint32_t&
 bool NodeGraph::canExecute(std::string& reason) const {
     std::lock_guard<std::recursive_mutex> lock(mutex);
 
-    const NodeGraphCompiled plan = NodeGraphCompiler::compile(graphState);
+    const NodeGraphCompiled plan = NodeGraphCompiler::compile(state());
     if (!plan.isValid) {
         if (!plan.compilationErrors.empty()) {
             reason = plan.compilationErrors.front();
@@ -555,7 +538,16 @@ bool NodeGraph::canExecute(std::string& reason) const {
 
 NodeGraphState NodeGraph::state() const {
     std::lock_guard<std::recursive_mutex> lock(mutex);
-    return graphState;
+
+    NodeGraphState result{};
+    result.nodes = nodes;
+    result.edges = edges;
+    result.instanceId = graphInstanceId;
+    result.revision = revision;
+    result.nextNodeId = nextNodeId;
+    result.nextSocketId = nextSocketId;
+    result.nextEdgeId = nextEdgeId;
+    return result;
 }
 
 uint64_t NodeGraph::getRevision() const {
@@ -563,23 +555,14 @@ uint64_t NodeGraph::getRevision() const {
     return revision;
 }
 
-bool NodeGraph::resolveGizmoTransformNode(uint64_t outputSocketKey, NodeGraphNodeId& outTransformNodeId) const {
-    outTransformNodeId = {};
-    std::lock_guard<std::recursive_mutex> lock(mutex);
-    if (outputSocketKey == 0) {
-        return false;
-    }
-
-    return findFirstUpstreamNodeByType(graphState, outputSocketKey, nodegraphtypes::Transform, outTransformNodeId);
-}
-
-bool NodeGraph::consumeChanges(uint64_t& lastSeenRevision, NodeGraphDelta& outDelta) const {
+bool NodeGraph::consumeChanges(uint64_t& lastSeenRevision, NodeGraphDelta& outDelta) {
     std::lock_guard<std::recursive_mutex> lock(mutex);
     if (lastSeenRevision == revision) {
         return false;
     }
 
     outDelta = {};
+    outDelta.graphInstanceId = graphInstanceId;
     outDelta.fromRevision = lastSeenRevision;
     outDelta.toRevision = revision;
     for (const auto& entry : changeLog) {
@@ -589,12 +572,8 @@ bool NodeGraph::consumeChanges(uint64_t& lastSeenRevision, NodeGraphDelta& outDe
     }
 
     lastSeenRevision = revision;
+    changeLog.clear();
     return true;
-}
-
-std::unordered_map<uint32_t, NodeGraphNode> NodeGraph::getNodes() const {
-    std::lock_guard<std::recursive_mutex> lock(mutex);
-    return nodes;
 }
 
 std::unordered_map<uint32_t, NodeGraphEdge> NodeGraph::getEdges() const {
@@ -663,21 +642,11 @@ void NodeGraph::bumpRevision() {
     ++revision;
 }
 
-void NodeGraph::rebuildStateLocked() {
-    graphState.nodes = nodes;
-    graphState.edges = edges;
-    graphState.revision = revision;
-    graphState.nextNodeId = nextNodeId;
-    graphState.nextSocketId = nextSocketId;
-    graphState.nextEdgeId = nextEdgeId;
-}
-
 void NodeGraph::pushChangesLocked(const std::vector<NodeGraphChange>& changes) {
     if (changes.empty()) {
         return;
     }
 
-    graphState.revision = revision;
     for (const NodeGraphChange& change : changes) {
         changeLog.push_back({revision, change});
     }

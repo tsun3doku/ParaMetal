@@ -69,7 +69,7 @@ public:
     ~CFDSystemComputeController();
 
     bool apply(uint64_t socketKey, const Config& config);
-    void remove(uint64_t socketKey);
+    bool remove(uint64_t socketKey);
 
     void releaseWaits();
 
@@ -87,12 +87,12 @@ public:
 
     bool hasAnyRetiring() const;
     void clearAllRetiring();
-    void commitPending(uint64_t socketKey);
+    bool commitPending(uint64_t socketKey);
     void cancelCandidate(uint64_t socketKey);
     void quiescedClear() noexcept;
 
 private:
-    void retireCurrent(uint64_t socketKey);
+    bool retireCurrent(uint64_t socketKey);
 
     struct GenerationSlot {
         std::unique_ptr<CFDSystem> current;

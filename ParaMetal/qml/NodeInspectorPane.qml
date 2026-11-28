@@ -91,6 +91,16 @@ Item {
         }
         return null
     }
+
+    function groupSelectionActionId() {
+        const actions = graphModel.selectedNodeActions
+        for (let index = 0; index < actions.length; ++index) {
+            if (actions[index].type === 0)
+                return actions[index].id
+        }
+        return -1
+    }
+
     function setValue(parameterId, value) {
         root.exportStatusText = ""
         graphModel.setParameterValue(parameterId, value)
@@ -99,7 +109,6 @@ Item {
         switch (String(typeId)) {
         case "model": return modelPanel
         case "transform": return transformPanel
-        case "group": return groupPanel
         case "remesh": return remeshPanel
         case "voronoi": return voronoiPanel
         case "heat_model": return heatModelPanel
@@ -269,18 +278,6 @@ Item {
         }
     }
 
-
-    Component {
-        id: groupPanel
-        Column {
-            width: panelLoader.width; spacing: root.theme.inspectorRowSpacing
-            InspectorField { width: parent.width; theme: root.theme; label: qsTr("Enable Assignment"); editor: "bool"; parameter: root.parameter(1); onValueEdited: value => root.setValue(1, value) }
-            InspectorField { width: parent.width; theme: root.theme; label: qsTr("Source Type"); editor: "combo"; choices: [{text:"Vertex",value:0},{text:"Object",value:1},{text:"Material",value:2},{text:"Smooth",value:3}]; parameter: root.parameter(4); onValueEdited: value => root.setValue(4, value) }
-            InspectorField { width: parent.width; theme: root.theme; label: qsTr("Source Name"); editor: "text"; parameter: root.parameter(2); onValueEdited: value => root.setValue(2, value) }
-            InspectorField { width: parent.width; theme: root.theme; label: qsTr("Target Group Name"); editor: "text"; parameter: root.parameter(3); onValueEdited: value => root.setValue(3, value) }
-            Text { width: parent.width; wrapMode: Text.Wrap; text: qsTr("Select a source type and source name from incoming mesh data, then assign triangles to a target group name."); color: root.theme.mutedText; font: root.theme.descriptionFont }
-        }
-    }
 
     Component {
         id: remeshPanel
@@ -1066,7 +1063,76 @@ Item {
         id: genericPanel
         Column {
             width: panelLoader.width; spacing: root.theme.inspectorRowSpacing
-            Text { visible: graphModel.selectedNodeParameters.length === 0; text: qsTr("This node has no editable actions yet"); color: root.theme.text; font: root.theme.regularFont }
+
+            Column {
+                width: parent.width
+                spacing: root.theme.inspectorRowSpacing
+                visible: graphModel.selectedNodeActions.length > 0
+                Repeater {
+                    model: graphModel.selectedNodeActions
+                    Button {
+                        required property var modelData
+                        width: parent.width
+                        visible: modelData.type !== 0
+                        text: modelData.label
+                        enabled: !ui.viewport.meshSelectionActive
+                        onClicked: graphModel.triggerNodeAction(modelData.id)
+                    }
+                }
+                RowLayout {
+                    width: parent.width
+                    visible: graphModel.selectedNodeType === "group" &&
+                        root.groupSelectionActionId() >= 0
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: qsTr("Selection")
+                        color: root.theme.text
+                        font: root.theme.regularFont
+                    }
+
+                    ToolIconButton {
+                        iconSize: 16
+                        baseColor: root.theme.panelBackground
+                        checked: ui.viewport.meshSelectionActive
+                        imageSource: "../textures/icons/Select/select_arrow/64w/Artboard 1.png"
+                        ToolTip.visible: hovered
+                        ToolTip.text: qsTr("Select in Viewport")
+                        onClicked: {
+                            if (ui.viewport.meshSelectionActive) {
+                                graphModel.completeNodeAction()
+                            } else {
+                                graphModel.triggerNodeAction(root.groupSelectionActionId())
+                            }
+                        }
+                    }
+
+                }
+                RowLayout {
+                    width: parent.width
+                    visible: ui.viewport.meshSelectionActive &&
+                        graphModel.selectedNodeType !== "group"
+                    Text {
+                        Layout.fillWidth: true
+                        text: qsTr("Selection (%1)").arg(ui.viewport.meshSelectionCount)
+                        color: root.theme.text
+                        font: root.theme.regularFont
+                    }
+                    Button {
+                        text: qsTr("Apply")
+                        onClicked: graphModel.completeNodeAction()
+                    }
+                    Button {
+                        text: qsTr("Cancel")
+                        onClicked: graphModel.cancelNodeAction()
+                    }
+                    Button {
+                        text: qsTr("Clear")
+                        onClicked: graphModel.clearNodeActionSelection()
+                    }
+                }
+            }
+
             Column {
                 visible: graphModel.selectedNodeParameters.length > 0
                 width: parent.width
@@ -1075,13 +1141,50 @@ Item {
                     model: graphModel.selectedNodeParameters
                     InspectorField {
                         required property var modelData
+                        readonly property var dynamicChoices: graphModel.selectedParameterChoices[String(modelData.id)] || []
                         width: parent.width
                         theme: root.theme
                         parameter: modelData
-                        editor: modelData.type === 2 ? "bool" : (modelData.type === 4 ? "combo" : (modelData.type === 3 ? "text" : "number"))
+                        choices: dynamicChoices
+                        editable: false
+                        editor: modelData.dynamicChoices ? "combo" : (modelData.type === 2 ? "bool" : (modelData.type === 4 ? "combo" : (modelData.type === 3 ? "text" : "number")))
                         onValueEdited: value => root.setValue(modelData.id, value)
                     }
                 }
+            }
+
+            Column {
+                width: parent.width
+                spacing: root.theme.inspectorRowSpacing
+                visible: graphModel.selectedNodeInspection.length > 0
+                Repeater {
+                    model: graphModel.selectedNodeInspection
+                    RowLayout {
+                        required property var modelData
+                        width: parent.width
+                        Text {
+                            text: modelData.name
+                            color: root.theme.headingText
+                            font: root.theme.regularFont
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: modelData.value
+                            color: root.theme.mutedText
+                            font: root.theme.regularFont
+                            elide: Text.ElideRight
+                        }
+                    }
+                }
+            }
+
+            Text {
+                width: parent.width
+                visible: graphModel.selectedNodeParameters.length === 0 &&
+                    graphModel.selectedNodeActions.length === 0
+                text: qsTr("This node has no editable actions yet")
+                color: root.theme.text
+                font: root.theme.regularFont
             }
         }
     }

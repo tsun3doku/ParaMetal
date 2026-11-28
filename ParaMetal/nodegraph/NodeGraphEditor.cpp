@@ -4,7 +4,6 @@
 #include "NodeBoundaryConditions.hpp"
 #include "NodeCFD.hpp"
 #include "NodeFluid.hpp"
-#include "NodeGroup.hpp"
 #include "NodeHeatModel.hpp"
 #include "NodeHeatSolve.hpp"
 #include "NodeMerge.hpp"
@@ -31,6 +30,7 @@
 #include "nodegraph/NodeParamUtils.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -346,8 +346,16 @@ bool NodeGraphEditor::pasteCopiedNodes(
         return false;
     }
 
+    struct PendingNodeParameters {
+        NodeGraphNodeId nodeId{};
+        NodeTypeId typeId;
+        std::vector<NodeGraphParamValue> parameters;
+    };
+
     std::unordered_map<uint32_t, NodeGraphNodeId> newNodeIdBySourceNodeId;
     std::unordered_map<uint32_t, NodeGraphSocketId> newOutputSocketBySourceOutputSocket;
+    std::vector<PendingNodeParameters> pendingNodeParameters;
+    pendingNodeParameters.reserve(copiedNodes.size());
     outCreatedNodeIds.reserve(copiedNodes.size());
 
     for (const CopiedNode& copiedNode : copiedNodes) {
@@ -374,6 +382,10 @@ bool NodeGraphEditor::pasteCopiedNodes(
         }
 
         const NodeTypeDefinition* nodeDefinition = bridge ? bridge->getRegistry().findNodeType(getNodeTypeId(copiedNode.typeId)) : nullptr;
+        PendingNodeParameters pending{};
+        pending.nodeId = newNodeId;
+        pending.typeId = copiedNode.typeId;
+        pending.parameters.reserve(copiedNode.parameters.size());
         for (const NodeGraphParamValue& originalParameter : copiedNode.parameters) {
             NodeGraphParamValue parameter = originalParameter;
 
@@ -384,7 +396,14 @@ bool NodeGraphEditor::pasteCopiedNodes(
                 }
             }
 
-            setNodeParameter(newNodeId, parameter);
+            pending.parameters.push_back(std::move(parameter));
+        }
+        pendingNodeParameters.push_back(std::move(pending));
+    }
+
+    for (PendingNodeParameters& pending : pendingNodeParameters) {
+        for (const NodeGraphParamValue& parameter : pending.parameters) {
+            setNodeParameter(pending.nodeId, parameter);
         }
     }
 

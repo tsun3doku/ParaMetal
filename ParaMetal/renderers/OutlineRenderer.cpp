@@ -19,7 +19,7 @@ OutlineRenderer::~OutlineRenderer() {
 }
 
 bool OutlineRenderer::initialize(VkRenderPass renderPass, uint32_t subpassIndex, uint32_t maxFramesInFlight) {
-    if (!createDepthSampler() ||
+    if (!createStencilSampler() ||
         !createDescriptorPool(maxFramesInFlight) ||
         !createDescriptorSetLayout() ||
         !createDescriptorSets(maxFramesInFlight) ||
@@ -34,7 +34,7 @@ bool OutlineRenderer::initialize(VkRenderPass renderPass, uint32_t subpassIndex,
 bool OutlineRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = maxFramesInFlight * 2;
+    poolSize.descriptorCount = maxFramesInFlight;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -50,17 +50,12 @@ bool OutlineRenderer::createDescriptorPool(uint32_t maxFramesInFlight) {
 }
 
 bool OutlineRenderer::createDescriptorSetLayout() {
-    std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 1> bindings{};
 
     bindings[0].binding = 0;
     bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     bindings[0].descriptorCount = 1;
     bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    bindings[1].binding = 1;
-    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bindings[1].descriptorCount = 1;
-    bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -92,49 +87,35 @@ bool OutlineRenderer::createDescriptorSets(uint32_t maxFramesInFlight) {
     return true;
 }
 
-void OutlineRenderer::updateDescriptors(const std::vector<VkImageView>& depthViews, const std::vector<VkImageView>& stencilViews) {
-    const size_t frameCount = std::min(depthViews.size(), stencilViews.size());
-    const size_t setCount = std::min(frameCount, descriptorSets.size());
+void OutlineRenderer::updateDescriptors(const std::vector<VkImageView>& stencilViews) {
+    const size_t setCount = std::min(stencilViews.size(), descriptorSets.size());
     if (setCount != descriptorSets.size()) {
         return;
     }
 
     for (size_t i = 0; i < setCount; i++) {
-        if (depthViews[i] == VK_NULL_HANDLE || stencilViews[i] == VK_NULL_HANDLE) {
+        if (stencilViews[i] == VK_NULL_HANDLE) {
             return;
         }
 
-        std::array<VkDescriptorImageInfo, 2> imageInfos{};
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        imageInfo.imageView = stencilViews[i];
+        imageInfo.sampler = stencilSampler;
 
-        imageInfos[0].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-        imageInfos[0].imageView = depthViews[i];
-        imageInfos[0].sampler = depthSampler;
+        VkWriteDescriptorSet descriptorWrite{};
+        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite.dstSet = descriptorSets[i];
+        descriptorWrite.dstBinding = 0;
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.pImageInfo = &imageInfo;
 
-        imageInfos[1].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-        imageInfos[1].imageView = stencilViews[i];
-        imageInfos[1].sampler = depthSampler;
-
-        std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
-
-        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[0].dstSet = descriptorSets[i];
-        descriptorWrites[0].dstBinding = 0;
-        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[0].descriptorCount = 1;
-        descriptorWrites[0].pImageInfo = &imageInfos[0];
-
-        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[1].dstSet = descriptorSets[i];
-        descriptorWrites[1].dstBinding = 1;
-        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[1].descriptorCount = 1;
-        descriptorWrites[1].pImageInfo = &imageInfos[1];
-
-        vkUpdateDescriptorSets(vulkanDevice.getDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+        vkUpdateDescriptorSets(vulkanDevice.getDevice(), 1, &descriptorWrite, 0, nullptr);
     }
 }
 
-bool OutlineRenderer::createDepthSampler() {
+bool OutlineRenderer::createStencilSampler() {
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     samplerInfo.magFilter = VK_FILTER_NEAREST;
@@ -148,8 +129,8 @@ bool OutlineRenderer::createDepthSampler() {
     samplerInfo.compareEnable = VK_FALSE;
     samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
 
-    if (vkCreateSampler(vulkanDevice.getDevice(), &samplerInfo, nullptr, &depthSampler) != VK_SUCCESS) {
-        std::cerr << "[OutlineRenderer] Failed to create depth sampler" << std::endl;
+    if (vkCreateSampler(vulkanDevice.getDevice(), &samplerInfo, nullptr, &stencilSampler) != VK_SUCCESS) {
+        std::cerr << "[OutlineRenderer] Failed to create stencil sampler" << std::endl;
         return false;
     }
     return true;
@@ -339,9 +320,9 @@ void OutlineRenderer::cleanup() {
         vkDestroyDescriptorSetLayout(vulkanDevice.getDevice(), descriptorSetLayout, nullptr);
         descriptorSetLayout = VK_NULL_HANDLE;
     }
-    if (depthSampler != VK_NULL_HANDLE) {
-        vkDestroySampler(vulkanDevice.getDevice(), depthSampler, nullptr);
-        depthSampler = VK_NULL_HANDLE;
+    if (stencilSampler != VK_NULL_HANDLE) {
+        vkDestroySampler(vulkanDevice.getDevice(), stencilSampler, nullptr);
+        stencilSampler = VK_NULL_HANDLE;
     }
     descriptorSets.clear();
 }

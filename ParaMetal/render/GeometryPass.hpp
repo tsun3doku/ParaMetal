@@ -6,6 +6,7 @@
 #include <vector>
 
 class ModelRegistry;
+class IntrinsicRenderer;
 class UniformBufferManager;
 class VulkanDevice;
 class VkFrameGraphRuntime;
@@ -18,12 +19,13 @@ public:
         VulkanDevice& device,
         VkFrameGraphRuntime& frameGraphRuntime,
         ModelRegistry& resources,
+        IntrinsicRenderer& intrinsicRenderer,
         UniformBufferManager& ubo,
         uint32_t framesInFlight,
         framegraph::PassId passId);
 
     const char* name() const override;
-    void create() override;
+    bool create() override;
     void resize(VkExtent2D extent) override;
     void updateDescriptors() override;
     void record(const FrameContext& context, const SceneView& view, const RenderFlags& flags, RenderServices& services) override;
@@ -42,6 +44,7 @@ private:
     ::VulkanDevice& vulkanDevice;
     VkFrameGraphRuntime& frameGraphRuntime;
     ModelRegistry& modelRegistry;
+    IntrinsicRenderer& intrinsicRenderer;
     UniformBufferManager& uniformBufferManager;
     uint32_t maxFramesInFlight = 0;
     framegraph::PassId passId{};

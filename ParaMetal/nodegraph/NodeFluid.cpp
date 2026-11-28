@@ -2,7 +2,7 @@
 #include "NodeGraphDefinitionUtils.hpp"
 #include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
-#include "NodeGraphDataTypes.hpp"
+#include "NodeGraphCoreTypes.hpp"
 #include "NodeGraphUtils.hpp"
 #include "hash/HashBuilder.hpp"
 #include "hash/HashNodeCache.hpp"
@@ -64,6 +64,10 @@ void NodeFluid::execute(NodeKernelEval& eval) const {
 
         const uint64_t payloadKey = NodeSocketKey(eval.node.id, outputSocket.id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, eval.outputHashes);
+        if (outputValue.payloadHandle.key == 0) {
+            eval.error = "Payload publication backpressured.";
+            return;
+        }
     }
 }
 

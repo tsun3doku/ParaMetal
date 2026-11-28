@@ -9,9 +9,10 @@
 #include "NodePayloadRegistry.hpp"
 #include "domain/GeometryData.hpp"
 #include "domain/PointData.hpp"
+#include "mesh/MeshElementIds.hpp"
 
+#include <cassert>
 #include <cmath>
-#include <limits>
 #include "../util/GeometryUtils.hpp"
 
 #include <glm/glm.hpp>
@@ -19,6 +20,8 @@
 #include <unordered_map>
 #include <vector>
 #include <algorithm>
+#include <iterator>
+#include <utility>
 
 static NodeTypeDefinition buildMergeNode() {
     return {
@@ -64,13 +67,20 @@ void NodeMerge::execute(NodeKernelEval& eval) const {
     bool hasGeometry = false;
     for (const NodeDataBlock* block : inputs) {
         if (!block || block->payloadHandle.key == 0) {
-            continue;
+            eval.error = "Merge received an invalid connected input.";
+            return;
         }
         if (block->dataType == payloadtypes::Points) {
             hasPoints = true;
         } else if (block->dataType == payloadtypes::Geometry ||
-                   block->dataType == payloadtypes::Remesh) {
+                   block->dataType == payloadtypes::Group) {
             hasGeometry = true;
+        } else if (block->dataType == payloadtypes::Remesh) {
+            eval.error = "Merge requires concrete mesh geometry, not remeshed topology.";
+            return;
+        } else {
+            eval.error = "Merge received an unsupported input payload.";
+            return;
         }
     }
 
@@ -81,7 +91,7 @@ void NodeMerge::execute(NodeKernelEval& eval) const {
         return;
     }
     if (hasPoints && hasGeometry) {
-        eval.error = "Merge cannot mix Points with Geometry or Remesh inputs.";
+        eval.error = "Merge cannot mix Points with Geometry inputs.";
         return;
     }
 
@@ -117,48 +127,98 @@ void NodeMerge::execute(NodeKernelEval& eval) const {
         payload.active = true;
         const uint64_t payloadKey = NodeSocketKey(eval.node.id, eval.node.outputs[0].id);
         outputValue.dataType = payloadtypes::Points;
-        outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, eval.outputHashes);
+        outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(payload), eval.outputHashes);
+        if (outputValue.payloadHandle.key == 0) {
+            eval.error = "Payload publication backpressured.";
+            return;
+        }
     } else if (hasGeometry) {
         std::vector<const GeometryData*> geometryInputs;
         std::vector<std::array<float, 16>> geometryMatrices;
+        std::vector<std::vector<MeshGroup>> geometryGroups;
         for (const NodeDataBlock* block : inputs) {
-            if (block &&
-                (block->dataType == payloadtypes::Geometry || block->dataType == payloadtypes::Remesh) &&
-                block->payloadHandle.key != 0) {
-                const GeometryData* geometryData = payloadRegistry->resolveGeometry(block->payloadHandle);
-                std::array<float, 16> localToWorld{};
-                if (geometryData && !geometryData->vertexPositions.empty() &&
-                    payloadRegistry->resolveLocalToWorld(block->payloadHandle, localToWorld)) {
-                    geometryInputs.push_back(geometryData);
-                    geometryMatrices.push_back(localToWorld);
-                }
+            if (!block || block->payloadHandle.key == 0 ||
+                (block->dataType != payloadtypes::Geometry &&
+                 block->dataType != payloadtypes::Group)) {
+                eval.error = "Merge received an invalid geometry input.";
+                return;
             }
+            const GeometryData* geometryData = payloadRegistry->resolveGeometry(block->payloadHandle);
+            std::array<float, 16> localToWorld{};
+            if (!geometryData || geometryData->vertexPositions.empty()) {
+                eval.error = "Merge cannot resolve a connected geometry input.";
+                return;
+            }
+            if (!payloadRegistry->resolveLocalToWorld(block->payloadHandle, localToWorld)) {
+                eval.error = "Merge cannot resolve a connected input placement.";
+                return;
+            }
+            std::vector<MeshGroup> groups;
+            if (!payloadRegistry->resolveGroups(block->payloadHandle, groups)) {
+                eval.error = "Merge cannot resolve connected input groups.";
+                return;
+            }
+            geometryInputs.push_back(geometryData);
+            geometryMatrices.push_back(localToWorld);
+            geometryGroups.push_back(std::move(groups));
         }
 
         if (geometryInputs.empty()) {
             return;
         }
 
-        bool carryRenderMesh = true;
+        bool hasAnyRenderData = false;
+        bool hasMissingRenderData = false;
         std::size_t renderVertexCount = 0;
         std::size_t renderIndexCount = 0;
         for (const GeometryData* input : geometryInputs) {
+            const bool hasRenderData =
+                !input->renderPositions.empty() ||
+                !input->renderNormals.empty() ||
+                !input->renderTexcoords.empty() ||
+                !input->renderIndices.empty();
+            if (!hasRenderData) {
+                hasMissingRenderData = true;
+                continue;
+            }
+            hasAnyRenderData = true;
             const std::size_t cornerCount = input->renderPositions.size() / 3;
             if (input->renderPositions.empty() ||
                 input->renderPositions.size() % 3 != 0 ||
                 input->renderNormals.size() != input->renderPositions.size() ||
                 input->renderTexcoords.size() != cornerCount * 2 ||
                 input->renderIndices.size() != input->triangleIndices.size()) {
-                carryRenderMesh = false;
-                break;
+                eval.error = "Merge received inconsistent render mesh data.";
+                return;
             }
             renderVertexCount += cornerCount;
             renderIndexCount += input->renderIndices.size();
+        }
+        if (hasAnyRenderData && hasMissingRenderData) {
+            eval.error = "Merge cannot mix inputs with and without render meshes.";
+            return;
+        }
+        const bool carryRenderMesh = hasAnyRenderData && !hasMissingRenderData;
+
+        uint64_t totalVertexCount = 0;
+        uint64_t totalTriangleCount = 0;
+        for (const GeometryData* input : geometryInputs) {
+            totalVertexCount += input->vertexPositions.size() / 3;
+            totalTriangleCount += input->triangleIndices.size() / 3;
+        }
+        if (totalVertexCount > UINT32_MAX ||
+            totalTriangleCount > UINT32_MAX ||
+            renderVertexCount > UINT32_MAX ||
+            renderIndexCount > UINT32_MAX) {
+            eval.error = "Merge result exceeds the 32-bit geometry element range.";
+            return;
         }
 
         GeometryData payload{};
         payload.localToWorld = geometryMatrices[0];
         payload.baseModelPath = geometryInputs[0]->baseModelPath;
+        payload.vertexPositions.reserve(static_cast<std::size_t>(totalVertexCount) * 3);
+        payload.triangleIndices.reserve(static_cast<std::size_t>(totalTriangleCount) * 3);
 
         if (carryRenderMesh) {
             payload.renderPositions.reserve(renderVertexCount * 3);
@@ -167,12 +227,17 @@ void NodeMerge::execute(NodeKernelEval& eval) const {
             payload.renderIndices.reserve(renderIndexCount);
         }
 
-        glm::mat4 referenceL2W = toMat4(payload.localToWorld);
-        glm::mat4 invReferenceL2W = glm::inverse(referenceL2W);
+        const glm::mat4 referenceL2W = toMat4(payload.localToWorld);
+        const float referenceDeterminant = glm::determinant(glm::mat3(referenceL2W));
+        if (!std::isfinite(referenceDeterminant) ||
+            std::abs(referenceDeterminant) <= 1e-12f) {
+            eval.error = "Merge reference placement is not invertible.";
+            return;
+        }
+        const glm::mat4 invReferenceL2W = glm::inverse(referenceL2W);
 
-        std::vector<GeometryGroup> mergedGroups;
-        std::vector<uint32_t> mergedTriangleGroupIds;
-        uint32_t nextGroupId = 1;
+        std::vector<MeshGroup> mergedGroups;
+        std::unordered_map<std::string, std::size_t> mergedGroupByKey;
 
         for (size_t i = 0; i < geometryInputs.size(); ++i) {
             const GeometryData* input = geometryInputs[i];
@@ -180,6 +245,7 @@ void NodeMerge::execute(NodeKernelEval& eval) const {
             glm::mat4 inputToReference = invReferenceL2W * inputL2W;
 
             const uint32_t vertexOffset = static_cast<uint32_t>(payload.vertexPositions.size() / 3);
+            const uint32_t triangleOffset = static_cast<uint32_t>(payload.triangleIndices.size() / 3);
 
             // Merge vertex positions
             for (size_t vIdx = 0; vIdx + 2 < input->vertexPositions.size(); vIdx += 3) {
@@ -235,55 +301,107 @@ void NodeMerge::execute(NodeKernelEval& eval) const {
                 }
             }
 
-            // Merge groups
-            std::unordered_map<uint32_t, uint32_t> groupIdMap;
-            groupIdMap[0] = 0; // 0 stays 0
-            for (const auto& inputGroup : input->groups) {
-                uint32_t targetId = 0;
-                for (const auto& existing : mergedGroups) {
-                    if (existing.name == inputGroup.name) {
-                        targetId = existing.id;
-                        break;
+            // Merge groups by stable key
+            for (const MeshGroup& inputGroup : geometryGroups[i]) {
+                MeshGroup remapped = inputGroup;
+                switch (remapped.elementType) {
+                case MeshElementType::Vertex:
+                    for (uint64_t& element : remapped.elements) {
+                        element += vertexOffset;
                     }
+                    break;
+                case MeshElementType::Edge:
+                    for (uint64_t& element : remapped.elements) {
+                        uint32_t a = 0;
+                        uint32_t b = 0;
+                        unpackMeshEdge(element, a, b);
+                        element = packMeshEdge(a + vertexOffset, b + vertexOffset);
+                    }
+                    break;
+                case MeshElementType::Face:
+                    for (uint64_t& element : remapped.elements) {
+                        element += triangleOffset;
+                    }
+                    break;
                 }
 
-                if (targetId == 0) {
-                    targetId = nextGroupId++;
-                    GeometryGroup newGroup = inputGroup;
-                    newGroup.id = targetId;
-                    mergedGroups.push_back(newGroup);
+                const auto existingIt = mergedGroupByKey.find(remapped.key);
+                if (existingIt == mergedGroupByKey.end()) {
+                    mergedGroupByKey.emplace(remapped.key, mergedGroups.size());
+                    mergedGroups.push_back(std::move(remapped));
+                    continue;
                 }
 
-                groupIdMap[inputGroup.id] = targetId;
-            }
+                MeshGroup& existing = mergedGroups[existingIt->second];
+                if (existing.elementType != remapped.elementType ||
+                    existing.name != remapped.name ||
+                    existing.colorRGBA != remapped.colorRGBA ||
+                    existing.source != remapped.source) {
+                    eval.error = "Merge group identity conflict for key '" + remapped.key + "'.";
+                    return;
+                }
 
-            // Merge triangle group IDs
-            for (uint32_t gId : input->triangleGroupIds) {
-                auto it = groupIdMap.find(gId);
-                mergedTriangleGroupIds.push_back(it != groupIdMap.end() ? it->second : 0);
+                std::vector<uint64_t> united;
+                united.reserve(existing.elements.size() + remapped.elements.size());
+                std::set_union(
+                    existing.elements.begin(), existing.elements.end(),
+                    remapped.elements.begin(), remapped.elements.end(),
+                    std::back_inserter(united));
+                existing.elements = std::move(united);
             }
         }
 
-        payload.groups = mergedGroups;
-        payload.triangleGroupIds = mergedTriangleGroupIds;
+        payload.groups = std::move(mergedGroups);
+        assert(!carryRenderMesh ||
+            payload.renderIndices.size() == payload.triangleIndices.size());
+        assert(!carryRenderMesh ||
+            payload.renderPositions.size() / 3 == payload.renderIndices.size());
 
         const uint64_t payloadKey = NodeSocketKey(eval.node.id, eval.node.outputs[0].id);
         outputValue.dataType = payloadtypes::Geometry;
-        outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, eval.outputHashes);
+        outputValue.payloadHandle = payloadRegistry->store(payloadKey, std::move(payload), eval.outputHashes);
+        if (outputValue.payloadHandle.key == 0) {
+            eval.error = "Payload publication backpressured.";
+            return;
+        }
     }
 }
 
 HashValues NodeMerge::computeOutputHashes(const NodeKernelHash& hash) const {
     const MergeNodeParams params = readMergeNodeParams(hash.node);
+    bool pointsInput = false;
+    const std::size_t geometrySocketIndex = inputIndexOf(hash.node, "Geometry");
+    if (geometrySocketIndex < hash.inputs.size()) {
+        for (const NodeDataBlock* input : hash.inputs[geometrySocketIndex]) {
+            if (input && input->dataType == payloadtypes::Points) {
+                pointsInput = true;
+                break;
+            }
+        }
+    }
 
-    uint64_t hashValue = HashBuilder::start();
-    HashBuilder::combineString(hashValue, nodegraphtypes::Merge);
-    HashBuilder::combineFloat(hashValue, params.mergeDistance);
-    HashNodeCache::combineSocketList(hashValue, hash, "Geometry", HashDomain::Geometry);
+    uint64_t geometryHash = HashBuilder::start();
+    HashBuilder::combineString(geometryHash, nodegraphtypes::Merge);
+    if (pointsInput) {
+        HashBuilder::combineFloat(geometryHash, params.mergeDistance);
+    }
+    HashNodeCache::combineSocketList(geometryHash, hash, "Geometry", HashDomain::Geometry);
+
+    uint64_t propertiesHash = HashBuilder::start();
+    HashBuilder::combineString(propertiesHash, "merge.properties");
+    HashNodeCache::combineSocketList(propertiesHash, hash, "Geometry", HashDomain::Properties);
+
+    uint64_t fullHash = HashBuilder::start();
+    HashBuilder::combineString(fullHash, nodegraphtypes::Merge);
+    if (pointsInput) {
+        HashBuilder::combineFloat(fullHash, params.mergeDistance);
+    }
+    HashNodeCache::combineSocketList(fullHash, hash, "Geometry", HashDomain::Full);
 
     HashValues values{};
-    values.full = hashValue;
-    values.geometry = hashValue;
-    values.simulation = hashValue;
+    values.full = fullHash;
+    values.geometry = geometryHash;
+    values.properties = propertiesHash;
+    values.simulation = fullHash;
     return values;
 }

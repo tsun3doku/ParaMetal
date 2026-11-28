@@ -13,10 +13,10 @@ public:
     void run(VoronoiPackage& package, units::LengthUnit worldUnit) const;
     void run(HeatPackage& package, units::LengthUnit worldUnit) const;
     static void scalePositions(std::vector<float>& positions, float factor);
+    static void scaleTranslation(std::array<float, 16>& matrix, float factor);
 
 private:
     static void scalePositions(std::vector<glm::vec4>& positions, float factor);
-    static void scaleTranslation(std::array<float, 16>& matrix, float factor);
 };
 
 }

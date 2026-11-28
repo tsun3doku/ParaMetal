@@ -31,6 +31,7 @@ struct HeatSimDefaults {
     static constexpr float specificHeat = 1000.0f;
     static constexpr float conductivity = 1.0f;
 
+    static constexpr float fluidInitialTemperatureC = 20.0f;
     static constexpr float fluidDensity = 1.225f;
     static constexpr float fluidSpecificHeat = 1005.0f;
     static constexpr float fluidConductivity = 0.026f;

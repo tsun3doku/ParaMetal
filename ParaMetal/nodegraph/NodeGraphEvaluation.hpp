@@ -1,7 +1,7 @@
 #pragma once
 
 #include "NodeGraphCoreTypes.hpp"
-#include "NodeGraphDataTypes.hpp"
+
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -17,6 +17,7 @@ struct EvaluatedSocketValue {
     EvaluatedSocketStatus status = EvaluatedSocketStatus::Missing;
     NodeDataBlock data{};
     std::string error;
+    bool backpressured = false;
 };
 
 // socket outputs evaluated per execution

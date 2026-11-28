@@ -10,6 +10,12 @@ class UniformBufferManager;
 
 class WireframeRenderer {
 public:
+    struct PushConstant {
+        alignas(16) glm::mat4 modelMatrix{1.0f};
+        alignas(16) glm::vec3 color{0.05f};
+        float padding = 0.0f;
+    };
+
     WireframeRenderer(VulkanDevice& device, VkDescriptorSetLayout geometryDescriptorSetLayout,
                      VkRenderPass renderPass, uint32_t subpass);
     ~WireframeRenderer();
@@ -23,7 +29,8 @@ public:
         VkDeviceSize vertexBufferOffset,
         VkBuffer indexBuffer,
         VkDeviceSize indexBufferOffset,
-        uint32_t indexCount);
+        uint32_t indexCount,
+        const glm::vec3& color);
     
     VkPipelineLayout getPipelineLayout() const { return pipelineLayout; }
     

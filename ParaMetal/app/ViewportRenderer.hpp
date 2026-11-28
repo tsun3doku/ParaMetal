@@ -9,7 +9,6 @@ class RuntimeNotifier;
 class RuntimeSystems;
 class ViewportItem;
 class ViewportMailbox;
-struct NodeGraphState;
 
 class ViewportRenderer final : public QQuickRhiItemRenderer {
 public:
@@ -26,10 +25,6 @@ protected:
     void render(QRhiCommandBuffer* commandBuffer) override;
 
 private:
-    // Node ids are reused across graphs; statuses must die with the graph they
-    // describe, on the render thread, so no publish can follow this clear.
-    bool applyGraphReplacement(const NodeGraphState& graphState);
-    void applySelection(int selectedNode);
     void publishState();
 
     RuntimeSystems& runtime;
@@ -45,4 +40,5 @@ private:
     bool initialized = false;
     bool runtimeFresh = false;
     bool probePickingActiveLast = false;
+    bool publishedModelSelected = false;
 };

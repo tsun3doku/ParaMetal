@@ -36,32 +36,33 @@ const char* BlendPass::name() const {
     return framegraph::passes::Blend.data();
 }
 
-void BlendPass::create() {
+bool BlendPass::create() {
     ready = false;
     destroy();
 
     if (!createBackgroundResources()) {
         destroy();
-        return;
+        return false;
     }
     if (!createBlendDescriptorPool(maxFramesInFlight)) {
         destroy();
-        return;
+        return false;
     }
     if (!createBlendDescriptorSetLayout()) {
         destroy();
-        return;
+        return false;
     }
     if (!createBlendDescriptorSets(maxFramesInFlight)) {
         destroy();
-        return;
+        return false;
     }
     if (!createBlendPipeline()) {
         destroy();
-        return;
+        return false;
     }
 
     ready = true;
+    return true;
 }
 
 void BlendPass::resize(VkExtent2D extent) {

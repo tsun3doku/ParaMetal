@@ -1,6 +1,8 @@
 #pragma once
 
-#include "NodeGraphDataTypes.hpp"
+#include "NodeGraphCoreTypes.hpp"
+#include "NodeGraphTypes.hpp"
+
 #include <string>
 
 class NodeGraphRegistry;

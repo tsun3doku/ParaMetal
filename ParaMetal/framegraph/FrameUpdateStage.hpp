@@ -11,6 +11,7 @@ class LightingSystem;
 class MaterialSystem;
 class SceneRenderer;
 class ModelSelection;
+class SubselectionPickService;
 
 class FrameUpdateStage {
 public:
@@ -21,8 +22,10 @@ public:
         LightingSystem& lightingSystem,
         MaterialSystem& materialSystem,
         SceneRenderer& sceneRenderer,
-        ModelSelection& modelSelection);
+        ModelSelection& modelSelection,
+        SubselectionPickService& subselectionPickService);
 
+    void setViewportExtent(uint32_t width, uint32_t height);
     void processPicking(uint32_t frameIndex);
     void updateFrameState(uint32_t frameIndex, const render::SceneView& sceneView);
 
@@ -34,5 +37,6 @@ private:
     MaterialSystem& materialSystem;
     SceneRenderer& sceneRenderer;
     ModelSelection& modelSelection;
+    SubselectionPickService& subselectionPickService;
 };
 

@@ -145,6 +145,7 @@ void NodeGraphUiModel::initializeGraph(
     const std::vector<NodeTypeDefinition>& definitions) {
     typeDefinitions = definitions;
     graphState = state;
+    clearInspection();
     rebuildNodeCategories();
     revision = UINT64_MAX;
     refresh();
@@ -152,11 +153,15 @@ void NodeGraphUiModel::initializeGraph(
 
 void NodeGraphUiModel::replaceGraphState(const NodeGraphState& state) {
     graphState = state;
+    clearInspection();
+    selectedIds.clear();
+    selectedId = 0;
     revision = UINT64_MAX;
     refresh();
     syncBoundaryFaceEditing(true);
     relabelExportProducts();
     if (selectedType == QStringLiteral("write")) requestCurrentExportProducts();
+    emit selectionRequested(runtimeSelectionIds(), selectedId);
 }
 
 void NodeGraphUiModel::applyDelta(const NodeGraphDelta& delta) {
@@ -184,6 +189,82 @@ void NodeGraphUiModel::handleNodesPasted(const std::vector<NodeGraphNodeId>& nod
     notifySelectionChanged(true);
 }
 
+void NodeGraphUiModel::applyNodeInspection(
+    qulonglong graphInstanceId,
+    int nodeId,
+    const QVariantList& fields,
+    const QVariantMap& parameterChoices) {
+    if (graphInstanceId != graphState.instanceId ||
+        nodeId <= 0 ||
+        nodeId != selectedId) {
+        return;
+    }
+    if (nodeInspectionNodeId == nodeId &&
+        nodeInspectionItems == fields &&
+        parameterChoiceItems == parameterChoices) {
+        return;
+    }
+    nodeInspectionNodeId = nodeId;
+    nodeInspectionItems = fields;
+    parameterChoiceItems = parameterChoices;
+    emit inspectionChanged();
+}
+
+void NodeGraphUiModel::applyNodeActionCompleted(
+    int nodeId,
+    bool success,
+    const QString& error) {
+    if (nodeId <= 0 || nodeId != selectedId) {
+        return;
+    }
+    const QString status = success
+        ? tr("Action applied.")
+        : (error.isEmpty() ? tr("Node action failed.") : error);
+    if (nodeActionStatusText == status &&
+        nodeActionStatusWasSuccess == success) {
+        return;
+    }
+    nodeActionStatusText = status;
+    nodeActionStatusWasSuccess = success;
+    emit nodeActionStatusChanged();
+}
+
+void NodeGraphUiModel::applyRuntimeParametersResult(
+    int nodeId,
+    bool success,
+    const QString& error) {
+    if (nodeId <= 0 || nodeId != selectedId) {
+        return;
+    }
+
+    const QString status = success
+        ? tr("Parameters accepted. Evaluating...")
+        : (error.isEmpty() ? tr("Node update failed.") : error);
+    if (nodeActionStatusText == status &&
+        nodeActionStatusWasSuccess == success) {
+        return;
+    }
+    nodeActionStatusText = status;
+    nodeActionStatusWasSuccess = success;
+    emit nodeActionStatusChanged();
+}
+
+void NodeGraphUiModel::clearInspection() {
+    const bool inspectionDataChanged =
+        !nodeActionItems.isEmpty() ||
+        !nodeInspectionItems.isEmpty() ||
+        !parameterChoiceItems.isEmpty();
+    const bool statusChanged = !nodeActionStatusText.isEmpty();
+    nodeActionItems.clear();
+    nodeInspectionItems.clear();
+    parameterChoiceItems.clear();
+    nodeInspectionNodeId = 0;
+    nodeActionStatusText.clear();
+    nodeActionStatusWasSuccess = true;
+    if (inspectionDataChanged) emit inspectionChanged();
+    if (statusChanged) emit nodeActionStatusChanged();
+}
+
 void NodeGraphUiModel::setRuntimeSelectedNodeId(int nodeId) {
     const uint32_t runtimeNodeId = nodeId > 0 ? static_cast<uint32_t>(nodeId) : 0;
     if ((runtimeNodeId == 0 && selectedIds.empty()) ||
@@ -195,6 +276,25 @@ void NodeGraphUiModel::setRuntimeSelectedNodeId(int nodeId) {
         selectedIds.push_back(runtimeNodeId);
     }
     notifySelectionChanged(false);
+}
+
+void NodeGraphUiModel::applyViewportSelection(
+    qulonglong graphInstanceId,
+    NodeGraphNodeId nodeId,
+    qulonglong nodeInstanceId,
+    bool additive) {
+    if (graphInstanceId != graphState.instanceId) {
+        return;
+    }
+
+    if (nodeId.isValid()) {
+        const NodeGraphNode* node = graphState.node(nodeId);
+        if (!node || node->instanceId != nodeInstanceId) {
+            return;
+        }
+    }
+
+    setNodeSelected(static_cast<int>(nodeId.value), additive);
 }
 
 void NodeGraphUiModel::refresh() {
@@ -287,6 +387,45 @@ void NodeGraphUiModel::setBoundaryFaceSelectionActive(bool active) {
     boundaryFaceSelectionActive = active;
     emit boundaryFaceSelectionActiveChanged();
     emit boundaryFaceEditingRequested(boundaryEditingNode, active);
+}
+
+void NodeGraphUiModel::triggerNodeAction(int actionId) {
+    if (selectedId <= 0 || actionId <= 0) {
+        return;
+    }
+    const NodeGraphNode* node =
+        graphState.node(NodeGraphNodeId{static_cast<uint32_t>(selectedId)});
+    if (!node) {
+        return;
+    }
+    nodeActionStatusText.clear();
+    nodeActionStatusWasSuccess = true;
+    emit nodeActionStatusChanged();
+    emit nodeActionRequested(selectedId, node->instanceId, actionId);
+}
+
+bool NodeGraphUiModel::triggerPrimaryNodeAction() {
+    for (const QVariant& action : nodeActionItems) {
+        const QVariantMap row = action.toMap();
+        if (row.value(QStringLiteral("type")).toInt() ==
+            static_cast<int>(NodeInteractionType::MeshSubselection)) {
+            triggerNodeAction(row.value(QStringLiteral("id")).toInt());
+            return true;
+        }
+    }
+    return false;
+}
+
+void NodeGraphUiModel::completeNodeAction() {
+    emit nodeActionCompleteRequested();
+}
+
+void NodeGraphUiModel::cancelNodeAction() {
+    emit nodeActionCancelRequested();
+}
+
+void NodeGraphUiModel::clearNodeActionSelection() {
+    emit nodeActionClearRequested();
 }
 
 void NodeGraphUiModel::removeSelectedNodes() {
@@ -702,6 +841,15 @@ void NodeGraphUiModel::rebuildNodeCategories() {
     emit nodeCategoriesChanged();
 }
 
+std::vector<NodeGraphNodeId> NodeGraphUiModel::runtimeSelectionIds() const {
+    std::vector<NodeGraphNodeId> nodeIds;
+    nodeIds.reserve(selectedIds.size());
+    for (uint32_t nodeId : selectedIds) {
+        nodeIds.push_back(NodeGraphNodeId{nodeId});
+    }
+    return nodeIds;
+}
+
 void NodeGraphUiModel::notifySelectionChanged(bool requestRuntimeSelection) {
     if (std::find(selectedIds.begin(), selectedIds.end(), static_cast<uint32_t>(selectedId)) == selectedIds.end()) {
         selectedId = selectedIds.empty() ? 0 : static_cast<int>(selectedIds.back());
@@ -709,12 +857,15 @@ void NodeGraphUiModel::notifySelectionChanged(bool requestRuntimeSelection) {
     if (m_probePickingActive && selectedId <= 0) {
         cancelProbePicking();
     }
+    if (selectedId != nodeInspectionNodeId) {
+        clearInspection();
+    }
     rebuildSelectedNode();
     if (!nodes.empty()) {
         emit dataChanged(index(0, 0), index(static_cast<int>(nodes.size()) - 1, 0), {SelectedRole});
     }
     if (requestRuntimeSelection) {
-        emit selectionRequested(selectedId);
+        emit selectionRequested(runtimeSelectionIds(), selectedId);
     }
     requestCurrentExportProducts();
 }
@@ -723,6 +874,7 @@ void NodeGraphUiModel::rebuildSelectedNode() {
     selectedTitle.clear();
     selectedType.clear();
     selectedParameters.clear();
+    nodeActionItems.clear();
 
     if (selectedId > 0) {
         const NodeGraphNode* selectedNode = graphState.node(NodeGraphNodeId{static_cast<uint32_t>(selectedId)});
@@ -734,6 +886,15 @@ void NodeGraphUiModel::rebuildSelectedNode() {
             for (const NodeTypeDefinition& candidate : typeDefinitions) {
                 if (candidate.id == node.typeId) { definition = &candidate; break; }
             }
+            if (definition) {
+                for (const NodeActionDefinition& action : definition->actions) {
+                    QVariantMap item;
+                    item.insert(QStringLiteral("id"), static_cast<int>(action.id));
+                    item.insert(QStringLiteral("label"), QString::fromStdString(action.label));
+                    item.insert(QStringLiteral("type"), static_cast<int>(action.type));
+                    nodeActionItems.push_back(item);
+                }
+            }
             for (const NodeGraphParamValue& parameter : node.parameters) {
                 QVariantMap item;
                 item.insert(QStringLiteral("id"), static_cast<int>(parameter.id));
@@ -741,16 +902,23 @@ void NodeGraphUiModel::rebuildSelectedNode() {
                 QString name = QStringLiteral("Parameter %1").arg(parameter.id);
                 QVariant value;
                 QStringList options;
+                bool visible = true;
+                bool dynamicChoices = false;
                 if (definition) {
                     for (const NodeGraphParamDefinition& parameterDefinition : definition->parameters) {
                         if (parameterDefinition.id == parameter.id) {
                             name = QString::fromStdString(parameterDefinition.name);
+                            visible = parameterDefinition.visible;
+                            dynamicChoices = parameterDefinition.dynamicChoices;
                             for (const std::string& option : parameterDefinition.enumOptions) {
                                 options.push_back(QString::fromStdString(option));
                             }
                             break;
                         }
                     }
+                }
+                if (!visible) {
+                    continue;
                 }
                 switch (parameter.type) {
                 case NodeGraphParamType::Float: value = parameter.floatValue; break;
@@ -763,12 +931,14 @@ void NodeGraphUiModel::rebuildSelectedNode() {
                 item.insert(QStringLiteral("name"), name);
                 item.insert(QStringLiteral("value"), value);
                 item.insert(QStringLiteral("options"), options);
+                item.insert(QStringLiteral("dynamicChoices"), dynamicChoices);
                 selectedParameters.push_back(item);
             }
         }
     }
 
     emit selectedNodeChanged();
+    emit inspectionChanged();
     syncBoundaryFaceEditing(false);
 }
 
@@ -788,3 +958,5 @@ void NodeGraphUiModel::syncBoundaryFaceEditing(bool force) {
     }
     emit boundaryFaceEditingRequested(targetNode, active);
 }
+
+

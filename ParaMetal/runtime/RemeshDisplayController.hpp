@@ -1,20 +1,31 @@
 #pragma once
 
 #include "hash/HashBuilder.hpp"
+#include "mesh/MeshElementType.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <glm/mat4x4.hpp>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 #include <vulkan/vulkan.h>
 
 class IntrinsicRenderer;
+struct MeshSelection;
+struct SubselectionEditState;
 
 class RemeshDisplayController {
 public:
+    struct SelectionConfig {
+        MeshElementType elementType = MeshElementType::Face;
+        uint64_t surfaceIdentity = 0;
+        uint64_t revision = 0;
+        size_t selectedCount = 0;
+        std::vector<uint32_t> elementMask;
+    };
+
     struct Config {
-        bool showRemeshOverlay = false;
         bool showFaceNormals = false;
         bool showVertexNormals = false;
         float normalLength = 0.05f;
@@ -42,11 +53,9 @@ public:
         VkBufferView inputEdgeView = VK_NULL_HANDLE;
         VkBufferView inputTriangleView = VK_NULL_HANDLE;
         VkBufferView inputLengthView = VK_NULL_HANDLE;
+        VkBufferView faceIdView = VK_NULL_HANDLE;
+        uint64_t surfaceIdentity = 0;
         uint64_t displayHash = 0;
-
-        bool anyVisible() const {
-            return showRemeshOverlay || showFaceNormals || showVertexNormals;
-        }
 
         bool isValid() const {
             return runtimeModelId != 0 &&
@@ -64,28 +73,45 @@ public:
                 inputHalfedgeView != VK_NULL_HANDLE &&
                 inputEdgeView != VK_NULL_HANDLE &&
                 inputTriangleView != VK_NULL_HANDLE &&
-                inputLengthView != VK_NULL_HANDLE;
+                inputLengthView != VK_NULL_HANDLE &&
+                faceIdView != VK_NULL_HANDLE &&
+                surfaceIdentity != 0;
         }
     };
 
     void setIntrinsicRenderer(IntrinsicRenderer* updatedIntrinsicRenderer);
-    void apply(uint64_t socketKey, const Config& config);
+    bool apply(uint64_t socketKey, const Config& config);
     void remove(uint64_t socketKey);
-    void finalizeSync();
+    void applySelection(
+        uint64_t socketKey,
+        const SubselectionEditState& state,
+        const MeshSelection& selection,
+        uint64_t revision);
+    void applyElementSelection(uint64_t socketKey, const SelectionConfig& config);
+    void removeSelection(uint64_t socketKey);
+    bool surfaceMatches(uint64_t socketKey, uint64_t surfaceIdentity) const;
+    bool findByRuntimeModelId(
+        uint32_t runtimeModelId,
+        uint64_t& outSocketKey,
+        uint64_t& outSurfaceIdentity) const;
+    std::vector<uint32_t> registeredRuntimeModelIds() const;
 
 private:
     IntrinsicRenderer* intrinsicRenderer = nullptr;
     std::unordered_map<uint64_t, Config> configsBySocket;
-    std::unordered_set<uint64_t> syncedSockets;
+    uint64_t selectionSocketKey = 0;
+    uint64_t selectionSurfaceIdentity = 0;
+    uint64_t selectionRevision = UINT64_MAX;
+    MeshElementType selectionElementType = MeshElementType::Face;
 };
 
 inline uint64_t buildDisplayHash(const RemeshDisplayController::Config& config, uint64_t productDisplayHash) {
     uint64_t hash = HashBuilder::start();
-    HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showRemeshOverlay ? 1u : 0u));
     HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showFaceNormals ? 1u : 0u));
     HashBuilder::combinePod(hash, static_cast<uint64_t>(config.showVertexNormals ? 1u : 0u));
     HashBuilder::combinePod(hash, config.normalLength);
     HashBuilder::combinePod(hash, config.modelMatrix);
+    HashBuilder::combine(hash, config.surfaceIdentity);
     HashBuilder::combine(hash, productDisplayHash);
     return hash;
 }

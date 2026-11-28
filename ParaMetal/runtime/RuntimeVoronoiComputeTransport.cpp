@@ -78,11 +78,8 @@ ComputeApplyResult RuntimeVoronoiComputeTransport::apply(
     return ComputeApplyResult::Prepared;
 }
 
-void RuntimeVoronoiComputeTransport::commitPending(uint64_t socketKey) {
-    if (!controller || socketKey == 0) {
-        return;
-    }
-    controller->commitPending(socketKey);
+bool RuntimeVoronoiComputeTransport::commitPending(uint64_t socketKey) {
+    return controller && socketKey != 0 && controller->commitPending(socketKey);
 }
 
 void RuntimeVoronoiComputeTransport::cancelPending(uint64_t socketKey) {
@@ -92,9 +89,22 @@ void RuntimeVoronoiComputeTransport::cancelPending(uint64_t socketKey) {
     controller->cancelCandidate(socketKey);
 }
 
-void RuntimeVoronoiComputeTransport::remove(uint64_t socketKey) {
-    if (!controller || socketKey == 0) {
-        return;
+bool RuntimeVoronoiComputeTransport::remove(uint64_t socketKey) {
+    if (!controller) {
+        return false;
     }
-    controller->remove(socketKey);
+    if (socketKey == 0) {
+        return true;
+    }
+    return controller->remove(socketKey);
+}
+
+bool RuntimeVoronoiComputeTransport::hasAnyRetiring() const {
+    return controller && controller->hasAnyRetiring();
+}
+
+void RuntimeVoronoiComputeTransport::quiescedClear() {
+    if (controller) {
+        controller->quiescedClear();
+    }
 }

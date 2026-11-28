@@ -30,7 +30,7 @@ const char* VolumePass::name() const {
     return framegraph::passes::Volume.data();
 }
 
-void VolumePass::create() {
+bool VolumePass::create() {
     ready = false;
     destroy();
 
@@ -43,10 +43,11 @@ void VolumePass::create() {
             maxFramesInFlight)) {
         std::cerr << "[VolumePass] Failed to initialize heat volume renderer." << std::endl;
         destroy();
-        return;
+        return false;
     }
 
     ready = true;
+    return true;
 }
 
 void VolumePass::resize(VkExtent2D extent) {

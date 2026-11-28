@@ -6,7 +6,6 @@
 #include "domain/FluidData.hpp"
 #include "domain/HeatData.hpp"
 #include "domain/HeatModelData.hpp"
-#include "domain/HeatProbeData.hpp"
 #include "domain/RemeshData.hpp"
 #include "domain/VoronoiData.hpp"
 #include "hash/HashBuilder.hpp"
@@ -20,13 +19,70 @@
 #include "runtime/package/RuntimePackages.hpp"
 #include "runtime/package/passes/CoordinatePass.hpp"
 
+#include <algorithm>
+#include <map>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 namespace runtimepackage {
 
-static void sealHeatPackage(HeatPackage& package, const HashValues& authoredHashes) {
+static HeatProbeConfig makeHeatProbeConfig(const HeatProbeNodeParams& params) {
+    HeatProbeConfig config{};
+    config.enabled = params.enabled;
+    config.opcPort = params.opcPort;
+    config.showTemperature = params.showTemperature;
+    config.showName = params.showName;
+    config.items.reserve(params.items.size());
+    for (const HeatProbeItem& item : params.items) {
+        HeatProbeConfigItem converted{};
+        converted.id = item.id;
+        converted.name = item.name;
+        converted.worldPosition = item.worldPosition;
+        converted.enabled = item.enabled;
+        config.items.push_back(std::move(converted));
+    }
+    return config;
+}
+
+static uint64_t computeHeatProbeConfigHash(
+    const std::unordered_map<uint64_t, HeatProbeConfig>& probes) {
+    std::vector<uint64_t> sourceKeys;
+    sourceKeys.reserve(probes.size());
+    for (const auto& [sourceKey, config] : probes) {
+        (void)config;
+        sourceKeys.push_back(sourceKey);
+    }
+    std::sort(sourceKeys.begin(), sourceKeys.end());
+
+    uint64_t hash = HashBuilder::start();
+    HashBuilder::combine(hash, static_cast<uint64_t>(sourceKeys.size()));
+    for (uint64_t sourceKey : sourceKeys) {
+        const HeatProbeConfig& config = probes.at(sourceKey);
+        HashBuilder::combine(hash, sourceKey);
+        HashBuilder::combine(hash, config.enabled ? 1u : 0u);
+        HashBuilder::combine(hash, static_cast<uint64_t>(config.opcPort));
+        HashBuilder::combine(hash, config.showTemperature ? 1u : 0u);
+        HashBuilder::combine(hash, config.showName ? 1u : 0u);
+        HashBuilder::combine(hash, static_cast<uint64_t>(config.items.size()));
+        for (const HeatProbeConfigItem& item : config.items) {
+            HashBuilder::combine(hash, static_cast<uint64_t>(item.id));
+            HashBuilder::combineString(hash, item.name);
+            HashBuilder::combineFloat(hash, item.worldPosition.x);
+            HashBuilder::combineFloat(hash, item.worldPosition.y);
+            HashBuilder::combineFloat(hash, item.worldPosition.z);
+            HashBuilder::combine(hash, item.enabled ? 1u : 0u);
+        }
+    }
+    return hash;
+}
+
+static void sealHeatPackage(
+    HeatPackage& package,
+    const HashValues& authoredHashes,
+    uint64_t probeConfigHash) {
     uint64_t simulationHash = HashBuilder::start();
     HashBuilder::combine(simulationHash, authoredHashes.simulation);
     HashBuilder::combine(simulationHash, static_cast<uint64_t>(package.worldUnit));
@@ -51,7 +107,6 @@ static void sealHeatPackage(HeatPackage& package, const HashValues& authoredHash
         HashBuilder::combineFloat(simulationHash, package.fluidConductivity);
         HashBuilder::combineFloat(simulationHash, package.fluidInitialTemperatureC);
     }
-    HashBuilder::combine(simulationHash, package.domainVoronoiHandle.key);
     combineProductHandleHash(simulationHash, package.domainVoronoiProduct, HashDomain::Geometry);
     combineProductHandleHash(simulationHash, package.cfdProduct, HashDomain::Simulation);
 
@@ -82,6 +137,7 @@ static void sealHeatPackage(HeatPackage& package, const HashValues& authoredHash
     HashBuilder::combine(fullHash, simulationHash);
     HashBuilder::combine(fullHash, displayHash);
     HashBuilder::combine(fullHash, authoredHashes.full);
+    HashBuilder::combine(fullHash, probeConfigHash);
 
     package.hashes.simulation = simulationHash;
     package.hashes.geometry = simulationHash;
@@ -99,12 +155,10 @@ bool compileHeatPackage(const PackageCompileContext& context) {
     HeatPackage package{};
     const HeatPackage* previous = context.packages.findStored<HeatPackage>(context.outputSocketKey);
     package.productHandle = previous ? previous->productHandle : ProductHandle{};
-    package.heatHandle = context.output.payloadHandle;
     package.active = heat->active;
     package.simulationDuration = heat->simulationDuration;
     package.solverMaxIterations = heat->solverMaxIterations;
     package.solverConvergenceTolerance = heat->solverConvergenceTolerance;
-    package.domainVoronoiHandle = heat->domainVoronoiHandle;
 
     std::vector<NodeGraphNodeId> scanQueue = { context.node.id };
     std::unordered_set<uint32_t> visited = { context.node.id.value };
@@ -119,13 +173,8 @@ bool compileHeatPackage(const PackageCompileContext& context) {
                 if (downstreamNode && getNodeTypeId(downstreamNode->typeId) == nodegraphtypes::HeatProbe) {
                     if (visited.insert(downstreamNode->id.value).second) {
                         const auto probeParams = readHeatProbeNodeParams(*downstreamNode);
-                        HeatProbeData probeData{};
-                        probeData.enabled = probeParams.enabled;
-                        probeData.opcPort = probeParams.opcPort;
-                        probeData.showTemperature = probeParams.showTemperature;
-                        probeData.showName = probeParams.showName;
-                        probeData.items = probeParams.items;
-                        package.resolvedHeatProbes[downstreamNode->id.value] = probeData;
+                        package.resolvedHeatProbes[downstreamNode->id.value] =
+                            makeHeatProbeConfig(probeParams);
                         scanQueue.push_back(downstreamNode->id);
                     }
                 }
@@ -162,16 +211,36 @@ bool compileHeatPackage(const PackageCompileContext& context) {
         const HeatModelData* data = nullptr;
         uint64_t handleKey = 0;
     };
-    std::unordered_map<uint64_t, AuthoredHeatModel> modelsByRemesh;
+    std::map<uint64_t, AuthoredHeatModel> modelsByRemesh;
     for (const NodeDataHandle& handle : heat->heatModelHandles) {
         const HeatModelData* model = context.payloads.get<HeatModelData>(handle);
-        if (model && model->meshHandle.key != 0) {
-            modelsByRemesh.emplace(model->meshHandle.key, AuthoredHeatModel{model, handle.key});
+        if (!model || model->meshHandle.key == 0) {
+            continue;
+        }
+        NodeDataHandle resolvedRemeshHandle{};
+        if (!context.payloads.resolveRemesh(model->meshHandle, &resolvedRemeshHandle) ||
+            resolvedRemeshHandle.key == 0) {
+            if (heat->active) {
+                context.errors.push_back("Heat package cannot resolve a heat-model remesh payload.");
+                return false;
+            }
+            continue;
+        }
+        if (!modelsByRemesh.emplace(
+                resolvedRemeshHandle.key,
+                AuthoredHeatModel{model, handle.key}).second) {
+            if (heat->active) {
+                context.errors.push_back("Heat package contains duplicate heat-model remesh inputs.");
+                return false;
+            }
         }
     }
 
     const bool canResolveDomain = heat->domainVoronoiHandle.key != 0 &&
         heat->activeVoronoiCount == 1;
+    const VoronoiData* voronoi = canResolveDomain
+        ? context.payloads.get<VoronoiData>(heat->domainVoronoiHandle)
+        : nullptr;
 
     if (heat->active) {
         if (!boundary) {
@@ -182,7 +251,6 @@ bool compileHeatPackage(const PackageCompileContext& context) {
             context.errors.push_back("HeatSolve requires exactly one active Voronoi input.");
             return false;
         }
-        const VoronoiData* voronoi = context.payloads.get<VoronoiData>(heat->domainVoronoiHandle);
         if (!voronoi || !voronoi->active) {
             context.errors.push_back("HeatSolve's domain Voronoi input is invalid.");
             return false;
@@ -206,21 +274,49 @@ bool compileHeatPackage(const PackageCompileContext& context) {
             return false;
         }
         std::unordered_set<uint64_t> domainRemeshKeys;
-        for (const NodeDataHandle& handle : domainPackage->globalRemeshHandles) {
-            domainRemeshKeys.insert(handle.key);
+        for (const NodeDataHandle& handle : voronoi->modelMeshHandles) {
+            NodeDataHandle resolvedRemeshHandle{};
+            if (!context.payloads.resolveRemesh(handle, &resolvedRemeshHandle) ||
+                resolvedRemeshHandle.key == 0 ||
+                !domainRemeshKeys.insert(resolvedRemeshHandle.key).second) {
+                context.errors.push_back("Heat package's Voronoi domain contains an empty or duplicate remesh input.");
+                return false;
+            }
         }
         if (domainRemeshKeys.size() != modelsByRemesh.size()) {
             context.errors.push_back("Heat package requires the heat-model remesh set to exactly equal the global Voronoi domain's Remeshes set.");
             return false;
         }
+        for (const auto& [remeshKey, authoredModel] : modelsByRemesh) {
+            (void)authoredModel;
+            if (domainRemeshKeys.find(remeshKey) == domainRemeshKeys.end()) {
+                context.errors.push_back("Heat package requires the heat-model remesh set to exactly equal the global Voronoi domain's Remeshes set.");
+                return false;
+            }
+        }
     }
 
+    std::unordered_set<uint64_t> domainProductKeys;
+    if (heat->active) {
+        for (const ProductHandle& handle : domainPackage->globalRemeshProducts) {
+            if (!handle.isValid() || !domainProductKeys.insert(handle.outputSocketKey).second) {
+                context.errors.push_back("Heat package's global Voronoi domain contains duplicate or invalid remesh publications.");
+                return false;
+            }
+        }
+        if (domainProductKeys.size() != modelsByRemesh.size()) {
+            context.errors.push_back("Heat package requires one current global remesh publication per heat model.");
+            return false;
+        }
+    }
+
+    std::unordered_set<uint64_t> heatRemeshProductKeys;
     for (const auto& [remeshKey, authoredModel] : modelsByRemesh) {
         (void)remeshKey;
         const HeatModelData* model = authoredModel.data;
-        const RemeshPackage* remeshPackage = context.packages.findAny<RemeshPackage>(model->meshHandle.key);
+        const RemeshPackage* remeshPackage = context.packages.findAny<RemeshPackage>(remeshKey);
         const ModelPackage* modelPackage = remeshPackage
-            ? context.packages.findAny<ModelPackage>(remeshPackage->sourceMeshHandle.key)
+            ? context.packages.findAny<ModelPackage>(remeshPackage->sourceModelProduct.outputSocketKey)
             : nullptr;
         if (!modelPackage || !remeshPackage ||
             !modelPackage->productHandle.isValid() ||
@@ -232,6 +328,10 @@ bool compileHeatPackage(const PackageCompileContext& context) {
             continue;
         }
         if (heat->active) {
+            if (!heatRemeshProductKeys.insert(remeshPackage->productHandle.outputSocketKey).second) {
+                context.errors.push_back("Heat package contains duplicate heat-model remesh publications.");
+                return false;
+            }
             bool inDomain = false;
             for (const ProductHandle& handle : domainPackage->globalRemeshProducts) {
                 inDomain = inDomain || isSamePublication(handle, remeshPackage->productHandle);
@@ -254,6 +354,9 @@ bool compileHeatPackage(const PackageCompileContext& context) {
             }
             continue;
         }
+        CoordinatePass::scaleTranslation(
+            compiledModel.remeshLocalToWorld,
+            units::canonicalToWorldScale(context.worldUnit));
         compiledModel.density = model->density;
         compiledModel.specificHeat = model->specificHeat;
         compiledModel.conductivity = model->conductivity;
@@ -282,6 +385,7 @@ bool compileHeatPackage(const PackageCompileContext& context) {
     }
     if (heat->cfdHandle.key != 0) {
         const CFDPackage* cfdPackage = context.packages.findAny<CFDPackage>(heat->cfdHandle.key);
+        const CFDData* cfdData = context.payloads.get<CFDData>(heat->cfdHandle);
         if (cfdPackage && cfdPackage->productHandle.isValid()) {
             if (domainPackage && isSamePublication(cfdPackage->domainVoronoiProduct, domainPackage->productHandle)) {
                 package.cfdProduct = cfdPackage->productHandle;
@@ -289,13 +393,15 @@ bool compileHeatPackage(const PackageCompileContext& context) {
                 context.errors.push_back("Heat package CFD input does not share the same Voronoi domain as Heat.");
                 return false;
             }
-            if (heat->heatFluidHandle.key != 0 && cfdPackage->fluidHandle.key != 0 &&
-                heat->heatFluidHandle.key != cfdPackage->fluidHandle.key) {
+            if (cfdData &&
+                heat->heatFluidHandle.key != 0 && cfdData->fluidHandle.key != 0 &&
+                heat->heatFluidHandle.key != cfdData->fluidHandle.key) {
                 context.errors.push_back("Heat and CFD must share the same Fluid input.");
                 return false;
             }
-            if (heat->boundaryHandle.key != 0 && cfdPackage->boundaryHandle.key != 0 &&
-                heat->boundaryHandle.key != cfdPackage->boundaryHandle.key) {
+            if (cfdData &&
+                heat->boundaryHandle.key != 0 && cfdData->boundaryHandle.key != 0 &&
+                heat->boundaryHandle.key != cfdData->boundaryHandle.key) {
                 context.errors.push_back("Heat and CFD must share the same Boundary Conditions input.");
                 return false;
             }
@@ -307,8 +413,13 @@ bool compileHeatPackage(const PackageCompileContext& context) {
         package.domainVoronoiProduct = domainPackage->productHandle;
     }
     for (const HeatModelPackage& model : package.models) {
-        package.displayDependencyKeys.push_back(model.modelProduct.outputSocketKey);
-        package.displayDependencyKeys.push_back(model.remeshProduct.outputSocketKey);
+        if (model.remeshProduct.isValid()) {
+            package.displayDependencyKeys.push_back(
+                model.remeshProduct.outputSocketKey);
+        } else if (model.modelProduct.isValid()) {
+            package.displayDependencyKeys.push_back(
+                model.modelProduct.outputSocketKey);
+        }
     }
     if (package.domainVoronoiProduct.isValid()) {
         package.displayDependencyKeys.push_back(package.domainVoronoiProduct.outputSocketKey);
@@ -317,7 +428,8 @@ bool compileHeatPackage(const PackageCompileContext& context) {
         package.displayDependencyKeys.push_back(package.cfdProduct.outputSocketKey);
     }
 
-    sealHeatPackage(package, context.output.hashes);
+    package.probeConfigHash = computeHeatProbeConfigHash(package.resolvedHeatProbes);
+    sealHeatPackage(package, context.output.hashes, package.probeConfigHash);
     context.packages.apply<HeatPackage>(context.outputSocketKey, std::move(package));
     return true;
 }

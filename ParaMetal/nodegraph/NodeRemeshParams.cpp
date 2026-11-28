@@ -10,7 +10,6 @@ RemeshNodeParams readRemeshNodeParams(const NodeGraphNode& node) {
     params.minAngleDegrees = NodeParamUtils::readFloatParam(node, nodegraphparams::remesh::MinAngleDegrees, params.minAngleDegrees);
     params.maxEdgeLength = NodeParamUtils::readFloatParam(node, nodegraphparams::remesh::MaxEdgeLength, params.maxEdgeLength);
     params.stepSize = NodeParamUtils::readFloatParam(node, nodegraphparams::remesh::StepSize, params.stepSize);
-    params.preview.showRemeshOverlay = NodeParamUtils::readBoolParam(node, nodegraphparams::remesh::ShowRemeshOverlay, params.preview.showRemeshOverlay);
     params.preview.showFaceNormals = NodeParamUtils::readBoolParam(node, nodegraphparams::remesh::ShowFaceNormals, params.preview.showFaceNormals);
     params.preview.showVertexNormals = NodeParamUtils::readBoolParam(node, nodegraphparams::remesh::ShowVertexNormals, params.preview.showVertexNormals);
     params.normalLength = NodeParamUtils::readFloatParam(node, nodegraphparams::remesh::NormalLength, params.normalLength);
@@ -22,7 +21,6 @@ bool writeRemeshNodeParams(NodeGraphEditor& editor, NodeGraphNodeId nodeId, cons
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::remesh::MinAngleDegrees, NodeGraphParamType::Float, params.minAngleDegrees}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::remesh::MaxEdgeLength, NodeGraphParamType::Float, params.maxEdgeLength}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::remesh::StepSize, NodeGraphParamType::Float, params.stepSize}) &&
-        editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::remesh::ShowRemeshOverlay, NodeGraphParamType::Bool, 0.0, 0, params.preview.showRemeshOverlay}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::remesh::ShowFaceNormals, NodeGraphParamType::Bool, 0.0, 0, params.preview.showFaceNormals}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::remesh::ShowVertexNormals, NodeGraphParamType::Bool, 0.0, 0, params.preview.showVertexNormals}) &&
         editor.setNodeParameter(nodeId, NodeGraphParamValue{nodegraphparams::remesh::NormalLength, NodeGraphParamType::Float, params.normalLength});

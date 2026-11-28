@@ -30,6 +30,7 @@ public:
 	void clearAllRetiring();
 	std::vector<uint32_t> getRenderableModelIds() const;
 	bool hasModel(uint32_t modelID) const;
+	bool isRetiring(uint32_t modelID) const;
 	bool setModelVisible(uint32_t modelID, bool visible);
 	bool isModelVisible(uint32_t modelID) const;
 	bool exportProduct(uint32_t modelID, ModelProduct& outProduct) const;
@@ -42,6 +43,7 @@ public:
 		uint32_t& outIndexCount) const;
 	bool setModelMatrix(uint32_t modelID, const glm::mat4& matrix);
 	bool tryGetModelMatrix(uint32_t modelID, glm::mat4& outMatrix) const;
+	void setSceneExtent(const glm::vec3& extent);
 	bool tryGetLocalBounds(uint32_t modelID, glm::vec3& outMin, glm::vec3& outMax) const;
 	bool tryGetWorldBounds(uint32_t modelID, glm::vec3& outMin, glm::vec3& outMax) const;
 	glm::vec3 sceneWorldExtent() const;
@@ -69,5 +71,7 @@ private:
     std::unordered_map<uint32_t, std::unique_ptr<Model>> retiringModels;
     std::unordered_set<uint32_t> visibleModelIds;
 	std::vector<uint32_t> recycledModelIds;
+	glm::vec3 cachedSceneExtent{1.0f};
+	bool hasCachedSceneExtent = false;
 	uint32_t nextModelId = 1;
 };

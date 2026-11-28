@@ -1,8 +1,6 @@
 #version 450
 
-// Sample depth and stencil textures
-layout(set = 0, binding = 0) uniform sampler2D depthTexture;
-layout(set = 0, binding = 1) uniform usampler2DMS stencilTexture; 
+layout(set = 0, binding = 0) uniform usampler2DMS stencilTexture;
 
 layout(push_constant) uniform PushConstants {
     float outlineThickness;
@@ -15,6 +13,7 @@ layout(location = 0) out vec4 outColor;
 void main() {
     ivec2 pixelCoord = ivec2(gl_FragCoord.xy);
     int sampleCount = textureSamples(stencilTexture);
+    ivec2 imageSize = textureSize(stencilTexture);
     float thickness = max(pc.outlineThickness, 1.0);
     int thickInt = int(thickness);
     
@@ -44,6 +43,10 @@ void main() {
     
     for (int n = 0; n < 4; n++) {
         ivec2 neighborCoord = pixelCoord + neighbors[n];
+        if (any(lessThan(neighborCoord, ivec2(0))) ||
+            any(greaterThanEqual(neighborCoord, imageSize))) {
+            continue;
+        }
         for (int s = 0; s < sampleCount; s++) {
             uint neighborStencil = texelFetch(stencilTexture, neighborCoord, s).r;
             if (neighborStencil != pc.selectedModelID) {

@@ -33,7 +33,7 @@ void main() {
     float screenSize = (pc.pointSize / distance) * projScale * (pc.viewportHeight * 0.5);
     
     // Clamp to reasonable range
-    gl_PointSize = clamp(screenSize, 1.0, 64.0);
+    gl_PointSize = clamp(screenSize, 1.0, 10.0);
     
     fragColor = inColor;
 }

@@ -1,6 +1,9 @@
 #include "NodeGraphCompiler.hpp"
 #include "NodeGraphRegistry.hpp"
 
+#include <algorithm>
+#include <functional>
+#include <queue>
 #include <unordered_map>
 #include <vector>
 
@@ -17,63 +20,56 @@ bool NodeGraphCompiler::buildTopologicalOrder(
         return true;
     }
 
-    std::unordered_map<uint32_t, std::size_t> nodeIndexById;
-    nodeIndexById.reserve(state.nodes.size() * 2);
-    std::size_t index = 0;
+    std::vector<uint32_t> nodeIds;
+    nodeIds.reserve(state.nodes.size());
     for (const auto& [id, node] : state.nodes) {
-        nodeIndexById[id] = index++;
+        (void)node;
+        nodeIds.push_back(id);
+    }
+    std::sort(nodeIds.begin(), nodeIds.end());
+
+    std::unordered_map<uint32_t, std::size_t> nodeIndexById;
+    nodeIndexById.reserve(nodeIds.size() * 2);
+    for (std::size_t index = 0; index < nodeIds.size(); ++index) {
+        nodeIndexById[nodeIds[index]] = index;
     }
 
-    std::vector<std::vector<uint32_t>> adjacency(state.nodes.size());
-    std::vector<uint32_t> inDegree(state.nodes.size(), 0);
+    std::vector<std::vector<std::size_t>> adjacency(nodeIds.size());
+    std::vector<std::size_t> inDegree(nodeIds.size(), 0);
     for (const auto& [id, edge] : state.edges) {
+        (void)id;
         const auto fromIt = nodeIndexById.find(edge.fromNode.value);
         const auto toIt = nodeIndexById.find(edge.toNode.value);
         if (fromIt == nodeIndexById.end() || toIt == nodeIndexById.end()) {
             continue;
         }
-
-        adjacency[fromIt->second].push_back(edge.toNode.value);
+        adjacency[fromIt->second].push_back(toIt->second);
         ++inDegree[toIt->second];
     }
 
-    std::vector<uint32_t> readyNodeIds;
-    readyNodeIds.reserve(state.nodes.size());
-    for (const auto& [id, node] : state.nodes) {
-        const auto nodeIt = nodeIndexById.find(id);
-        if (nodeIt == nodeIndexById.end()) {
-            continue;
-        }
-        if (inDegree[nodeIt->second] == 0) {
-            readyNodeIds.push_back(id);
+    std::priority_queue<
+        std::size_t,
+        std::vector<std::size_t>,
+        std::greater<std::size_t>> ready;
+    for (std::size_t index = 0; index < nodeIds.size(); ++index) {
+        if (inDegree[index] == 0) {
+            ready.push(index);
         }
     }
 
-    outOrder.reserve(state.nodes.size());
-    std::size_t cursor = 0;
-    while (cursor < readyNodeIds.size()) {
-        const uint32_t currentNodeId = readyNodeIds[cursor++];
-        outOrder.push_back(NodeGraphNodeId{currentNodeId});
+    outOrder.reserve(nodeIds.size());
+    while (!ready.empty()) {
+        const std::size_t current = ready.top();
+        ready.pop();
+        outOrder.push_back(NodeGraphNodeId{nodeIds[current]});
 
-        const auto currentIt = nodeIndexById.find(currentNodeId);
-        if (currentIt == nodeIndexById.end()) {
-            continue;
-        }
-
-        for (const uint32_t downstreamNodeId : adjacency[currentIt->second]) {
-            const auto downstreamIt = nodeIndexById.find(downstreamNodeId);
-            if (downstreamIt == nodeIndexById.end()) {
+        for (const std::size_t downstream : adjacency[current]) {
+            if (inDegree[downstream] == 0) {
                 continue;
             }
-
-            uint32_t& downstreamDegree = inDegree[downstreamIt->second];
-            if (downstreamDegree == 0) {
-                continue;
-            }
-
-            --downstreamDegree;
-            if (downstreamDegree == 0) {
-                readyNodeIds.push_back(downstreamNodeId);
+            --inDegree[downstream];
+            if (inDegree[downstream] == 0) {
+                ready.push(downstream);
             }
         }
     }
@@ -88,7 +84,6 @@ bool NodeGraphCompiler::buildTopologicalOrder(
 
     return true;
 }
-
 NodeGraphCompiled NodeGraphCompiler::compile(const NodeGraphState& state) {
     NodeGraphCompiled compiled{};
     compiled.revision = state.revision;

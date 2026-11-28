@@ -35,6 +35,7 @@ void ModelRegistry::clearModels() {
     retiringModels.clear();
     visibleModelIds.clear();
     recycledModelIds.clear();
+    hasCachedSceneExtent = false;
     nextModelId = 1;
 }
 
@@ -49,7 +50,6 @@ uint32_t ModelRegistry::addModel(std::unique_ptr<Model> model, uint32_t preferre
     }
     model->setRuntimeModelId(modelId);
     models.emplace(modelId, std::move(model));
-    visibleModelIds.insert(modelId);
     return modelId;
 }
 
@@ -102,6 +102,10 @@ std::vector<uint32_t> ModelRegistry::getRenderableModelIds() const {
 
 bool ModelRegistry::hasModel(uint32_t modelID) const {
     return models.find(modelID) != models.end();
+}
+
+bool ModelRegistry::isRetiring(uint32_t modelID) const {
+    return retiringModels.find(modelID) != retiringModels.end();
 }
 
 bool ModelRegistry::setModelVisible(uint32_t modelID, bool visible) {
@@ -162,6 +166,11 @@ bool ModelRegistry::tryGetModelMatrix(uint32_t modelID, glm::mat4& outMatrix) co
 
     outMatrix = model->getModelMatrix();
     return true;
+}
+
+void ModelRegistry::setSceneExtent(const glm::vec3& extent) {
+    cachedSceneExtent = extent;
+    hasCachedSceneExtent = true;
 }
 
 bool ModelRegistry::tryGetLocalBounds(
@@ -284,6 +293,10 @@ void ModelRegistry::unregisterModel(uint32_t modelId) {
 }
 
 glm::vec3 ModelRegistry::sceneWorldExtent() const {
+    if (hasCachedSceneExtent) {
+        return cachedSceneExtent;
+    }
+
     glm::vec3 globalMin = glm::vec3(std::numeric_limits<float>::max());
     glm::vec3 globalMax = glm::vec3(std::numeric_limits<float>::lowest());
     bool hasAnyBounds = false;

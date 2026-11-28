@@ -133,6 +133,31 @@ void GraphHost::setParameters(
     publishChanges();
 }
 
+void GraphHost::applyRuntimeParameters(
+    NodeGraphNodeId nodeId,
+    qulonglong originInstanceId,
+    const std::vector<NodeGraphParamValue>& parameters) {
+    NodeGraphNode node;
+    if (nodeId.value == 0 || originInstanceId == 0 ||
+        parameters.empty() ||
+        !graph.getNode(nodeId, node) ||
+        node.instanceId != originInstanceId) {
+        emit runtimeParametersApplied(
+            static_cast<int>(nodeId.value), false,
+            QStringLiteral("Node parameter update targeted a stale node."));
+        return;
+    }
+    if (!editor.setNodeParameters(nodeId, parameters)) {
+        emit runtimeParametersApplied(
+            static_cast<int>(nodeId.value), false,
+            QStringLiteral("Node parameter update was rejected."));
+        return;
+    }
+    publishChanges();
+    emit runtimeParametersApplied(
+        static_cast<int>(nodeId.value), true, QString{});
+}
+
 void GraphHost::pasteFragment(const GraphPastePayload& payload) {
     std::vector<NodeGraphNodeId> created;
     if (!editor.pasteCopiedNodes(payload.nodes, payload.edges, payload.offset, created)) return;

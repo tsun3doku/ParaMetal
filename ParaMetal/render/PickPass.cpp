@@ -8,6 +8,7 @@
 #include "framegraph/FrameGraphPasses.hpp"
 #include "framegraph/VkFrameGraphRuntime.hpp"
 #include "renderers/GizmoRenderer.hpp"
+#include "renderers/IntrinsicRenderer.hpp"
 #include "scene/GizmoController.hpp"
 #include "scene/Model.hpp"
 #include "scene/ModelSelection.hpp"
@@ -25,12 +26,14 @@ PickPass::PickPass(
     ModelRegistry& resources,
     GeometryPass& geometry,
     GizmoRenderer& gizmo,
+    IntrinsicRenderer& intrinsic,
     framegraph::PassId pickPassId)
     : vulkanDevice(device),
       frameGraphRuntime(runtime),
       modelRegistry(resources),
       geometryPass(geometry),
       gizmoRenderer(gizmo),
+      intrinsicRenderer(intrinsic),
       passId(pickPassId) {
 }
 
@@ -38,18 +41,25 @@ const char* PickPass::name() const {
     return framegraph::passes::Pick.data();
 }
 
-void PickPass::create() {
+bool PickPass::create() {
     ready = false;
     destroy();
     if (!createModelPipeline()) {
         destroy();
-        return;
+        return false;
     }
     if (!gizmoRenderer.createPickPipeline(frameGraphRuntime.getRenderPass(), framegraph::toIndex(passId))) {
         destroy();
-        return;
+        return false;
+    }
+    if (!intrinsicRenderer.initializePick(
+            frameGraphRuntime.getRenderPass(),
+            framegraph::toIndex(passId))) {
+        destroy();
+        return false;
     }
     ready = true;
+    return true;
 }
 
 void PickPass::resize(VkExtent2D extent) {
@@ -62,21 +72,83 @@ void PickPass::updateDescriptors() {
 void PickPass::record(const FrameContext& context, const SceneView& view, const RenderFlags& flags, RenderServices& services) {
     (void)view;
     (void)flags;
-    if (!ready || !services.modelSelection || !services.gizmoController) {
+    if (!ready) {
         return;
     }
 
     VkCommandBuffer commandBuffer = context.commandBuffer;
     const uint32_t frameIndex = context.currentFrame;
+
     VkDescriptorSet geometryDescriptorSet = geometryPass.getDescriptorSet(frameIndex);
     if (geometryDescriptorSet == VK_NULL_HANDLE) {
         return;
     }
 
+    const bool intrinsicPick =
+        services.subselectionPick &&
+        services.subselectionPick->isValid() &&
+        services.subselectionPick->binding == SurfaceBinding::Intrinsic;
+
+    if (!intrinsicPick &&
+        (!services.modelSelection || !services.gizmoController)) {
+        return;
+    }
+
+    std::vector<uint32_t> fallbackModelIds;
+    const std::vector<uint32_t>* pickModelIds = services.displayedModelIds;
+    if (!pickModelIds) {
+        fallbackModelIds = modelRegistry.getRenderableModelIds();
+        pickModelIds = &fallbackModelIds;
+    }
+
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, modelPipeline);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, modelPipelineLayout, 0, 1, &geometryDescriptorSet, 0, nullptr);
 
-    for (uint32_t modelId : modelRegistry.getRenderableModelIds()) {
+    if (intrinsicPick) {
+        drawOccluders(commandBuffer, frameIndex, *pickModelIds);
+        intrinsicRenderer.renderElementPick(
+            commandBuffer,
+            frameIndex,
+            services.subselectionPick->displaySocketKey,
+            services.subselectionPick->pickGeometryIdentity,
+            services.subselectionPick->elementType);
+        return;
+    }
+
+    if (services.subselectionPick && services.subselectionPick->isValid()) {
+        drawOccluders(commandBuffer, frameIndex, *pickModelIds);
+
+        VkBuffer vertexBuffer = VK_NULL_HANDLE;
+        VkDeviceSize vertexBufferOffset = 0;
+        VkBuffer indexBuffer = VK_NULL_HANDLE;
+        VkDeviceSize indexBufferOffset = 0;
+        uint32_t indexCount = 0;
+        if (modelRegistry.tryGetRenderGeometry(
+                services.subselectionPick->runtimeModelId,
+                vertexBuffer, vertexBufferOffset,
+                indexBuffer, indexBufferOffset, indexCount) &&
+            indexCount > 0) {
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, subselectionPipeline);
+            PickPushConstant pushConstant{};
+            pushConstant.modelMatrix = services.subselectionPick->modelMatrix;
+            pushConstant.pickId = 0;
+            pushConstant.elementMode = 1;
+            pushConstant.primitiveBase = services.subselectionPick->primitiveBase;
+            vkCmdPushConstants(
+                commandBuffer,
+                modelPipelineLayout,
+                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                0,
+                sizeof(PickPushConstant),
+                &pushConstant);
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, &vertexBufferOffset);
+            vkCmdBindIndexBuffer(commandBuffer, indexBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);
+        }
+        return;
+    }
+
+    for (uint32_t modelId : *pickModelIds) {
         VkBuffer vertexBuffer = VK_NULL_HANDLE;
         VkDeviceSize vertexBufferOffset = 0;
         VkBuffer indexBuffer = VK_NULL_HANDLE;
@@ -109,11 +181,62 @@ void PickPass::record(const FrameContext& context, const SceneView& view, const 
     }
 }
 
+void PickPass::drawOccluders(
+    VkCommandBuffer commandBuffer,
+    uint32_t frameIndex,
+    const std::vector<uint32_t>& modelIds) {
+    (void)frameIndex;
+    vkCmdBindPipeline(
+        commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        occluderPipeline);
+    for (uint32_t modelId : modelIds) {
+        VkBuffer vertexBuffer = VK_NULL_HANDLE;
+        VkDeviceSize vertexBufferOffset = 0;
+        VkBuffer indexBuffer = VK_NULL_HANDLE;
+        VkDeviceSize indexBufferOffset = 0;
+        uint32_t indexCount = 0;
+        glm::mat4 modelMatrix{1.0f};
+        if (!modelRegistry.tryGetRenderGeometry(
+                modelId, vertexBuffer, vertexBufferOffset,
+                indexBuffer, indexBufferOffset, indexCount) ||
+            !modelRegistry.tryGetModelMatrix(modelId, modelMatrix) ||
+            indexCount == 0) {
+            continue;
+        }
+
+        PickPushConstant pushConstant{};
+        pushConstant.modelMatrix = modelMatrix;
+        pushConstant.pickId = 0;
+        pushConstant.elementMode = 0;
+        vkCmdPushConstants(
+            commandBuffer,
+            modelPipelineLayout,
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            0,
+            sizeof(PickPushConstant),
+            &pushConstant);
+        vkCmdBindVertexBuffers(
+            commandBuffer, 0, 1, &vertexBuffer, &vertexBufferOffset);
+        vkCmdBindIndexBuffer(
+            commandBuffer, indexBuffer, indexBufferOffset,
+            VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);
+    }
+}
+
 void PickPass::destroy() {
     ready = false;
     if (modelPipeline != VK_NULL_HANDLE) {
         vkDestroyPipeline(vulkanDevice.getDevice(), modelPipeline, nullptr);
         modelPipeline = VK_NULL_HANDLE;
+    }
+    if (occluderPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(vulkanDevice.getDevice(), occluderPipeline, nullptr);
+        occluderPipeline = VK_NULL_HANDLE;
+    }
+    if (subselectionPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(vulkanDevice.getDevice(), subselectionPipeline, nullptr);
+        subselectionPipeline = VK_NULL_HANDLE;
     }
     if (modelPipelineLayout != VK_NULL_HANDLE) {
         vkDestroyPipelineLayout(vulkanDevice.getDevice(), modelPipelineLayout, nullptr);
@@ -250,6 +373,41 @@ bool PickPass::createModelPipeline() {
         vkDestroyShaderModule(vulkanDevice.getDevice(), vertShaderModule, nullptr);
         vkDestroyShaderModule(vulkanDevice.getDevice(), fragShaderModule, nullptr);
         std::cerr << "[PickPass] Failed to create model pick pipeline" << std::endl;
+        return false;
+    }
+
+    VkPipelineColorBlendAttachmentState occluderAttachment = colorBlendAttachment;
+    occluderAttachment.colorWriteMask = 0;
+    VkPipelineColorBlendStateCreateInfo occluderBlending = colorBlending;
+    occluderBlending.pAttachments = &occluderAttachment;
+    VkGraphicsPipelineCreateInfo occluderInfo = pipelineInfo;
+    occluderInfo.pColorBlendState = &occluderBlending;
+    if (vkCreateGraphicsPipelines(vulkanDevice.getDevice(), VK_NULL_HANDLE, 1, &occluderInfo, nullptr, &occluderPipeline) != VK_SUCCESS) {
+        vkDestroyPipeline(vulkanDevice.getDevice(), modelPipeline, nullptr);
+        modelPipeline = VK_NULL_HANDLE;
+        vkDestroyPipelineLayout(vulkanDevice.getDevice(), modelPipelineLayout, nullptr);
+        modelPipelineLayout = VK_NULL_HANDLE;
+        vkDestroyShaderModule(vulkanDevice.getDevice(), vertShaderModule, nullptr);
+        vkDestroyShaderModule(vulkanDevice.getDevice(), fragShaderModule, nullptr);
+        std::cerr << "[PickPass] Failed to create occluder pipeline" << std::endl;
+        return false;
+    }
+
+    VkPipelineDepthStencilStateCreateInfo subselectionDepth = depthStencil;
+    subselectionDepth.depthWriteEnable = VK_FALSE;
+    subselectionDepth.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    VkGraphicsPipelineCreateInfo subselectionInfo = pipelineInfo;
+    subselectionInfo.pDepthStencilState = &subselectionDepth;
+    if (vkCreateGraphicsPipelines(vulkanDevice.getDevice(), VK_NULL_HANDLE, 1, &subselectionInfo, nullptr, &subselectionPipeline) != VK_SUCCESS) {
+        vkDestroyPipeline(vulkanDevice.getDevice(), occluderPipeline, nullptr);
+        occluderPipeline = VK_NULL_HANDLE;
+        vkDestroyPipeline(vulkanDevice.getDevice(), modelPipeline, nullptr);
+        modelPipeline = VK_NULL_HANDLE;
+        vkDestroyPipelineLayout(vulkanDevice.getDevice(), modelPipelineLayout, nullptr);
+        modelPipelineLayout = VK_NULL_HANDLE;
+        vkDestroyShaderModule(vulkanDevice.getDevice(), vertShaderModule, nullptr);
+        vkDestroyShaderModule(vulkanDevice.getDevice(), fragShaderModule, nullptr);
+        std::cerr << "[PickPass] Failed to create subselection pipeline" << std::endl;
         return false;
     }
 

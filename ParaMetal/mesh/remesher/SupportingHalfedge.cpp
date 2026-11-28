@@ -1,6 +1,8 @@
 #include "SupportingHalfedge.hpp"
 #include <glm/gtc/constants.hpp>
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <iostream>
 #include <queue>
 #include <unordered_set>
@@ -484,8 +486,10 @@ SupportingHalfedge::IntrinsicMesh SupportingHalfedge::buildIntrinsicMesh() const
     }
 
     // Build index buffer and face ID mapping
+    const auto& intrinsicEdges = intrinsicConn.getEdges();
     meshData.indices.reserve(intrinsicFaces.size() * 3);
     meshData.faceIds.reserve(intrinsicFaces.size());
+    meshData.edgeIds.reserve(intrinsicFaces.size() * 3);
     meshData.triangles.reserve(intrinsicFaces.size());
 
     for (uint32_t faceIdx = 0; faceIdx < intrinsicFaces.size(); ++faceIdx) {
@@ -495,9 +499,33 @@ SupportingHalfedge::IntrinsicMesh SupportingHalfedge::buildIntrinsicMesh() const
         }
 
         // Get the three vertices of this face
-        uint32_t he0 = face.halfEdgeIdx;
-        uint32_t he1 = intrinsicHalfedges[he0].next;
-        uint32_t he2 = intrinsicHalfedges[he1].next;
+        const uint32_t he0 = face.halfEdgeIdx;
+        if (he0 >= intrinsicHalfedges.size()) {
+            return {};
+        }
+        const uint32_t he1 = intrinsicHalfedges[he0].next;
+        if (he1 >= intrinsicHalfedges.size()) {
+            return {};
+        }
+        const uint32_t he2 = intrinsicHalfedges[he1].next;
+        if (he2 >= intrinsicHalfedges.size() ||
+            intrinsicHalfedges[he2].next != he0) {
+            return {};
+        }
+
+        const uint32_t faceEdgeIds[] = {
+            intrinsicHalfedges[he0].edgeIdx,
+            intrinsicHalfedges[he1].edgeIdx,
+            intrinsicHalfedges[he2].edgeIdx
+        };
+        for (uint32_t edgeId : faceEdgeIds) {
+            if (edgeId == INVALID_INDEX ||
+                edgeId >= intrinsicEdges.size() ||
+                edgeId > static_cast<uint32_t>(INT32_MAX)) {
+                return {};
+            }
+            meshData.edgeIds.push_back(edgeId);
+        }
 
         uint32_t rawV0 = intrinsicHalfedges[he0].origin;
         uint32_t rawV1 = intrinsicHalfedges[he1].origin;
@@ -550,6 +578,11 @@ SupportingHalfedge::IntrinsicMesh SupportingHalfedge::buildIntrinsicMesh() const
 
         meshData.triangles.push_back(tri);
     }
+
+    std::sort(meshData.edgeIds.begin(), meshData.edgeIds.end());
+    meshData.edgeIds.erase(
+        std::unique(meshData.edgeIds.begin(), meshData.edgeIds.end()),
+        meshData.edgeIds.end());
 
     // Calculate area weighted vertex normals from neighboring triangles
     calculateVertexNormals(meshData);

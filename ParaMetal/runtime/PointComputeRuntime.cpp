@@ -113,21 +113,19 @@ bool PointComputeRuntime::buildProduct(uint64_t socketKey, PointProduct& product
     return product.isValid();
 }
 
-void PointComputeRuntime::commitPending(uint64_t socketKey) noexcept {
+bool PointComputeRuntime::commitPending(uint64_t socketKey) noexcept {
     const auto it = slots.find(socketKey);
     if (it == slots.end()) {
-        return;
+        return false;
     }
     PointBufferSlot& slot = it->second;
 
     if (slot.candidate.buffer == VK_NULL_HANDLE) {
-        return;
+        return false;
     }
 
-    assert(slot.retiring.buffer == VK_NULL_HANDLE);
     if (slot.retiring.buffer != VK_NULL_HANDLE) {
-        releaseGeneration(slot.candidate);
-        return;
+        return false;
     }
 
     if (slot.current.buffer != VK_NULL_HANDLE) {
@@ -135,6 +133,7 @@ void PointComputeRuntime::commitPending(uint64_t socketKey) noexcept {
     }
     slot.current = slot.candidate;
     slot.candidate = {};
+    return true;
 }
 
 void PointComputeRuntime::clearRetiring(uint64_t socketKey) {
@@ -145,19 +144,21 @@ void PointComputeRuntime::clearRetiring(uint64_t socketKey) {
     releaseGeneration(it->second.retiring);
 }
 
-void PointComputeRuntime::retireCurrent(uint64_t socketKey) {
+bool PointComputeRuntime::retireCurrent(uint64_t socketKey) {
     const auto it = slots.find(socketKey);
     if (it == slots.end()) {
-        return;
+        return true;
     }
     PointBufferSlot& slot = it->second;
-    assert(slot.retiring.buffer == VK_NULL_HANDLE);
     if (slot.retiring.buffer != VK_NULL_HANDLE) {
-        return;
+        return false;
     }
-    slot.retiring = slot.current;
-    slot.current = {};
     cancelCandidate(socketKey);
+    if (slot.current.buffer != VK_NULL_HANDLE) {
+        slot.retiring = slot.current;
+        slot.current = {};
+    }
+    return true;
 }
 
 bool PointComputeRuntime::currentHashMatches(uint64_t socketKey, uint64_t computeHash) const {
@@ -167,8 +168,8 @@ bool PointComputeRuntime::currentHashMatches(uint64_t socketKey, uint64_t comput
            it->second.current.hash == computeHash;
 }
 
-void PointComputeRuntime::disable(uint64_t socketKey) {
-    retireCurrent(socketKey);
+bool PointComputeRuntime::disable(uint64_t socketKey) {
+    return retireCurrent(socketKey);
 }
 
 bool PointComputeRuntime::hasAnyRetiring() const {

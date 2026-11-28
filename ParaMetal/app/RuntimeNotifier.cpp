@@ -47,31 +47,6 @@ void RuntimeNotifier::onConnection(const TelemetryConnection& telemetry) {
 
     const int nodeId = static_cast<int>(telemetry.nodeId);
     const SerialTemperatureRuntime::Status& status = *telemetry.status;
-    const bool hasReading = status.latestReading.has_value();
-    const uint64_t revision = hasReading ? status.latestReading->revision : 0;
-    const float readingTemperatureC = hasReading ? status.latestReading->temperatureC : 0.0f;
-    const float readingPollingRateHz = hasReading ? status.latestReading->pollingRateHz : 0.0f;
-
-    {
-        const QMutexLocker lock(&statusMutex);
-        SerialStatusInfo& cached = serialStatusMap[nodeId];
-        if (cached.initialized &&
-            cached.connectionState == status.connection &&
-            cached.detail == status.detail &&
-            cached.hasReading == hasReading &&
-            cached.readingRevision == revision &&
-            cached.readingTemperatureC == readingTemperatureC &&
-            cached.readingPollingRateHz == readingPollingRateHz) {
-            return;
-        }
-        cached.initialized = true;
-        cached.connectionState = status.connection;
-        cached.detail = status.detail;
-        cached.hasReading = hasReading;
-        cached.readingRevision = revision;
-        cached.readingTemperatureC = readingTemperatureC;
-        cached.readingPollingRateHz = readingPollingRateHz;
-    }
 
     QString connectionText;
     switch (status.connection) {

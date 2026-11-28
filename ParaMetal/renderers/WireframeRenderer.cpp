@@ -152,7 +152,7 @@ bool WireframeRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpass
     VkPushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(GeometryPushConstant);
+    pushConstantRange.size = sizeof(PushConstant);
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -215,7 +215,8 @@ void WireframeRenderer::renderModel(
     VkDeviceSize vertexBufferOffset,
     VkBuffer indexBuffer,
     VkDeviceSize indexBufferOffset,
-    uint32_t indexCount) {
+    uint32_t indexCount,
+    const glm::vec3& color) {
     if (!initialized || geometryDescriptorSet == VK_NULL_HANDLE ||
         vertexBuffer == VK_NULL_HANDLE || indexBuffer == VK_NULL_HANDLE || indexCount == 0)
         return;
@@ -224,11 +225,11 @@ void WireframeRenderer::renderModel(
     vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                            pipelineLayout, 0, 1, &geometryDescriptorSet, 0, nullptr);
     
-    // Push model matrix
-    GeometryPushConstant pushConstant{};
+    PushConstant pushConstant{};
     pushConstant.modelMatrix = modelMatrix;
+    pushConstant.color = color;
     vkCmdPushConstants(cmdBuffer, pipelineLayout,
-                      VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GeometryPushConstant), &pushConstant);
+                      VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstant), &pushConstant);
     
     // Bind vertex and index buffers with proper offsets
     vkCmdBindVertexBuffers(cmdBuffer, 0, 1, &vertexBuffer, &vertexBufferOffset);

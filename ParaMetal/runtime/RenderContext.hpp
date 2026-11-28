@@ -10,6 +10,7 @@
 #include "runtime/RemeshDisplayController.hpp"
 #include "runtime/HeatDisplayController.hpp"
 #include "runtime/CFDDisplayController.hpp"
+#include "runtime/SubselectionDisplayController.hpp"
 #include "runtime/VoronoiDisplayController.hpp"
 #include "app/ViewportTarget.hpp"
 #include "render/RenderRuntime.hpp"
@@ -36,6 +37,8 @@ public:
 
     bool updateViewportTarget(VkImage image, VkFormat format, VkExtent2D extent);
     NodeGraphDisplayControllers displayControllers();
+    SubselectionDisplayController* subselectionDisplayController();
+    RemeshDisplayController* remeshDisplayController();
     RenderRuntime* runtime();
     const RenderRuntime* runtime() const;
 
@@ -48,6 +51,7 @@ private:
     std::unique_ptr<RemeshDisplayController> remeshDisplayControllerState;
     std::unique_ptr<HeatDisplayController> heatDisplayControllerState;
     std::unique_ptr<CFDDisplayController> cfdDisplayControllerState;
+    std::unique_ptr<SubselectionDisplayController> subselectionDisplayControllerState;
     std::unique_ptr<VoronoiDisplayController> voronoiDisplayControllerState;
     bool initialized = false;
 };

@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <glm/mat4x4.hpp>
 #include <unordered_map>
-#include <unordered_set>
+#include <vector>
 
 #include "hash/HashBuilder.hpp"
 
@@ -15,15 +15,20 @@ public:
         uint32_t runtimeModelId = 0;
         glm::mat4 modelMatrix{ 1.0f };
         uint64_t displayHash = 0;
+        bool displayed = false;
     };
 
     void setModelRegistry(ModelRegistry* registry);
-    void apply(uint64_t socketKey, const Config& config);
+    bool apply(uint64_t socketKey, const Config& config);
+    bool applySceneOnly(uint64_t socketKey, const Config& config);
     void remove(uint64_t socketKey);
-    void finalizeSync();
+    bool isDisplayed(uint64_t socketKey) const;
+    bool findByRuntimeModelId(
+        uint32_t runtimeModelId,
+        uint64_t& outSocketKey) const;
+    std::vector<uint32_t> registeredRuntimeModelIds() const;
 
 private:
     ModelRegistry* modelRegistry = nullptr;
     std::unordered_map<uint64_t, Config> configsBySocket;
-    std::unordered_set<uint64_t> syncedSockets;
 };

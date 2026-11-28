@@ -28,7 +28,7 @@ public:
     ~VolumePass() override;
 
     const char* name() const override;
-    void create() override;
+    bool create() override;
     void resize(VkExtent2D extent) override;
     void updateDescriptors() override;
     void record(const FrameContext& context, const SceneView& view, const RenderFlags& flags, RenderServices& services) override;

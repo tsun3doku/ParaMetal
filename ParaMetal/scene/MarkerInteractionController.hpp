@@ -33,6 +33,7 @@ public:
     ~MarkerInteractionController() = default;
 
     void updateMarkers(const std::vector<MarkerItem>& updatedMarkers);
+    void updateDisplayedModelIds(std::vector<uint32_t> modelIds);
 
     bool handlePointerPress(float mouseX, float mouseY, int button = 1, bool shiftPressed = false) override;
     bool handlePointerMove(float mouseX, float mouseY) override;
@@ -61,6 +62,7 @@ private:
     const WindowRuntimeState& windowState;
 
     std::vector<MarkerItem> markers;
+    std::vector<uint32_t> displayedModelIds;
 
     bool isDragging = false;
     glm::vec3 dragCurrentPosition{0.0f};

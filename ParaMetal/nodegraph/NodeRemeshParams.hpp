@@ -6,7 +6,6 @@ class NodeGraphEditor;
 struct NodeGraphNode;
 
 struct RemeshPreviewSettings {
-    bool showRemeshOverlay = false;
     bool showFaceNormals = false;
     bool showVertexNormals = false;
 };
@@ -29,7 +28,6 @@ constexpr uint32_t MinAngleDegrees = 2;
 constexpr uint32_t MaxEdgeLength = 3;
 constexpr uint32_t StepSize = 4;
 constexpr uint32_t RunRequested = 5;
-constexpr uint32_t ShowRemeshOverlay = 6;
 constexpr uint32_t ShowFaceNormals = 7;
 constexpr uint32_t ShowVertexNormals = 8;
 constexpr uint32_t NormalLength = 9;

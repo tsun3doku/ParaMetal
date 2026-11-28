@@ -1,0 +1,230 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) uniform usampler2D pickId;
+layout(std430, set = 0, binding = 1) readonly buffer VertexWords {
+    uint vertexWords[];
+};
+layout(std430, set = 0, binding = 2) readonly buffer IndexWords {
+    uint indexWords[];
+};
+layout(std430, set = 0, binding = 3) writeonly buffer PickResult {
+    uvec4 pickResult;
+};
+
+layout(push_constant) uniform PushConstants {
+    mat4 mvp;
+    vec2 cursor;
+    vec2 viewport;
+    uint radius;
+    uint elementType;
+    uint vertexStride;
+    uint indexCount;
+} pc;
+
+shared uvec4 sharedResult[256];
+shared vec2 sharedKeys[256];
+
+struct Candidate {
+    float distance;
+    float depth;
+    uint a;
+    uint b;
+    bool valid;
+};
+
+vec3 vertexPosition(uint index) {
+    const uint base = index * pc.vertexStride;
+    return vec3(
+        uintBitsToFloat(vertexWords[base + 0]),
+        uintBitsToFloat(vertexWords[base + 1]),
+        uintBitsToFloat(vertexWords[base + 2]));
+}
+
+bool projectVertex(uint index, out vec2 screen, out float depth) {
+    const vec4 clip = pc.mvp * vec4(vertexPosition(index), 1.0);
+    if (clip.w <= 0.0) {
+        return false;
+    }
+    const vec3 ndc = clip.xyz / clip.w;
+    screen = vec2(
+        (ndc.x * 0.5 + 0.5) * pc.viewport.x,
+        (ndc.y * 0.5 + 0.5) * pc.viewport.y);
+    depth = ndc.z;
+    return depth >= 0.0 && depth <= 1.0;
+}
+
+bool pointVisible(ivec2 point, uint sourceId) {
+    const ivec2 size = ivec2(pc.viewport);
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            const ivec2 p = point + ivec2(x, y);
+            if (p.x < 0 || p.y < 0 || p.x >= size.x || p.y >= size.y) {
+                continue;
+            }
+            if (texelFetch(pickId, p, 0).r == sourceId) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool better(Candidate candidate, Candidate current) {
+    if (!candidate.valid) {
+        return false;
+    }
+    if (!current.valid) {
+        return true;
+    }
+    if (candidate.distance != current.distance) {
+        return candidate.distance < current.distance;
+    }
+    if (candidate.depth != current.depth) {
+        return candidate.depth < current.depth;
+    }
+    if (candidate.a != current.a) {
+        return candidate.a < current.a;
+    }
+    return candidate.b < current.b;
+}
+
+vec2 segmentDistance(vec2 point, vec2 a, vec2 b, out float t) {
+    const vec2 segment = b - a;
+    const float lengthSquared = dot(segment, segment);
+    t = 0.0;
+    if (lengthSquared > 0.0) {
+        t = clamp(dot(point - a, segment) / lengthSquared, 0.0, 1.0);
+    }
+    return a + segment * t;
+}
+
+void main() {
+    const uint thread = gl_LocalInvocationIndex;
+    Candidate best;
+    best.distance = 3.402823466e+38;
+    best.depth = 3.402823466e+38;
+    best.a = 0u;
+    best.b = 0u;
+    best.valid = false;
+
+    const ivec2 size = ivec2(pc.viewport);
+    const ivec2 center = ivec2(pc.cursor);
+    const int radius = int(pc.radius);
+    const int diameter = radius * 2 + 1;
+    const uint total = uint(diameter * diameter);
+
+    for (uint i = thread; i < total; i += 256u) {
+        const int dx = int(i % uint(diameter)) - radius;
+        const int dy = int(i / uint(diameter)) - radius;
+        if (dx * dx + dy * dy > radius * radius) {
+            continue;
+        }
+
+        const ivec2 pixel = center + ivec2(dx, dy);
+        if (pixel.x < 0 || pixel.y < 0 || pixel.x >= size.x || pixel.y >= size.y) {
+            continue;
+        }
+
+        const uint sourceId = texelFetch(pickId, pixel, 0).r;
+        if (sourceId == 0u) {
+            continue;
+        }
+        const uint face = sourceId - 1u;
+        const uint indexBase = face * 3u;
+        if (indexBase + 2u >= pc.indexCount) {
+            continue;
+        }
+
+        const uint a = indexWords[indexBase + 0u];
+        const uint b = indexWords[indexBase + 1u];
+        const uint c = indexWords[indexBase + 2u];
+
+        if (pc.elementType == 0u) {
+            const uint vertices[3] = { a, b, c };
+            for (uint corner = 0; corner < 3u; ++corner) {
+                vec2 screen;
+                float depth;
+                if (!projectVertex(vertices[corner], screen, depth)) {
+                    continue;
+                }
+                const float distance = length(screen - pc.cursor);
+                if (distance > float(radius)) {
+                    continue;
+                }
+                const ivec2 candidatePixel = ivec2(round(screen));
+                if (!pointVisible(candidatePixel, sourceId)) {
+                    continue;
+                }
+                Candidate candidate;
+                candidate.distance = distance;
+                candidate.depth = depth;
+                candidate.a = vertices[corner];
+                candidate.b = vertices[corner];
+                candidate.valid = true;
+                if (better(candidate, best)) {
+                    best = candidate;
+                }
+            }
+        } else if (pc.elementType == 1u) {
+            const uint edges[3] = { a, b, c };
+            for (uint edge = 0; edge < 3u; ++edge) {
+                const uint va = edges[edge];
+                const uint vb = edges[(edge + 1u) % 3u];
+                vec2 sa;
+                vec2 sb;
+                float da;
+                float db;
+                if (!projectVertex(va, sa, da) || !projectVertex(vb, sb, db)) {
+                    continue;
+                }
+                float t = 0.0;
+                const vec2 closest = segmentDistance(pc.cursor, sa, sb, t);
+                const float distance = length(pc.cursor - closest);
+                if (distance > float(radius)) {
+                    continue;
+                }
+                const ivec2 candidatePixel = ivec2(round(closest));
+                if (!pointVisible(candidatePixel, sourceId)) {
+                    continue;
+                }
+                Candidate candidate;
+                candidate.distance = distance;
+                candidate.depth = mix(da, db, t);
+                candidate.a = min(va, vb);
+                candidate.b = max(va, vb);
+                candidate.valid = true;
+                if (better(candidate, best)) {
+                    best = candidate;
+                }
+            }
+        }
+    }
+
+    sharedResult[thread] = uvec4(best.valid ? 1u : 0u, best.a, best.b, 0u);
+    sharedKeys[thread] = vec2(
+        best.valid ? best.distance : 3.402823466e+38,
+        best.valid ? best.depth : 3.402823466e+38);
+    barrier();
+
+    if (thread == 0u) {
+        Candidate winner = best;
+        for (uint i = 1u; i < 256u; ++i) {
+            Candidate other;
+            other.a = sharedResult[i].y;
+            other.b = sharedResult[i].z;
+            other.distance = sharedKeys[i].x;
+            other.depth = sharedKeys[i].y;
+            other.valid = sharedResult[i].x != 0u;
+            if (better(other, winner)) {
+                winner = other;
+            }
+        }
+        pickResult = uvec4(
+            winner.valid ? 1u : 0u,
+            0u,
+            winner.a,
+            winner.b);
+    }
+}

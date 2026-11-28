@@ -4,73 +4,109 @@
 #include "util/GeometryUtils.hpp"
 #include "runtime/ModelDisplayController.hpp"
 #include "runtime/package/RuntimePackageManager.hpp"
+#include "scene/SceneController.hpp"
 
-void RuntimeModelDisplayTransport::sync(const RuntimePackageManager& registry, const std::unordered_set<uint64_t>& visibleKeys) {
-    if (!controller || !products) {
-        return;
+bool RuntimeModelDisplayTransport::sync(
+    const RuntimePackageManager& registry,
+    const std::unordered_set<uint64_t>& displayKeys,
+    const std::unordered_set<uint64_t>& sceneKeys) {
+    if ((!controller && !sceneController) || !products) {
+        return true;
     }
 
     std::unordered_set<uint64_t> nextSocketKeys;
     for (const auto& [socketKey, package] : registry.models()) {
         if (!registry.isPackageCurrent(socketKey)) continue;
-        if (visibleKeys.find(socketKey) == visibleKeys.end()) {
+        const bool displayed =
+            displayKeys.find(socketKey) != displayKeys.end();
+        const bool sceneOnly =
+            !displayed && sceneKeys.find(socketKey) != sceneKeys.end();
+        if (!displayed && !sceneOnly) {
             continue;
         }
 
         if (!products->isCurrent<ModelProduct>(package.productHandle)) {
-            controller->remove(socketKey);
+            if (controller) controller->remove(socketKey);
+            if (sceneController) sceneController->remove(socketKey);
             continue;
         }
         const ModelProduct* product = products->resolve<ModelProduct>(package.productHandle);
         if (!product || product->runtimeModelId == 0) {
-            controller->remove(socketKey);
+            if (controller) controller->remove(socketKey);
+            if (sceneController) sceneController->remove(socketKey);
             continue;
         }
 
-        ModelDisplayController::Config config{};
-        config.runtimeModelId = product->runtimeModelId;
-        config.modelMatrix = toMat4(package.localToWorld);
+        const glm::mat4 modelMatrix = toMat4(package.localToWorld);
         uint64_t displayHash = HashBuilder::start();
-        HashBuilder::combine(displayHash, config.runtimeModelId);
-        HashBuilder::combinePod(displayHash, config.modelMatrix);
+        HashBuilder::combine(displayHash, product->runtimeModelId);
+        HashBuilder::combinePod(displayHash, modelMatrix);
         HashBuilder::combine(displayHash, product->hashes.display);
         HashBuilder::combine(displayHash, package.productHandle.publicationId);
-        config.displayHash = displayHash;
-        controller->apply(socketKey, config);
+
+        if (controller) {
+            ModelDisplayController::Config config{};
+            config.runtimeModelId = product->runtimeModelId;
+            config.modelMatrix = modelMatrix;
+            config.displayHash = displayHash;
+            const bool applied = displayed
+                ? controller->apply(socketKey, config)
+                : controller->applySceneOnly(socketKey, config);
+            if (!applied) {
+                return false;
+            }
+        }
+
+        if (sceneController) {
+            SceneController::Config config{};
+            config.runtimeModelId = product->runtimeModelId;
+            config.worldBoundsMin = package.worldBoundsMin;
+            config.worldBoundsMax = package.worldBoundsMax;
+            sceneController->apply(socketKey, config);
+        }
+
         nextSocketKeys.insert(socketKey);
     }
 
     for (uint64_t socketKey : activeSocketKeys) {
         if (nextSocketKeys.find(socketKey) == nextSocketKeys.end()) {
-            controller->remove(socketKey);
+            if (controller) controller->remove(socketKey);
+            if (sceneController) sceneController->remove(socketKey);
         }
     }
     activeSocketKeys = nextSocketKeys;
+    return true;
 }
 
-void RuntimeModelDisplayTransport::finalizeSync() {
-    if (!controller) {
-        return;
-    }
+bool RuntimeModelDisplayTransport::isDisplayed(uint64_t socketKey) const {
+    return controller && controller->isDisplayed(socketKey);
+}
 
-    controller->finalizeSync();
+bool RuntimeModelDisplayTransport::findByRuntimeModelId(
+    uint32_t runtimeModelId,
+    uint64_t& outSocketKey) const {
+    return controller && controller->findByRuntimeModelId(
+        runtimeModelId, outSocketKey);
+}
+
+std::vector<uint32_t> RuntimeModelDisplayTransport::registeredRuntimeModelIds() const {
+    return controller ? controller->registeredRuntimeModelIds()
+                      : std::vector<uint32_t>{};
 }
 
 void RuntimeModelDisplayTransport::detach(uint64_t socketKey) {
-    if (!controller || socketKey == 0) {
+    if ((!controller && !sceneController) || socketKey == 0) {
         return;
     }
-    controller->remove(socketKey);
+    if (controller) controller->remove(socketKey);
+    if (sceneController) sceneController->remove(socketKey);
     activeSocketKeys.erase(socketKey);
 }
 
 void RuntimeModelDisplayTransport::detachAll() {
-    if (!controller) {
-        activeSocketKeys.clear();
-        return;
-    }
     for (uint64_t socketKey : activeSocketKeys) {
-        controller->remove(socketKey);
+        if (controller) controller->remove(socketKey);
+        if (sceneController) sceneController->remove(socketKey);
     }
     activeSocketKeys.clear();
 }

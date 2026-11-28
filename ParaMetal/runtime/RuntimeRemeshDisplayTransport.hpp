@@ -1,6 +1,7 @@
 #pragma once
 
-#include "nodegraph/NodeGraphProductTypes.hpp"
+#include "hash/HashProductHandle.hpp"
+#include "runtime/ProductHandle.hpp"
 #include "runtime/package/RuntimePackageManager.hpp"
 #include "runtime/RuntimeProductManager.hpp"
 #include "runtime/RemeshDisplayController.hpp"
@@ -19,11 +20,12 @@ public:
         products = updatedProducts;
     }
 
-    void sync(const RuntimePackageManager& registry, const std::unordered_set<uint64_t>& visibleKeys) {
+    bool sync(const RuntimePackageManager& registry, const std::unordered_set<uint64_t>& visibleKeys) {
         if (!controller) {
-            return;
+            return true;
         }
 
+        bool success = true;
         std::unordered_set<uint64_t> nextSocketKeys;
         for (const auto& [socketKey, package] : registry.remeshes()) {
             if (!registry.isPackageCurrent(socketKey)) continue;
@@ -32,12 +34,17 @@ public:
             }
 
             RemeshDisplayController::Config config{};
-            if (!tryBuildConfig(socketKey, package, config)) {
+            if (!tryBuildConfig(socketKey, package, config) ||
+                !config.isValid()) {
                 controller->remove(socketKey);
+                success = false;
                 continue;
             }
 
-            controller->apply(socketKey, config);
+            if (!controller->apply(socketKey, config)) {
+                success = false;
+                continue;
+            }
             nextSocketKeys.insert(socketKey);
         }
 
@@ -47,14 +54,24 @@ public:
             }
         }
         activeSocketKeys = nextSocketKeys;
+        return success;
     }
 
-    void finalizeSync() {
-        if (!controller) {
-            return;
-        }
+    bool surfaceMatches(uint64_t socketKey, uint64_t surfaceIdentity) const {
+        return controller && controller->surfaceMatches(socketKey, surfaceIdentity);
+    }
 
-        controller->finalizeSync();
+    bool findByRuntimeModelId(
+        uint32_t runtimeModelId,
+        uint64_t& outSocketKey,
+        uint64_t& outSurfaceIdentity) const {
+        return controller && controller->findByRuntimeModelId(
+            runtimeModelId, outSocketKey, outSurfaceIdentity);
+    }
+
+    std::vector<uint32_t> registeredRuntimeModelIds() const {
+        return controller ? controller->registeredRuntimeModelIds()
+                          : std::vector<uint32_t>{};
     }
 
     void detach(uint64_t socketKey) {
@@ -82,13 +99,6 @@ private:
         if (!controller || !products || socketKey == 0) {
             return false;
         }
-        const bool anyVisible =
-            package.display.showRemeshOverlay ||
-            package.display.showFaceNormals ||
-            package.display.showVertexNormals;
-        if (!anyVisible) {
-            return false;
-        }
 
         if (!products->isCurrent<RemeshProduct>(package.productHandle)) {
             return false;
@@ -107,7 +117,6 @@ private:
         }
 
         outConfig = {};
-        outConfig.showRemeshOverlay = package.display.showRemeshOverlay;
         outConfig.showFaceNormals = package.display.showFaceNormals;
         outConfig.showVertexNormals = package.display.showVertexNormals;
         outConfig.normalLength = package.display.normalLength;
@@ -135,6 +144,9 @@ private:
         outConfig.inputEdgeView = computeProduct->inputEdgeView;
         outConfig.inputTriangleView = computeProduct->inputTriangleView;
         outConfig.inputLengthView = computeProduct->inputLengthView;
+        outConfig.faceIdView = computeProduct->faceIdView;
+        outConfig.surfaceIdentity =
+            surfaceGeometryIdentity(package.productHandle);
         outConfig.displayHash = buildDisplayHash(outConfig, computeProduct->hashes.display);
         HashBuilder::combine(outConfig.displayHash, package.productHandle.publicationId);
         return true;

@@ -23,9 +23,11 @@ public:
         uint64_t socketKey,
         const HeatPackage& package,
         HeatProduct& outProduct);
-    void commitPending(uint64_t socketKey);
+    bool commitPending(uint64_t socketKey);
     void cancelPending(uint64_t socketKey);
-    void remove(uint64_t socketKey);
+    bool remove(uint64_t socketKey);
+    bool hasAnyRetiring() const;
+    void quiescedClear();
 
 private:
     uint64_t advectionUpstreamSocket(const HeatPackage& package) const;

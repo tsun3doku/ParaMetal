@@ -290,6 +290,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="runtime\RemeshSystem.cpp" />
     <ClCompile Include="runtime\RuntimeProductManager.cpp" />
     <ClCompile Include="runtime\package\RuntimePackageCompiler.cpp" />
+    <ClCompile Include="runtime\package\GroupPackageCompiler.cpp" />
     <ClCompile Include="runtime\package\ModelPackageCompiler.cpp" />
     <ClCompile Include="runtime\package\PointPackageCompiler.cpp" />
     <ClCompile Include="runtime\package\RemeshPackageCompiler.cpp" />
@@ -298,7 +299,6 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="runtime\package\CFDPackageCompiler.cpp" />
     <ClCompile Include="runtime\package\RuntimePackageController.cpp" />
     <ClCompile Include="runtime\package\RuntimePackageManager.cpp" />
-    <ClCompile Include="runtime\package\passes\ValidationPass.cpp" />
     <ClCompile Include="runtime\package\passes\CoordinatePass.cpp" />
     <ClCompile Include="runtime\RuntimeModelComputeTransport.cpp" />
     <ClCompile Include="runtime\RuntimeModelDisplayTransport.cpp" />
@@ -314,6 +314,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="serial\SerialTemperatureRuntime.cpp" />
     <ClCompile Include="runtime\VoronoiDisplayController.cpp" />
     <ClCompile Include="runtime\RuntimeController.cpp" />
+    <ClCompile Include="runtime\SubselectionDisplayController.cpp" />
     <ClCompile Include="runtime\TimelineController.cpp" />
     <ClCompile Include="runtime\TimelineRuntime.cpp" />
     <ClCompile Include="runtime\ViewportEditController.cpp" />
@@ -386,6 +387,8 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="scene\NavigationGizmoController.cpp" />
     <ClCompile Include="scene\MarkerInteractionController.cpp" />
     <ClCompile Include="scene\DomainFaceInteractionController.cpp" />
+    <ClCompile Include="scene\SubselectionInteractionController.cpp" />
+    <ClCompile Include="scene\SubselectionPickService.cpp" />
     <ClCompile Include="interaction\InteractionContext.cpp" />
     <ClCompile Include="renderers\GizmoRenderer.cpp" />
     <ClCompile Include="renderers\NavigationGizmoRenderer.cpp" />
@@ -396,6 +399,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="mesh\\remesher\\HalfEdgeMesh.cpp" />
     <ClCompile Include="renderers\HeatSurfaceRenderer.cpp" />
     <ClCompile Include="mesh\IsocontourBuilder.cpp" />
+    <ClCompile Include="mesh\MeshSelection.cpp" />
     <ClCompile Include="renderers\SurfaceVectorRenderer.cpp" />
     <ClCompile Include="renderers\StreamlineRenderer.cpp" />
     <ClCompile Include="renderers\CFDSliceRenderer.cpp" />
@@ -440,6 +444,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClCompile Include="nodegraph\NodeTransform.cpp" />
     <ClCompile Include="nodegraph\NodeTransformParams.cpp" />
     <ClCompile Include="nodegraph\NodeGroup.cpp" />
+    <ClCompile Include="nodegraph\NodeGroupParams.cpp" />
     <ClCompile Include="nodegraph\NodeRemesh.cpp" />
     <ClCompile Include="nodegraph\NodeRemeshParams.cpp" />
     <ClCompile Include="nodegraph\NodePoints.cpp" />
@@ -493,12 +498,14 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="scene\ModelSelection.cpp" />
+    <ClCompile Include="scene\PickReadback.cpp" />
     <ClCompile Include="renderers\PointRenderer.cpp" />
     <ClCompile Include="mesh\\remesher\\SupportingHalfedge.cpp" />
     <ClCompile Include="spatial\TriangleHashGrid.cpp" />
     <ClCompile Include="renderers\VoronoiRenderer.cpp" />
     <ClCompile Include="renderers\IntrinsicRenderer.cpp" />
     <ClCompile Include="renderers\OutlineRenderer.cpp" />
+    <ClCompile Include="renderers\SubselectionRenderer.cpp" />
     <ClCompile Include="vulkan\VulkanBuffer.cpp" />
     <ClCompile Include="vulkan\VulkanExternalBuffer.cpp" />
     <ClCompile Include="app\ViewportTarget.cpp" />
@@ -670,6 +677,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="cuda\CudaExternalBuffer.hpp" />
     <ClInclude Include="cuda\CudaPcg.cuh" />
     <ClInclude Include="domain\GeometryData.hpp" />
+    <ClInclude Include="domain\GroupData.hpp" />
     <ClInclude Include="domain\HeatData.hpp" />
     <ClInclude Include="domain\HeatModelData.hpp" />
     <ClInclude Include="domain\BoundaryData.hpp" />
@@ -723,6 +731,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="runtime\RuntimeVoronoiComputeTransport.hpp" />
     <ClInclude Include="runtime\RuntimeVoronoiDisplayTransport.hpp" />
     <ClInclude Include="runtime\VoronoiDisplayController.hpp" />
+    <ClInclude Include="runtime\ProductHandle.hpp" />
     <ClInclude Include="runtime\RuntimeProducts.hpp" />
     <ClInclude Include="runtime\RuntimeRemeshDisplayTransport.hpp" />
     <ClInclude Include="runtime\RuntimeRemeshComputeTransport.hpp" />
@@ -745,6 +754,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="runtime\RuntimeTransports.hpp" />
     <ClInclude Include="runtime\package\RuntimePackageCompiler.hpp" />
     <ClInclude Include="runtime\package\PackageCompileContext.hpp" />
+    <ClInclude Include="runtime\package\GroupPackageCompiler.hpp" />
     <ClInclude Include="runtime\package\ModelPackageCompiler.hpp" />
     <ClInclude Include="runtime\package\PointPackageCompiler.hpp" />
     <ClInclude Include="runtime\package\RemeshPackageCompiler.hpp" />
@@ -752,12 +762,12 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="runtime\package\HeatPackageCompiler.hpp" />
     <ClInclude Include="runtime\package\CFDPackageCompiler.hpp" />
     <ClInclude Include="runtime\package\RuntimePackageController.hpp" />
-    <ClInclude Include="runtime\package\passes\ValidationPass.hpp" />
     <ClInclude Include="runtime\package\passes\CoordinatePass.hpp" />
     <ClInclude Include="runtime\package\RuntimePackageManager.hpp" />
     <ClInclude Include="runtime\package\RuntimePackages.hpp" />
     <ClInclude Include="runtime\RuntimeProductManager.hpp" />
     <ClInclude Include="runtime\RuntimeController.hpp" />
+    <ClInclude Include="runtime\SubselectionDisplayController.hpp" />
     <ClInclude Include="runtime\TimelineController.hpp" />
     <ClInclude Include="runtime\TimelineRuntime.hpp" />
     <ClInclude Include="runtime\ViewportEditController.hpp" />
@@ -821,6 +831,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="spatial\SpatialNodeIndex.hpp" />
     <ClInclude Include="voronoi\VoronoiConfig.hpp" />
     <ClInclude Include="voronoi\VoronoiGpuStructs.hpp" />
+    <ClInclude Include="heat\HeatProbeConfig.hpp" />
     <ClInclude Include="heat\HeatSystemPresets.hpp" />
     <ClInclude Include="heat\HeatSystemComputeController.hpp" />
     <ClInclude Include="heat\HeatGpuStructs.hpp" />
@@ -848,7 +859,6 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="nodegraph\NodeGraph.hpp" />
     <ClInclude Include="project\ProjectFile.hpp" />
     <ClInclude Include="nodegraph\NodeGraphEditor.hpp" />
-    <ClInclude Include="nodegraph\NodeGraphDataTypes.hpp" />
     <ClInclude Include="nodegraph\NodeGraphEdges.hpp" />
     <ClInclude Include="nodegraph\NodeGraphEvaluation.hpp" />
     <ClInclude Include="hash\HashBuilder.hpp" />
@@ -865,6 +875,11 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="nodegraph\NodeTransform.hpp" />
     <ClInclude Include="nodegraph\NodeTransformParams.hpp" />
     <ClInclude Include="nodegraph\NodeGroup.hpp" />
+    <ClInclude Include="nodegraph\NodeGroupParams.hpp" />
+    <ClInclude Include="mesh\MeshElementIds.hpp" />
+    <ClInclude Include="mesh\MeshElementType.hpp" />
+    <ClInclude Include="mesh\MeshSelection.hpp" />
+    <ClInclude Include="mesh\SubselectionEditState.hpp" />
     <ClInclude Include="nodegraph\NodeRemesh.hpp" />
     <ClInclude Include="nodegraph\NodeRemeshParams.hpp" />
     <ClInclude Include="nodegraph\NodePoints.hpp" />
@@ -949,6 +964,7 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="renderers\VoronoiRenderer.hpp" />
     <ClInclude Include="renderers\IntrinsicRenderer.hpp" />
     <ClInclude Include="renderers\OutlineRenderer.hpp" />
+    <ClInclude Include="renderers\SubselectionRenderer.hpp" />
     <ClInclude Include="renderers\WireframeRenderer.hpp" />
     <QtMoc Include="app\ViewportItem.hpp" />
     <ClInclude Include="app\ViewportMailbox.hpp" />
@@ -958,6 +974,10 @@ xcopy /y /d /e /i "$(ProjectDir)fonts" "$(OutDir)fonts"
     <ClInclude Include="scene\MeshImporter.hpp" />
     <ClInclude Include="scene\ModelUploader.hpp" />
     <ClInclude Include="scene\ModelSelection.hpp" />
+    <ClInclude Include="scene\PickReadback.hpp" />
+    <ClInclude Include="scene\SubselectionInteractionController.hpp" />
+    <ClInclude Include="scene\SubselectionPickService.hpp" />
+    <ClInclude Include="scene\SubselectionPickState.hpp" />
     <ClInclude Include="vulkan\ModelRegistry.hpp" />
     <ClInclude Include="mesh\\remesher\\Remesher.hpp" />
     <ClInclude Include="mesh\\remesher\\SignPostMesh.hpp" />

@@ -11,7 +11,7 @@
 #include "domain/PointData.hpp"
 #include "heat/HeatSystemComputeController.hpp"
 #include "nodegraph/NodeGraphController.hpp"
-#include "nodegraph/NodeGraphDataTypes.hpp"
+#include "nodegraph/NodeGraphCoreTypes.hpp"
 #include "nodegraph/NodeGraphPayloadTypes.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
 #include "runtime/RuntimeProductManager.hpp"
@@ -97,7 +97,8 @@ ExportResult writeGeometry(
 
 class MeshExporter final : public PayloadExporter {
 public:
-    uint8_t payloadType() const noexcept override { return payloadtypes::Geometry; }
+    explicit MeshExporter(uint8_t type) : type_(type) {}
+    uint8_t payloadType() const noexcept override { return type_; }
     void appendProducts(const ExportOutput& output, const NodeGraphController& graph,
                        std::vector<ExportProduct>& out) const override {
         const GeometryData* geometry = hasValue(output)
@@ -124,6 +125,9 @@ public:
         return writeGeometry(path, geometry->vertexPositions, geometry->triangleIndices,
                              geometry->renderNormals, format, &transform);
     }
+
+private:
+    uint8_t type_ = payloadtypes::Geometry;
 };
 
 class RemeshExporter final : public PayloadExporter {
@@ -138,8 +142,10 @@ public:
         p.supportedFormats = meshFormats;
         p.defaultFormat = ExportFormat::OBJ;
         const uint64_t socketKey = NodeSocketKey(output.nodeId, output.socketId).value;
-        const RuntimePackageManager* packages = graph.getPackageManager();
-        const RuntimeProductManager* products = graph.getProductManager();
+        const RuntimePackageController& packageController =
+            graph.getPackageController();
+        const RuntimePackageManager* packages = &packageController.packages();
+        const RuntimeProductManager* products = packageController.products();
         const RemeshPackage* package = packages ? packages->findAny<RemeshPackage>(socketKey) : nullptr;
         const RemeshProduct* product = package && products
             ? products->resolve<RemeshProduct>(package->productHandle) : nullptr;
@@ -153,8 +159,10 @@ public:
                               ExportFormat format, const std::string& path,
                               const NodeGraphController& graph) const override {
         const uint64_t socketKey = NodeSocketKey(output.nodeId, output.socketId).value;
-        const RuntimePackageManager* packages = graph.getPackageManager();
-        const RuntimeProductManager* products = graph.getProductManager();
+        const RuntimePackageController& packageController =
+            graph.getPackageController();
+        const RuntimePackageManager* packages = &packageController.packages();
+        const RuntimeProductManager* products = packageController.products();
         const RemeshPackage* package = packages ? packages->findAny<RemeshPackage>(socketKey) : nullptr;
         const RemeshProduct* product = package && products
             ? products->resolve<RemeshProduct>(package->productHandle) : nullptr;
@@ -175,8 +183,10 @@ public:
     void appendProducts(const ExportOutput& output, const NodeGraphController& graph,
                        std::vector<ExportProduct>& out) const override {
         const uint64_t socketKey = NodeSocketKey(output.nodeId, output.socketId).value;
-        const RuntimePackageManager* packages = graph.getPackageManager();
-        const RuntimeProductManager* products = graph.getProductManager();
+        const RuntimePackageController& packageController =
+            graph.getPackageController();
+        const RuntimePackageManager* packages = &packageController.packages();
+        const RuntimeProductManager* products = packageController.products();
         const PointPackage* package =
             packages ? packages->findAny<PointPackage>(socketKey) : nullptr;
         const bool current = package && packages->isPackageCurrent(socketKey) &&
@@ -206,8 +216,10 @@ public:
                               ExportFormat format, const std::string& path,
                               const NodeGraphController& graph) const override {
         const uint64_t socketKey = NodeSocketKey(output.nodeId, output.socketId).value;
-        const RuntimePackageManager* packages = graph.getPackageManager();
-        const RuntimeProductManager* products = graph.getProductManager();
+        const RuntimePackageController& packageController =
+            graph.getPackageController();
+        const RuntimePackageManager* packages = &packageController.packages();
+        const RuntimeProductManager* products = packageController.products();
         const PointPackage* package =
             packages ? packages->findAny<PointPackage>(socketKey) : nullptr;
         if (!package || !packages->isPackageCurrent(socketKey) || package->positions.empty() ||
@@ -336,7 +348,8 @@ ExporterRegistry::ExporterRegistry(
         const uint8_t type = exporter->payloadType();
         exporters.emplace(type, std::move(exporter));
     };
-    add(std::make_unique<MeshExporter>());
+    add(std::make_unique<MeshExporter>(payloadtypes::Geometry));
+    add(std::make_unique<MeshExporter>(payloadtypes::Group));
     add(std::make_unique<RemeshExporter>());
     add(std::make_unique<PointExporter>());
     add(std::make_unique<HeatContourExporter>(heatController));

@@ -35,11 +35,8 @@ ComputeApplyResult RuntimePointComputeTransport::apply(
     return ComputeApplyResult::Prepared;
 }
 
-void RuntimePointComputeTransport::commitPending(uint64_t socketKey) {
-    if (!runtime || socketKey == 0) {
-        return;
-    }
-    runtime->commitPending(socketKey);
+bool RuntimePointComputeTransport::commitPending(uint64_t socketKey) {
+    return runtime && socketKey != 0 && runtime->commitPending(socketKey);
 }
 
 void RuntimePointComputeTransport::cancelPending(uint64_t socketKey) {
@@ -49,9 +46,22 @@ void RuntimePointComputeTransport::cancelPending(uint64_t socketKey) {
     runtime->cancelCandidate(socketKey);
 }
 
-void RuntimePointComputeTransport::remove(uint64_t socketKey) {
-    if (!runtime || socketKey == 0) {
-        return;
+bool RuntimePointComputeTransport::remove(uint64_t socketKey) {
+    if (!runtime) {
+        return false;
     }
-    runtime->disable(socketKey);
+    if (socketKey == 0) {
+        return true;
+    }
+    return runtime->disable(socketKey);
+}
+
+bool RuntimePointComputeTransport::hasAnyRetiring() const {
+    return runtime && runtime->hasAnyRetiring();
+}
+
+void RuntimePointComputeTransport::quiescedClear() {
+    if (runtime) {
+        runtime->quiescedClear();
+    }
 }

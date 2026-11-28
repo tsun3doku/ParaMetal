@@ -3,10 +3,12 @@
 #include "NodeGraphEdges.hpp"
 #include "NodeGraphTypes.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <unordered_map>
 
 struct NodeGraphState {
+    uint64_t instanceId = 0;
     uint64_t revision = 0;
     uint32_t nextNodeId = 1;
     uint32_t nextSocketId = 1;
@@ -43,9 +45,30 @@ inline void applyNodeGraphChange(NodeGraphState& state, const NodeGraphChange& c
     }
 }
 
+inline bool canApplyNodeGraphDelta(
+    const NodeGraphState& state,
+    const NodeGraphDelta& delta) {
+    if (delta.fromRevision != state.revision) {
+        return false;
+    }
+
+    const bool resetsGraph = std::any_of(
+        delta.changes.begin(),
+        delta.changes.end(),
+        [](const NodeGraphChange& change) {
+            return change.type == NodeGraphChangeType::Reset;
+        });
+    return resetsGraph || delta.graphInstanceId == state.instanceId;
+}
+
 inline bool applyNodeGraphDelta(NodeGraphState& state, const NodeGraphDelta& delta) {
-    if (delta.fromRevision != state.revision) return false;
-    for (const NodeGraphChange& change : delta.changes) applyNodeGraphChange(state, change);
+    if (!canApplyNodeGraphDelta(state, delta)) {
+        return false;
+    }
+    for (const NodeGraphChange& change : delta.changes) {
+        applyNodeGraphChange(state, change);
+    }
+    state.instanceId = delta.graphInstanceId;
     state.revision = delta.toRevision;
     return true;
 }

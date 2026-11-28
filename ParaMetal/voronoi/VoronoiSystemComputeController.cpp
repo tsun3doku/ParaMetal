@@ -1,4 +1,4 @@
-﻿#include "VoronoiSystemComputeController.hpp"
+#include "VoronoiSystemComputeController.hpp"
 
 #include "voronoi/VoronoiSystem.hpp"
 #include "runtime/RuntimeProducts.hpp"
@@ -72,13 +72,13 @@ bool VoronoiSystemComputeController::apply(uint64_t socketKey, const Config& con
     return true;
 }
 
-void VoronoiSystemComputeController::remove(uint64_t socketKey) {
+bool VoronoiSystemComputeController::remove(uint64_t socketKey) {
     if (socketKey == 0) {
-        return;
+        return true;
     }
 
     failedComputeHashes.erase(socketKey);
-    retireCurrent(socketKey);
+    return retireCurrent(socketKey);
 }
 
 bool VoronoiSystemComputeController::hasAnyRetiring() const {
@@ -105,20 +105,20 @@ void VoronoiSystemComputeController::clearAllRetiring() {
     }
 }
 
-void VoronoiSystemComputeController::commitPending(uint64_t socketKey) noexcept {
+bool VoronoiSystemComputeController::commitPending(uint64_t socketKey) noexcept {
     const auto it = generationSlots.find(socketKey);
     if (it == generationSlots.end()) {
-        return;
+        return false;
     }
     GenerationSlot& slot = it->second;
-    assert(slot.retiring == nullptr);
     if (slot.retiring != nullptr) {
-        return;
+        return false;
     }
-    if (slot.candidate) {
-        slot.retiring = std::move(slot.current);
-        slot.current = std::move(slot.candidate);
+    if (!slot.candidate) {
+        return false;
     }
+    slot.retiring = std::move(slot.current);
+    slot.current = std::move(slot.candidate);
 
     const auto pending = pendingHashes.find(socketKey);
     if (pending != pendingHashes.end()) {
@@ -129,6 +129,7 @@ void VoronoiSystemComputeController::commitPending(uint64_t socketKey) noexcept 
         pendingHashes.erase(pending);
     }
     failedComputeHashes.erase(socketKey);
+    return true;
 }
 
 void VoronoiSystemComputeController::cancelCandidate(uint64_t socketKey) {
@@ -148,21 +149,26 @@ void VoronoiSystemComputeController::cancelCandidate(uint64_t socketKey) {
     pendingHashes.erase(socketKey);
 }
 
-void VoronoiSystemComputeController::retireCurrent(uint64_t socketKey) {
+bool VoronoiSystemComputeController::retireCurrent(uint64_t socketKey) {
     configuredHashes.erase(socketKey);
     pendingHashes.erase(socketKey);
 
     const auto it = generationSlots.find(socketKey);
     if (it == generationSlots.end()) {
-        return;
+        return true;
     }
     GenerationSlot& slot = it->second;
-    if (slot.candidate && !slot.retiring) {
-        slot.retiring = std::move(slot.candidate);
+    if (slot.retiring) {
+        return false;
     }
-    if (slot.current && !slot.retiring) {
+    if (slot.candidate) {
+        slot.retiring = std::move(slot.candidate);
+        return !slot.current;
+    }
+    if (slot.current) {
         slot.retiring = std::move(slot.current);
     }
+    return true;
 }
 
 void VoronoiSystemComputeController::quiescedClear() noexcept {

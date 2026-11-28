@@ -1,5 +1,7 @@
 #include "ViewportUiModel.hpp"
 
+#include <algorithm>
+
 void ViewportUiModel::setWireframeMode(int mode) {
     Q_ASSERT(mode >= static_cast<int>(app::WireframeMode::Off));
     Q_ASSERT(mode <= static_cast<int>(app::WireframeMode::Shaded));
@@ -54,6 +56,59 @@ void ViewportUiModel::setNearClip(float meters) {
 
 void ViewportUiModel::setCullLinesOnly(bool linesOnly) {
     emit cullLinesOnlyRequested(linesOnly);
+}
+
+void ViewportUiModel::setMeshSelectionActive(bool active) {
+    emit meshSelectionRequested(active);
+}
+
+void ViewportUiModel::applyModelSelection(bool selected) {
+    if (modelIsSelected == selected) {
+        return;
+    }
+    modelIsSelected = selected;
+    emit modelSelectionChanged();
+}
+
+void ViewportUiModel::setMeshSelectionElementType(int elementType) {
+    const int clamped = std::clamp(
+        elementType,
+        static_cast<int>(MeshElementType::Vertex),
+        static_cast<int>(MeshElementType::Face));
+    emit meshSelectionElementTypeRequested(clamped);
+}
+
+void ViewportUiModel::applySubselectionState(
+    bool active,
+    int selectedCount,
+    int elementType,
+    bool commitRequired) {
+    const int clampedElementType = std::clamp(
+        elementType,
+        static_cast<int>(MeshElementType::Vertex),
+        static_cast<int>(MeshElementType::Face));
+
+    const bool selectionChanged =
+        selectionActive != active || selectionCount != selectedCount;
+    const bool elementTypeChanged =
+        selectionElementType != clampedElementType;
+    const bool commitRequiredChanged =
+        this->commitRequired != commitRequired;
+
+    selectionActive = active;
+    selectionCount = selectedCount;
+    selectionElementType = clampedElementType;
+    this->commitRequired = commitRequired;
+
+    if (selectionChanged) {
+        emit meshSelectionStateChanged();
+    }
+    if (elementTypeChanged) {
+        emit meshSelectionElementTypeChanged();
+    }
+    if (commitRequiredChanged) {
+        emit selectionCommitRequiredChanged();
+    }
 }
 
 void ViewportUiModel::applyState(const ViewportUiState& updated) {

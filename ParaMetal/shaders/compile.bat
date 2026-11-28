@@ -18,6 +18,10 @@ C:/VulkanSDK/1.3.283.0/Bin/glslc.exe intrinsic_common.frag -o intrinsic_common_f
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe intrinsic_supporting.vert -o intrinsic_supporting_vert.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe intrinsic_supporting.geom -o intrinsic_supporting_geom.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe intrinsic_supporting.frag -o intrinsic_supporting_frag.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe intrinsic_xray.frag -o intrinsic_xray_frag.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe intrinsic_face_pick.frag -o intrinsic_face_pick_frag.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe intrinsic_vertex_pick.frag -o intrinsic_vertex_pick_frag.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe intrinsic_edge_pick.frag -o intrinsic_edge_pick_frag.spv
 
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe intrinsic_normals.vert -o intrinsic_normals_vert.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe intrinsic_normals.geom -o intrinsic_normals_geom.spv
@@ -53,6 +57,12 @@ C:/VulkanSDK/1.3.283.0/Bin/glslc.exe gizmo.frag -o gizmo_frag.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe pick_model.vert -o pick_model_vert.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe pick_model.frag -o pick_model_frag.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe pick_gizmo.frag -o pick_gizmo_frag.spv
+
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe subselection.vert -o subselection_vert.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe subselection.frag -o subselection_frag.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe subselection_lines.vert -o subselection_lines_vert.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe subselection_points.frag -o subselection_points_frag.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc.exe subselection_pick.comp -o subselection_pick_comp.spv
 
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe point_cloud.vert -o point_cloud_vert.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc.exe point_cloud.frag -o point_cloud_frag.spv

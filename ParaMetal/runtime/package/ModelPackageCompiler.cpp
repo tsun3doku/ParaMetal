@@ -7,10 +7,40 @@
 #include "runtime/package/RuntimePackageManager.hpp"
 #include "runtime/package/RuntimePackages.hpp"
 #include "runtime/package/passes/CoordinatePass.hpp"
+#include "util/GeometryUtils.hpp"
 
+#include <limits>
 #include <utility>
 
 namespace runtimepackage {
+
+static void computeLocalBounds(
+    const std::vector<float>& positions,
+    glm::vec3& outMin,
+    glm::vec3& outMax) {
+    outMin = glm::vec3(std::numeric_limits<float>::max());
+    outMax = glm::vec3(std::numeric_limits<float>::lowest());
+    for (std::size_t i = 0; i + 2 < positions.size(); i += 3) {
+        const glm::vec3 position(positions[i], positions[i + 1], positions[i + 2]);
+        outMin = glm::min(outMin, position);
+        outMax = glm::max(outMax, position);
+    }
+}
+
+static void computeWorldBounds(ModelPackage& package) {
+    const glm::mat4 localToWorld = toMat4(package.localToWorld);
+    package.worldBoundsMin = glm::vec3(std::numeric_limits<float>::max());
+    package.worldBoundsMax = glm::vec3(std::numeric_limits<float>::lowest());
+    for (int corner = 0; corner < 8; ++corner) {
+        const glm::vec3 local(
+            (corner & 1) != 0 ? package.localBoundsMax.x : package.localBoundsMin.x,
+            (corner & 2) != 0 ? package.localBoundsMax.y : package.localBoundsMin.y,
+            (corner & 4) != 0 ? package.localBoundsMax.z : package.localBoundsMin.z);
+        const glm::vec3 world = glm::vec3(localToWorld * glm::vec4(local, 1.0f));
+        package.worldBoundsMin = glm::min(package.worldBoundsMin, world);
+        package.worldBoundsMax = glm::max(package.worldBoundsMax, world);
+    }
+}
 
 static void sealModelPackage(
     ModelPackage& package,
@@ -18,7 +48,6 @@ static void sealModelPackage(
     const HashValues& outputHashes) {
     uint64_t geometryHash = HashBuilder::start();
     HashBuilder::combine(geometryHash, sourceGeometryHashes.geometry);
-    HashBuilder::combine(geometryHash, package.geometryHandle.key);
     HashBuilder::combineFloat(geometryHash, package.canonicalToWorldScale);
 
     uint64_t fullHash = HashBuilder::start();
@@ -54,7 +83,6 @@ bool compileModelPackage(const PackageCompileContext& context) {
     ModelPackage package{};
     const ModelPackage* previous = context.packages.findStored<ModelPackage>(context.outputSocketKey);
     package.productHandle = previous ? previous->productHandle : ProductHandle{};
-    package.geometryHandle = sourceGeometryHandle;
     if (!context.payloads.resolveLocalToWorld(
             context.output.payloadHandle, package.localToWorld)) {
         context.errors.push_back("Model package cannot resolve its placement.");
@@ -78,7 +106,15 @@ bool compileModelPackage(const PackageCompileContext& context) {
             package.vertexPositions, package.canonicalToWorldScale);
         CoordinatePass::scalePositions(
             package.renderPositions, package.canonicalToWorldScale);
+        computeLocalBounds(
+            package.vertexPositions,
+            package.localBoundsMin,
+            package.localBoundsMax);
+    } else {
+        package.localBoundsMin = previous->localBoundsMin;
+        package.localBoundsMax = previous->localBoundsMax;
     }
+    computeWorldBounds(package);
 
     context.packages.apply<ModelPackage>(context.outputSocketKey, std::move(package));
     return true;

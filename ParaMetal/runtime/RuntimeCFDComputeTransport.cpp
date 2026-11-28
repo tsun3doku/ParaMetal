@@ -41,11 +41,8 @@ ComputeApplyResult RuntimeCFDComputeTransport::apply(
     return ComputeApplyResult::Prepared;
 }
 
-void RuntimeCFDComputeTransport::commitPending(uint64_t socketKey) {
-    if (!controller || socketKey == 0) {
-        return;
-    }
-    controller->commitPending(socketKey);
+bool RuntimeCFDComputeTransport::commitPending(uint64_t socketKey) {
+    return controller && socketKey != 0 && controller->commitPending(socketKey);
 }
 
 void RuntimeCFDComputeTransport::cancelPending(uint64_t socketKey) {
@@ -55,11 +52,24 @@ void RuntimeCFDComputeTransport::cancelPending(uint64_t socketKey) {
     controller->cancelCandidate(socketKey);
 }
 
-void RuntimeCFDComputeTransport::remove(uint64_t socketKey) {
-    if (!controller || socketKey == 0) {
-        return;
+bool RuntimeCFDComputeTransport::remove(uint64_t socketKey) {
+    if (!controller) {
+        return false;
     }
-    controller->remove(socketKey);
+    if (socketKey == 0) {
+        return true;
+    }
+    return controller->remove(socketKey);
+}
+
+bool RuntimeCFDComputeTransport::hasAnyRetiring() const {
+    return controller && controller->hasAnyRetiring();
+}
+
+void RuntimeCFDComputeTransport::quiescedClear() {
+    if (controller) {
+        controller->quiescedClear();
+    }
 }
 
 bool RuntimeCFDComputeTransport::tryBuildConfig(

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "nodegraph/NodeGraphProductTypes.hpp"
+#include "runtime/ProductHandle.hpp"
 #include "runtime/package/RuntimePackageManager.hpp"
 #include "runtime/RuntimeProductManager.hpp"
 #include "runtime/VoronoiDisplayController.hpp"

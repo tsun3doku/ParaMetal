@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/GeometryData.hpp"
+#include "domain/GroupData.hpp"
 #include "domain/HeatData.hpp"
 #include "domain/FluidData.hpp"
 #include "domain/RemeshData.hpp"
@@ -15,6 +16,7 @@
 namespace payloadtypes {
     extern uint8_t None;
     extern uint8_t Geometry;
+    extern uint8_t Group;
     extern uint8_t Remesh;
     extern uint8_t HeatModel;
     extern uint8_t Fluid;

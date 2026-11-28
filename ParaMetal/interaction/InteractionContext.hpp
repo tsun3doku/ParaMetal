@@ -9,6 +9,8 @@ class ModelRegistry;
 struct WindowRuntimeState;
 class NavigationGizmoController;
 class MarkerInteractionController;
+class SubselectionInteractionController;
+class SubselectionPickService;
 class DomainFaceInteractionController;
 class GizmoController;
 class IViewportInteraction;
@@ -30,6 +32,11 @@ public:
 
     MarkerInteractionController& markerInteractionController();
     const MarkerInteractionController& markerInteractionController() const;
+
+    SubselectionInteractionController& subselectionInteractionController();
+    const SubselectionInteractionController& subselectionInteractionController() const;
+
+    void setSubselectionPickService(SubselectionPickService* pickService);
 
     DomainFaceInteractionController& domainFaceInteractionController();
     const DomainFaceInteractionController& domainFaceInteractionController() const;
@@ -57,6 +64,7 @@ public:
 private:
     std::unique_ptr<NavigationGizmoController> navigationGizmo;
     std::unique_ptr<MarkerInteractionController> markerInteraction;
+    std::unique_ptr<SubselectionInteractionController> subselection;
     std::unique_ptr<DomainFaceInteractionController> domainFace;
     std::unique_ptr<GizmoController> gizmo;
 

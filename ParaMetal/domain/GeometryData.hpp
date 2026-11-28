@@ -1,5 +1,6 @@
 #pragma once
 
+#include "mesh/MeshElementType.hpp"
 #include "nodegraph/NodeGraphCoreTypes.hpp"
 #include "nodegraph/NodeGraphTypes.hpp"
 #include <array>
@@ -14,9 +15,13 @@
 //                                                          backend/controller objects or GPU resources
 //                                                        - This header must not be included in any backend ]
 
-struct GeometryGroup {
-    uint32_t id = 0;
+struct MeshGroup {
+    std::string key;
     std::string name;
+    SurfaceBinding binding = SurfaceBinding::Source;
+    MeshElementType elementType = MeshElementType::Face;
+    std::vector<uint64_t> elements;
+    uint32_t colorRGBA = 0xffffffffu;
     std::string source;
 };
 
@@ -34,7 +39,6 @@ struct GeometryData {
     std::vector<float> renderNormals;
     std::vector<float> renderTexcoords;
     std::vector<uint32_t> renderIndices;
-    std::vector<uint32_t> triangleGroupIds;
-    std::vector<GeometryGroup> groups;
+    std::vector<MeshGroup> groups;
 
 };

@@ -30,6 +30,8 @@
 #include "renderers/TimingRenderer.hpp"
 #include "renderers/IntrinsicRenderer.hpp"
 #include "renderers/OutlineRenderer.hpp"
+#include "renderers/SubselectionRenderer.hpp"
+#include "RenderConfig.hpp"
 
 namespace render {
 
@@ -78,27 +80,27 @@ const char* OverlayPass::name() const {
     return framegraph::passes::Overlay.data();
 }
 
-void OverlayPass::create() {
+bool OverlayPass::create() {
     ready = false;
     destroy();
     outlineRenderer = std::make_unique<OutlineRenderer>(vulkanDevice);
     if (!outlineRenderer || !outlineRenderer->initialize(frameGraphRuntime.getRenderPass(), framegraph::toIndex(passId), maxFramesInFlight)) {
         std::cerr << "[OverlayPass] Failed to create outline renderer" << std::endl;
         destroy();
-        return;
+        return false;
     }
 
     if (!intrinsicRenderer.initializeOverlay(frameGraphRuntime.getRenderPass(), maxFramesInFlight, framegraph::toIndex(passId))) {
         std::cerr << "[OverlayPass] Failed to create intrinsic renderer" << std::endl;
         destroy();
-        return;
+        return false;
     }
 
     timingOverlay = std::make_unique<TimingRenderer>(screenTextRenderer);
     if (!timingOverlay) {
         std::cerr << "[OverlayPass] Failed to create timing overlay renderer" << std::endl;
         destroy();
-        return;
+        return false;
     }
 
     heatOverlayRenderer.initializeOverlay(frameGraphRuntime.getRenderPass(), framegraph::toIndex(passId), maxFramesInFlight);
@@ -110,7 +112,7 @@ void OverlayPass::create() {
     if (!streamlineRenderer) {
         std::cerr << "[OverlayPass] Failed to create streamline renderer" << std::endl;
         destroy();
-        return;
+        return false;
     }
     streamlineRenderer->initialize(frameGraphRuntime.getRenderPass(), framegraph::toIndex(passId), maxFramesInFlight);
 
@@ -119,7 +121,7 @@ void OverlayPass::create() {
     if (!sliceRenderer) {
         std::cerr << "[OverlayPass] Failed to create velocity slice renderer" << std::endl;
         destroy();
-        return;
+        return false;
     }
     sliceRenderer->initialize(frameGraphRuntime.getRenderPass(), framegraph::toIndex(passId), maxFramesInFlight);
 
@@ -127,10 +129,24 @@ void OverlayPass::create() {
     if (!pointOverlayRenderer) {
         std::cerr << "[OverlayPass] Failed to create point overlay renderer" << std::endl;
         destroy();
-        return;
+        return false;
     }
 
     pointOverlayRenderer->initialize(frameGraphRuntime.getRenderPass(), framegraph::toIndex(passId), maxFramesInFlight);
+
+    subselectionRenderer = std::make_unique<SubselectionRenderer>(
+        vulkanDevice,
+        memoryAllocator,
+        uniformBufferManager);
+    if (!subselectionRenderer) {
+        std::cerr << "[OverlayPass] Failed to create subselection renderer" << std::endl;
+        destroy();
+        return false;
+    }
+    subselectionRenderer->initialize(
+        frameGraphRuntime.getRenderPass(),
+        framegraph::toIndex(passId),
+        maxFramesInFlight);
 
     gridRenderer = std::make_unique<GridRenderer>(
         vulkanDevice,
@@ -143,9 +159,10 @@ void OverlayPass::create() {
     if (!gridRenderer) {
         std::cerr << "[OverlayPass] Failed to create grid renderer" << std::endl;
         destroy();
-        return;
+        return false;
     }
     ready = true;
+    return true;
 }
 
 void OverlayPass::resize(VkExtent2D extent) {
@@ -158,7 +175,6 @@ void OverlayPass::updateDescriptors() {
     }
     if (outlineRenderer) {
         outlineRenderer->updateDescriptors(
-            frameGraphRuntime.getResourceDepthSamplerViews(depthResolveId),
             frameGraphRuntime.getResourceStencilSamplerViews(depthMsaaId));
     }
 }
@@ -201,6 +217,10 @@ void OverlayPass::setStreamlineCull(float worldDistance) {
 
 PointOverlayRenderer* OverlayPass::getPointOverlayRenderer() const {
     return pointOverlayRenderer.get();
+}
+
+SubselectionRenderer* OverlayPass::getSubselectionRenderer() const {
+    return subselectionRenderer.get();
 }
 
 void OverlayPass::record(const FrameContext& context, const SceneView& view, const RenderFlags& flags, RenderServices& services) {
@@ -246,7 +266,7 @@ void OverlayPass::record(const FrameContext& context, const SceneView& view, con
 
     intrinsicRenderer.renderOverlay(commandBuffer, currentFrame);
 
-    if (outlineRenderer) {
+    if (outlineRenderer && flags.wireframeMode == 0) {
         outlineRenderer->render(commandBuffer, currentFrame, modelSelection);
     }
 
@@ -284,12 +304,29 @@ void OverlayPass::record(const FrameContext& context, const SceneView& view, con
                     !modelRegistry.tryGetModelMatrix(modelId, modelMatrix)) {
                     continue;
                 }
+                const glm::vec3 wireframeColor =
+                    modelSelection.isModelSelected(modelId)
+                    ? renderconfig::SelectedWireframeColor
+                    : renderconfig::WireframeColor;
                 wireframeRenderer.renderModel(
                     commandBuffer, geometryDescriptorSet, modelMatrix,
                     vertexBuffer, vertexBufferOffset,
-                    indexBuffer, indexBufferOffset, indexCount);
+                    indexBuffer, indexBufferOffset, indexCount, wireframeColor);
             }
         }
+    }
+
+    if (flags.wireframeMode == 1) {
+        intrinsicRenderer.renderXRayWireframe(
+            commandBuffer, currentFrame, modelSelection);
+    }
+
+    if (subselectionRenderer) {
+        subselectionRenderer->render(
+            commandBuffer,
+            currentFrame,
+            extent,
+            modelRegistry);
     }
 
     if (flags.drawTimingOverlay && timingOverlay) {
@@ -328,6 +365,10 @@ void OverlayPass::destroy() {
     if (pointOverlayRenderer) {
         pointOverlayRenderer->cleanup();
         pointOverlayRenderer.reset();
+    }
+    if (subselectionRenderer) {
+        subselectionRenderer->cleanup();
+        subselectionRenderer.reset();
     }
     if (timingOverlay) {
         timingOverlay->cleanup();

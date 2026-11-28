@@ -3,7 +3,7 @@
 #include "NodeGraphParamUtils.hpp"
 #include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
-#include "NodeGraphDataTypes.hpp"
+#include "NodeGraphCoreTypes.hpp"
 #include "NodeGraphUtils.hpp"
 #include "hash/HashBuilder.hpp"
 #include "hash/HashNodeCache.hpp"
@@ -86,6 +86,10 @@ void NodeHeatModel::execute(NodeKernelEval& eval) const {
         payload.prescribedTemperatureC = static_cast<float>(params.prescribedTemperatureC);
         const uint64_t payloadKey = NodeSocketKey(eval.node.id, outputSocket.id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, eval.outputHashes);
+        if (outputValue.payloadHandle.key == 0) {
+            eval.error = "Payload publication backpressured.";
+            return;
+        }
     }
 }
 

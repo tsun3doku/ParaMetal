@@ -115,9 +115,12 @@ bool CFDSystemComputeController::apply(uint64_t socketKey, const Config& config)
     return true;
 }
 
-void CFDSystemComputeController::remove(uint64_t socketKey) {
+bool CFDSystemComputeController::remove(uint64_t socketKey) {
+    if (socketKey == 0) {
+        return true;
+    }
     failedHashes.erase(socketKey);
-    retireCurrent(socketKey);
+    return retireCurrent(socketKey);
 }
 
 bool CFDSystemComputeController::hasAnyRetiring() const {
@@ -144,20 +147,20 @@ void CFDSystemComputeController::clearAllRetiring() {
     }
 }
 
-void CFDSystemComputeController::commitPending(uint64_t socketKey) {
+bool CFDSystemComputeController::commitPending(uint64_t socketKey) {
     const auto it = generationSlots.find(socketKey);
     if (it == generationSlots.end()) {
-        return;
+        return false;
     }
     GenerationSlot& slot = it->second;
-    assert(slot.retiring == nullptr);
     if (slot.retiring != nullptr) {
-        return;
+        return false;
     }
-    if (slot.candidate != nullptr) {
-        slot.retiring = std::move(slot.current);
-        slot.current = std::move(slot.candidate);
+    if (slot.candidate == nullptr) {
+        return false;
     }
+    slot.retiring = std::move(slot.current);
+    slot.current = std::move(slot.candidate);
 
     const auto pending = pendingHashes.find(socketKey);
     if (pending != pendingHashes.end()) {
@@ -168,6 +171,7 @@ void CFDSystemComputeController::commitPending(uint64_t socketKey) {
         pendingHashes.erase(pending);
     }
     failedHashes.erase(socketKey);
+    return true;
 }
 
 void CFDSystemComputeController::cancelCandidate(uint64_t socketKey) {
@@ -191,21 +195,26 @@ void CFDSystemComputeController::cancelCandidate(uint64_t socketKey) {
     }
 }
 
-void CFDSystemComputeController::retireCurrent(uint64_t socketKey) {
+bool CFDSystemComputeController::retireCurrent(uint64_t socketKey) {
     configuredHashes.erase(socketKey);
     pendingHashes.erase(socketKey);
 
     const auto it = generationSlots.find(socketKey);
     if (it == generationSlots.end()) {
-        return;
+        return true;
     }
     GenerationSlot& slot = it->second;
-    if (slot.candidate && !slot.retiring) {
-        slot.retiring = std::move(slot.candidate);
+    if (slot.retiring) {
+        return false;
     }
-    if (slot.current && !slot.retiring) {
+    if (slot.candidate) {
+        slot.retiring = std::move(slot.candidate);
+        return !slot.current;
+    }
+    if (slot.current) {
         slot.retiring = std::move(slot.current);
     }
+    return true;
 }
 
 void CFDSystemComputeController::quiescedClear() noexcept {

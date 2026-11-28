@@ -24,6 +24,7 @@ class MaterialSystem;
 class FrameGraph;
 class SceneRenderer;
 class ModelSelection;
+class SubselectionPickService;
 class WireframeRenderer;
 class FrameController;
 class VkFrameGraphRuntime;
@@ -65,6 +66,8 @@ public:
     const SceneRenderer& getSceneRenderer() const;
     ModelSelection& getModelSelection();
     const ModelSelection& getModelSelection() const;
+    SubselectionPickService& getSubselectionPickService();
+    const SubselectionPickService& getSubselectionPickService() const;
     WireframeRenderer& getWireframeRenderer();
     const WireframeRenderer& getWireframeRenderer() const;
 
@@ -83,6 +86,7 @@ private:
     std::unique_ptr<VkFrameGraphRuntime> frameGraphRuntime;
     std::unique_ptr<SceneRenderer> sceneRenderer;
     std::unique_ptr<ModelSelection> modelSelection;
+    std::unique_ptr<SubselectionPickService> subselectionPickService;
     std::unique_ptr<WireframeRenderer> wireframeRenderer;
     std::unique_ptr<FrameController> frameController;
 };

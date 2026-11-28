@@ -1,4 +1,4 @@
-#include "ViewportMailbox.hpp"
+﻿#include "ViewportMailbox.hpp"
 
 #include <QtCore/QtGlobal>
 
@@ -100,8 +100,11 @@ void ViewportMailbox::requestTimelineRange(uint32_t frameCount, float fps) {
     timelineRangeDirty = true;
 }
 
-void ViewportMailbox::requestSelection(int nodeId) {
-    requestedSelectedNode = std::max(0, nodeId);
+void ViewportMailbox::requestSelection(
+    const std::vector<NodeGraphNodeId>& nodeIds,
+    int primaryNodeId) {
+    requestedSelectedNodes = nodeIds;
+    requestedPrimaryNode = std::max(0, primaryNodeId);
     selectionDirty = true;
 }
 
@@ -115,6 +118,29 @@ void ViewportMailbox::requestBoundaryFaceEditing(int nodeId, bool armed) {
     requestedBoundaryFaceNode = std::max(0, nodeId);
     requestedBoundaryFaceArmed = armed;
     boundaryFaceDirty = true;
+}
+
+void ViewportMailbox::requestNodeAction(const NodeActionMessage& message) {
+    if (message.type == NodeActionMessage::Type::Begin &&
+        (message.nodeId.value == 0 ||
+         message.nodeInstanceId == 0 ||
+         message.actionId == 0)) {
+        return;
+    }
+    pendingNodeActions.push_back(message);
+}
+
+void ViewportMailbox::requestViewportMeshSelection(bool active) {
+    requestedViewportMeshSelection = active;
+    viewportMeshSelectionDirty = true;
+}
+
+void ViewportMailbox::requestSubselectionElementType(int elementType) {
+    requestedSubselectionElementType = std::clamp(
+        elementType,
+        static_cast<int>(MeshElementType::Vertex),
+        static_cast<int>(MeshElementType::Face));
+    subselectionElementTypeDirty = true;
 }
 
 void ViewportMailbox::requestHeatPaletteRange(float minimum, float maximum) {
@@ -137,6 +163,9 @@ void ViewportMailbox::applyViewportProjectState(const ProjectFile::Viewport& vie
     requestedBackgroundMode = viewport.backgroundMode;
     requestedNavigationCubeVisible = viewport.navigationCubeVisible;
     requestedAxisLabelsVisible = viewport.axisLabelsVisible;
+    backgroundModeDirty = true;
+    navigationCubeVisibleDirty = true;
+    axisLabelsVisibleDirty = true;
 }
 
 void ViewportMailbox::requestCurrentViewportProjectState() {
@@ -148,6 +177,7 @@ void ViewportMailbox::replaceGraphState(const NodeGraphState& graphState) {
     graphStateInitialized = true;
     graphStateDirty = true;
     pendingGraphDeltas.clear();
+    pendingNodeActions.clear();
 }
 
 void ViewportMailbox::appendGraphDelta(const NodeGraphDelta& delta) {
@@ -267,9 +297,13 @@ bool ViewportMailbox::takeTimelineRange(uint32_t& frameCount, float& fps, bool f
     return true;
 }
 
-bool ViewportMailbox::takeSelection(int& nodeId, bool force) {
+bool ViewportMailbox::takeSelection(
+    std::vector<NodeGraphNodeId>& nodeIds,
+    int& primaryNodeId,
+    bool force) {
     if (!force && !selectionDirty) return false;
-    nodeId = requestedSelectedNode;
+    nodeIds = requestedSelectedNodes;
+    primaryNodeId = requestedPrimaryNode;
     selectionDirty = false;
     return true;
 }
@@ -287,6 +321,28 @@ bool ViewportMailbox::takeBoundaryFaceEditing(int& outNodeId, bool& outArmed, bo
     outNodeId = requestedBoundaryFaceNode;
     outArmed = requestedBoundaryFaceArmed;
     boundaryFaceDirty = false;
+    return true;
+}
+
+void ViewportMailbox::takeNodeActions(std::vector<NodeActionMessage>& outMessages) {
+    outMessages.swap(pendingNodeActions);
+}
+
+void ViewportMailbox::clearNodeActions() {
+    pendingNodeActions.clear();
+}
+
+bool ViewportMailbox::takeViewportMeshSelection(bool& outActive, bool force) {
+    if (!force && !viewportMeshSelectionDirty) return false;
+    outActive = requestedViewportMeshSelection;
+    viewportMeshSelectionDirty = false;
+    return true;
+}
+
+bool ViewportMailbox::takeSubselectionElementType(int& outElementType, bool force) {
+    if (!force && !subselectionElementTypeDirty) return false;
+    outElementType = requestedSubselectionElementType;
+    subselectionElementTypeDirty = false;
     return true;
 }
 

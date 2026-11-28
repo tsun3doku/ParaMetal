@@ -4,7 +4,6 @@
 #include "domain/GeometryData.hpp"
 #include "domain/PointData.hpp"
 #include "domain/RemeshData.hpp"
-#include "domain/TransformData.hpp"
 #include "hash/HashBuilder.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
 #include "runtime/RuntimeProductManager.hpp"
@@ -34,9 +33,6 @@ enum class PointSourceType {
     Invalid,
 };
 
-static bool isFinite(const glm::vec3& value) {
-    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-}
 
 static bool isFinite(const glm::vec4& value) {
     return std::isfinite(value.x) && std::isfinite(value.y) &&
@@ -62,7 +58,7 @@ static bool isFinite(const std::array<float, 16>& values) {
 }
 
 static bool isFiniteDomain(const glm::vec3& minimum, const glm::vec3& maximum) {
-    return isFinite(minimum) && isFinite(maximum) &&
+    return GeometryUtils::isFinite(minimum) && GeometryUtils::isFinite(maximum) &&
         minimum.x <= maximum.x &&
         minimum.y <= maximum.y &&
         minimum.z <= maximum.z;
@@ -115,11 +111,6 @@ static bool isMergeTransformUsable(const std::array<float, 16>& values) {
     return true;
 }
 
-static void scaleTranslation(std::array<float, 16>& matrix, float factor) {
-    matrix[12] *= factor;
-    matrix[13] *= factor;
-    matrix[14] *= factor;
-}
 
 static void computeBounds(
     const std::vector<glm::vec4>& positions,
@@ -172,7 +163,6 @@ static PointSourceType classifySource(
 static void sealPointPackage(PointPackage& package, const HashValues& sourceHashes) {
     uint64_t geometryHash = HashBuilder::start();
     HashBuilder::combine(geometryHash, sourceHashes.geometry);
-    HashBuilder::combine(geometryHash, package.pointsPayloadHandle.key);
     HashBuilder::combinePodVector(geometryHash, package.positions);
     HashBuilder::combine(geometryHash, static_cast<uint64_t>(package.pointCount));
     HashBuilder::combinePod(geometryHash, package.domainMinimum);
@@ -301,7 +291,6 @@ static bool resolveGeometrySource(
 
 static bool resolveRemeshSource(
     const PackageCompileContext& context,
-    const RuntimeProductManager& products,
     const PointData& points,
     PointPackage& package,
     HashValues& sourceHashes,
@@ -314,38 +303,16 @@ static bool resolveRemeshSource(
     const NodeDataHandle source = points.sources.front();
     NodeDataHandle remeshHandle{};
     const RemeshData* remesh = context.payloads.resolveRemesh(source, &remeshHandle);
-    if (!remesh || context.payloads.get<RemeshData>(remeshHandle) == nullptr) {
-        error = "Mesh Points remesh source cannot be resolved.";
+    if (!remesh || remesh->surfacePositions.empty() ||
+        remesh->surfaceTriangleIndices.empty()) {
+        error = "Mesh Points requires completed Remesh geometry.";
         return false;
     }
 
-    const uint64_t remeshSocketKey = remeshHandle.key;
-    const RemeshPackage* remeshPackage =
-        context.packages.findAny<RemeshPackage>(remeshSocketKey);
-    if (!remeshPackage) {
-        error = "Mesh Points remesh package is unavailable.";
-        return false;
-    }
-    if (!products.isCurrent<RemeshProduct>(remeshPackage->productHandle)) {
-        error = "Mesh Points remesh product is not current.";
-        return false;
-    }
-
-    const RemeshProduct* product =
-        products.resolve<RemeshProduct>(remeshPackage->productHandle);
-    if (!product) {
-        error = "Mesh Points remesh product is unavailable.";
-        return false;
-    }
-    if (product->surfacePositions.empty()) {
-        error = "Mesh Points remesh product has no surface positions.";
-        return false;
-    }
-
-    package.positions.reserve(product->surfacePositions.size());
-    for (const glm::vec3& position : product->surfacePositions) {
-        if (!isFinite(position)) {
-            error = "Mesh Points remesh product contains a non-finite surface position.";
+    package.positions.reserve(remesh->surfacePositions.size());
+    for (const glm::vec3& position : remesh->surfacePositions) {
+        if (!GeometryUtils::isFinite(position)) {
+            error = "Mesh Points remesh output contains a non-finite surface position.";
             return false;
         }
         package.positions.emplace_back(position, 1.0f);
@@ -355,22 +322,22 @@ static bool resolveRemeshSource(
     if (!resolvePlacement(context, package.localToWorld, error)) {
         return false;
     }
-    scaleTranslation(package.localToWorld, units::canonicalToWorldScale(context.worldUnit));
+    CoordinatePass::scaleTranslation(package.localToWorld, units::canonicalToWorldScale(context.worldUnit));
 
     uint64_t sourceHash = context.output.hashes.geometry;
     HashBuilder::combine(sourceHash, source.key);
-    HashBuilder::combine(sourceHash, remeshPackage->hashes.geometry);
+    HashBuilder::combine(sourceHash, context.payloads.resolveHash(remeshHandle, HashDomain::Geometry));
     sourceHashes.geometry = sourceHash;
     return true;
 }
 
 static bool mergePointPackages(
     const std::vector<const PointPackage*>& sourcePackages,
-    const std::array<float, 16>& referenceLocalToWorld,
+    const std::vector<std::array<float, 16>>& sourcePlacements,
     float mergeDistance,
     PointPackage& package,
     std::string& error) {
-    if (sourcePackages.empty()) {
+    if (sourcePackages.empty() || sourcePackages.size() != sourcePlacements.size()) {
         error = "Point Merge has no inputs.";
         return false;
     }
@@ -378,6 +345,7 @@ static bool mergePointPackages(
         error = "Point Merge has an invalid distance.";
         return false;
     }
+    const std::array<float, 16>& referenceLocalToWorld = sourcePlacements.front();
     if (!isMergeTransformUsable(referenceLocalToWorld)) {
         error = "Point Merge reference placement is not invertible.";
         return false;
@@ -423,12 +391,14 @@ static bool mergePointPackages(
     package.domainMinimum = glm::vec3(std::numeric_limits<float>::max());
     package.domainMaximum = glm::vec3(std::numeric_limits<float>::lowest());
 
-    for (const PointPackage* sourcePackage : sourcePackages) {
+    for (std::size_t sourceIndex = 0; sourceIndex < sourcePackages.size(); ++sourceIndex) {
+        const PointPackage* sourcePackage = sourcePackages[sourceIndex];
+        const std::array<float, 16>& sourcePlacement = sourcePlacements[sourceIndex];
         if (!sourcePackage || sourcePackage->positions.empty()) {
             error = "Point Merge input package is unavailable or empty.";
             return false;
         }
-        if (!isMergeTransformUsable(sourcePackage->localToWorld)) {
+        if (!isMergeTransformUsable(sourcePlacement)) {
             error = "Point Merge input placement is not invertible.";
             return false;
         }
@@ -437,7 +407,7 @@ static bool mergePointPackages(
             return false;
         }
 
-        const glm::mat4 inputToWorld = toMat4(sourcePackage->localToWorld);
+        const glm::mat4 inputToWorld = toMat4(sourcePlacement);
         const glm::mat4 inputToReference = referenceInverse * inputToWorld;
 
         for (uint32_t corner = 0; corner < 8; ++corner) {
@@ -569,17 +539,22 @@ static bool resolveMergedSources(
     }
 
     std::vector<const PointPackage*> sourcePackages;
+    std::vector<std::array<float, 16>> sourcePlacements;
     sourcePackages.reserve(points.sources.size());
+    sourcePlacements.reserve(points.sources.size());
     uint64_t sourceHash = context.output.hashes.geometry;
 
     for (const NodeDataHandle& source : points.sources) {
-        if (classifySource(context, source) != PointSourceType::Points) {
+        NodeDataHandle resolvedPointHandle{};
+        const PointData* sourcePoints = context.payloads.resolvePoints(
+            source, &resolvedPointHandle);
+        if (!sourcePoints || resolvedPointHandle.key == 0) {
             error = "Point Merge requires only Points inputs.";
             return false;
         }
 
         const PointPackage* sourcePackage =
-            context.packages.findAny<PointPackage>(source.key);
+            context.packages.findAny<PointPackage>(resolvedPointHandle.key);
         if (!sourcePackage || sourcePackage->positions.empty()) {
             error = "Point Merge input package is unavailable or empty.";
             return false;
@@ -593,7 +568,17 @@ static bool resolveMergedSources(
             return false;
         }
 
+        std::array<float, 16> placement{};
+        if (!context.payloads.resolveLocalToWorld(source, placement)) {
+            error = "Point Merge input placement is unavailable.";
+            return false;
+        }
+        CoordinatePass::scaleTranslation(
+            placement,
+            units::canonicalToWorldScale(context.worldUnit));
+
         sourcePackages.push_back(sourcePackage);
+        sourcePlacements.push_back(placement);
         HashBuilder::combine(sourceHash, source.key);
         HashBuilder::combine(sourceHash, sourcePackage->hashes.geometry);
     }
@@ -607,7 +592,7 @@ static bool resolveMergedSources(
 
     if (!mergePointPackages(
             sourcePackages,
-            sourcePackages.front()->localToWorld,
+            sourcePlacements,
             mergeDistance,
             package,
             error)) {
@@ -617,53 +602,9 @@ static bool resolveMergedSources(
     if (!resolvePlacement(context, package.localToWorld, error)) {
         return false;
     }
-    scaleTranslation(package.localToWorld, units::canonicalToWorldScale(context.worldUnit));
+    CoordinatePass::scaleTranslation(package.localToWorld, units::canonicalToWorldScale(context.worldUnit));
 
     HashBuilder::combineFloat(sourceHash, points.mergeDistance);
-    sourceHashes.geometry = sourceHash;
-    return true;
-}
-
-static bool resolveTransformSource(
-    const PackageCompileContext& context,
-    const RuntimeProductManager& products,
-    const TransformData& transform,
-    PointPackage& package,
-    HashValues& sourceHashes,
-    std::string& error) {
-    if (transform.sourceHandle.key == 0) {
-        error = "Point Transform has no source reference.";
-        return false;
-    }
-
-    const PointPackage* sourcePackage =
-        context.packages.findAny<PointPackage>(transform.sourceHandle.key);
-    if (!sourcePackage || sourcePackage->positions.empty()) {
-        error = "Point Transform source package is unavailable or empty.";
-        return false;
-    }
-    if (!products.isCurrent<PointProduct>(sourcePackage->productHandle)) {
-        error = "Point Transform source product is not current.";
-        return false;
-    }
-    if (!products.resolve<PointProduct>(sourcePackage->productHandle)) {
-        error = "Point Transform source product is unavailable.";
-        return false;
-    }
-
-    package.positions = sourcePackage->positions;
-    package.domainMinimum = sourcePackage->domainMinimum;
-    package.domainMaximum = sourcePackage->domainMaximum;
-    package.localToWorld = transform.localToWorld;
-    if (!isFinite(package.localToWorld)) {
-        error = "Point Transform placement is not finite.";
-        return false;
-    }
-    scaleTranslation(package.localToWorld, units::canonicalToWorldScale(context.worldUnit));
-
-    uint64_t sourceHash = context.output.hashes.geometry;
-    HashBuilder::combine(sourceHash, transform.sourceHandle.key);
-    HashBuilder::combine(sourceHash, sourcePackage->hashes.geometry);
     sourceHashes.geometry = sourceHash;
     return true;
 }
@@ -675,46 +616,38 @@ bool compilePointPackage(
     const PointPackage* previous =
         context.packages.findStored<PointPackage>(context.outputSocketKey);
     package.productHandle = previous ? previous->productHandle : ProductHandle{};
-    package.pointsPayloadHandle = context.output.payloadHandle;
 
     HashValues sourceHashes{};
     std::string error;
     bool resolved = false;
 
-    const TransformData* transform =
-        context.payloads.get<TransformData>(context.output.payloadHandle);
-    if (transform) {
-        resolved = resolveTransformSource(
-            context, products, *transform, package, sourceHashes, error);
-    } else {
-        const PointData* points =
-            context.payloads.resolvePoints(context.output.payloadHandle);
-        if (!points) {
-            error = "Point package is missing its authored payload.";
-        } else if (!points->active) {
-            return true;
-        } else if (!points->positions.empty() && !points->sources.empty()) {
-            error = "Point payload mixes authored positions with sources.";
-        } else if (!points->positions.empty()) {
-            resolved = resolveAuthored(context, *points, package, sourceHashes, error);
-        } else if (!points->sources.empty()) {
-            const PointSourceType firstType =
-                classifySource(context, points->sources.front());
-            if (firstType == PointSourceType::Invalid) {
-                error = "Point source cannot be resolved.";
-            } else if (firstType == PointSourceType::Geometry) {
-                resolved = resolveGeometrySource(
-                    context, *points, package, sourceHashes, error);
-            } else if (firstType == PointSourceType::Remesh) {
-                resolved = resolveRemeshSource(
-                    context, products, *points, package, sourceHashes, error);
-            } else {
-                resolved = resolveMergedSources(
-                    context, products, *points, package, sourceHashes, error);
-            }
+    const PointData* points =
+        context.payloads.resolvePoints(context.output.payloadHandle);
+    if (!points) {
+        error = "Point package is missing its authored payload.";
+    } else if (!points->active) {
+        return true;
+    } else if (!points->positions.empty() && !points->sources.empty()) {
+        error = "Point payload mixes authored positions with sources.";
+    } else if (!points->positions.empty()) {
+        resolved = resolveAuthored(context, *points, package, sourceHashes, error);
+    } else if (!points->sources.empty()) {
+        const PointSourceType firstType =
+            classifySource(context, points->sources.front());
+        if (firstType == PointSourceType::Invalid) {
+            error = "Point source cannot be resolved.";
+        } else if (firstType == PointSourceType::Geometry) {
+            resolved = resolveGeometrySource(
+                context, *points, package, sourceHashes, error);
+        } else if (firstType == PointSourceType::Remesh) {
+            resolved = resolveRemeshSource(
+                context, *points, package, sourceHashes, error);
         } else {
-            error = "Point payload contains no positions or sources.";
+            resolved = resolveMergedSources(
+                context, products, *points, package, sourceHashes, error);
         }
+    } else {
+        error = "Point payload contains no positions or sources.";
     }
 
     if (!resolved) {

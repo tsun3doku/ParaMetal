@@ -19,7 +19,6 @@ namespace runtimepackage {
 static void sealCFDPackage(CFDPackage& package, const HashValues& authoredHashes) {
     uint64_t simulationHash = HashBuilder::start();
     HashBuilder::combine(simulationHash, authoredHashes.simulation);
-    HashBuilder::combine(simulationHash, package.domainVoronoiHandle.key);
     combineProductHandleHash(simulationHash, package.domainVoronoiProduct, HashDomain::Geometry);
     HashBuilder::combineFloat(simulationHash, package.fluid.density);
     HashBuilder::combineFloat(simulationHash, package.fluid.kinematicViscosity);
@@ -61,9 +60,6 @@ bool compileCFDPackage(const PackageCompileContext& context) {
     CFDPackage package{};
     const CFDPackage* previous = context.packages.findStored<CFDPackage>(context.outputSocketKey);
     package.productHandle = previous ? previous->productHandle : ProductHandle{};
-    package.domainVoronoiHandle = cfd->domainVoronoiHandle;
-    package.fluidHandle = cfd->fluidHandle;
-    package.boundaryHandle = cfd->boundaryHandle;
     package.initialVelocity = cfd->initialVelocity;
     package.fixedTimeStep = cfd->fixedTimeStep;
     package.targetCourant = cfd->targetCourant;
@@ -128,9 +124,6 @@ bool compileCFDPackage(const PackageCompileContext& context) {
         for (const ProductHandle& handle : domainPackage->globalRemeshProducts) {
             package.displayDependencyKeys.push_back(handle.outputSocketKey);
         }
-        for (const ProductHandle& handle : domainPackage->globalModelProducts) {
-            package.displayDependencyKeys.push_back(handle.outputSocketKey);
-        }
     }
 
     if (cfd->hasFluid && cfd->fluidHandle.key != 0) {
@@ -141,7 +134,8 @@ bool compileCFDPackage(const PackageCompileContext& context) {
                 return false;
             }
         } else {
-            package.fluid = *fluid;
+            package.fluid.density = fluid->density;
+            package.fluid.kinematicViscosity = fluid->kinematicViscosity;
         }
     }
 

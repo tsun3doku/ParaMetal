@@ -7,8 +7,9 @@
 
 class NodePayloadRegistry;
 class RuntimePackageManager;
+class RuntimePackageController;
+class NodeGraphRuntime;
 class RuntimeProductManager;
-struct NodeGraphCompiled;
 struct NodeGraphEvaluation;
 struct NodeGraphNode;
 struct NodeGraphState;
@@ -20,21 +21,15 @@ public:
         Rebuild,
     };
 
-    bool validate(
-        const NodeGraphState& graph,
-        const NodeGraphCompiled& graphPlan,
-        const NodeGraphEvaluation& evaluation,
-        const NodePayloadRegistry& payloads,
-        std::vector<std::string>& errors) const;
-
-    bool compileNode(
+    // Evaluate/compile/apply/publish is one ordered node transaction.
+    bool executeNode(
         const NodeGraphState& graph,
         const NodeGraphNode& node,
-        const NodeGraphEvaluation& evaluation,
-        const NodePayloadRegistry& payloads,
+        NodeGraphRuntime& graphRuntime,
+        NodePayloadRegistry& payloads,
         units::LengthUnit worldUnit,
         FrozenPackages frozenPackages,
-        RuntimePackageManager& packages,
-        const RuntimeProductManager* products,
-        std::vector<std::string>& errors) const;
+        RuntimePackageController& backend,
+        std::vector<std::string>& errors,
+        bool& backpressured) const;
 };

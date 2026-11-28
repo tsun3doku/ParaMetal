@@ -29,6 +29,7 @@ FrameController::FrameController(
     SceneContext& scene,
     InteractionContext& interaction,
     ModelSelection& modelSelection,
+    SubselectionPickService& subselectionPickService,
     std::atomic<bool>& isOperating,
     std::atomic<bool>& isShuttingDown)
     : windowState(windowState),
@@ -47,7 +48,8 @@ FrameController::FrameController(
           *scene.lightingSystem(),
           *scene.materialSystem(),
           sceneRenderer,
-          modelSelection),
+          modelSelection,
+          subselectionPickService),
       vulkanDevice(vulkanDevice),
       frameGraphRuntime(frameGraphRuntime) {
 }
@@ -63,11 +65,13 @@ bool FrameController::drawFrame(VkCommandBuffer commandBuffer, uint32_t frameInd
     }
 
     std::vector<std::string> timingLines;
+    frameUpdateStage.setViewportExtent(extent.width, extent.height);
     frameUpdateStage.processPicking(frameIndex);
 
     interaction.setViewport(extent, windowState.devicePixelRatio.load(std::memory_order_acquire));
     const render::SceneView sceneView = cameraController.buildSceneView(extent);
     frameUpdateStage.updateFrameState(frameIndex, sceneView);
+    sceneRenderer.prepareFrame(frameIndex, extent);
 
     if (flags.drawTimingOverlay) {
         timingLines = buildFrameTimingLines(frameIndex, frameStats.getComputeGpuMs());

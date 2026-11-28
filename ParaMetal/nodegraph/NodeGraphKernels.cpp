@@ -14,6 +14,11 @@ bool NodeGraphKernels::hasKernel(const NodeTypeId& typeId) const {
     return it != kernels.end() && it->second != nullptr;
 }
 
+const NodeKernel* NodeGraphKernels::findKernel(const NodeTypeId& typeId) const {
+    const auto it = kernels.find(getNodeTypeId(typeId));
+    return it == kernels.end() ? nullptr : it->second.get();
+}
+
 bool NodeGraphKernels::registerKernel(std::unique_ptr<NodeKernel> kernel) {
     if (!kernel || !kernel->typeId() || kernel->typeId()[0] == '\0') {
         registrationValid = false;

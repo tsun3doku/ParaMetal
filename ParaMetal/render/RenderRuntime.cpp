@@ -14,6 +14,7 @@
 #include "vulkan/MemoryAllocator.hpp"
 #include "scene/MaterialSystem.hpp"
 #include "scene/ModelSelection.hpp"
+#include "scene/SubselectionPickService.hpp"
 #include "RenderConfig.hpp"
 #include "vulkan/ModelRegistry.hpp"
 #include "SceneRenderer.hpp"
@@ -97,6 +98,16 @@ bool RenderRuntime::initializeBase(VkFormat swapChainFormat, VkExtent2D extent, 
         return false;
     }
 
+    subselectionPickService = std::make_unique<SubselectionPickService>(
+        vulkanDevice,
+        *frameGraphRuntime,
+        frameGraph->getResourceId(framegraph::resources::PickID),
+        renderconfig::MaxFramesInFlight);
+    if (!subselectionPickService) {
+        return false;
+    }
+    sceneRenderer->setSubselectionPickService(subselectionPickService.get());
+
     wireframeRenderer = std::make_unique<WireframeRenderer>(
         vulkanDevice,
         sceneRenderer->getGbufferDescriptorSetLayout(),
@@ -131,6 +142,7 @@ bool RenderRuntime::initializeFrameController(SceneContext& scene, InteractionCo
         scene,
         interaction,
         *modelSelection,
+        *subselectionPickService,
         isOperating,
         isShuttingDown);
 
@@ -257,6 +269,14 @@ ModelSelection& RenderRuntime::getModelSelection() {
 
 const ModelSelection& RenderRuntime::getModelSelection() const {
     return *modelSelection;
+}
+
+SubselectionPickService& RenderRuntime::getSubselectionPickService() {
+    return *subselectionPickService;
+}
+
+const SubselectionPickService& RenderRuntime::getSubselectionPickService() const {
+    return *subselectionPickService;
 }
 
 WireframeRenderer& RenderRuntime::getWireframeRenderer() {

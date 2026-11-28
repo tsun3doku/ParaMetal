@@ -15,6 +15,13 @@ struct HeatProbeNodeParams {
     std::vector<HeatProbeItem> items;
 };
 
+struct NodeHeatProbeMarker {
+    uint32_t nodeId = 0;
+    int probeIndex = 0;
+    uint32_t probeId = 0;
+    glm::vec3 worldPosition{0.0f};
+};
+
 std::string serializeHeatProbesJson(const std::vector<HeatProbeItem>& items);
 std::vector<HeatProbeItem> deserializeHeatProbesJson(const std::string& json);
 

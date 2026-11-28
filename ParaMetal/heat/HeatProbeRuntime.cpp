@@ -192,7 +192,7 @@ HeatProbeRuntime::~HeatProbeRuntime() {
 void HeatProbeRuntime::configure(
     bool isEnabled,
     uint32_t port,
-    const std::vector<HeatProbeItem>& items) {
+    const std::vector<HeatProbeConfigItem>& items) {
     const bool portChanged = (opcPort != port);
     enabled = isEnabled;
     opcPort = (port > 0) ? port : 4840;
@@ -211,7 +211,10 @@ void HeatProbeRuntime::configure(
             [&item](const ProbeChannel& c) { return c.id == item.id; });
         if (existingIt != channels.end()) {
             ch.currentTemperatureC = existingIt->currentTemperatureC;
-            const bool posChanged = (glm::distance(existingIt->worldPosition, item.worldPosition) > 1e-5f);
+            const bool posChanged =
+                existingIt->worldPosition.x != item.worldPosition.x ||
+                existingIt->worldPosition.y != item.worldPosition.y ||
+                existingIt->worldPosition.z != item.worldPosition.z;
             if (!posChanged && !existingIt->stencilWeights.empty()) {
                 ch.stencilWeights = existingIt->stencilWeights;
                 ch.weightsDirty = false;

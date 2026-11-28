@@ -70,6 +70,9 @@ void HashProduct::seal(RemeshProduct& p) {
     HashBuilder::combinePodVector(hash, p.surfacePositions);
     HashBuilder::combinePodVector(hash, p.surfaceNormals);
     HashBuilder::combinePodVector(hash, p.surfaceTriangleIndices);
+    HashBuilder::combinePodVector(hash, p.surfaceFaceIds);
+    HashBuilder::combinePodVector(hash, p.surfaceVertexIds);
+    HashBuilder::combinePodVector(hash, p.surfaceEdgeIds);
     combineVkBuffer(hash, p.intrinsicTriangleBuffer);
     HashBuilder::combine(hash, p.intrinsicTriangleBufferOffset);
     combineVkBuffer(hash, p.intrinsicVertexBuffer);
@@ -77,6 +80,9 @@ void HashProduct::seal(RemeshProduct& p) {
     HashBuilder::combine(hash, p.intrinsicTriangleCount);
     HashBuilder::combine(hash, p.intrinsicVertexCount);
     HashBuilder::combinePod(hash, p.averageTriangleArea);
+    combineVkBuffer(hash, p.faceIdBuffer);
+    HashBuilder::combine(hash, p.faceIdOffset);
+    combineVkBufferView(hash, p.faceIdView);
 
     combineVkBuffer(hash, p.supportingHalfedgeBuffer);
     HashBuilder::combine(hash, p.supportingHalfedgeOffset);

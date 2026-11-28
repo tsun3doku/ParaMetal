@@ -431,7 +431,7 @@ bool HeatSurfaceRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpa
     rasterizer.lineWidth = 1.0f;
     rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    rasterizer.depthBiasEnable = VK_TRUE;
+    rasterizer.depthBiasEnable = VK_FALSE;
 
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -473,8 +473,7 @@ bool HeatSurfaceRenderer::createPipeline(VkRenderPass renderPass, uint32_t subpa
 
     std::vector<VkDynamicState> dynamicStates = {
          VK_DYNAMIC_STATE_VIEWPORT,
-         VK_DYNAMIC_STATE_SCISSOR,
-         VK_DYNAMIC_STATE_DEPTH_BIAS
+         VK_DYNAMIC_STATE_SCISSOR
     };
 
     VkPipelineDynamicStateCreateInfo dynamicState{};

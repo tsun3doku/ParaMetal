@@ -9,6 +9,7 @@
 #include "runtime/ModelComputeController.hpp"
 #include "runtime/PointComputeRuntime.hpp"
 #include "runtime/RemeshController.hpp"
+#include "runtime/package/RuntimePackageManager.hpp"
 #include "scene/ModelUploader.hpp"
 #include "simgraph/SimGraphRuntime.hpp"
 #include "voronoi/VoronoiSystemComputeController.hpp"
@@ -78,6 +79,7 @@ bool ComputeContext::initialize(
 }
 
 void ComputeContext::shutdown() {
+    simulationSockets.clear();
     remeshControllerState.reset();
     modelComputeControllerState.reset();
     pointComputeRuntimeState.reset();
@@ -99,6 +101,7 @@ void ComputeContext::quiescedClear() {
     if (simGraphRuntimeState) {
         simGraphRuntimeState->clear();
     }
+    simulationSockets.clear();
     if (modelComputeControllerState) {
         modelComputeControllerState->disableAll();
     }
@@ -119,8 +122,94 @@ void ComputeContext::quiescedClear() {
     }
 }
 
+void ComputeContext::clearRetiringGenerations() {
+    if (modelComputeControllerState) {
+        modelComputeControllerState->clearAllRetiring();
+    }
+    if (pointComputeRuntimeState) {
+        pointComputeRuntimeState->clearAllRetiring();
+    }
+    if (remeshControllerState) {
+        remeshControllerState->clearAllRetiring();
+    }
+    if (voronoiSystemComputeControllerState) {
+        voronoiSystemComputeControllerState->clearAllRetiring();
+    }
+    if (heatSystemComputeControllerState) {
+        heatSystemComputeControllerState->clearAllRetiring();
+    }
+    if (cfdSystemComputeControllerState) {
+        cfdSystemComputeControllerState->clearAllRetiring();
+    }
+}
+
 void ComputeContext::tickDomainServices() {
     if (heatSystemComputeControllerState) {
         heatSystemComputeControllerState->updateSerialInputs();
     }
+}
+
+void ComputeContext::syncSimulationNodes(
+    const RuntimePackageManager& packages) {
+    SimGraphRuntime* simGraph = simGraphRuntime();
+    if (simGraph == nullptr) {
+        return;
+    }
+
+    std::unordered_set<uint64_t> desired;
+    desired.reserve(packages.cfdSystems().size() + packages.heatSystems().size());
+
+    if (cfdSystemComputeControllerState) {
+        for (const auto& [socketKey, package] : packages.cfdSystems()) {
+            (void)package;
+            cfd::CFDSystem* system =
+                cfdSystemComputeControllerState->getSystem(socketKey);
+            if (system == nullptr) {
+                continue;
+            }
+            simGraph->registerNode(socketKey, system);
+            desired.insert(socketKey);
+        }
+    }
+
+    if (heatSystemComputeControllerState) {
+        for (const auto& [socketKey, package] : packages.heatSystems()) {
+            (void)package;
+            HeatSystem* system =
+                heatSystemComputeControllerState->getSystem(socketKey);
+            if (system == nullptr) {
+                continue;
+            }
+            simGraph->registerNode(socketKey, system);
+            desired.insert(socketKey);
+
+            const HeatSystemComputeController::Config* heatConfig =
+                heatSystemComputeControllerState->getConfig(socketKey);
+            const uint64_t producerSocket =
+                heatConfig && heatConfig->hasAdvection &&
+                package.cfdProduct.isValid()
+                    ? package.cfdProduct.outputSocketKey
+                    : 0;
+            if (producerSocket == 0 ||
+                cfdSystemComputeControllerState == nullptr ||
+                cfdSystemComputeControllerState->getSystem(producerSocket) ==
+                    nullptr) {
+                simGraph->disconnect(socketKey);
+                continue;
+            }
+            SimConnection connection{};
+            connection.connectionId = socketKey;
+            connection.producerSocket = producerSocket;
+            connection.consumerSocket = socketKey;
+            connection.mode = SimConnectionMode::Staged;
+            simGraph->connect(connection);
+        }
+    }
+
+    for (uint64_t socketKey : simulationSockets) {
+        if (desired.find(socketKey) == desired.end()) {
+            simGraph->unregisterNode(socketKey);
+        }
+    }
+    simulationSockets = std::move(desired);
 }

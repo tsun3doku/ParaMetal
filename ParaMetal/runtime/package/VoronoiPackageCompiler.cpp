@@ -1,6 +1,7 @@
 #include "VoronoiPackageCompiler.hpp"
 
 #include "PackageCompileContext.hpp"
+#include "domain/RemeshData.hpp"
 #include "domain/VoronoiData.hpp"
 #include "hash/HashBuilder.hpp"
 #include "hash/HashProductHandle.hpp"
@@ -27,8 +28,6 @@ static void sealVoronoiPackage(VoronoiPackage& package, const HashValues& author
     HashBuilder::combine(geometryHash, static_cast<uint64_t>(package.lloydIterations));
     HashBuilder::combineFloat(geometryHash, package.lloydVolumeThreshold);
     HashBuilder::combineFloat(geometryHash, package.lloydDamping);
-    HashBuilder::combinePod(geometryHash, package.localToWorld);
-    HashBuilder::combine(geometryHash, package.pointsPayloadHandle.key);
     combineProductHandleHash(geometryHash, package.pointsProduct, HashDomain::Geometry);
     for (const glm::vec3& corner : package.pointDomainCorners) {
         HashBuilder::combinePod(geometryHash, corner);
@@ -71,7 +70,8 @@ bool compileVoronoiPackage(const PackageCompileContext& context) {
         return true;
     }
 
-    const PointPackage* points = context.packages.findAny<PointPackage>(voronoi->pointsPayloadHandle.key);
+    const PointPackage* points = context.packages.findAny<PointPackage>(
+        voronoi->pointsPayloadHandle.key);
     if (!points || points->positions.empty()) {
         context.errors.push_back("Voronoi package is missing its upstream point package.");
         return false;
@@ -91,8 +91,6 @@ bool compileVoronoiPackage(const PackageCompileContext& context) {
     package.lloydVolumeThreshold = voronoi->lloydVolumeThreshold;
     package.lloydDamping = voronoi->lloydDamping;
     package.contactRange = voronoi->contactRange;
-    package.voronoiHandle = context.output.payloadHandle;
-    package.pointsPayloadHandle = voronoi->pointsPayloadHandle;
     package.pointsProduct = points->productHandle;
     const VoronoiNodeParams params = readVoronoiNodeParams(context.node);
     package.display.showVoronoi = params.preview.showVoronoi;
@@ -104,26 +102,31 @@ bool compileVoronoiPackage(const PackageCompileContext& context) {
     }
 
     std::unordered_set<uint64_t> seenRemeshKeys;
+    std::vector<NodeDataHandle> remeshHandles;
+    remeshHandles.reserve(voronoi->modelMeshHandles.size());
     for (const NodeDataHandle& remeshHandle : voronoi->modelMeshHandles) {
-        if (remeshHandle.key == 0 ||
-            !seenRemeshKeys.insert(remeshHandle.key).second) {
+        NodeDataHandle resolvedRemeshHandle{};
+        const RemeshData* remeshData = context.payloads.resolveRemesh(
+            remeshHandle, &resolvedRemeshHandle);
+        const uint64_t remeshKey = resolvedRemeshHandle.key;
+        if (!remeshData || remeshKey == 0 ||
+            !seenRemeshKeys.insert(remeshKey).second) {
             context.errors.push_back("Voronoi domain contains an empty or duplicate remesh payload.");
             return false;
         }
-        const RemeshPackage* remesh = context.packages.findAny<RemeshPackage>(remeshHandle.key);
+        const RemeshPackage* remesh = context.packages.findAny<RemeshPackage>(remeshKey);
         const ModelPackage* model = remesh
-            ? context.packages.findAny<ModelPackage>(remesh->sourceMeshHandle.key)
+            ? context.packages.findAny<ModelPackage>(remesh->sourceModelProduct.outputSocketKey)
             : nullptr;
         if (!remesh || !model ||
             !remesh->productHandle.isValid() || !model->productHandle.isValid()) {
             context.errors.push_back("Voronoi domain is missing an upstream remesh product.");
             return false;
         }
-        package.globalRemeshHandles.push_back(remeshHandle);
+        remeshHandles.push_back(resolvedRemeshHandle);
         package.globalRemeshProducts.push_back(remesh->productHandle);
         package.globalModelProducts.push_back(model->productHandle);
         package.displayDependencyKeys.push_back(remesh->productHandle.outputSocketKey);
-        package.displayDependencyKeys.push_back(model->productHandle.outputSocketKey);
     }
 
     CoordinatePass{}.run(package, context.worldUnit);
@@ -175,27 +178,26 @@ bool compileVoronoiPackage(const PackageCompileContext& context) {
     const glm::vec3 localDomainMin = points->domainMinimum - glm::vec3(epsilon);
     const glm::vec3 localDomainMax = points->domainMaximum + glm::vec3(epsilon);
 
-    for (std::size_t i = 0; i < package.globalRemeshHandles.size(); ++i) {
-        const RemeshPackage* remesh = context.packages.findAny<RemeshPackage>(
-            package.globalRemeshHandles[i].key);
-        if (!remesh) {
-            context.errors.push_back("Voronoi domain cannot resolve remesh package.");
+    for (const NodeDataHandle& remeshHandle : remeshHandles) {
+        const RemeshPackage* remesh =
+            context.packages.findAny<RemeshPackage>(remeshHandle.key);
+        const RemeshData* completed =
+            context.payloads.get<RemeshData>(remeshHandle);
+        if (!remesh || !completed || completed->surfacePositions.empty()) {
+            context.errors.push_back("Voronoi domain cannot resolve completed Remesh surface.");
             return false;
         }
         package.globalRemeshLocalToWorld.push_back(remesh->localToWorld);
 
-        const glm::mat4 remeshToWorldMat = toMat4(remesh->localToWorld);
-        const glm::mat4 remeshToPointLocal = worldToPoint * remeshToWorldMat;
-        const std::vector<float>& positions = remesh->vertexPositions;
-
-        for (std::size_t p = 0; p + 2 < positions.size(); p += 3) {
+        const glm::mat4 remeshToPointLocal =
+            worldToPoint * toMat4(remesh->localToWorld);
+        for (const glm::vec3& position : completed->surfacePositions) {
             const glm::vec3 pointLocalPos = glm::vec3(
-                remeshToPointLocal * glm::vec4(positions[p], positions[p + 1], positions[p + 2], 1.0f));
-
+                remeshToPointLocal * glm::vec4(position, 1.0f));
             if (glm::any(glm::lessThan(pointLocalPos, localDomainMin)) ||
                 glm::any(glm::greaterThan(pointLocalPos, localDomainMax))) {
                 context.errors.push_back(
-                    "Voronoi domain remesh " + std::to_string(package.globalRemeshHandles[i].key) +
+                    "Voronoi domain remesh " + std::to_string(remeshHandle.key) +
                     " lies outside the PointData domain bounds.");
                 return false;
             }

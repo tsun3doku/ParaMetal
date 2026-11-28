@@ -274,9 +274,11 @@ void MainRenderGraph::buildMainRenderGraph(FrameGraph& frameGraph) {
         framegraph::ImageFormat::R32Uint,
         false,
         framegraph::SampleCount::Count1,
-        framegraph::ImageUsage::ColorAttachment | framegraph::ImageUsage::TransferSrc,
+        framegraph::ImageUsage::ColorAttachment |
+            framegraph::ImageUsage::TransferSrc |
+            framegraph::ImageUsage::Sampled,
         makeAttachmentOps(framegraph::AttachmentLoadOp::Clear, framegraph::AttachmentStoreOp::Store),
-        framegraph::ResourceLayout::TransferSrc,
+        framegraph::ResourceLayout::General,
         framegraph::ResourceLifetime::Transient,
         framegraph::ResourceLayout::Undefined,
         true);

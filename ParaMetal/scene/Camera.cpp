@@ -208,6 +208,36 @@ glm::mat4 Camera::getProjectionMatrix(float aspectRatio) const {
     return proj;
 }
 
+bool Camera::projectToScreen(
+    const glm::mat4& viewProjection,
+    const glm::vec3& worldPos,
+    uint32_t screenWidth,
+    uint32_t screenHeight,
+    glm::vec2& outScreen,
+    float* outDepth) {
+    if (screenWidth == 0 || screenHeight == 0) {
+        return false;
+    }
+
+    const glm::vec4 clip = viewProjection * glm::vec4(worldPos, 1.0f);
+    if (clip.w <= 0.001f) {
+        return false;
+    }
+
+    const glm::vec3 ndc = glm::vec3(clip) / clip.w;
+    if (ndc.z < 0.0f || ndc.z > 1.0f) {
+        return false;
+    }
+
+    if (outDepth) {
+        *outDepth = ndc.z;
+    }
+    outScreen = glm::vec2(
+        (ndc.x * 0.5f + 0.5f) * static_cast<float>(screenWidth),
+        (ndc.y * 0.5f + 0.5f) * static_cast<float>(screenHeight));
+    return true;
+}
+
 std::optional<glm::vec2> Camera::worldToScreen(
     const glm::vec3& worldPos,
     uint32_t screenWidth,
@@ -216,30 +246,18 @@ std::optional<glm::vec2> Camera::worldToScreen(
     if (screenWidth == 0 || screenHeight == 0) {
         return std::nullopt;
     }
-
     const float aspect = static_cast<float>(screenWidth) / static_cast<float>(screenHeight);
-    const glm::mat4 view = getViewMatrix();
-    const glm::mat4 proj = getProjectionMatrix(aspect);
-
-    const glm::vec4 clip = proj * view * glm::vec4(worldPos, 1.0f);
-    if (clip.w <= 0.001f) {
-        return std::nullopt; // Behind near plane
+    glm::vec2 screen;
+    if (!projectToScreen(
+            getProjectionMatrix(aspect) * getViewMatrix(),
+            worldPos,
+            screenWidth,
+            screenHeight,
+            screen,
+            outDepth)) {
+        return std::nullopt;
     }
-
-    const glm::vec3 ndc = glm::vec3(clip) / clip.w;
-    if (ndc.z < 0.0f || ndc.z > 1.0f) {
-        return std::nullopt; // Outside depth bounds
-    }
-
-    if (outDepth) {
-        *outDepth = clip.z;
-    }
-
-    // map vulkan ndc to screen
-    return glm::vec2(
-        (ndc.x * 0.5f + 0.5f) * static_cast<float>(screenWidth),
-        (ndc.y * 0.5f + 0.5f) * static_cast<float>(screenHeight)
-    );
+    return screen;
 }
 
 glm::vec3 Camera::screenToWorldRay(double mouseX, double mouseY, int screenWidth, int screenHeight) const {

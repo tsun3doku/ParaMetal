@@ -34,7 +34,9 @@ public slots:
     void requestTimelineScrub(uint32_t frame);
     void requestTimelineStep(int delta);
     void requestTimelineRange(uint32_t frameCount, float fps);
-    void requestSelection(int nodeId);
+    void requestSelection(
+        const std::vector<NodeGraphNodeId>& nodeIds,
+        int primaryNodeId);
     void requestHeatPaletteRange(float minimum, float maximum);
     void requestHeatPalette(int palette);
     void requestVelocityPaletteRange(float minimum, float maximum);
@@ -42,6 +44,15 @@ public slots:
     void requestWorldUnit(int unit);
     void requestProbePicking(int nodeId, int probeIndex = 0);
     void requestBoundaryFaceEditing(int nodeId, bool armed);
+    void requestNodeAction(
+        int nodeId,
+        qulonglong nodeInstanceId,
+        int actionId);
+    void requestNodeActionComplete();
+    void requestNodeActionCancel();
+    void requestNodeActionClearSelection();
+    void requestViewportMeshSelection(bool active);
+    Q_INVOKABLE void requestSubselectionElementType(int elementType);
     void requestExport(int nodeId);
     void requestExportProducts(int nodeId, qulonglong requestId, qulonglong graphRevision);
     void applyViewportProjectState(const ProjectFile::Viewport& viewport);

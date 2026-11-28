@@ -45,11 +45,8 @@ ComputeApplyResult RuntimeRemeshComputeTransport::apply(
     return ComputeApplyResult::Prepared;
 }
 
-void RuntimeRemeshComputeTransport::commitPending(uint64_t socketKey) {
-    if (!controller || socketKey == 0) {
-        return;
-    }
-    controller->commitPending(socketKey);
+bool RuntimeRemeshComputeTransport::commitPending(uint64_t socketKey) {
+    return controller && socketKey != 0 && controller->commitPending(socketKey);
 }
 
 void RuntimeRemeshComputeTransport::cancelPending(uint64_t socketKey) {
@@ -59,9 +56,22 @@ void RuntimeRemeshComputeTransport::cancelPending(uint64_t socketKey) {
     controller->cancelCandidate(socketKey);
 }
 
-void RuntimeRemeshComputeTransport::remove(uint64_t socketKey) {
-    if (!controller || socketKey == 0) {
-        return;
+bool RuntimeRemeshComputeTransport::remove(uint64_t socketKey) {
+    if (!controller) {
+        return false;
     }
-    controller->remove(socketKey);
+    if (socketKey == 0) {
+        return true;
+    }
+    return controller->remove(socketKey);
+}
+
+bool RuntimeRemeshComputeTransport::hasAnyRetiring() const {
+    return controller && controller->hasAnyRetiring();
+}
+
+void RuntimeRemeshComputeTransport::quiescedClear() {
+    if (controller) {
+        controller->quiescedClear();
+    }
 }

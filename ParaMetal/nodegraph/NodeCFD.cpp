@@ -136,6 +136,10 @@ void NodeCFD::execute(NodeKernelEval& eval) const {
 
         const uint64_t payloadKey = NodeSocketKey(eval.node.id, outputSocket.id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, cfdData, eval.outputHashes);
+        if (outputValue.payloadHandle.key == 0) {
+            eval.error = "Payload publication backpressured.";
+            return;
+        }
     }
 }
 

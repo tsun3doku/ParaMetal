@@ -17,3 +17,5 @@ UiPanelPopup 1.0 UiPanelPopup.qml
 CameraControl 1.0 CameraControl.qml
 ViewportPane 1.0 ViewportPane.qml
 ViewportSettingsControl 1.0 ViewportSettingsControl.qml
+ViewportToolRail 1.0 ViewportToolRail.qml
+ViewportTopToolbar 1.0 ViewportTopToolbar.qml

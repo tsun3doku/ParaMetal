@@ -8,7 +8,7 @@
 #include <glm/glm.hpp>
 #include <memory>
 
-#include "domain/HeatProbeData.hpp"
+#include "heat/HeatProbeConfig.hpp"
 
 class HeatProbeRuntime {
 public:
@@ -43,7 +43,7 @@ public:
     void configure(
         bool enabled,
         uint32_t opcPort,
-        const std::vector<HeatProbeItem>& items);
+        const std::vector<HeatProbeConfigItem>& items);
 
     bool rebuildWeights(
         const std::vector<FragmentCentroid>& domainCentroids,

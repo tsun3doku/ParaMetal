@@ -7,14 +7,12 @@
 
 #include <glm/glm.hpp>
 
-#include "domain/FluidData.hpp"
-#include "domain/SerialTemperatureData.hpp"
-#include "domain/HeatProbeData.hpp"
+#include "heat/HeatProbeConfig.hpp"
 #include "heat/HeatSystemPresets.hpp"
 #include "voronoi/VoronoiConfig.hpp"
+#include "hash/HashBuilder.hpp"
 #include "hash/HashValues.hpp"
-#include "nodegraph/NodeGraphCoreTypes.hpp"
-#include "nodegraph/NodeGraphProductTypes.hpp"
+#include "runtime/ProductHandle.hpp"
 #include "util/Units.hpp"
 
 
@@ -22,7 +20,6 @@ struct ModelPackage {
     HashValues hashes{};
     ProductHandle productHandle{};
     std::vector<uint64_t> displayDependencyKeys;
-    NodeDataHandle geometryHandle{};
     std::vector<float> vertexPositions;
     std::vector<uint32_t> triangleIndices;
     std::vector<float> renderPositions;
@@ -36,21 +33,34 @@ struct ModelPackage {
         0.0f, 0.0f, 0.0f, 1.0f
     };
     float canonicalToWorldScale = 1.0f;
+    glm::vec3 localBoundsMin{0.0f};
+    glm::vec3 localBoundsMax{0.0f};
+    glm::vec3 worldBoundsMin{0.0f};
+    glm::vec3 worldBoundsMax{0.0f};
 
     uint64_t computeHash() const { return hashes.geometry; }
     uint64_t displayHash() const { return hashes.display; }
     bool hasValidProduct() const { return productHandle.isValid(); }
 };
 
+struct GroupPackage {
+    HashValues hashes{};
+    ProductHandle surfaceProduct{};
+    std::vector<uint64_t> displayDependencyKeys;
+
+    uint64_t computeHash() const { return hashes.full; }
+    uint64_t displayHash() const { return hashes.display; }
+    bool hasValidProduct() const { return surfaceProduct.isValid(); }
+};
+
 struct RemeshPackage {
     struct DisplaySettings {
-        bool showRemeshOverlay = false;
         bool showFaceNormals = false;
         bool showVertexNormals = false;
         float normalLength = 0.05f;
 
         bool anyVisible() const {
-            return showRemeshOverlay || showFaceNormals || showVertexNormals;
+            return showFaceNormals || showVertexNormals;
         }
     };
 
@@ -64,8 +74,6 @@ struct RemeshPackage {
     float maxEdgeLength = 0.1f;
     float stepSize = 0.25f;
     DisplaySettings display{};
-    NodeDataHandle remeshHandle{};
-    NodeDataHandle sourceMeshHandle{};
     ProductHandle sourceModelProduct{};
     std::array<float, 16> localToWorld{
         1.0f, 0.0f, 0.0f, 0.0f,
@@ -93,7 +101,6 @@ struct VoronoiPackage {
     HashValues hashes{};
     ProductHandle productHandle{};
     std::vector<uint64_t> displayDependencyKeys;
-    NodeDataHandle voronoiHandle{};
     bool active = false;
     int voxelResolution = 128;
     float volumePadding = 0.01f;
@@ -102,17 +109,9 @@ struct VoronoiPackage {
     float lloydDamping = voronoi::DefaultLloydDamping;
     float contactRange = voronoi::DefaultContactRange;
     DisplaySettings display{};
-    std::array<float, 16> localToWorld{
-        1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 1.0f, 0.0f,
-        0.0f, 0.0f, 0.0f, 1.0f
-    };
-    NodeDataHandle pointsPayloadHandle{};
     ProductHandle pointsProduct{};
     std::vector<glm::vec4> pointPositions;
     std::array<glm::vec3, 8> pointDomainCorners{};
-    std::vector<NodeDataHandle> globalRemeshHandles;
     std::vector<ProductHandle> globalRemeshProducts;
     std::vector<ProductHandle> globalModelProducts;
     std::vector<std::array<float, 16>> globalRemeshLocalToWorld;
@@ -126,7 +125,6 @@ struct PointPackage {
     HashValues hashes{};
     ProductHandle productHandle{};
     std::vector<uint64_t> displayDependencyKeys;
-    NodeDataHandle pointsPayloadHandle{};
     std::vector<glm::vec4> positions;
     glm::vec3 domainMinimum{0.0f};
     glm::vec3 domainMaximum{0.0f};
@@ -190,7 +188,6 @@ struct HeatPackage {
     HashValues hashes{};
     ProductHandle productHandle{};
     std::vector<uint64_t> displayDependencyKeys;
-    NodeDataHandle heatHandle{};
     bool active = false;
     float simulationDuration = 5.0f;
     uint32_t solverMaxIterations = 0;
@@ -206,11 +203,10 @@ struct HeatPackage {
     float fluidConductivity = 0.0f;
     float fluidInitialTemperatureC = 0.0f;
 
-    NodeDataHandle domainVoronoiHandle{};
     ProductHandle domainVoronoiProduct{};
     ProductHandle cfdProduct{};
-    std::unordered_map<uint64_t, SerialTemperatureData> resolvedSerialSources;
-    std::unordered_map<uint64_t, HeatProbeData> resolvedHeatProbes;
+    std::unordered_map<uint64_t, HeatProbeConfig> resolvedHeatProbes;
+    uint64_t probeConfigHash = 0;
 
     uint32_t domainBoundaryTypes[6] = {};
     float domainBoundaryTemperaturesC[6] = {
@@ -224,17 +220,22 @@ struct HeatPackage {
     float domainBoundaryHeatFluxes[6] = {};
     float domainBoundaryHeatTransferCoefficients[6] = {};
     float domainBoundaryInflowTemperaturesC[6] = {
-        FluidData{}.initialTemperatureC,
-        FluidData{}.initialTemperatureC,
-        FluidData{}.initialTemperatureC,
-        FluidData{}.initialTemperatureC,
-        FluidData{}.initialTemperatureC,
-        FluidData{}.initialTemperatureC
+        HeatSimDefaults::fluidInitialTemperatureC,
+        HeatSimDefaults::fluidInitialTemperatureC,
+        HeatSimDefaults::fluidInitialTemperatureC,
+        HeatSimDefaults::fluidInitialTemperatureC,
+        HeatSimDefaults::fluidInitialTemperatureC,
+        HeatSimDefaults::fluidInitialTemperatureC
     };
 
     uint64_t computeHash() const { return hashes.simulation; }
     uint64_t displayHash() const { return hashes.display; }
     bool hasValidProduct() const { return productHandle.isValid(); }
+};
+
+struct CFDFluidProperties {
+    float density = 1.225f;
+    float kinematicViscosity = 1.516e-5f;
 };
 
 struct CFDPackage {
@@ -257,11 +258,7 @@ struct CFDPackage {
     std::vector<uint64_t> displayDependencyKeys;
 
     ProductHandle domainVoronoiProduct{};
-    NodeDataHandle domainVoronoiHandle{};
-    NodeDataHandle fluidHandle{};
-    NodeDataHandle boundaryHandle{};
-
-    FluidData fluid{};
+    CFDFluidProperties fluid{};
     glm::vec3 initialVelocity{0.0f};
 
     uint32_t domainBoundaryTypes[6] = {};
@@ -282,3 +279,14 @@ struct CFDPackage {
     bool hasValidProduct() const { return productHandle.isValid(); }
 };
 
+template <typename PackageT>
+uint64_t packageUpdateHash(const PackageT& package) {
+    return package.computeHash();
+}
+
+inline uint64_t packageUpdateHash(const HeatPackage& package) {
+    uint64_t hash = HashBuilder::start();
+    HashBuilder::combine(hash, package.computeHash());
+    HashBuilder::combine(hash, package.probeConfigHash);
+    return hash;
+}

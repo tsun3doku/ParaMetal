@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.h>
 #include "scene/SceneView.hpp"
+#include "scene/SubselectionPickState.hpp"
 
 #include <vector>
 
@@ -32,6 +33,8 @@ struct RenderServices {
     GizmoController* gizmoController = nullptr;
     NavigationGizmoController* navigationGizmoController = nullptr;
     WireframeRenderer* wireframeRenderer = nullptr;
+    const SubselectionPickState* subselectionPick = nullptr;
+    const std::vector<uint32_t>* displayedModelIds = nullptr;
 };
 
 class Pass {
@@ -39,7 +42,7 @@ public:
     virtual ~Pass() = default;
 
     virtual const char* name() const = 0;
-    virtual void create() = 0;
+    virtual bool create() = 0;
     virtual void resize(VkExtent2D extent) = 0;
     virtual void updateDescriptors() = 0;
     virtual void record(const FrameContext& context, const SceneView& view, const RenderFlags& flags, RenderServices& services) = 0;

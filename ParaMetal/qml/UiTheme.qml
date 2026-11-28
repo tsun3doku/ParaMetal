@@ -32,6 +32,8 @@ QtObject {
     readonly property color hover: "#4a4a4a"
     readonly property color selected: "#545454"
 
+    readonly property color toolbarBackground: "#262626"
+    readonly property color popupBackground: "#252525"
     readonly property color toolNormal: "#343434"
     readonly property color toolHover: "#464646"
     readonly property color toolPressed: "#282828"

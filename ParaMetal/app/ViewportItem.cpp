@@ -1,6 +1,7 @@
 #include "ViewportItem.hpp"
 
 #include "ViewportRenderer.hpp"
+#include "runtime/RuntimeSystems.hpp"
 
 #include <QtGui/QFocusEvent>
 #include <QtGui/QHoverEvent>
@@ -29,6 +30,50 @@ void ViewportItem::requestProbePicking(int nodeId, int probeIndex) {
 
 void ViewportItem::requestBoundaryFaceEditing(int nodeId, bool armed) {
     mailbox.requestBoundaryFaceEditing(nodeId, armed);
+    update();
+}
+
+void ViewportItem::requestNodeAction(
+    int nodeId,
+    qulonglong nodeInstanceId,
+    int actionId) {
+    mailbox.requestNodeAction(NodeActionMessage{
+        NodeActionMessage::Type::Begin,
+        NodeGraphNodeId{static_cast<uint32_t>(nodeId)},
+        nodeInstanceId,
+        static_cast<uint32_t>(actionId),
+    });
+    update();
+}
+
+void ViewportItem::requestNodeActionComplete() {
+    mailbox.requestNodeAction(NodeActionMessage{
+        NodeActionMessage::Type::Complete,
+    });
+    update();
+}
+
+void ViewportItem::requestNodeActionCancel() {
+    mailbox.requestNodeAction(NodeActionMessage{
+        NodeActionMessage::Type::Cancel,
+    });
+    update();
+}
+
+void ViewportItem::requestNodeActionClearSelection() {
+    mailbox.requestNodeAction(NodeActionMessage{
+        NodeActionMessage::Type::Clear,
+    });
+    update();
+}
+
+void ViewportItem::requestViewportMeshSelection(bool active) {
+    mailbox.requestViewportMeshSelection(active);
+    update();
+}
+
+void ViewportItem::requestSubselectionElementType(int elementType) {
+    mailbox.requestSubselectionElementType(elementType);
     update();
 }
 
@@ -64,7 +109,12 @@ void ViewportItem::requestTimelineReset() { mailbox.requestTimelineReset(); upda
 void ViewportItem::requestTimelineScrub(uint32_t frame) { mailbox.requestTimelineScrub(frame); update(); }
 void ViewportItem::requestTimelineStep(int delta) { mailbox.requestTimelineStep(delta); update(); }
 void ViewportItem::requestTimelineRange(uint32_t frameCount, float fps) { mailbox.requestTimelineRange(frameCount, fps); update(); }
-void ViewportItem::requestSelection(int nodeId) { mailbox.requestSelection(nodeId); update(); }
+void ViewportItem::requestSelection(
+    const std::vector<NodeGraphNodeId>& nodeIds,
+    int primaryNodeId) {
+    mailbox.requestSelection(nodeIds, primaryNodeId);
+    update();
+}
 void ViewportItem::requestHeatPaletteRange(float minimum, float maximum) { mailbox.requestHeatPaletteRange(minimum, maximum); update(); }
 void ViewportItem::requestHeatPalette(int palette) { mailbox.requestHeatPalette(palette); update(); }
 void ViewportItem::requestVelocityPaletteRange(float minimum, float maximum) { mailbox.requestVelocityPaletteRange(minimum, maximum); update(); }

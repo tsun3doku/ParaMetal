@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <utility>
 
-#include "nodegraph/NodeGraphProductTypes.hpp"
+#include "runtime/ProductHandle.hpp"
 #include "runtime/RuntimeProducts.hpp"
 
 template <typename ProductT>
@@ -22,6 +22,7 @@ template <typename ProductT>
 struct ProductSlot {
     std::optional<PublishedProduct<ProductT>> current;
     std::optional<PublishedProduct<ProductT>> retiring;
+    bool invalidated = false;
 };
 
 // ProductHandle::operator== is content-based, so lifetime decisions must match
@@ -31,6 +32,18 @@ public:
     RuntimeProductManager() = default;
     ~RuntimeProductManager();
 
+    template <typename ProductT>
+    bool canPublish(uint64_t socketKey) const {
+        if (socketKey == 0) {
+            return false;
+        }
+        const auto it = productsFor<ProductT>().find(socketKey);
+        if (it == productsFor<ProductT>().end()) {
+            return true;
+        }
+        return !it->second.retiring.has_value() && !it->second.invalidated;
+    }
+
     // A socket publishes only after its retiring generation has been reclaimed.
     template <typename ProductT>
     ProductHandle publish(uint64_t socketKey, ProductT& product) {
@@ -39,9 +52,9 @@ public:
         }
         auto& map = productsFor<ProductT>();
         auto [it, _] = map.try_emplace(socketKey);
-        if (it->second.retiring.has_value()) {
-            std::cerr << "[RuntimeProductManager] publish rejected: retiring slot occupied for socket "
-                      << socketKey << std::endl;
+        if (it->second.retiring.has_value() || it->second.invalidated) {
+            std::cerr << "[RuntimeProductManager] publish rejected: socket " << socketKey
+                      << " cannot accept a new publication" << std::endl;
             return {};
         }
 
@@ -60,12 +73,14 @@ public:
     const ProductHandle& getCurrentHandle(uint64_t socketKey) const {
         static const ProductHandle emptyHandle{};
         const auto it = productsFor<ProductT>().find(socketKey);
-        return (it != productsFor<ProductT>().end() && it->second.current.has_value())
+        return (it != productsFor<ProductT>().end() && !it->second.invalidated &&
+                it->second.current.has_value())
             ? it->second.current->handle
             : emptyHandle;
     }
 
-    // Socket-keyed removal for lifecycle orchestration; the manager owns identity
+    // Logical invalidation is immediate. Physical retirement is deferred when the
+    // retiring slot is occupied; false means the current product is still alive.
     template <typename ProductT>
     bool unpublish(uint64_t socketKey) {
         if (socketKey == 0) {
@@ -73,18 +88,29 @@ public:
         }
         auto it = productsFor<ProductT>().find(socketKey);
         if (it == productsFor<ProductT>().end() || !it->second.current.has_value()) {
-            return false;
+            return true;
         }
-        auto& slot = it->second;
+        ProductSlot<ProductT>& slot = it->second;
+        slot.invalidated = true;
+        ++revision;
         if (slot.retiring.has_value()) {
-            std::cerr << "[RuntimeProductManager] Error: retiring slot occupied during unpublish for socket "
-                      << socketKey << std::endl;
             return false;
         }
         slot.retiring = std::move(slot.current);
         slot.current.reset();
-        ++revision;
         return true;
+    }
+
+    bool canUnpublishForSocket(uint64_t socketKey) const {
+        if (socketKey == 0) {
+            return true;
+        }
+        return canUnpublishMap(modelProducts, socketKey) &&
+            canUnpublishMap(remeshProducts, socketKey) &&
+            canUnpublishMap(voronoiProducts, socketKey) &&
+            canUnpublishMap(pointProducts, socketKey) &&
+            canUnpublishMap(heatProducts, socketKey) &&
+            canUnpublishMap(cfdProducts, socketKey);
     }
 
     template <typename ProductT>
@@ -116,7 +142,8 @@ public:
             return false;
         }
         const auto it = productsFor<ProductT>().find(handle.outputSocketKey);
-        if (it == productsFor<ProductT>().end() || !it->second.current.has_value()) {
+        if (it == productsFor<ProductT>().end() || it->second.invalidated ||
+            !it->second.current.has_value()) {
             return false;
         }
         return isSamePublication(it->second.current->handle, handle);
@@ -140,9 +167,13 @@ public:
     // Called only after GPU completion has been established for every retiring generation.
     void clearAllRetiring() noexcept {
         const auto clearMap = [](auto& map) {
-            for (auto& [socketKey, slot] : map) {
-                (void)socketKey;
-                slot.retiring.reset();
+            for (auto it = map.begin(); it != map.end();) {
+                it->second.retiring.reset();
+                if (!it->second.current.has_value()) {
+                    it = map.erase(it);
+                } else {
+                    ++it;
+                }
             }
         };
         clearMap(modelProducts);
@@ -169,17 +200,26 @@ public:
 
 private:
     template <typename ProductT>
-    static NodeProductType type() {
-        if constexpr (std::is_same_v<ProductT, ModelProduct>) return NodeProductType::Model;
-        else if constexpr (std::is_same_v<ProductT, RemeshProduct>) return NodeProductType::Remesh;
-        else if constexpr (std::is_same_v<ProductT, VoronoiProduct>) return NodeProductType::Voronoi;
-        else if constexpr (std::is_same_v<ProductT, PointProduct>) return NodeProductType::Point;
-        else if constexpr (std::is_same_v<ProductT, HeatProduct>) return NodeProductType::Heat;
-        else if constexpr (std::is_same_v<ProductT, CFDProduct>) return NodeProductType::CFD;
+    static ProductType type() {
+        if constexpr (std::is_same_v<ProductT, ModelProduct>) return ProductType::Model;
+        else if constexpr (std::is_same_v<ProductT, RemeshProduct>) return ProductType::Remesh;
+        else if constexpr (std::is_same_v<ProductT, VoronoiProduct>) return ProductType::Voronoi;
+        else if constexpr (std::is_same_v<ProductT, PointProduct>) return ProductType::Point;
+        else if constexpr (std::is_same_v<ProductT, HeatProduct>) return ProductType::Heat;
+        else if constexpr (std::is_same_v<ProductT, CFDProduct>) return ProductType::CFD;
         else {
             static_assert(!std::is_same_v<ProductT, ProductT>, "Unsupported product type");
-            return NodeProductType::None;
+            return ProductType::None;
         }
+    }
+
+    template <typename ProductMapT>
+    static bool canUnpublishMap(const ProductMapT& map, uint64_t socketKey) {
+        const auto it = map.find(socketKey);
+        if (it == map.end() || !it->second.current.has_value()) {
+            return true;
+        }
+        return !it->second.retiring.has_value();
     }
 
     template <typename ProductT>

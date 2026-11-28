@@ -3,7 +3,7 @@
 #include "NodeGraphParamUtils.hpp"
 #include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
-#include "NodeGraphDataTypes.hpp"
+#include "NodeGraphCoreTypes.hpp"
 #include "NodeGraphUtils.hpp"
 
 #include "hash/HashBuilder.hpp"
@@ -112,6 +112,10 @@ void NodeVoronoi::execute(NodeKernelEval& eval) const {
         voronoiData.active = active;
         const uint64_t payloadKey = NodeSocketKey(eval.node.id, eval.node.outputs[outputIndex].id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, voronoiData, eval.outputHashes);
+        if (outputValue.payloadHandle.key == 0) {
+            eval.error = "Payload publication backpressured.";
+            return;
+        }
     }
 }
 

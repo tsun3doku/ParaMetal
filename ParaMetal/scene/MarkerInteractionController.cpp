@@ -34,6 +34,11 @@ void MarkerInteractionController::updateMarkers(const std::vector<MarkerItem>& u
     markers = std::move(next);
 }
 
+void MarkerInteractionController::updateDisplayedModelIds(
+    std::vector<uint32_t> modelIds) {
+    displayedModelIds = std::move(modelIds);
+}
+
 void MarkerInteractionController::setSelected(uint32_t nodeId, int probeIndex, uint32_t probeId) {
     selectedNodeId = nodeId;
     selectedProbeIndex = probeIndex;
@@ -128,7 +133,7 @@ bool MarkerInteractionController::handlePointerPress(float mouseX, float mouseY,
         const Ray ray = MousePicker::screenToWorldRay(mouseX, mouseY, width, height, camera);
         RayHit closestHit{};
         bool hitAny = false;
-        for (uint32_t modelId : modelRegistry.getRenderableModelIds()) {
+        for (uint32_t modelId : displayedModelIds) {
             const Model* model = modelRegistry.getModel(modelId);
             if (!model) continue;
             RayHit hit{};
@@ -180,7 +185,7 @@ bool MarkerInteractionController::handlePointerMove(float mouseX, float mouseY) 
     RayHit closestHit{};
     bool hitAny = false;
 
-    for (uint32_t modelId : modelRegistry.getRenderableModelIds()) {
+    for (uint32_t modelId : displayedModelIds) {
         const Model* model = modelRegistry.getModel(modelId);
         if (!model) continue;
         RayHit hit{};

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "UiRuntimeTypes.hpp"
+#include "mesh/MeshElementType.hpp"
 
 #include <QObject>
 
@@ -17,6 +18,11 @@ class ViewportUiModel final : public QObject {
     Q_PROPERTY(float cameraPanSpeed READ cameraPanSpeed NOTIFY stateChanged)
     Q_PROPERTY(float nearClip READ nearClip NOTIFY stateChanged)
     Q_PROPERTY(bool cullLinesOnly READ cullLinesOnly NOTIFY stateChanged)
+    Q_PROPERTY(bool modelSelected READ modelSelected NOTIFY modelSelectionChanged)
+    Q_PROPERTY(bool meshSelectionActive READ meshSelectionActive NOTIFY meshSelectionStateChanged)
+    Q_PROPERTY(bool selectionCommitRequired READ selectionCommitRequired NOTIFY selectionCommitRequiredChanged)
+    Q_PROPERTY(int meshSelectionCount READ meshSelectionCount NOTIFY meshSelectionStateChanged)
+    Q_PROPERTY(int meshSelectionElementType READ meshSelectionElementType NOTIFY meshSelectionElementTypeChanged)
 
 public:
     explicit ViewportUiModel(QObject* parent = nullptr) : QObject(parent) {}
@@ -32,6 +38,11 @@ public:
     float cameraPanSpeed() const { return state.panSpeed; }
     float nearClip() const { return state.nearClip; }
     bool cullLinesOnly() const { return state.cullLinesOnly; }
+    bool modelSelected() const { return modelIsSelected; }
+    bool meshSelectionActive() const { return selectionActive; }
+    bool selectionCommitRequired() const { return commitRequired; }
+    int meshSelectionCount() const { return selectionCount; }
+    int meshSelectionElementType() const { return selectionElementType; }
 
     Q_INVOKABLE void setWireframeMode(int mode);
     Q_INVOKABLE void setGridEnabled(bool enabled);
@@ -45,9 +56,17 @@ public:
     Q_INVOKABLE void setCameraPanSpeed(float speed);
     Q_INVOKABLE void setNearClip(float meters);
     Q_INVOKABLE void setCullLinesOnly(bool linesOnly);
+    Q_INVOKABLE void setMeshSelectionActive(bool active);
+    Q_INVOKABLE void setMeshSelectionElementType(int elementType);
 
 public slots:
     void applyState(const ViewportUiState& updated);
+    void applyModelSelection(bool selected);
+    void applySubselectionState(
+        bool active,
+        int selectedCount,
+        int elementType,
+        bool commitRequired);
 
 signals:
     void stateChanged();
@@ -63,7 +82,18 @@ signals:
     void cameraPanSpeedRequested(float speed);
     void nearClipRequested(float meters);
     void cullLinesOnlyRequested(bool linesOnly);
+    void meshSelectionRequested(bool active);
+    void modelSelectionChanged();
+    void meshSelectionStateChanged();
+    void selectionCommitRequiredChanged();
+    void meshSelectionElementTypeChanged();
+    void meshSelectionElementTypeRequested(int elementType);
 
 private:
     ViewportUiState state{};
+    bool modelIsSelected = false;
+    bool selectionActive = false;
+    bool commitRequired = false;
+    int selectionCount = 0;
+    int selectionElementType = static_cast<int>(MeshElementType::Face);
 };

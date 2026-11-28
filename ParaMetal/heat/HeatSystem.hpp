@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "framegraph/ComputePass.hpp"
 #include "simgraph/SimNode.hpp"
@@ -8,7 +8,7 @@
 #include "HeatDomainRuntime.hpp"
 #include "HeatFluidRuntime.hpp"
 #include "HeatProbeRuntime.hpp"
-#include "domain/HeatProbeData.hpp"
+#include "heat/HeatProbeConfig.hpp"
 #include "heat/HeatFluidVolumeStage.hpp"
 
 
@@ -167,7 +167,7 @@ public:
             : VK_NULL_HANDLE;
     }
 
-    void syncHeatProbes(const std::unordered_map<uint64_t, HeatProbeData>& probes);
+    void syncHeatProbes(const std::unordered_map<uint64_t, HeatProbeConfig>& probes);
     void publishProbeTelemetry(TemperatureTelemetryReceiver& receiver) const;
     bool readCurrentSurfaceTemperatures(
         std::vector<std::vector<float>>& temperaturesByModel,

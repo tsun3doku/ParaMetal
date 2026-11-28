@@ -42,7 +42,7 @@ const char* LightingPass::name() const {
     return framegraph::passes::Lighting.data();
 }
 
-void LightingPass::create() {
+bool LightingPass::create() {
     ready = false;
     destroy();
     if (!iblSystem.isInitialized() ||
@@ -51,25 +51,26 @@ void LightingPass::create() {
         iblSystem.getBrdfLutView() == VK_NULL_HANDLE ||
         iblSystem.getSampler() == VK_NULL_HANDLE) {
         std::cerr << "[LightingPass] Missing required IBL resources" << std::endl;
-        return;
+        return false;
     }
     if (!createLightingDescriptorPool(maxFramesInFlight)) {
         destroy();
-        return;
+        return false;
     }
     if (!createLightingDescriptorSetLayout()) {
         destroy();
-        return;
+        return false;
     }
     if (!createLightingDescriptorSets(uniformBufferManager, maxFramesInFlight)) {
         destroy();
-        return;
+        return false;
     }
     if (!createLightingPipeline()) {
         destroy();
-        return;
+        return false;
     }
     ready = true;
+    return true;
 }
 
 void LightingPass::resize(VkExtent2D extent) {

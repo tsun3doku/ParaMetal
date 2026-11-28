@@ -19,7 +19,7 @@ Popup {
     }
 
     background: Rectangle {
-        color: control.theme.cardBackground
+        color: control.theme.popupBackground
         border.width: 1
         border.color: control.theme.border
         radius: 0

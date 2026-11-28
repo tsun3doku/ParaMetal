@@ -29,6 +29,10 @@ public slots:
     void removeConnection(NodeGraphEdgeId edgeId);
     void setParameter(NodeGraphNodeId nodeId, const NodeGraphParamValue& parameter);
     void setParameters(NodeGraphNodeId nodeId, const std::vector<NodeGraphParamValue>& parameters);
+    void applyRuntimeParameters(
+        NodeGraphNodeId nodeId,
+        qulonglong originInstanceId,
+        const std::vector<NodeGraphParamValue>& parameters);
     void pasteFragment(const GraphPastePayload& payload);
     void executePython(const QString& source);
     void requestGraphState();
@@ -47,6 +51,7 @@ signals:
     void graphStateLoaded(bool success, const QString& error);
     void exportRequested(int nodeId);
     void exportProductsRequested(int nodeId, qulonglong requestId, qulonglong graphRevision);
+    void runtimeParametersApplied(int nodeId, bool success, const QString& error);
 
 private:
     void publishChanges();

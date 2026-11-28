@@ -17,20 +17,19 @@ public:
         if (socketKey == 0 || package.hashes.full == 0) {
             return;
         }
-
         const auto& committed = packagesFor<PackageT>();
         auto& pending = pendingFor<PackageT>();
         const auto it = committed.find(socketKey);
 
-        const bool computeChanged =
+        const bool needsApply =
             it == committed.end() ||
             !package.hasValidProduct() ||
-            it->second.computeHash() != package.computeHash();
+            packageUpdateHash(it->second) != packageUpdateHash(package);
 
         pending.insert_or_assign(socketKey, std::forward<PackageT>(package));
         staleSockets.erase(socketKey);
 
-        if (computeChanged) {
+        if (needsApply) {
             retainedSockets.erase(socketKey);
         } else {
             retainedSockets.insert(socketKey);
@@ -38,24 +37,15 @@ public:
     }
 
     void erasePackagesForSocket(uint64_t socketKey);
+    void retainCommitted(uint64_t socketKey);
     void setProductHandle(uint64_t socketKey, const ProductHandle& handle);
 
     template <typename PackageT>
     const PackageT* find(uint64_t socketKey) const {
-        if (staleSockets.find(socketKey) != staleSockets.end()) {
-            return nullptr;
-        }
         if (retainedSockets.find(socketKey) != retainedSockets.end()) {
             return nullptr;
         }
-        const auto& pending = pendingFor<PackageT>();
-        const auto pendingIt = pending.find(socketKey);
-        if (pendingIt != pending.end()) {
-            return &pendingIt->second;
-        }
-        const auto& committed = packagesFor<PackageT>();
-        const auto it = committed.find(socketKey);
-        return it != committed.end() ? &it->second : nullptr;
+        return findAny<PackageT>(socketKey);
     }
 
     template <typename PackageT>
@@ -85,6 +75,7 @@ public:
     const std::vector<uint64_t>* displayDependencyKeysFor(uint64_t socketKey) const;
 
     const std::unordered_map<uint64_t, ModelPackage>& models() const { return modelPackages; }
+    const std::unordered_map<uint64_t, GroupPackage>& groups() const { return groupPackages; }
     const std::unordered_map<uint64_t, PointPackage>& points() const { return pointPackages; }
     const std::unordered_map<uint64_t, RemeshPackage>& remeshes() const { return remeshPackages; }
     const std::unordered_map<uint64_t, VoronoiPackage>& voronois() const { return voronoiPackages; }
@@ -113,6 +104,19 @@ private:
         }
     }
 
+    static void preserveModelComputeData(
+        ModelPackage& incoming,
+        ModelPackage& previous);
+
+    static void commitModelPendingInto(
+        std::unordered_map<uint64_t, ModelPackage>& committed,
+        std::unordered_map<uint64_t, ModelPackage>& pending);
+
+    static void commitProcessedModelInto(
+        std::unordered_map<uint64_t, ModelPackage>& committed,
+        std::unordered_map<uint64_t, ModelPackage>& pending,
+        const std::unordered_set<uint64_t>& processedSockets);
+
     template <typename PackageT>
     static void commitProcessedInto(
         std::unordered_map<uint64_t, PackageT>& committed,
@@ -137,6 +141,7 @@ private:
     template <typename PackageT>
     std::unordered_map<uint64_t, PackageT>& packagesFor() {
         if constexpr (std::is_same_v<PackageT, ModelPackage>) return modelPackages;
+        else if constexpr (std::is_same_v<PackageT, GroupPackage>) return groupPackages;
         else if constexpr (std::is_same_v<PackageT, PointPackage>) return pointPackages;
         else if constexpr (std::is_same_v<PackageT, RemeshPackage>) return remeshPackages;
         else if constexpr (std::is_same_v<PackageT, VoronoiPackage>) return voronoiPackages;
@@ -147,6 +152,7 @@ private:
     template <typename PackageT>
     const std::unordered_map<uint64_t, PackageT>& packagesFor() const {
         if constexpr (std::is_same_v<PackageT, ModelPackage>) return modelPackages;
+        else if constexpr (std::is_same_v<PackageT, GroupPackage>) return groupPackages;
         else if constexpr (std::is_same_v<PackageT, PointPackage>) return pointPackages;
         else if constexpr (std::is_same_v<PackageT, RemeshPackage>) return remeshPackages;
         else if constexpr (std::is_same_v<PackageT, VoronoiPackage>) return voronoiPackages;
@@ -157,6 +163,7 @@ private:
     template <typename PackageT>
     std::unordered_map<uint64_t, PackageT>& pendingFor() {
         if constexpr (std::is_same_v<PackageT, ModelPackage>) return pendingModelPackages;
+        else if constexpr (std::is_same_v<PackageT, GroupPackage>) return pendingGroupPackages;
         else if constexpr (std::is_same_v<PackageT, PointPackage>) return pendingPointPackages;
         else if constexpr (std::is_same_v<PackageT, RemeshPackage>) return pendingRemeshPackages;
         else if constexpr (std::is_same_v<PackageT, VoronoiPackage>) return pendingVoronoiPackages;
@@ -167,6 +174,7 @@ private:
     template <typename PackageT>
     const std::unordered_map<uint64_t, PackageT>& pendingFor() const {
         if constexpr (std::is_same_v<PackageT, ModelPackage>) return pendingModelPackages;
+        else if constexpr (std::is_same_v<PackageT, GroupPackage>) return pendingGroupPackages;
         else if constexpr (std::is_same_v<PackageT, PointPackage>) return pendingPointPackages;
         else if constexpr (std::is_same_v<PackageT, RemeshPackage>) return pendingRemeshPackages;
         else if constexpr (std::is_same_v<PackageT, VoronoiPackage>) return pendingVoronoiPackages;
@@ -175,6 +183,7 @@ private:
     }
 
     void clearPending();
+    void eraseNonGroupPackagesForSocket(uint64_t socketKey);
 
     template <typename PackageT>
     static void setProductHandle(
@@ -213,6 +222,7 @@ private:
     }
 
     std::unordered_map<uint64_t, ModelPackage> modelPackages;
+    std::unordered_map<uint64_t, GroupPackage> groupPackages;
     std::unordered_map<uint64_t, PointPackage> pointPackages;
     std::unordered_map<uint64_t, RemeshPackage> remeshPackages;
     std::unordered_map<uint64_t, VoronoiPackage> voronoiPackages;
@@ -220,6 +230,7 @@ private:
     std::unordered_map<uint64_t, CFDPackage> cfdPackages;
 
     std::unordered_map<uint64_t, ModelPackage> pendingModelPackages;
+    std::unordered_map<uint64_t, GroupPackage> pendingGroupPackages;
     std::unordered_map<uint64_t, PointPackage> pendingPointPackages;
     std::unordered_map<uint64_t, RemeshPackage> pendingRemeshPackages;
     std::unordered_map<uint64_t, VoronoiPackage> pendingVoronoiPackages;

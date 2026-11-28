@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../hash/HashValues.hpp"
+
 #include <cstdint>
 
 struct NodeGraphNodeId {
@@ -66,12 +68,25 @@ struct NodeSocketKey {
 
 struct NodeDataHandle {
     uint64_t key = 0;
+    uint64_t generation = 0;
 
     bool operator==(const NodeDataHandle& other) const {
-        return key == other.key;
+        return key == other.key && generation == other.generation;
+    }
+
+    bool operator!=(const NodeDataHandle& other) const {
+        return !(*this == other);
     }
 
     bool operator<(const NodeDataHandle& other) const {
-        return key < other.key;
+        return key < other.key ||
+            (key == other.key && generation < other.generation);
     }
+};
+
+struct NodeDataBlock {
+    uint8_t dataType = 0;
+    NodeDataHandle payloadHandle{};
+    HashValues hashes{};
+    bool isFrozen = false;
 };

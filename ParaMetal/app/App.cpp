@@ -175,6 +175,26 @@ void App::connectUi(ViewportItem& viewport, GraphHost& graphHost) {
                      &viewport, &ViewportItem::requestBoundaryFaceEditing);
     QObject::connect(uiModel.nodeGraph(), &NodeGraphUiModel::boundaryFaceEditingRequested,
                      uiModel.boundaryFace(), &BoundaryFaceUiModel::applyEditingNode);
+    QObject::connect(uiModel.nodeGraph(), &NodeGraphUiModel::nodeActionRequested,
+                     &viewport, &ViewportItem::requestNodeAction);
+    QObject::connect(uiModel.nodeGraph(), &NodeGraphUiModel::nodeActionCompleteRequested,
+                     &viewport, &ViewportItem::requestNodeActionComplete);
+    QObject::connect(uiModel.nodeGraph(), &NodeGraphUiModel::nodeActionCancelRequested,
+                     &viewport, &ViewportItem::requestNodeActionCancel);
+    QObject::connect(uiModel.nodeGraph(), &NodeGraphUiModel::nodeActionClearRequested,
+                     &viewport, &ViewportItem::requestNodeActionClearSelection);
+    QObject::connect(uiModel.viewport(), &ViewportUiModel::meshSelectionRequested,
+                     &viewport, [&viewport, model = uiModel.nodeGraph()](bool active) {
+                         if (!active) {
+                             viewport.requestViewportMeshSelection(false);
+                             return;
+                         }
+                         if (!model->triggerPrimaryNodeAction()) {
+                             viewport.requestViewportMeshSelection(true);
+                         }
+                     });
+    QObject::connect(uiModel.viewport(), &ViewportUiModel::meshSelectionElementTypeRequested,
+                     &viewport, &ViewportItem::requestSubselectionElementType);
     QObject::connect(uiModel.nodeGraph(), &NodeGraphUiModel::exportRequested,
                      &graphHost, &GraphHost::requestExport, Qt::QueuedConnection);
     QObject::connect(uiModel.nodeGraph(), &NodeGraphUiModel::exportProductsRequested,
@@ -220,19 +240,42 @@ void App::connectRuntime(GraphHost& graphHost) {
                      uiModel.velocityPalette(), &VelocityPaletteUiModel::applyVisibility, Qt::QueuedConnection);
     QObject::connect(&runtimeNotifier, &RuntimeNotifier::boundaryFaceSelectionChanged,
                      uiModel.boundaryFace(), &BoundaryFaceUiModel::applySelectedFace, Qt::QueuedConnection);
+    QObject::connect(&runtimeNotifier, &RuntimeNotifier::subselectionStateChanged,
+                     uiModel.viewport(), &ViewportUiModel::applySubselectionState,
+                     Qt::QueuedConnection);
+    QObject::connect(&runtimeNotifier, &RuntimeNotifier::modelSelectionStateChanged,
+                     uiModel.viewport(), &ViewportUiModel::applyModelSelection,
+                     Qt::QueuedConnection);
     QObject::connect(&runtimeNotifier, &RuntimeNotifier::timelineStateChanged,
                      uiModel.timeline(), &TimelineUiModel::applyState, Qt::QueuedConnection);
     QObject::connect(&runtimeNotifier, &RuntimeNotifier::graphSelectionChanged,
                      uiModel.nodeGraph(), [model = uiModel.nodeGraph()](NodeGraphNodeId id) {
                          model->setRuntimeSelectedNodeId(static_cast<int>(id.value));
                      }, Qt::QueuedConnection);
+    QObject::connect(&runtimeNotifier, &RuntimeNotifier::viewportSelectionRequested,
+                     uiModel.nodeGraph(), &NodeGraphUiModel::applyViewportSelection,
+                     Qt::QueuedConnection);
     QObject::connect(&runtimeNotifier, &RuntimeNotifier::nodeParametersRequested,
                      &graphHost, [&graphHost](NodeGraphNodeId nodeId,
+                                              qulonglong originInstanceId,
                                               const std::vector<NodeGraphParamValue>& parameters) {
-                         graphHost.setParameters(nodeId, parameters);
+                         graphHost.applyRuntimeParameters(
+                             nodeId, originInstanceId, parameters);
                      }, Qt::QueuedConnection);
+    QObject::connect(&graphHost, &GraphHost::runtimeParametersApplied,
+                     &runtimeNotifier, &RuntimeNotifier::publishRuntimeParametersResult,
+                     Qt::QueuedConnection);
+    QObject::connect(&runtimeNotifier, &RuntimeNotifier::runtimeParametersApplied,
+                     uiModel.nodeGraph(), &NodeGraphUiModel::applyRuntimeParametersResult,
+                     Qt::QueuedConnection);
     QObject::connect(&runtimeNotifier, &RuntimeNotifier::exportProductsReady,
                      uiModel.nodeGraph(), &NodeGraphUiModel::applyExportProducts,
+                     Qt::QueuedConnection);
+    QObject::connect(&runtimeNotifier, &RuntimeNotifier::nodeInspectionChanged,
+                     uiModel.nodeGraph(), &NodeGraphUiModel::applyNodeInspection,
+                     Qt::QueuedConnection);
+    QObject::connect(&runtimeNotifier, &RuntimeNotifier::nodeActionCompleted,
+                     uiModel.nodeGraph(), &NodeGraphUiModel::applyNodeActionCompleted,
                      Qt::QueuedConnection);
     QObject::connect(&runtimeNotifier, &RuntimeNotifier::probePickingCompleted,
                      uiModel.nodeGraph(), &NodeGraphUiModel::cancelProbePicking,

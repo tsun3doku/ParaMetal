@@ -1713,8 +1713,35 @@ bool HeatSystem::rebuildGlobalThermalDomain() {
     return true;
 }
 
-void HeatSystem::syncHeatProbes(const std::unordered_map<uint64_t, HeatProbeData>& probes) {
+void HeatSystem::syncHeatProbes(const std::unordered_map<uint64_t, HeatProbeConfig>& probes) {
     std::unordered_set<uint64_t> activeKeys;
+    std::vector<HeatProbeRuntime::FragmentCentroid> sharedCentroids;
+    bool centroidsBuilt = false;
+    const auto buildCentroids = [&]() {
+        if (centroidsBuilt) {
+            return;
+        }
+        centroidsBuilt = true;
+        if (!domainRuntime.hasGlobalDomain()) {
+            return;
+        }
+        const vem::VEMMesh& vemMesh = domainRuntime.getVemMesh();
+        if (vemMesh.cells.empty()) {
+            return;
+        }
+        std::unordered_map<uint32_t, uint32_t> localCounts;
+        sharedCentroids.reserve(vemMesh.cells.size());
+        for (const vem::CellGeometry& cell : vemMesh.cells) {
+            if (cell.ownerModelId == UINT32_MAX) {
+                continue;
+            }
+            sharedCentroids.push_back({
+                cell.ownerModelId,
+                localCounts[cell.ownerModelId]++,
+                glm::vec3(cell.centroid)});
+        }
+    };
+
     for (const auto& [key, data] : probes) {
         activeKeys.insert(key);
         auto& runtime = probeRuntimes[key];
@@ -1725,21 +1752,9 @@ void HeatSystem::syncHeatProbes(const std::unordered_map<uint64_t, HeatProbeData
         runtime->configure(data.enabled, data.opcPort, data.items);
 
         if ((isNew || runtime->hasDirtyWeights()) && domainRuntime.hasGlobalDomain()) {
-            const vem::VEMMesh& vemMesh = domainRuntime.getVemMesh();
-            if (!vemMesh.cells.empty()) {
-                std::unordered_map<uint32_t, uint32_t> localCounts;
-                std::vector<HeatProbeRuntime::FragmentCentroid> centroids;
-                centroids.reserve(vemMesh.cells.size());
-                for (const vem::CellGeometry& cell : vemMesh.cells) {
-                    if (cell.ownerModelId == UINT32_MAX) {
-                        continue;
-                    }
-                    centroids.push_back({
-                        cell.ownerModelId,
-                        localCounts[cell.ownerModelId]++,
-                        glm::vec3(cell.centroid)});
-                }
-                runtime->rebuildWeights(centroids, modelLocalToWorldByModelId);
+            buildCentroids();
+            if (!sharedCentroids.empty()) {
+                runtime->rebuildWeights(sharedCentroids, modelLocalToWorldByModelId);
             }
         }
     }

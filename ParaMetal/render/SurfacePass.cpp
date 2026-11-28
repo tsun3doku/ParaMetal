@@ -2,7 +2,6 @@
 
 #include "HeatOverlayRenderer.hpp"
 #include "VoronoiOverlayRenderer.hpp"
-#include "renderers/IntrinsicRenderer.hpp"
 #include "framegraph/FrameGraphPasses.hpp"
 #include "framegraph/FrameGraphTypes.hpp"
 #include "framegraph/VkFrameGraphRuntime.hpp"
@@ -13,13 +12,11 @@ SurfacePass::SurfacePass(
     VkFrameGraphRuntime& frameGraphRuntime,
     HeatOverlayRenderer& heatOverlayRenderer,
     VoronoiOverlayRenderer& voronoiOverlayRenderer,
-    IntrinsicRenderer& intrinsicRenderer,
     framegraph::PassId passId,
     uint32_t maxFramesInFlight)
     : frameGraphRuntime(frameGraphRuntime),
       heatOverlayRenderer(heatOverlayRenderer),
       voronoiOverlayRenderer(voronoiOverlayRenderer),
-      intrinsicRenderer(intrinsicRenderer),
       passId(passId),
       maxFramesInFlight(maxFramesInFlight) {
 }
@@ -28,7 +25,7 @@ const char* SurfacePass::name() const {
     return framegraph::passes::Surface.data();
 }
 
-void SurfacePass::create() {
+bool SurfacePass::create() {
     heatOverlayRenderer.initializeSurface(
         frameGraphRuntime.getRenderPass(),
         framegraph::toIndex(passId),
@@ -37,11 +34,8 @@ void SurfacePass::create() {
         frameGraphRuntime.getRenderPass(),
         framegraph::toIndex(passId),
         maxFramesInFlight);
-    intrinsicRenderer.initializeSurface(
-        frameGraphRuntime.getRenderPass(),
-        maxFramesInFlight,
-        framegraph::toIndex(passId));
     ready = true;
+    return true;
 }
 
 void SurfacePass::resize(VkExtent2D extent) {
@@ -64,7 +58,6 @@ void SurfacePass::record(const FrameContext& context, const SceneView& view, con
 
     heatOverlayRenderer.renderSurface(commandBuffer, frameIndex, context.extent);
     voronoiOverlayRenderer.renderSurface(commandBuffer, frameIndex);
-    intrinsicRenderer.renderSurface(commandBuffer, frameIndex);
 }
 
 void SurfacePass::destroy() {

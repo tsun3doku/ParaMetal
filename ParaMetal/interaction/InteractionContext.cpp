@@ -6,6 +6,8 @@
 #include "scene/GizmoController.hpp"
 #include "scene/MarkerInteractionController.hpp"
 #include "scene/NavigationGizmoController.hpp"
+#include "scene/SubselectionInteractionController.hpp"
+#include "scene/SubselectionPickService.hpp"
 #include "vulkan/ModelRegistry.hpp"
 
 InteractionContext::InteractionContext() = default;
@@ -21,12 +23,14 @@ bool InteractionContext::initialize(
 
     navigationGizmo = std::make_unique<NavigationGizmoController>(cameraController);
     markerInteraction = std::make_unique<MarkerInteractionController>(cameraController.getCamera(), modelRegistry, windowState);
+    subselection = std::make_unique<SubselectionInteractionController>();
     domainFace = std::make_unique<DomainFaceInteractionController>(cameraController.getCamera(), windowState);
     gizmo = std::make_unique<GizmoController>(cameraController, windowState);
 
     interactionStack = {
         navigationGizmo.get(),
         markerInteraction.get(),
+        subselection.get(),
         domainFace.get(),
         gizmo.get()
     };
@@ -39,6 +43,7 @@ void InteractionContext::shutdown() {
     interactionStack.clear();
     gizmo.reset();
     domainFace.reset();
+    subselection.reset();
     markerInteraction.reset();
     navigationGizmo.reset();
     initialized = false;
@@ -58,6 +63,20 @@ MarkerInteractionController& InteractionContext::markerInteractionController() {
 
 const MarkerInteractionController& InteractionContext::markerInteractionController() const {
     return *markerInteraction;
+}
+
+SubselectionInteractionController& InteractionContext::subselectionInteractionController() {
+    return *subselection;
+}
+
+const SubselectionInteractionController& InteractionContext::subselectionInteractionController() const {
+    return *subselection;
+}
+
+void InteractionContext::setSubselectionPickService(SubselectionPickService* pickService) {
+    if (subselection) {
+        subselection->setPickService(pickService);
+    }
 }
 
 DomainFaceInteractionController& InteractionContext::domainFaceInteractionController() {
@@ -130,6 +149,9 @@ bool InteractionContext::hasActivePointerCapture() const {
 void InteractionContext::cancelActiveInteractions() {
     if (markerInteraction && markerInteraction->isProbePickingActive()) {
         markerInteraction->cancelProbePicking();
+    }
+    if (subselection) {
+        subselection->cancelEdit();
     }
     if (gizmo) {
         gizmo->cancelDrag();

@@ -215,14 +215,15 @@ bool HeatSystemComputeController::apply(uint64_t socketKey, const Config& config
     return true;
 }
 
-void HeatSystemComputeController::remove(uint64_t socketKey) {
+bool HeatSystemComputeController::remove(uint64_t socketKey) {
     if (socketKey == 0) {
-        return;
+        return true;
     }
 
     failedComputeHashes.erase(socketKey);
-    retireCurrent(socketKey);
+    const bool retired = retireCurrent(socketKey);
     syncSerialInputs();
+    return retired;
 }
 
 bool HeatSystemComputeController::hasAnyRetiring() const {
@@ -249,20 +250,20 @@ void HeatSystemComputeController::clearAllRetiring() {
     }
 }
 
-void HeatSystemComputeController::commitPending(uint64_t socketKey) noexcept {
+bool HeatSystemComputeController::commitPending(uint64_t socketKey) noexcept {
     const auto it = generationSlots.find(socketKey);
     if (it == generationSlots.end()) {
-        return;
+        return false;
     }
     GenerationSlot& slot = it->second;
-    assert(slot.retiring == nullptr);
     if (slot.retiring != nullptr) {
-        return;
+        return false;
     }
-    if (slot.candidate) {
-        slot.retiring = std::move(slot.current);
-        slot.current = std::move(slot.candidate);
+    if (!slot.candidate) {
+        return false;
     }
+    slot.retiring = std::move(slot.current);
+    slot.current = std::move(slot.candidate);
 
     const auto pending = pendingConfigs.find(socketKey);
     if (pending != pendingConfigs.end()) {
@@ -273,6 +274,7 @@ void HeatSystemComputeController::commitPending(uint64_t socketKey) noexcept {
         pendingConfigs.erase(pending);
     }
     failedComputeHashes.erase(socketKey);
+    return true;
 }
 
 void HeatSystemComputeController::cancelCandidate(uint64_t socketKey) {
@@ -296,21 +298,26 @@ void HeatSystemComputeController::cancelCandidate(uint64_t socketKey) {
     }
 }
 
-void HeatSystemComputeController::retireCurrent(uint64_t socketKey) {
+bool HeatSystemComputeController::retireCurrent(uint64_t socketKey) {
     configuredConfigs.erase(socketKey);
     pendingConfigs.erase(socketKey);
 
     const auto it = generationSlots.find(socketKey);
     if (it == generationSlots.end()) {
-        return;
+        return true;
     }
     GenerationSlot& slot = it->second;
-    if (slot.candidate && !slot.retiring) {
-        slot.retiring = std::move(slot.candidate);
+    if (slot.retiring) {
+        return false;
     }
-    if (slot.current && !slot.retiring) {
+    if (slot.candidate) {
+        slot.retiring = std::move(slot.candidate);
+        return !slot.current;
+    }
+    if (slot.current) {
         slot.retiring = std::move(slot.current);
     }
+    return true;
 }
 
 void HeatSystemComputeController::quiescedClear() noexcept {

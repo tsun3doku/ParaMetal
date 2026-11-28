@@ -42,7 +42,7 @@ Item {
     UiPanelPopup {
         id: cameraPopup
         theme: root.theme
-        x: 0
+        x: root.width - width
         y: root.height + 4
         width: 205
 

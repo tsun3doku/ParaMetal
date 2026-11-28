@@ -50,6 +50,10 @@ void NodeSerialTemperature::execute(NodeKernelEval& eval) const {
     data.baudRate = params.baudRate;
     const uint64_t key = NodeSocketKey(eval.node.id, eval.node.outputs.front().id);
     output.payloadHandle = eval.runtime.payloadRegistry->store(key, data, eval.outputHashes);
+    if (output.payloadHandle.key == 0) {
+        eval.error = "Payload publication backpressured.";
+        return;
+    }
 }
 
 HashValues NodeSerialTemperature::computeOutputHashes(const NodeKernelHash& hash) const {

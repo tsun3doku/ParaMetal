@@ -99,6 +99,9 @@
     <ClCompile Include="runtime\package\PointPackageCompiler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="runtime\package\GroupPackageCompiler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="runtime\package\RemeshPackageCompiler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -115,9 +118,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="runtime\package\RuntimePackageManager.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="runtime\package\passes\ValidationPass.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="runtime\package\passes\CoordinatePass.cpp">
@@ -175,6 +175,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClCompile Include="runtime\RuntimeController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime\SubselectionDisplayController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="runtime\TimelineController.cpp">
@@ -1186,6 +1189,9 @@
     <ClInclude Include="runtime\package\RuntimePackageCompiler.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="runtime\package\GroupPackageCompiler.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="runtime\package\PackageCompileContext.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1210,9 +1216,6 @@
     <ClInclude Include="runtime\package\RuntimePackageController.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="runtime\package\passes\ValidationPass.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="runtime\package\passes\CoordinatePass.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1222,10 +1225,16 @@
     <ClInclude Include="runtime\package\RuntimePackageManager.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="runtime\ProductHandle.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="runtime\RuntimeProductManager.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="runtime\RuntimeController.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="runtime\SubselectionDisplayController.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="runtime\TimelineController.hpp">
@@ -1334,6 +1343,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="heat\HeatSystemSurfaceStage.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="heat\HeatProbeConfig.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="heat\HeatSystemComputeController.hpp">
@@ -1622,9 +1634,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\NodeGraphEditor.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="nodegraph\NodeGraphDataTypes.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nodegraph\NodeGraphEdges.hpp">

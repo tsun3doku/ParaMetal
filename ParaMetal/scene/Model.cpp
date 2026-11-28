@@ -99,7 +99,7 @@ void Model::createVertexBuffer() {
         commandPool,
         vertices.data(),
         sizeof(Vertex) * vertices.size(),
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
         alignment,
         vertexBuffer,
         vertexBufferOffset_
@@ -119,7 +119,7 @@ void Model::createIndexBuffer() {
         commandPool,
         indices.data(),
         sizeof(uint32_t) * indices.size(),
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
         alignment,
         indexBuffer,
         indexBufferOffset_
@@ -217,6 +217,7 @@ void Model::setGeometry(
     renderVertices = vertices;
     renderIndices = indices;
     hasSplitRenderMesh = false;
+
     recalculateNormals();
 }
 
@@ -295,6 +296,7 @@ void Model::updateGeometry(const std::vector<Vertex>& newVertices, const std::ve
     recalculateNormals();
     hasSplitRenderMesh = false;
 
+
     updateVertexBuffer();
     updateIndexBuffer();
     updateRenderVertexBuffer();
@@ -329,7 +331,7 @@ void Model::updateVertexBuffer() {
         commandPool,
         vertices.data(),
         sizeof(vertices[0]) * vertices.size(),
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
         alignment,
         vertexBuffer,
         vertexBufferOffset_
@@ -344,7 +346,7 @@ void Model::updateIndexBuffer() {
         commandPool,
         indices.data(),
         sizeof(indices[0]) * indices.size(),
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
         alignment,
         indexBuffer,
         indexBufferOffset_

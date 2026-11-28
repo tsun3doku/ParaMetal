@@ -7,8 +7,8 @@
 #include <QObject>
 #include <QString>
 #include <QVariantList>
+#include <QVariantMap>
 #include <cstdint>
-#include <string>
 
 class RuntimeNotifier final : public QObject,
                               public TemperatureTelemetryReceiver,
@@ -113,8 +113,60 @@ public:
         emit graphSelectionChanged(nodeId);
     }
 
+    void publishViewportSelectionRequested(
+        uint64_t graphInstanceId,
+        NodeGraphNodeId nodeId,
+        uint64_t nodeInstanceId,
+        bool additive) {
+        emit viewportSelectionRequested(
+            static_cast<qulonglong>(graphInstanceId),
+            nodeId,
+            static_cast<qulonglong>(nodeInstanceId),
+            additive);
+    }
+
     void publishBoundaryFaceSelection(int nodeId, int face) {
         emit boundaryFaceSelectionChanged(nodeId, face);
+    }
+
+    void publishSubselectionState(
+        bool active,
+        int selectedCount,
+        int elementType,
+        bool commitRequired) {
+        emit subselectionStateChanged(
+            active, selectedCount, elementType, commitRequired);
+    }
+
+    void publishNodeInspection(
+        uint64_t graphInstanceId,
+        int nodeId,
+        const QVariantList& fields,
+        const QVariantMap& parameterChoices) {
+        emit nodeInspectionChanged(
+            static_cast<qulonglong>(graphInstanceId),
+            nodeId,
+            fields,
+            parameterChoices);
+    }
+
+    void publishNodeActionCompleted(int nodeId, bool success, const QString& error) {
+        emit nodeActionCompleted(nodeId, success, error);
+    }
+
+    void publishRuntimeParametersResult(int nodeId, bool success, const QString& error) {
+        emit runtimeParametersApplied(nodeId, success, error);
+    }
+
+    void publishNodeParametersRequested(
+        NodeGraphNodeId nodeId,
+        qulonglong originInstanceId,
+        const std::vector<NodeGraphParamValue>& parameters) {
+        emit nodeParametersRequested(nodeId, originInstanceId, parameters);
+    }
+
+    void publishModelSelectionState(bool selected) {
+        emit modelSelectionStateChanged(selected);
     }
 
     void publishHeatSolveStatus(bool active, bool paused) {
@@ -161,12 +213,29 @@ signals:
     void heatProbeTemperaturesChanged(int nodeId, const QList<float>& temperatures);
     void probePickingCompleted(int nodeId);
     void graphSelectionChanged(NodeGraphNodeId nodeId);
+    void viewportSelectionRequested(
+        qulonglong graphInstanceId,
+        NodeGraphNodeId nodeId,
+        qulonglong nodeInstanceId,
+        bool additive);
     void boundaryFaceSelectionChanged(int nodeId, int face);
+    void modelSelectionStateChanged(bool selected);
+    void subselectionStateChanged(
+        bool active,
+        int selectedCount,
+        int elementType,
+        bool commitRequired);
+    void nodeInspectionChanged(qulonglong graphInstanceId, int nodeId,
+                               const QVariantList& fields,
+                               const QVariantMap& parameterChoices);
+    void nodeActionCompleted(int nodeId, bool success, const QString& error);
+    void runtimeParametersApplied(int nodeId, bool success, const QString& error);
     void exportStatusChanged(int nodeId, bool success, const QString& message);
     void exportProductsReady(int nodeId, qulonglong requestId, qulonglong graphRevision,
                              const QVariantList& products, const QString& error);
     void nodeParametersRequested(
         NodeGraphNodeId nodeId,
+        qulonglong originInstanceId,
         const std::vector<NodeGraphParamValue>& parameters);
 
 private:
@@ -179,14 +248,6 @@ private:
         QString connection;
         QString temperature;
         QString pollingRate;
-        SerialTemperatureRuntime::ConnectionState connectionState =
-            SerialTemperatureRuntime::ConnectionState::Disabled;
-        std::string detail;
-        uint64_t readingRevision = 0;
-        float readingTemperatureC = 0.0f;
-        float readingPollingRateHz = 0.0f;
-        bool hasReading = false;
-        bool initialized = false;
     };
 
     mutable QMutex statusMutex;

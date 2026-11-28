@@ -25,7 +25,6 @@ static NodeTypeDefinition buildRemeshNode() {
             {nodegraphparams::remesh::MaxEdgeLength, "Max Edge Length", NodeGraphParamType::Float, 0.1, 0, false, "", false},
             {nodegraphparams::remesh::StepSize, "Step Size", NodeGraphParamType::Float, 0.25, 0, false, "", false},
             {nodegraphparams::remesh::RunRequested, "Run Requested", NodeGraphParamType::Bool, 0.0, 0, false, "", true},
-            {nodegraphparams::remesh::ShowRemeshOverlay, "Show Remesh Overlay", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::remesh::ShowFaceNormals, "Show Face Normals", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::remesh::ShowVertexNormals, "Show Vertex Normals", NodeGraphParamType::Bool, 0.0, 0, false, "", false},
             {nodegraphparams::remesh::NormalLength, "Normal Length", NodeGraphParamType::Float, 0.05, 0, false, "", false},
@@ -46,43 +45,11 @@ const char* NodeRemesh::typeId() const {
 }
 
 void NodeRemesh::execute(NodeKernelEval& eval) const {
-    NodePayloadRegistry* const payloadRegistry = eval.runtime.payloadRegistry;
-    RemeshData remeshData{};
-
-    const std::size_t meshSocketIndex = inputIndexOf(eval.node, NodeGraphValueType::Mesh);
-    const NodeDataBlock* upstreamGeometryValue =
-        (meshSocketIndex < eval.inputs.size() && !eval.inputs[meshSocketIndex].empty())
-            ? eval.inputs[meshSocketIndex].front() : nullptr;
-    if (upstreamGeometryValue &&
-        upstreamGeometryValue->dataType != payloadtypes::Geometry &&
-        upstreamGeometryValue->dataType != payloadtypes::Remesh) {
-        upstreamGeometryValue = nullptr;
-    }
-
-    const bool hasValidInput = payloadRegistry && upstreamGeometryValue &&
-        upstreamGeometryValue->payloadHandle.key != 0;
-    if (hasValidInput) {
-        const RemeshNodeParams params = readRemeshNodeParams(eval.node);
-        remeshData.sourceMeshHandle = upstreamGeometryValue->payloadHandle;
-        remeshData.iterations = params.iterations;
-        remeshData.minAngleDegrees = static_cast<float>(params.minAngleDegrees);
-        remeshData.maxEdgeLength = static_cast<float>(params.maxEdgeLength);
-        remeshData.stepSize = static_cast<float>(params.stepSize);
-        remeshData.active = true;
-    }
-
     for (std::size_t outputIndex = 0; outputIndex < eval.outputs.size() && outputIndex < eval.node.outputs.size(); ++outputIndex) {
         NodeDataBlock& outputValue = eval.outputs[outputIndex];
         const NodeGraphSocket& outputSocket = eval.node.outputs[outputIndex];
         outputValue = {};
         outputValue.dataType = outputSocket.contract.producedPayloadType;
-
-        if (!payloadRegistry || outputValue.dataType != payloadtypes::Remesh || !hasValidInput) {
-            continue;
-        }
-
-        const uint64_t payloadKey = NodeSocketKey(eval.node.id, outputSocket.id);
-        outputValue.payloadHandle = payloadRegistry->store(payloadKey, remeshData, eval.outputHashes);
     }
 }
 

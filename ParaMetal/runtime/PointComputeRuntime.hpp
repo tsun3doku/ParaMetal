@@ -29,19 +29,19 @@ public:
 
     bool prepareCandidate(const Config& config);
     bool buildProduct(uint64_t socketKey, PointProduct& product) const;
-    void commitPending(uint64_t socketKey) noexcept;
+    bool commitPending(uint64_t socketKey) noexcept;
     void cancelCandidate(uint64_t socketKey);
 
     void clearRetiring(uint64_t socketKey);
 
-    void disable(uint64_t socketKey);
+    bool disable(uint64_t socketKey);
     bool hasAnyRetiring() const;
     void clearAllRetiring();
     bool currentHashMatches(uint64_t socketKey, uint64_t computeHash) const;
     void quiescedClear() noexcept;
 
 private:
-    void retireCurrent(uint64_t socketKey);
+    bool retireCurrent(uint64_t socketKey);
 
     struct PointBufferGeneration {
         VkBuffer buffer = VK_NULL_HANDLE;

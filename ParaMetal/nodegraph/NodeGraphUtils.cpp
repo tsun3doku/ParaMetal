@@ -31,7 +31,9 @@ bool findFirstUpstreamNodeByType(const NodeGraphState& state, NodeGraphNodeId st
         }
 
         for (const NodeGraphSocket& inputSocket : currentNode->inputs) {
-            if (inputSocket.valueType != NodeGraphValueType::Mesh) {
+            if (socketType(
+                    state, currentNodeId, inputSocket.id) !=
+                NodeGraphValueType::Mesh) {
                 continue;
             }
 

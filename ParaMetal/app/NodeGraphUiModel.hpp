@@ -23,6 +23,11 @@ class NodeGraphUiModel final : public QAbstractListModel {
     Q_PROPERTY(QString selectedNodeDescription READ selectedNodeDescription NOTIFY selectedNodeChanged)
     Q_PROPERTY(QVariantList selectedNodeParameters READ selectedNodeParameters NOTIFY selectedNodeChanged)
     Q_PROPERTY(QVariantList serialPorts READ serialPorts NOTIFY serialPortsChanged)
+    Q_PROPERTY(QVariantList selectedNodeActions READ selectedNodeActions NOTIFY inspectionChanged)
+    Q_PROPERTY(QVariantList selectedNodeInspection READ selectedNodeInspection NOTIFY inspectionChanged)
+    Q_PROPERTY(QVariantMap selectedParameterChoices READ selectedParameterChoices NOTIFY inspectionChanged)
+    Q_PROPERTY(QString nodeActionStatus READ nodeActionStatus NOTIFY nodeActionStatusChanged)
+    Q_PROPERTY(bool nodeActionStatusSuccess READ nodeActionStatusSuccess NOTIFY nodeActionStatusChanged)
     Q_PROPERTY(bool probePickingActive READ isProbePickingActive NOTIFY probePickingActiveChanged)
     Q_PROPERTY(bool boundaryFaceSelectionActive READ isBoundaryFaceSelectionActive NOTIFY boundaryFaceSelectionActiveChanged)
     Q_PROPERTY(QStringList exportProductLabels READ exportProductLabels NOTIFY exportProductsChanged)
@@ -66,6 +71,11 @@ public:
     QString selectedNodeDescription() const;
     QVariantList selectedNodeParameters() const;
     QVariantList serialPorts() const;
+    QVariantList selectedNodeActions() const { return nodeActionItems; }
+    QVariantList selectedNodeInspection() const { return nodeInspectionItems; }
+    QVariantMap selectedParameterChoices() const { return parameterChoiceItems; }
+    QString nodeActionStatus() const { return nodeActionStatusText; }
+    bool nodeActionStatusSuccess() const { return nodeActionStatusWasSuccess; }
     QStringList exportProductLabels() const;
     int selectedExportProductIndex() const;
     QStringList exportProductFormats() const;
@@ -75,12 +85,23 @@ public:
     QString exportProductsError() const { return exportProductsErrorText; }
 
     void setRuntimeSelectedNodeId(int nodeId);
+    void applyViewportSelection(
+        qulonglong graphInstanceId,
+        NodeGraphNodeId nodeId,
+        qulonglong nodeInstanceId,
+        bool additive);
+    bool triggerPrimaryNodeAction();
 
 public slots:
     void initializeGraph(const NodeGraphState& state, const std::vector<NodeTypeDefinition>& definitions);
     void replaceGraphState(const NodeGraphState& state);
     void applyDelta(const NodeGraphDelta& delta);
     void handleNodesPasted(const std::vector<NodeGraphNodeId>& nodeIds);
+    void applyNodeInspection(qulonglong graphInstanceId, int nodeId,
+                             const QVariantList& fields,
+                             const QVariantMap& parameterChoices);
+    void applyNodeActionCompleted(int nodeId, bool success, const QString& error);
+    void applyRuntimeParametersResult(int nodeId, bool success, const QString& error);
     void applyExportProducts(int nodeId, qulonglong requestId, qulonglong graphRevision,
                              const QVariantList& products, const QString& error);
 
@@ -90,6 +111,10 @@ public:
     Q_INVOKABLE void startProbePicking(int nodeId, int probeIndex = 0);
     Q_INVOKABLE void cancelProbePicking();
     Q_INVOKABLE void setBoundaryFaceSelectionActive(bool active);
+    Q_INVOKABLE void triggerNodeAction(int actionId);
+    Q_INVOKABLE void completeNodeAction();
+    Q_INVOKABLE void cancelNodeAction();
+    Q_INVOKABLE void clearNodeActionSelection();
     Q_INVOKABLE void removeSelectedNodes();
     Q_INVOKABLE void resetToDefaultGraph();
     Q_INVOKABLE int addNode(const QString& typeId, qreal x, qreal y);
@@ -114,12 +139,20 @@ signals:
     void edgesChanged();
     void nodeCategoriesChanged();
     void selectedNodeChanged();
-    void selectionRequested(int nodeId);
+    void selectionRequested(
+        const std::vector<NodeGraphNodeId>& nodeIds,
+        int primaryNodeId);
     void probePickingRequested(int nodeId, int probeIndex);
     void boundaryFaceEditingRequested(int nodeId, bool armed);
     void boundaryFaceSelectionActiveChanged();
+    void nodeActionRequested(int nodeId, qulonglong nodeInstanceId, int actionId);
+    void nodeActionCompleteRequested();
+    void nodeActionCancelRequested();
+    void nodeActionClearRequested();
     void probePickingActiveChanged();
     void serialPortsChanged();
+    void inspectionChanged();
+    void nodeActionStatusChanged();
     void resetRequested();
     void addNodeRequested(const QString& typeId, float x, float y);
     void removeNodeRequested(NodeGraphNodeId nodeId);
@@ -141,6 +174,8 @@ private:
     void rebuildNodeCategories();
     void rebuildSelectedNode();
     void syncBoundaryFaceEditing(bool force);
+    void clearInspection();
+    std::vector<NodeGraphNodeId> runtimeSelectionIds() const;
     void notifySelectionChanged(bool requestRuntimeSelection);
     void requestCurrentExportProducts();
     WriteProductSelection currentWriteSelection() const;
@@ -165,6 +200,12 @@ private:
     QString selectedType;
     QVariantList selectedParameters;
     QVariantList serialPortItems;
+    QVariantList nodeActionItems;
+    QVariantList nodeInspectionItems;
+    QVariantMap parameterChoiceItems;
+    int nodeInspectionNodeId = 0;
+    QString nodeActionStatusText;
+    bool nodeActionStatusWasSuccess = true;
     bool m_probePickingActive = false;
     QVariantList exportProductItems;
     QString exportProductsErrorText;

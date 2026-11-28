@@ -1,9 +1,9 @@
 #include "NodeGraphDisplay.hpp"
 
-#include "NodeGraphDataTypes.hpp"
+#include "NodeGraphCoreTypes.hpp"
 #include "NodeGraphEvaluation.hpp"
 #include "NodeGraphPayloadTypes.hpp"
-#include "NodeGraphProductTypes.hpp"
+#include "runtime/ProductHandle.hpp"
 #include "NodeGraphUtils.hpp"
 #include "nodegraph/NodePayloadRegistry.hpp"
 #include "runtime/package/RuntimePackageManager.hpp"
@@ -58,14 +58,7 @@ void NodeGraphDisplay::addDisplayKeys(
         NodeDataHandle currentMeshHandle{};
         if (payloadRegistry->resolveRemesh(block->payloadHandle, &currentMeshHandle) &&
             currentMeshHandle.key != 0) {
-            if (const RemeshPackage* remesh = packages.findAny<RemeshPackage>(currentMeshHandle.key)) {
-                selectedKeys.insert(currentMeshHandle.key);
-                if (remesh->sourceModelProduct.isValid()) {
-                    selectedKeys.insert(remesh->sourceModelProduct.outputSocketKey);
-                }
-            } else {
-                selectedKeys.insert(currentMeshHandle.key);
-            }
+            selectedKeys.insert(currentMeshHandle.key);
         }
         return;
     }

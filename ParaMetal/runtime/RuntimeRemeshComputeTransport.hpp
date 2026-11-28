@@ -20,9 +20,11 @@ public:
     }
 
     ComputeApplyResult apply(uint64_t socketKey, const RemeshPackage& package, RemeshProduct& outProduct);
-    void commitPending(uint64_t socketKey);
+    bool commitPending(uint64_t socketKey);
     void cancelPending(uint64_t socketKey);
-    void remove(uint64_t socketKey);
+    bool remove(uint64_t socketKey);
+    bool hasAnyRetiring() const;
+    void quiescedClear();
 
 private:
     RemeshController* controller = nullptr;

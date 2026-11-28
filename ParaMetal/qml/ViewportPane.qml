@@ -39,70 +39,90 @@ Rectangle {
         z: 10
     }
 
-    Row {
+    ViewportTopToolbar {
+        id: topToolbar
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.leftMargin: 10
+        anchors.rightMargin: 10
+        anchors.topMargin: 10
+        theme: root.theme
+        bridge: root.bridge
+        z: 20
+    }
+
+    ViewportToolRail {
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.leftMargin: 10
         anchors.topMargin: 10
-        spacing: 5
+        theme: root.theme
+        bridge: root.bridge
         z: 20
-
-        ViewportSettingsControl {
-            theme: root.theme
-            bridge: root.bridge
-        }
-
-        CameraControl {
-            theme: root.theme
-            bridge: root.bridge
-        }
     }
 
-    Row {
-        anchors.top: parent.top
-        anchors.topMargin: 10
+    Rectangle {
+        id: selectionHint
         anchors.horizontalCenter: parent.horizontalCenter
-        spacing: 5
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 44
+        visible: root.bridge.selectionCommitRequired
+        radius: 4
+        color: root.theme.panelBackground
+        border.width: 1
+        border.color: root.theme.subtleBorder
+        z: 20
 
-        Rectangle {
-            width: UiTheme.toolButtonGroupWidth(2)
-            height: UiTheme.toolButtonSize + UiTheme.toolButtonFrameSize
-            radius: 5
-            color: theme.toolBorder
-            Row {
-                x: UiTheme.toolButtonFrameInset
-                y: UiTheme.toolButtonFrameInset
-                spacing: UiTheme.toolButtonGroupSpacing
-                ToolIconButton {
-                    segment: 1
-                    iconSize: 20
-                    imageSource: "../textures/icons/Overlays/wireframe/128w/Artboard 1.png"
-                    checked: bridge.wireframeMode === 1
-                    onClicked: bridge.setWireframeMode(checked ? 1 : 0)
-                }
-                ToolIconButton {
-                    segment: 3
-                    iconSize: 20
-                    imageSource: "../textures/icons/Overlays/wireframe_shaded/128w/Artboard 1.png"
-                    checked: bridge.wireframeMode === 2
-                    onClicked: bridge.setWireframeMode(checked ? 2 : 0)
-                }
+        Row {
+            id: selectionHintContent
+            anchors.centerIn: parent
+            spacing: 5
+
+            Text {
+                color: root.theme.secondaryText
+                font.family: UiTheme.fontFamily
+                font.pixelSize: UiTheme.descriptionFontSize
+                text: qsTr("Selecting %1")
+                    .arg(root.bridge.meshSelectionElementType === 0
+                    ? qsTr("Vertices")
+                    : root.bridge.meshSelectionElementType === 1
+                        ? qsTr("Edges")
+                        : qsTr("Faces"))
+            }
+
+            Text {
+                color: root.theme.accent
+                font.family: UiTheme.fontFamily
+                font.pixelSize: UiTheme.descriptionFontSize
+                font.bold: true
+                text: qsTr("Enter")
+            }
+
+            Text {
+                color: root.theme.secondaryText
+                font.family: UiTheme.fontFamily
+                font.pixelSize: UiTheme.descriptionFontSize
+                text: qsTr("to finish  |")
+            }
+
+            Text {
+                color: root.theme.accent
+                font.family: UiTheme.fontFamily
+                font.pixelSize: UiTheme.descriptionFontSize
+                font.bold: true
+                text: qsTr("Esc")
+            }
+
+            Text {
+                color: root.theme.secondaryText
+                font.family: UiTheme.fontFamily
+                font.pixelSize: UiTheme.descriptionFontSize
+                text: qsTr("to cancel")
             }
         }
 
-        Rectangle {
-            width: UiTheme.toolButtonSize + UiTheme.toolButtonFrameSize
-            height: UiTheme.toolButtonSize + UiTheme.toolButtonFrameSize
-            radius: 5
-            color: theme.toolBorder
-            ToolIconButton {
-                x: UiTheme.toolButtonFrameInset
-                y: UiTheme.toolButtonFrameInset
-                iconSize: 20
-                imageSource: "../textures/icons/Overlays/grid/128w/Artboard 1.png"
-                checked: bridge.gridEnabled
-                onClicked: bridge.setGridEnabled(checked)
-            }
-        }
+        implicitWidth: selectionHintContent.implicitWidth + 20
+        implicitHeight: selectionHintContent.implicitHeight + 12
     }
 }

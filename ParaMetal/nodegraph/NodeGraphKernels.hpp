@@ -1,8 +1,9 @@
 #pragma once
 
-#include "NodeGraphDataTypes.hpp"
+#include "NodeGraphCoreTypes.hpp"
 #include "NodeGraphState.hpp"
 #include "NodeGraphPayloadTypes.hpp"
+#include "NodeInteraction.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -39,6 +40,38 @@ public:
     virtual const char* typeId() const = 0;
     virtual void execute(NodeKernelEval& eval) const = 0;
     virtual HashValues computeOutputHashes(const NodeKernelHash& hash) const = 0;
+
+    virtual void inspect(
+        const NodeAuthoringContext&,
+        NodeInspection&) const {}
+
+    virtual bool beginInteraction(
+        const NodeAuthoringContext&,
+        uint32_t,
+        NodeInteractionRequest&,
+        std::string&) const {
+        return false;
+    }
+
+    virtual bool completeInteraction(
+        const NodeAuthoringContext&,
+        const NodeInteractionSession&,
+        const NodeInteractionResult&,
+        std::vector<NodeGraphParamValue>&,
+        std::string&) const {
+        return false;
+    }
+
+    virtual bool previewInteraction(
+        const NodeAuthoringContext&,
+        const NodeInteractionSession&,
+        const NodeInteractionValue& authored,
+        NodeInteractionValue& display,
+        std::string& error) const {
+        (void)error;
+        display = authored;
+        return true;
+    }
 };
 
 class NodeGraphKernels {
@@ -46,6 +79,7 @@ public:
     NodeGraphKernels();
 
     bool hasKernel(const NodeTypeId& typeId) const;
+    const NodeKernel* findKernel(const NodeTypeId& typeId) const;
     bool registerKernel(std::unique_ptr<NodeKernel> kernel);
     bool registerKernellessNode(const NodeTypeId& typeId);
     bool requiresKernel(const NodeTypeId& typeId) const;

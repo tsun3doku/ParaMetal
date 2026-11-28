@@ -20,11 +20,6 @@ ComputeApplyResult RuntimeHeatComputeTransport::apply(
         HeatSystemComputeController::Config hostConfig{};
         hostConfig.computeHash = computeHash;
         hostConfig.heatProbesBySourceKey = package.resolvedHeatProbes;
-        for (const auto& [sourceKey, data] : package.resolvedSerialSources) {
-            hostConfig.serialEnabledBySourceKey[sourceKey] = data.enabled;
-            hostConfig.serialPortNamesBySourceKey[sourceKey] = data.portName;
-            hostConfig.serialBaudRatesBySourceKey[sourceKey] = data.baudRate;
-        }
         if (!controller->apply(socketKey, hostConfig)) {
             return ComputeApplyResult::Failed;
         }
@@ -73,11 +68,8 @@ uint64_t RuntimeHeatComputeTransport::advectionUpstreamSocket(const HeatPackage&
     return package.cfdProduct.outputSocketKey;
 }
 
-void RuntimeHeatComputeTransport::commitPending(uint64_t socketKey) {
-    if (!controller || socketKey == 0) {
-        return;
-    }
-    controller->commitPending(socketKey);
+bool RuntimeHeatComputeTransport::commitPending(uint64_t socketKey) {
+    return controller && socketKey != 0 && controller->commitPending(socketKey);
 }
 
 void RuntimeHeatComputeTransport::cancelPending(uint64_t socketKey) {
@@ -87,11 +79,24 @@ void RuntimeHeatComputeTransport::cancelPending(uint64_t socketKey) {
     controller->cancelCandidate(socketKey);
 }
 
-void RuntimeHeatComputeTransport::remove(uint64_t socketKey) {
-    if (!controller || socketKey == 0) {
-        return;
+bool RuntimeHeatComputeTransport::remove(uint64_t socketKey) {
+    if (!controller) {
+        return false;
     }
-    controller->remove(socketKey);
+    if (socketKey == 0) {
+        return true;
+    }
+    return controller->remove(socketKey);
+}
+
+bool RuntimeHeatComputeTransport::hasAnyRetiring() const {
+    return controller && controller->hasAnyRetiring();
+}
+
+void RuntimeHeatComputeTransport::quiescedClear() {
+    if (controller) {
+        controller->quiescedClear();
+    }
 }
 
 bool RuntimeHeatComputeTransport::tryBuildConfig(uint64_t socketKey, const HeatPackage& package, HeatSystemComputeController::Config& outConfig) const {
@@ -109,11 +114,6 @@ bool RuntimeHeatComputeTransport::tryBuildConfig(uint64_t socketKey, const HeatP
     outConfig.fluidSpecificHeat = package.fluidSpecificHeat;
     outConfig.fluidConductivity = package.fluidConductivity;
     outConfig.fluidInitialTemperatureC = package.fluidInitialTemperatureC;
-    for (const auto& [sourceKey, data] : package.resolvedSerialSources) {
-        outConfig.serialEnabledBySourceKey[sourceKey] = data.enabled;
-        outConfig.serialPortNamesBySourceKey[sourceKey] = data.portName;
-        outConfig.serialBaudRatesBySourceKey[sourceKey] = data.baudRate;
-    }
     for (const auto& [sourceKey, data] : package.resolvedHeatProbes) {
         outConfig.heatProbesBySourceKey[sourceKey] = data;
     }

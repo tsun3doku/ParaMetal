@@ -26,12 +26,6 @@ public:
     bool setNodeParameters(NodeGraphNodeId nodeId, const std::vector<NodeGraphParamValue>& parameters);
     bool appendSocket(NodeGraphNodeId nodeId, const NodeSocketSignature& socketSignature, NodeGraphSocketId* outSocketId = nullptr);
 
-    bool addConnection(
-        NodeGraphNodeId fromNode,
-        NodeGraphSocketId fromSocket,
-        NodeGraphNodeId toNode,
-        NodeGraphSocketId toSocket,
-        NodeGraphEdgeId* outEdgeId = nullptr);
     bool connectSockets(
         NodeGraphNodeId fromNode,
         NodeGraphSocketId fromSocket,
@@ -44,8 +38,7 @@ public:
     void clear();
     bool canExecute(std::string& reason) const;
     NodeGraphState state() const;
-    bool consumeChanges(uint64_t& lastSeenRevision, NodeGraphDelta& outDelta) const;
-    bool resolveGizmoTransformNode(uint64_t outputSocketKey, NodeGraphNodeId& outTransformNodeId) const;
+    bool consumeChanges(uint64_t& lastSeenRevision, NodeGraphDelta& outDelta);
     bool loadSerializedState(
         const NodeGraphState& state,
         uint32_t serializedNextNodeId,
@@ -57,7 +50,6 @@ public:
     NodeGraphRegistry& getRegistry() { return registry; }
     const NodeGraphRegistry& getRegistry() const { return registry; }
 
-    std::unordered_map<uint32_t, NodeGraphNode> getNodes() const;
     std::unordered_map<uint32_t, NodeGraphEdge> getEdges() const;
 
     const NodeGraphNode* findNode(NodeGraphNodeId nodeId) const;
@@ -75,7 +67,6 @@ private:
     const NodeGraphEdge* findIncomingEdgeUnlocked(NodeGraphNodeId toNode, NodeGraphSocketId toSocket) const;
     NodeGraphSocketId allocateSocketId();
     std::vector<NodeGraphSocket> buildSocketsFromInterface(const NodeTypeDefinition& definition, NodeGraphSocketDirection direction);
-    void rebuildStateLocked();
     void pushChangesLocked(const std::vector<NodeGraphChange>& changes);
     void bumpRevision();
 
@@ -85,10 +76,10 @@ private:
     uint32_t nextNodeId = 1;
     uint32_t nextSocketId = 1;
     uint32_t nextEdgeId = 1;
+    uint64_t graphInstanceId = 0;
     uint64_t revision = 0;
 
     std::unordered_map<uint32_t, NodeGraphNode> nodes;
     NodeGraphEdges edges;
-    NodeGraphState graphState;
     std::vector<std::pair<uint64_t, NodeGraphChange>> changeLog;
 };

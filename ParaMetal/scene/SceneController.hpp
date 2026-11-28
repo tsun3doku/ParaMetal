@@ -1,29 +1,28 @@
 #pragma once
 
 #include <cstdint>
-#include <string>
+#include <unordered_map>
 
 #include <glm/vec3.hpp>
 
-class CameraController;
-class ModelComputeController;
-class ModelRegistry;
-
 class SceneController {
 public:
-    SceneController(
-        ModelRegistry& modelRegistry,
-        CameraController& cameraController);
+    struct Config {
+        uint32_t runtimeModelId = 0;
+        glm::vec3 worldBoundsMin{0.0f};
+        glm::vec3 worldBoundsMax{0.0f};
+    };
 
-    void setModelComputeController(ModelComputeController* updatedModelComputeController);
-    bool tryGetRuntimeModelSocketKey(uint32_t runtimeModelId, uint64_t& outSocketKey) const;
-    void focusOnVisibleModel();
-    void focusCameraOn(const glm::vec3& worldCenter);
+    void apply(uint64_t socketKey, const Config& config);
+    void remove(uint64_t socketKey);
+
+    bool tryGetRuntimeModelSocketKey(
+        uint32_t runtimeModelId,
+        uint64_t& outSocketKey) const;
+
+    glm::vec3 sceneWorldExtent() const;
 
 private:
-    ModelRegistry& modelRegistry;
-    CameraController& cameraController;
-    ModelComputeController* modelComputeController = nullptr;
+    std::unordered_map<uint64_t, Config> configsBySocket;
+    std::unordered_map<uint32_t, uint64_t> socketKeyByRuntimeModelId;
 };
-
-

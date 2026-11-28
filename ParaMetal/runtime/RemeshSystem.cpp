@@ -45,7 +45,9 @@ bool RemeshSystem::remesh() {
 
     if (outGpuResources.viewS == VK_NULL_HANDLE ||
         outGpuResources.intrinsicTriangleBuffer == VK_NULL_HANDLE ||
-        outGpuResources.intrinsicVertexBuffer == VK_NULL_HANDLE) {
+        outGpuResources.intrinsicVertexBuffer == VK_NULL_HANDLE ||
+        outGpuResources.faceIdBuffer == VK_NULL_HANDLE ||
+        outGpuResources.faceIdView == VK_NULL_HANDLE) {
         remesher.cleanupGpuResources(outGpuResources);
         outMesh = {};
         return false;
@@ -62,6 +64,9 @@ void RemeshSystem::copyGpu(RemeshProduct& product) const {
     product.intrinsicTriangleBufferOffset = outGpuResources.triangleGeometryOffset;
     product.intrinsicVertexBuffer = outGpuResources.intrinsicVertexBuffer;
     product.intrinsicVertexBufferOffset = outGpuResources.vertexGeometryOffset;
+    product.faceIdBuffer = outGpuResources.faceIdBuffer;
+    product.faceIdOffset = outGpuResources.faceIdOffset;
+    product.faceIdView = outGpuResources.faceIdView;
     product.supportingHalfedgeBuffer = outGpuResources.bufferS;
     product.supportingHalfedgeOffset = outGpuResources.offsetS;
     product.supportingHalfedgeView = outGpuResources.viewS;

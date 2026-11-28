@@ -101,6 +101,12 @@ bool RemeshController::buildProduct(uint64_t socketKey, RemeshProduct& product) 
         product.surfaceNormals.push_back(vertex.normal);
     }
     product.surfaceTriangleIndices = mesh.indices;
+    product.surfaceFaceIds = mesh.faceIds;
+    product.surfaceEdgeIds = mesh.edgeIds;
+    product.surfaceVertexIds.reserve(mesh.vertices.size());
+    for (const SupportingHalfedge::IntrinsicVertex& vertex : mesh.vertices) {
+        product.surfaceVertexIds.push_back(vertex.intrinsicVertexId);
+    }
 
     // GPU resources (non-detaching copy, ownership transfers on commit)
     system.copyGpu(product);
@@ -111,13 +117,13 @@ bool RemeshController::buildProduct(uint64_t socketKey, RemeshProduct& product) 
 
 
 
-void RemeshController::remove(uint64_t socketKey) {
+bool RemeshController::remove(uint64_t socketKey) {
     if (socketKey == 0) {
-        return;
+        return true;
     }
 
     failedComputeHashes.erase(socketKey);
-    retireCurrent(socketKey);
+    return retireCurrent(socketKey);
 }
 
 bool RemeshController::hasAnyRetiring() const {
@@ -145,20 +151,20 @@ void RemeshController::clearAllRetiring() {
     }
 }
 
-void RemeshController::commitPending(uint64_t socketKey) noexcept {
+bool RemeshController::commitPending(uint64_t socketKey) noexcept {
     const auto it = generationSlots.find(socketKey);
     if (it == generationSlots.end()) {
-        return;
+        return false;
     }
     GenerationSlot& slot = it->second;
-    assert(slot.retiring == nullptr);
     if (slot.retiring != nullptr) {
-        return;
+        return false;
     }
-    if (slot.candidate) {
-        slot.retiring = std::move(slot.current);
-        slot.current = std::move(slot.candidate);
+    if (!slot.candidate) {
+        return false;
     }
+    slot.retiring = std::move(slot.current);
+    slot.current = std::move(slot.candidate);
 
     const auto pending = pendingHashes.find(socketKey);
     if (pending != pendingHashes.end()) {
@@ -169,6 +175,7 @@ void RemeshController::commitPending(uint64_t socketKey) noexcept {
         pendingHashes.erase(pending);
     }
     failedComputeHashes.erase(socketKey);
+    return true;
 }
 
 void RemeshController::cancelCandidate(uint64_t socketKey) {
@@ -190,23 +197,26 @@ void RemeshController::cancelCandidate(uint64_t socketKey) {
     pendingHashes.erase(socketKey);
 }
 
-void RemeshController::retireCurrent(uint64_t socketKey) {
+bool RemeshController::retireCurrent(uint64_t socketKey) {
     configuredHashes.erase(socketKey);
     pendingHashes.erase(socketKey);
 
     const auto it = generationSlots.find(socketKey);
     if (it == generationSlots.end()) {
-        return;
+        return true;
     }
     GenerationSlot& slot = it->second;
-    if (slot.candidate && !slot.retiring) {
-        slot.retiring = std::move(slot.candidate);
+    if (slot.retiring) {
+        return false;
     }
-    if (slot.current && !slot.retiring) {
+    if (slot.candidate) {
+        slot.retiring = std::move(slot.candidate);
+        return !slot.current;
+    }
+    if (slot.current) {
         slot.retiring = std::move(slot.current);
     }
-    // A system that cannot enter retiring stays as the ownerless current and is
-    // released by clearAllRetiring after the next successful quiesce.
+    return true;
 }
 
 void RemeshController::quiescedClear() noexcept {

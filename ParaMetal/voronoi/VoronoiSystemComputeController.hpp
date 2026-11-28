@@ -47,7 +47,7 @@ public:
 
     bool apply(uint64_t socketKey, const Config& config);
     bool buildProduct(uint64_t socketKey, VoronoiProduct& product);
-    void remove(uint64_t socketKey);
+    bool remove(uint64_t socketKey);
     VoronoiSystem* getSystem(uint64_t socketKey);
 
     uint64_t getCurrentComputeHash(uint64_t socketKey) const {
@@ -57,12 +57,12 @@ public:
 
     bool hasAnyRetiring() const;
     void clearAllRetiring();
-    void commitPending(uint64_t socketKey) noexcept;
+    bool commitPending(uint64_t socketKey) noexcept;
     void cancelCandidate(uint64_t socketKey);
     void quiescedClear() noexcept;
 
 private:
-    void retireCurrent(uint64_t socketKey);
+    bool retireCurrent(uint64_t socketKey);
 
     struct GenerationSlot {
         std::unique_ptr<VoronoiSystem> current;

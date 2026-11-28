@@ -24,6 +24,7 @@ class NavigationGizmoRenderer;
 class ScreenTextRenderer;
 class IntrinsicRenderer;
 class OutlineRenderer;
+class SubselectionRenderer;
 class VkFrameGraphRuntime;
 
 namespace render {
@@ -59,11 +60,12 @@ public:
     ~OverlayPass() override;
 
     const char* name() const override;
-    void create() override;
+    bool create() override;
     void resize(VkExtent2D extent) override;
     void updateDescriptors() override;
     void record(const FrameContext& context, const SceneView& sceneView, const RenderFlags& flags, RenderServices& services) override;
     void destroy() override;
+    SubselectionRenderer* getSubselectionRenderer() const;
 
     PointOverlayRenderer* getPointOverlayRenderer() const;
     void setTimingOverlayLines(const std::vector<std::string>& lines);
@@ -95,6 +97,7 @@ private:
 
     std::unique_ptr<OutlineRenderer> outlineRenderer;
     std::unique_ptr<PointOverlayRenderer> pointOverlayRenderer;
+    std::unique_ptr<SubselectionRenderer> subselectionRenderer;
     std::unique_ptr<TimingRenderer> timingOverlay;
     std::unique_ptr<GridRenderer> gridRenderer;
     std::unique_ptr<StreamlineRenderer> streamlineRenderer;

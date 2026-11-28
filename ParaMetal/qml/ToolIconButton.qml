@@ -7,6 +7,8 @@ Button {
     property url imageSource
     property int segment: 0
     property bool mirrorHorizontal: false
+    property bool preserveSourceColorWhenChecked: false
+    property color inactiveIconColor: UiTheme.toolIconColor
     property real iconSize: 0
     property color baseColor: UiTheme.toolNormal
     property color hoverColor: UiTheme.toolHover
@@ -42,8 +44,9 @@ Button {
             mirror: control.mirrorHorizontal
             layer.enabled: true
             layer.effect: MultiEffect {
-                colorization: 1.0
-                colorizationColor: control.checked ? "#ffffff" : UiTheme.toolIconColor
+                colorization: control.checked && control.preserveSourceColorWhenChecked
+                    ? 0.0 : 1.0
+                colorizationColor: control.checked ? "#ffffff" : control.inactiveIconColor
             }
         }
     }

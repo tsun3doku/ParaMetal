@@ -15,7 +15,11 @@ public:
     }
 
     ComputeApplyResult apply(uint64_t socketKey, const ModelPackage& package, ModelProduct& outProduct);
-    void remove(uint64_t socketKey);
+    bool commitPending(uint64_t socketKey);
+    void cancelPending(uint64_t socketKey);
+    bool remove(uint64_t socketKey);
+    bool hasAnyRetiring() const;
+    void quiescedClear();
 
 private:
     ModelComputeController* controller = nullptr;

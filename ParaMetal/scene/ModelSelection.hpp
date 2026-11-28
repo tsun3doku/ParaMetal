@@ -5,6 +5,7 @@
 #include <vulkan/vulkan.h>
 #include "framegraph/FrameGraphTypes.hpp"
 #include <mutex>
+#include <memory>
 #include <queue>
 #include <atomic>
 #include <vector>
@@ -17,6 +18,7 @@ class Model;
 class VulkanDevice;
 class VkFrameGraphRuntime;
 class ModelRegistry;
+class PickReadback;
 
 enum class PickedType {
     None = 0,
@@ -59,6 +61,11 @@ struct PickingRequest {
     float mouseY;
 };
 
+struct ModelSelectionPick {
+    PickedResult result;
+    bool shiftPressed = false;
+};
+
 class ModelSelection {
 public:
     ModelSelection(
@@ -71,23 +78,20 @@ public:
     
     void queuePickRequest(int x, int y, bool shiftPressed, float mouseX, float mouseY);
     void processPickingRequests(uint32_t currentFrame);
+    std::vector<ModelSelectionPick> takePendingPicks();
+    void discardPendingPicks();
     
     PickedResult pickAtPosition(int x, int y, uint32_t currentFrame);
-    
-    bool createPickingCommandPool();
-    bool createStagingBuffer();
+
     void cleanup();
     
     bool getSelected() const; 
      
-    void setSelectedModelID(uint32_t id);
     void addSelectedModelID(uint32_t id);
-    void removeSelectedModelID(uint32_t id);
     void clearSelection();
     bool isModelSelected(uint32_t id) const;
     
     const std::vector<uint32_t>& getSelectedModelIDsRenderThread() const;
-    const std::vector<uint32_t>& getSelectedRuntimeModelIDsRenderThread() const;
     uint32_t getSelectedModelID() const;
     
     PickedResult getLastPickedResult() const { 
@@ -109,14 +113,11 @@ private:
     VkFrameGraphRuntime& frameGraphRuntime;
     ModelRegistry& modelRegistry;
     framegraph::ResourceId pickResourceId{};
-    VkCommandPool pickingCommandPool;
-    
-    VkBuffer stagingBuffer;
-    VkDeviceMemory stagingBufferMemory;
-    void* stagingBufferMapped;
-    
+    std::unique_ptr<PickReadback> pickReadback;
+
     std::queue<PickingRequest> pickingRequestQueue;
     std::mutex pickingQueueMutex;
+    std::vector<ModelSelectionPick> pendingPicks;
     
     std::vector<uint32_t> selectedModelIDs; 
     PickedResult lastPickedResult;  

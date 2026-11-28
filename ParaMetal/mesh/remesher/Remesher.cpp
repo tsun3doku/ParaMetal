@@ -23,6 +23,11 @@ SupportingHalfedge::GPUResources Remesher::buildIntrinsicGPUResources(
     resources.vertexCount = intrinsicMesh.vertices.size();
     resources.averageTriangleArea = computeAverageTriangleArea(intrinsicMesh);
 
+    if (intrinsicMesh.faceIds.size() != intrinsicMesh.triangles.size()) {
+        std::cerr << "[Remesher] Intrinsic face ID count does not match triangle count" << std::endl;
+        return {};
+    }
+
     auto uploadTexel = [this, &resources](const void* data, VkDeviceSize size, VkFormat format,
         VkBuffer& buffer, VkDeviceSize& offset, VkBufferView& view, const char* label) -> bool {
             if (createTexelBuffer(memoryAllocator, vulkanDevice, data, size, format, buffer, offset, view) != VK_SUCCESS) {
@@ -71,6 +76,10 @@ SupportingHalfedge::GPUResources Remesher::buildIntrinsicGPUResources(
     }
     if (!uploadTexel(gpuBuffers.inputLengths.data(), gpuBuffers.inputLengths.size() * sizeof(float), VK_FORMAT_R32_SFLOAT,
         resources.bufferLInput, resources.offsetLInput, resources.viewLInput, "L_input")) {
+        return {};
+    }
+    if (!uploadTexel(intrinsicMesh.faceIds.data(), intrinsicMesh.faceIds.size() * sizeof(uint32_t), VK_FORMAT_R32_UINT,
+        resources.faceIdBuffer, resources.faceIdOffset, resources.faceIdView, "Face IDs")) {
         return {};
     }
 
@@ -200,6 +209,7 @@ void Remesher::cleanupGpuResources(SupportingHalfedge::GPUResources& resources) 
     destroyView(resources.viewEInput);
     destroyView(resources.viewTInput);
     destroyView(resources.viewLInput);
+    destroyView(resources.faceIdView);
 
     freeBuffer(resources.bufferS, resources.offsetS);
     freeBuffer(resources.bufferA, resources.offsetA);
@@ -213,6 +223,7 @@ void Remesher::cleanupGpuResources(SupportingHalfedge::GPUResources& resources) 
     freeBuffer(resources.bufferLInput, resources.offsetLInput);
     freeBuffer(resources.intrinsicTriangleBuffer, resources.triangleGeometryOffset);
     freeBuffer(resources.intrinsicVertexBuffer, resources.vertexGeometryOffset);
+    freeBuffer(resources.faceIdBuffer, resources.faceIdOffset);
 
     resources = {};
 }

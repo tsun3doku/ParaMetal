@@ -4,15 +4,12 @@
 #include "RuntimeNotifier.hpp"
 #include "ViewportItem.hpp"
 #include "ViewportMailbox.hpp"
-#include "nodegraph/NodeGraphController.hpp"
 #include "runtime/RuntimeInterfaces.hpp"
 #include "runtime/RuntimeSystems.hpp"
 #include "runtime/export/ExportTypes.hpp"
 #include "runtime/TimelineController.hpp"
 #include "scene/Camera.hpp"
 #include "scene/CameraController.hpp"
-#include "scene/DomainFaceInteractionController.hpp"
-#include "scene/MarkerInteractionController.hpp"
 #include "scene/ModelSelection.hpp"
 
 #include <QtCore/QElapsedTimer>
@@ -97,25 +94,8 @@ void ViewportRenderer::synchronize(QQuickRhiItem* item) {
         runtime.setWorldUnit(worldUnit);
     }
 
-    if (const NodeGraphState* graphState = mailbox.graphReplacement(runtimeFresh)) {
-        if (applyGraphReplacement(*graphState)) {
-            mailbox.graphReplacementApplied();
-        }
-    } else {
-        bool deltasApplied = true;
-        for (const NodeGraphDelta& delta : mailbox.graphDeltas()) {
-            if (!runtime.applyGraphDelta(delta)) {
-                const NodeGraphState* cachedState = mailbox.graphReplacement(true);
-                Q_ASSERT(cachedState);
-                if (cachedState && !applyGraphReplacement(*cachedState)) {
-                    deltasApplied = false;
-                }
-                break;
-            }
-        }
-        if (deltasApplied) {
-            mailbox.graphDeltasApplied();
-        }
+    if (runtime.applyGraphMailbox(mailbox, runtimeFresh)) {
+        notifier.resetNodeStatuses();
     }
 
     app::WireframeMode wireframeMode{};
@@ -181,10 +161,6 @@ void ViewportRenderer::synchronize(QQuickRhiItem* item) {
     if (mailbox.takeTimelinePlaying(timelinePlaying, runtimeFresh)) {
         timeline->setPlaying(timelinePlaying);
     }
-    int selectedNode = 0;
-    if (mailbox.takeSelection(selectedNode, runtimeFresh)) {
-        applySelection(selectedNode);
-    }
     int probeNode = 0;
     int probeIndex = 0;
     if (mailbox.takeProbePicking(probeNode, probeIndex)) {
@@ -199,6 +175,7 @@ void ViewportRenderer::synchronize(QQuickRhiItem* item) {
     if (mailbox.takeBoundaryFaceEditing(boundaryFaceNode, boundaryFaceArmed, runtimeFresh)) {
         runtime.setBoundaryFaceEditing(boundaryFaceNode, boundaryFaceArmed);
     }
+    runtime.applyInteractionMailbox(mailbox, runtimeFresh);
     float paletteMin = 0.0f, paletteMax = 100.0f;
     if (mailbox.takeHeatPaletteRange(paletteMin, paletteMax, runtimeFresh)) runtime.setHeatPaletteRange(paletteMin, paletteMax);
     int palette = 0;
@@ -209,9 +186,6 @@ void ViewportRenderer::synchronize(QQuickRhiItem* item) {
     if (mailbox.takeVelocityPalette(velocityPalette, runtimeFresh)) runtime.setVelocityPalette(velocityPalette);
     ProjectFile::Viewport viewportProjectState;
     if (mailbox.takeAppliedViewportProjectState(viewportProjectState)) {
-        runtime.setBackgroundMode(viewportProjectState.backgroundMode);
-        runtime.setNavigationCubeVisible(viewportProjectState.navigationCubeVisible);
-        runtime.setAxisLabelsVisible(viewportProjectState.axisLabelsVisible);
         if (CameraController* cameraController = runtime.getCameraController()) {
             cameraController->setCameraState(
                 viewportProjectState.lookAt,
@@ -296,11 +270,6 @@ void ViewportRenderer::render(QRhiCommandBuffer* commandBuffer) {
     }
     probePickingActiveLast = probePickingActive;
 
-    NodeGraphNodeId nodeId{};
-    std::vector<NodeGraphParamValue> parameters;
-    while (runtime.takePendingNodeParameters(nodeId, parameters)) {
-        emit notifier.nodeParametersRequested(nodeId, parameters);
-    }
     int exportNodeId = 0;
     bool exportSuccess = false;
     std::string exportMessage;
@@ -338,28 +307,8 @@ void ViewportRenderer::render(QRhiCommandBuffer* commandBuffer) {
     update();
 }
 
-bool ViewportRenderer::applyGraphReplacement(const NodeGraphState& graphState) {
-    if (!runtime.replaceGraphState(graphState)) {
-        return false;
-    }
-    notifier.resetNodeStatuses();
-    return true;
-}
-
-void ViewportRenderer::applySelection(int selectedNode) {
-    ModelSelection* selection = runtime.getModelSelection();
-    NodeGraphController* controller = runtime.getNodeGraphController();
-    if (!selection) return;
-    selection->clearSelection();
-    if (selectedNode <= 0 || !controller) return;
-    std::vector<uint32_t> runtimeModelIds;
-    if (!controller->runtimeModelIdsForNode(NodeGraphNodeId{static_cast<uint32_t>(selectedNode)}, runtimeModelIds)) return;
-    for (uint32_t id : runtimeModelIds) selection->addSelectedModelID(id);
-}
-
 void ViewportRenderer::publishState() {
-    const RuntimeQuery* query = runtime.runtimeQuery();
-    if (!query) return;
+    const RuntimeQuery* query = &runtime;
 
     const app::RenderSettings& renderSettings = runtime.renderSettings();
     ViewportUiState viewport{};
@@ -409,19 +358,16 @@ void ViewportRenderer::publishState() {
 
     notifier.publishHeatSolveStatus(query->isSimulationActive(), query->isSimulationPaused());
 
-    const NodeGraphController* graphController = runtime.getNodeGraphController();
-    if (graphController) {
-        notifier.publishHeatSolveError(QString::fromStdString(graphController->lastPackageErrors()));
-    }
+    runtime.publishRuntimeEvents(notifier);
     runtime.publishProbeTelemetry(notifier);
     runtime.publishSerialTelemetry(notifier);
 
-    if (runtime.getInteractionContext().isInitialized()) {
-        if (auto selection = runtime.getInteractionContext().domainFaceInteractionController().takePendingSelection()) {
-            notifier.publishBoundaryFaceSelection(static_cast<int>(selection->nodeId), selection->face);
-        }
-        if (auto selectedNode = runtime.getInteractionContext().markerInteractionController().takePendingSelectedNodeId()) {
-            notifier.notifyGraphSelectionChanged(NodeGraphNodeId{*selectedNode});
+    if (ModelSelection* selection = runtime.getModelSelection()) {
+        const bool modelSelected = selection->getSelected();
+        if (modelSelected != publishedModelSelected) {
+            publishedModelSelected = modelSelected;
+            notifier.publishModelSelectionState(modelSelected);
         }
     }
+
 }

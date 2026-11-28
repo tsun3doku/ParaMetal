@@ -22,6 +22,7 @@ class RuntimeRemeshComputeTransport;
 class RuntimeRemeshDisplayTransport;
 class RuntimeVoronoiComputeTransport;
 class RuntimeVoronoiDisplayTransport;
+class SceneController;
 class VulkanCoreContext;
 class VoronoiDisplayController;
 
@@ -45,6 +46,8 @@ public:
 
     NodeGraphController* nodeGraphController();
     const NodeGraphController* nodeGraphController() const;
+
+    void setSceneController(SceneController* sceneController);
 
 private:
     std::unique_ptr<NodePayloadRegistry> payloadRegistryState;

@@ -5,10 +5,7 @@
 
 namespace vem {
 
-bool validateMesh(
-    const VEMMesh& mesh,
-    const std::vector<float>& cellConductivity,
-    std::string* reason) {
+bool validateMesh(const VEMMesh& mesh, const std::vector<float>& cellConductivity, std::string* reason) {
     if (mesh.cells.empty() || mesh.faceIncidences.empty() ||
         cellConductivity.size() != mesh.cells.size()) {
         if (reason) *reason = "mesh arrays have inconsistent sizes";
@@ -17,8 +14,7 @@ bool validateMesh(
 
     for (uint32_t cellIndex = 0; cellIndex < mesh.cells.size(); ++cellIndex) {
         const CellGeometry& cell = mesh.cells[cellIndex];
-        if (VEMDiffusion::validateElementGeometry(
-                mesh.faceIncidences, cell, cellConductivity[cellIndex])) {
+        if (VEMDiffusion::validateElementGeometry(mesh.faceIncidences, cell, cellConductivity[cellIndex])) {
             continue;
         }
 
@@ -74,8 +70,7 @@ VEMMesh VEMMeshBuilder::buildFromArrays(
     }
     for (size_t coupling = 0; coupling < contactFaceA.size(); ++coupling) {
         if (!std::isfinite(contactAreas[coupling]) || !(contactAreas[coupling] > 0.0)) {
-            std::cerr << "[VEMMeshBuilder] invalid contact area on coupling "
-                      << coupling << std::endl;
+            std::cerr << "[VEMMeshBuilder] invalid contact area on coupling " << coupling << std::endl;
             return {};
         }
     }
@@ -101,14 +96,12 @@ VEMMesh VEMMeshBuilder::buildFromArrays(
             const uint32_t fragmentId = fragments[endpoint];
             if (faceId >= numFaces || fragmentId >= numFrags ||
                 (faceFragmentA[faceId] != fragmentId && faceFragmentB[faceId] != fragmentId)) {
-                std::cerr << "[VEMMeshBuilder] invalid contact incidence "
-                          << faceId << ':' << fragmentId << std::endl;
+                std::cerr << "[VEMMeshBuilder] invalid contact incidence " << faceId << ':' << fragmentId << std::endl;
                 return {};
             }
             if (contactSolidFragment[faceId] != UINT32_MAX &&
                 contactSolidFragment[faceId] != fragmentId) {
-                std::cerr << "[VEMMeshBuilder] contact references both sides "
-                          << "of physical face " << faceId << std::endl;
+                std::cerr << "[VEMMeshBuilder] contact references both sides " << "of physical face " << faceId << std::endl;
                 return {};
             }
             contactSolidFragment[faceId] = fragmentId;
@@ -125,8 +118,7 @@ VEMMesh VEMMeshBuilder::buildFromArrays(
         const uint32_t solidTrace = mesh.faceSideToTrace[faceId * 2 + solidSide];
         const uint32_t otherTrace = mesh.totalTraceCount++;
         mesh.faceSideToTrace[faceId * 2 + fluidSide] = otherTrace;
-        mesh.perfectContinuityPairs.push_back(
-            (uint64_t(solidTrace) << 32) | uint64_t(otherTrace));
+        mesh.perfectContinuityPairs.push_back((uint64_t(solidTrace) << 32) | uint64_t(otherTrace));
     }
 
     std::vector<uint32_t> fragFaceCount(numFrags, 0);

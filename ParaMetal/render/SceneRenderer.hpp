@@ -5,7 +5,6 @@
 #include <glm/glm.hpp>
 #include "framegraph/FramePass.hpp"
 
-#include <array>
 #include <memory>
 #include <string>
 #include <vector>
@@ -23,12 +22,14 @@ class CommandPool;
 class VkFrameGraphRuntime;
 class IBLSystem;
 class IntrinsicRenderer;
+class SubselectionRenderer;
 class GizmoRenderer;
 class NavigationGizmoRenderer;
 class ScreenTextRenderer;
 class ModelSelection;
 class GizmoController;
 class NavigationGizmoController;
+class SubselectionPickService;
 class WireframeRenderer;
 
 namespace render { class CFDOverlayRenderer; }
@@ -66,8 +67,6 @@ struct GpuTimingStats {
     std::vector<GpuPassTiming> passTimings;
 };
 
-inline constexpr std::array<float, 4> clearColorLinear = {0.0144f, 0.0144f, 0.0168f, 1.0f};
-
 class SceneRenderer {
 public:
     SceneRenderer(VulkanDevice& device, MemoryAllocator& allocator, FrameGraph& graph, VkFrameGraphRuntime& frameGraphRuntime, ModelRegistry& manager, UniformBufferManager& ubo, uint32_t framesInFlight, CommandPool& commandPool,
@@ -77,6 +76,7 @@ public:
     void resize(VkExtent2D extent);
     void updateDescriptorSets();
     IntrinsicRenderer* getIntrinsicRenderer() const;
+    SubselectionRenderer* getSubselectionRenderer() const;
     render::HeatOverlayRenderer* getHeatOverlayRenderer() const;
     render::CFDOverlayRenderer* getCFDOverlayRenderer() const;
     render::PointOverlayRenderer* getPointOverlayRenderer() const;
@@ -98,6 +98,10 @@ public:
         GizmoController& gizmoController,
         NavigationGizmoController& navigationGizmoController,
         WireframeRenderer& wireframeRenderer);
+    void setDisplayedModelIds(const std::vector<uint32_t>& modelIds);
+    void setSubselectionPickState(const SubselectionPickState& state);
+    void setSubselectionPickService(SubselectionPickService* service);
+    void prepareFrame(uint32_t frameIndex, VkExtent2D extent);
 
     bool recordExternalCommandBuffer(
         VkCommandBuffer commandBuffer,
@@ -118,7 +122,7 @@ private:
     bool initializePasses();
     void addPass(std::unique_ptr<render::Pass> pass);
     void rebuildOrderedPasses();
-    void createPasses();
+    bool createPasses();
     void resizePasses(VkExtent2D extent);
     void updatePassDescriptors();
     void recordPasses(
@@ -146,6 +150,9 @@ private:
     CommandPool& renderCommandPool;
     IBLSystem& iblSystem;
     render::RenderServices renderServices;
+    std::vector<uint32_t> displayedModelIds;
+    SubselectionPickState subselectionPickState;
+    SubselectionPickService* subselectionPickService = nullptr;
 
     render::GeometryPass* geometryPass = nullptr;
     render::SurfacePass* surfacePass = nullptr;

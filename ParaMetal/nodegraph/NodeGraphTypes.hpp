@@ -66,6 +66,19 @@ enum class NodeGraphParamType {
     Array
 };
 
+enum class NodeInteractionType : uint8_t {
+    MeshSubselection,
+    Transform,
+    Point,
+    Face
+};
+
+struct NodeActionDefinition {
+    uint32_t id = 0;
+    std::string label;
+    NodeInteractionType type = NodeInteractionType::MeshSubselection;
+};
+
 struct NodeGraphParamDefinition;
 
 struct NodeGraphParamField {
@@ -85,6 +98,8 @@ struct NodeGraphParamDefinition {
     std::vector<std::string> enumOptions;
     std::vector<NodeGraphParamField> fields;
     std::shared_ptr<NodeGraphParamDefinition> elementDefinition;
+    bool visible = true;
+    bool dynamicChoices = false;
 };
 
 struct NodeGraphParamValue;
@@ -112,6 +127,7 @@ struct NodeTypeDefinition {
     NodeGraphNodeCategory category = NodeGraphNodeCategory::Misc;
     std::vector<NodeSocketSignature> sockets;
     std::vector<NodeGraphParamDefinition> parameters;
+    std::vector<NodeActionDefinition> actions;
 };
 
 struct NodeGraphSocket : NodeSocketSignature {
@@ -124,6 +140,7 @@ struct NodeGraphSocket : NodeSocketSignature {
 
 struct NodeGraphNode {
     NodeGraphNodeId id{};
+    uint64_t instanceId = 0;
     NodeTypeId typeId;
     NodeGraphNodeCategory category = NodeGraphNodeCategory::Misc;
     std::string title;
@@ -206,6 +223,7 @@ struct NodeGraphChange {
 };
 
 struct NodeGraphDelta {
+    uint64_t graphInstanceId = 0;
     uint64_t fromRevision = 0;
     uint64_t toRevision = 0;
     std::vector<NodeGraphChange> changes;

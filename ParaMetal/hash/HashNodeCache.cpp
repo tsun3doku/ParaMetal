@@ -1,7 +1,6 @@
 #include "HashNodeCache.hpp"
 #include "HashBuilder.hpp"
 
-#include "nodegraph/NodeGraphDataTypes.hpp"
 #include "nodegraph/NodeGraphCoreTypes.hpp"
 #include "nodegraph/NodeGraphKernels.hpp"
 #include "nodegraph/NodeGraphUtils.hpp"

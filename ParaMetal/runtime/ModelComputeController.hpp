@@ -33,9 +33,10 @@ public:
 
     bool apply(uint64_t socketKey, const Config& config);
     bool buildProduct(uint64_t socketKey, ModelProduct& product) const;
-    void remove(uint64_t socketKey);
+    bool commitPending(uint64_t socketKey);
+    void cancelPending(uint64_t socketKey);
+    bool remove(uint64_t socketKey);
     void disableAll();
-    bool tryGetSocketKey(uint32_t runtimeModelId, uint64_t& outSocketKey) const;
     bool hasAnyRetiring() const;
     void clearAllRetiring();
     uint64_t getCurrentComputeHash(uint64_t socketKey) const;
@@ -51,7 +52,12 @@ private:
         bool previousState = false;
     };
 
-    bool rebuildModel(uint64_t socketKey, const Config& config, uint32_t preferredModelId);
+    struct PendingModel {
+        uint32_t runtimeModelId = 0;
+        uint64_t computeHash = 0;
+    };
+
+    bool prepareModel(uint64_t socketKey, const Config& config);
     bool removeModel(uint64_t socketKey);
 
     ModelRegistry& modelRegistry;
@@ -59,6 +65,6 @@ private:
     std::atomic<bool>& isOperating;
     mutable std::mutex executionMutex;
     std::unordered_map<uint64_t, uint32_t> runtimeModelIdBySocketKey;
-    std::unordered_map<uint32_t, uint64_t> socketKeyByRuntimeModelId;
     std::unordered_map<uint64_t, uint64_t> configuredComputeHashes;
+    std::unordered_map<uint64_t, PendingModel> pendingModels;
 };

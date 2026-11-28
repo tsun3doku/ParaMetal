@@ -14,12 +14,12 @@ public:
 
     bool initialize(VkRenderPass renderPass, uint32_t subpassIndex, uint32_t maxFramesInFlight);
 
-    void updateDescriptors(const std::vector<VkImageView>& depthViews, const std::vector<VkImageView>& stencilViews);
+    void updateDescriptors(const std::vector<VkImageView>& stencilViews);
     void render(VkCommandBuffer commandBuffer, uint32_t currentFrame, const ModelSelection& modelSelection);
     void cleanup();
 
 private:
-    bool createDepthSampler();
+    bool createStencilSampler();
     bool createDescriptorPool(uint32_t maxFramesInFlight);
     bool createDescriptorSetLayout();
     bool createDescriptorSets(uint32_t maxFramesInFlight);
@@ -30,7 +30,7 @@ private:
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
     std::vector<VkDescriptorSet> descriptorSets;
-    VkSampler depthSampler = VK_NULL_HANDLE;
+    VkSampler stencilSampler = VK_NULL_HANDLE;
 
     VkPipeline pipeline = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;

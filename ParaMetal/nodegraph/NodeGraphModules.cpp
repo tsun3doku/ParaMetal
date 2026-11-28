@@ -27,6 +27,7 @@
 namespace payloadtypes {
 uint8_t None = 0;
 uint8_t Geometry = 0;
+uint8_t Group = 0;
 uint8_t Remesh = 0;
 uint8_t HeatModel = 0;
 uint8_t Fluid = 0;
@@ -76,6 +77,7 @@ static bool registerPayload(
 bool registerNodePayloads(NodeGraphRegistry& registry) {
     return
         registerPayload(registry, payloadtypes::Geometry, "geometry", NodeGraphValueType::Mesh) &&
+        registerPayload(registry, payloadtypes::Group, "group", NodeGraphValueType::Mesh) &&
         registerPayload(registry, payloadtypes::Remesh, "remesh", NodeGraphValueType::Remesh) &&
         registerPayload(registry, payloadtypes::HeatModel, "heat_model", NodeGraphValueType::HeatModel) &&
         registerPayload(registry, payloadtypes::Fluid, "fluid", NodeGraphValueType::Fluid) &&

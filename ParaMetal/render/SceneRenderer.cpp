@@ -29,6 +29,8 @@
 #include "renderers/GizmoRenderer.hpp"
 #include "renderers/NavigationGizmoRenderer.hpp"
 #include "renderers/ScreenTextRenderer.hpp"
+#include "scene/Model.hpp"
+#include "scene/SubselectionPickService.hpp"
 
 SceneRenderer::SceneRenderer(VulkanDevice& device, MemoryAllocator& allocator, FrameGraph& graph, VkFrameGraphRuntime& runtime, ModelRegistry& manager, UniformBufferManager& ubo, uint32_t framesInFlight, CommandPool& commandPool,
                              IBLSystem& iblSystem)
@@ -41,14 +43,14 @@ SceneRenderer::SceneRenderer(VulkanDevice& device, MemoryAllocator& allocator, F
       renderCommandPool(commandPool),
       iblSystem(iblSystem),
       maxFramesInFlight(framesInFlight) {
-    ready = initializePasses();
-    if (!ready) {
+    ready = false;
+    if (!initializePasses() || !createPasses()) {
         cleanup();
         std::cerr << "[SceneRenderer] Initialization failed" << std::endl;
         return;
     }
-    createPasses();
     createGpuTimingQueryPool();
+    ready = true;
 }
 
 SceneRenderer::~SceneRenderer() {
@@ -97,10 +99,22 @@ bool SceneRenderer::initializePasses() {
         return false;
     }
 
+    intrinsicRenderer = std::make_unique<IntrinsicRenderer>(
+        vulkanDevice,
+        memoryAllocator,
+        uniformBufferManager,
+        renderCommandPool);
+    if (!intrinsicRenderer) {
+        std::cerr << "[SceneRenderer] Failed to create intrinsic renderer" << std::endl;
+        return false;
+    }
+    intrinsicRenderer->setModelRegistry(&modelRegistry);
+
     auto geometry = std::make_unique<render::GeometryPass>(
         vulkanDevice,
         frameGraphRuntime,
         modelRegistry,
+        *intrinsicRenderer,
         uniformBufferManager,
         maxFramesInFlight,
         geometryPassId);
@@ -118,11 +132,6 @@ bool SceneRenderer::initializePasses() {
         uniformBufferManager,
         renderCommandPool);
     voronoiOverlayRenderer = std::make_unique<render::VoronoiOverlayRenderer>(
-        vulkanDevice,
-        memoryAllocator,
-        uniformBufferManager,
-        renderCommandPool);
-    intrinsicRenderer = std::make_unique<IntrinsicRenderer>(
         vulkanDevice,
         memoryAllocator,
         uniformBufferManager,
@@ -151,14 +160,12 @@ bool SceneRenderer::initializePasses() {
         std::cerr << "[SceneRenderer] Failed to create surface visualization renderers" << std::endl;
         return false;
     }
-
     heatOverlayRenderer->setTextRenderer(screenTextRenderer.get());
 
     auto surface = std::make_unique<render::SurfacePass>(
         frameGraphRuntime,
         *heatOverlayRenderer,
         *voronoiOverlayRenderer,
-        *intrinsicRenderer,
         surfacePassId,
         maxFramesInFlight);
     surfacePass = surface.get();
@@ -217,6 +224,7 @@ bool SceneRenderer::initializePasses() {
         modelRegistry,
         *geometryPass,
         *gizmoRenderer,
+        *intrinsicRenderer,
         pickPassId);
     pickPass = pick.get();
     addPass(std::move(pick));
@@ -268,11 +276,16 @@ void SceneRenderer::rebuildOrderedPasses() {
     }
 }
 
-void SceneRenderer::createPasses() {
+bool SceneRenderer::createPasses() {
     rebuildOrderedPasses();
     for (render::Pass* pass : orderedPasses) {
-        pass->create();
+        if (!pass->create()) {
+            std::cerr << "[SceneRenderer] Pass creation failed: "
+                      << pass->name() << std::endl;
+            return false;
+        }
     }
+    return true;
 }
 
 void SceneRenderer::resizePasses(VkExtent2D extent) {
@@ -354,6 +367,10 @@ void SceneRenderer::updateDescriptorSets() {
 
 IntrinsicRenderer* SceneRenderer::getIntrinsicRenderer() const {
     return intrinsicRenderer.get();
+}
+
+SubselectionRenderer* SceneRenderer::getSubselectionRenderer() const {
+    return overlayPass ? overlayPass->getSubselectionRenderer() : nullptr;
 }
 
 render::HeatOverlayRenderer* SceneRenderer::getHeatOverlayRenderer() const {
@@ -459,6 +476,62 @@ void SceneRenderer::setRenderServices(
     renderServices.gizmoController = &gizmoController;
     renderServices.navigationGizmoController = &navigationGizmoController;
     renderServices.wireframeRenderer = &wireframeRenderer;
+}
+
+void SceneRenderer::setDisplayedModelIds(
+    const std::vector<uint32_t>& modelIds) {
+    displayedModelIds = modelIds;
+    renderServices.displayedModelIds = &displayedModelIds;
+}
+
+void SceneRenderer::setSubselectionPickState(const SubselectionPickState& state) {
+    subselectionPickState = state;
+    renderServices.subselectionPick = &subselectionPickState;
+}
+
+void SceneRenderer::setSubselectionPickService(SubselectionPickService* service) {
+    subselectionPickService = service;
+}
+
+void SceneRenderer::prepareFrame(uint32_t frameIndex, VkExtent2D extent) {
+    if (intrinsicRenderer) {
+        intrinsicRenderer->prepareFrame(
+            frameIndex,
+            glm::vec2(
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height)));
+    }
+
+    if (!subselectionPickService) {
+        return;
+    }
+
+    const SubselectionPickRequest* request =
+        subselectionPickService->pendingRequest(frameIndex);
+    if (!request ||
+        request->binding != SurfaceBinding::Source ||
+        request->elementType == MeshElementType::Face) {
+        return;
+    }
+
+    const Model* model = modelRegistry.getModel(request->runtimeModelId);
+    if (!model ||
+        model->getGeometryIdentity() != request->pickGeometryIdentity) {
+        return;
+    }
+
+    PickGeometryBinding binding{};
+    binding.vertexBuffer = model->getVertexBuffer();
+    binding.vertexOffset = model->getVertexBufferOffset();
+    binding.vertexRange = sizeof(Vertex) * model->getVertexCount();
+    binding.vertexCount = static_cast<uint32_t>(model->getVertexCount());
+    binding.indexBuffer = model->getIndexBuffer();
+    binding.indexOffset = model->getIndexBufferOffset();
+    binding.indexRange = sizeof(uint32_t) * model->getIndices().size();
+    binding.indexCount = static_cast<uint32_t>(model->getIndices().size());
+    binding.runtimeModelId = request->runtimeModelId;
+    binding.geometryIdentity = model->getGeometryIdentity();
+    subselectionPickService->prepareComputePick(frameIndex, binding);
 }
 
 bool SceneRenderer::recordExternalCommandBuffer(
@@ -570,6 +643,37 @@ bool SceneRenderer::recordCommands(
     frameContext.currentFrame = currentFrame;
     frameContext.extent = extent;
 
+    if (subselectionPickService) {
+        const SubselectionPickRequest* request =
+            subselectionPickService->pendingRequest(currentFrame);
+        if (request) {
+            const glm::mat4 currentViewProjection =
+                frameRequest.sceneView.proj * frameRequest.sceneView.view;
+            bool valid =
+                currentViewProjection == request->viewProjection &&
+                subselectionPickState.modelMatrix == request->modelMatrix &&
+                request->viewport.x == extent.width &&
+                request->viewport.y == extent.height;
+
+            if (valid && request->binding == SurfaceBinding::Source) {
+                const Model* model =
+                    modelRegistry.getModel(request->runtimeModelId);
+                valid = model &&
+                    model->getGeometryIdentity() ==
+                        request->pickGeometryIdentity;
+            } else if (valid) {
+                valid = intrinsicRenderer &&
+                    intrinsicRenderer->surfaceMatches(
+                        request->displaySocketKey,
+                        request->pickGeometryIdentity);
+            }
+
+            if (!valid) {
+                subselectionPickService->cancelFrameRequest(currentFrame);
+            }
+        }
+    }
+
     recordPasses(
         frameContext,
         frameRequest.sceneView,
@@ -583,6 +687,48 @@ bool SceneRenderer::recordCommands(
         vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, gpuTimingQueryPool, timingQueryBase + 1);
         if (currentFrame < gpuTimingValidFrames.size()) {
             gpuTimingValidFrames[currentFrame] = 1;
+        }
+    }
+
+    if (subselectionPickService) {
+        const SubselectionPickRequest* request =
+            subselectionPickService->pendingRequest(currentFrame);
+        if (request &&
+            request->binding == SurfaceBinding::Source &&
+            request->elementType != MeshElementType::Face) {
+            bool dispatched = false;
+            const Model* model = modelRegistry.getModel(request->runtimeModelId);
+            const glm::mat4 currentViewProjection =
+                frameRequest.sceneView.proj * frameRequest.sceneView.view;
+            if (model &&
+                model->getGeometryIdentity() == request->pickGeometryIdentity &&
+                currentViewProjection == request->viewProjection &&
+                subselectionPickState.modelMatrix == request->modelMatrix &&
+                request->viewport.x == extent.width &&
+                request->viewport.y == extent.height) {
+                PickGeometryBinding binding{};
+                binding.vertexBuffer = model->getVertexBuffer();
+                binding.vertexOffset = model->getVertexBufferOffset();
+                binding.vertexRange =
+                    sizeof(Vertex) * model->getVertexCount();
+                binding.vertexCount =
+                    static_cast<uint32_t>(model->getVertexCount());
+                binding.indexBuffer = model->getIndexBuffer();
+                binding.indexOffset = model->getIndexBufferOffset();
+                binding.indexRange =
+                    sizeof(uint32_t) * model->getIndices().size();
+                binding.indexCount =
+                    static_cast<uint32_t>(model->getIndices().size());
+                binding.runtimeModelId = request->runtimeModelId;
+                binding.geometryIdentity = model->getGeometryIdentity();
+                dispatched = subselectionPickService->recordComputePick(
+                    commandBuffer, currentFrame, binding);
+            }
+            if (!dispatched) {
+                subselectionPickService->cancelFrameRequest(currentFrame);
+            }
+        } else {
+            subselectionPickService->recordReadback(commandBuffer, currentFrame);
         }
     }
 

@@ -63,6 +63,13 @@ public:
 
     glm::mat4 getViewMatrix() const;  
     glm::mat4 getProjectionMatrix(float aspectRatio) const; 
+    static bool projectToScreen(
+        const glm::mat4& viewProjection,
+        const glm::vec3& worldPos,
+        uint32_t screenWidth,
+        uint32_t screenHeight,
+        glm::vec2& outScreen,
+        float* outDepth = nullptr);
     std::optional<glm::vec2> worldToScreen(
         const glm::vec3& worldPos,
         uint32_t screenWidth,

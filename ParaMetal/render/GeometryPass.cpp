@@ -7,6 +7,7 @@
 #include "util/file_utils.h"
 #include "framegraph/FrameGraphPasses.hpp"
 #include "framegraph/VkFrameGraphRuntime.hpp"
+#include "renderers/IntrinsicRenderer.hpp"
 #include "scene/Model.hpp"
 #include "vulkan/ModelRegistry.hpp"
 #include "util/Structs.hpp"
@@ -19,12 +20,14 @@ GeometryPass::GeometryPass(
     VulkanDevice& device,
     VkFrameGraphRuntime& runtime,
     ModelRegistry& resources,
+    IntrinsicRenderer& intrinsic,
     UniformBufferManager& ubo,
     uint32_t framesInFlight,
     framegraph::PassId passId)
     : vulkanDevice(device),
       frameGraphRuntime(runtime),
       modelRegistry(resources),
+      intrinsicRenderer(intrinsic),
       uniformBufferManager(ubo),
       maxFramesInFlight(framesInFlight),
       passId(passId) {
@@ -34,30 +37,38 @@ const char* GeometryPass::name() const {
     return framegraph::passes::Geometry.data();
 }
 
-void GeometryPass::create() {
+bool GeometryPass::create() {
     ready = false;
     destroy();
     if (!createGeometryDescriptorPool(maxFramesInFlight)) {
         destroy();
-        return;
+        return false;
     }
     if (!createGeometryDescriptorSetLayout()) {
         destroy();
-        return;
+        return false;
     }
     if (!createGeometryDescriptorSets(modelRegistry, uniformBufferManager, maxFramesInFlight)) {
         destroy();
-        return;
+        return false;
     }
     if (!createGeometryPipeline()) {
         destroy();
-        return;
+        return false;
     }
     if (!createStencilOnlyPipeline()) {
         destroy();
-        return;
+        return false;
+    }
+    if (!intrinsicRenderer.initializeGeometry(
+            frameGraphRuntime.getRenderPass(),
+            maxFramesInFlight,
+            framegraph::toIndex(passId))) {
+        destroy();
+        return false;
     }
     ready = true;
+    return true;
 }
 
 void GeometryPass::resize(VkExtent2D extent) {
@@ -72,7 +83,6 @@ void GeometryPass::updateDescriptors() {
 
 void GeometryPass::record(const FrameContext& context, const SceneView& view, const RenderFlags& flags, RenderServices& services) {
     (void)view;
-    (void)services;
     if (!ready) {
         return;
     }
@@ -112,6 +122,12 @@ void GeometryPass::record(const FrameContext& context, const SceneView& view, co
         vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);
 
         vkCmdSetDepthBias(commandBuffer, 0.0f, 0.0f, 0.0f);
+    }
+
+    if (flags.wireframeMode != 1) {
+        intrinsicRenderer.renderGeometry(
+            commandBuffer, frameIndex, flags.wireframeMode,
+            services.modelSelection);
     }
 }
 

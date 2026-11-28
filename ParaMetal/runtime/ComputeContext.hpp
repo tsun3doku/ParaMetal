@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <unordered_set>
 #include <vector>
 
 class FrameSync;
@@ -10,6 +11,7 @@ class HeatSystemComputeController;
 class ModelComputeController;
 class PointComputeRuntime;
 class RemeshController;
+class RuntimePackageManager;
 class SceneContext;
 class SimGraphRuntime;
 class VulkanCoreContext;
@@ -32,8 +34,10 @@ public:
         std::atomic<bool>& runtimeBusy);
     void shutdown();
         void quiescedClear();
+    void clearRetiringGenerations();
     bool isInitialized() const;
     void tickDomainServices();
+    void syncSimulationNodes(const RuntimePackageManager& packages);
 
     SimGraphRuntime* simGraphRuntime() { return simGraphRuntimeState.get(); }
     const SimGraphRuntime* simGraphRuntime() const { return simGraphRuntimeState.get(); }
@@ -58,5 +62,6 @@ private:
     std::unique_ptr<VoronoiSystemComputeController> voronoiSystemComputeControllerState;
     std::unique_ptr<HeatSystemComputeController> heatSystemComputeControllerState;
     std::unique_ptr<cfd::CFDSystemComputeController> cfdSystemComputeControllerState;
+    std::unordered_set<uint64_t> simulationSockets;
     bool initialized = false;
 };

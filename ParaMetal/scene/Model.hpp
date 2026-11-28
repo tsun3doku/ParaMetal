@@ -87,6 +87,12 @@ namespace std {
     };
 }
 
+static_assert(sizeof(Vertex) == 44, "Canonical vertex layout changed");
+static_assert(offsetof(Vertex, pos) == 0, "Canonical vertex position offset changed");
+static_assert(offsetof(Vertex, color) == 12, "Canonical vertex color offset changed");
+static_assert(offsetof(Vertex, normal) == 24, "Canonical vertex normal offset changed");
+static_assert(offsetof(Vertex, texCoord) == 36, "Canonical vertex texcoord offset changed");
+
 class CommandPool;
 
 class Model {
@@ -188,6 +194,12 @@ public:
         return runtimeModelId;
     }
 
+    void setGeometryIdentity(uint64_t identity) {
+        geometryIdentity = identity;
+    }
+    uint64_t getGeometryIdentity() const {
+        return geometryIdentity;
+    }
 
     void setModelPosition(const glm::vec3& position) { 
         modelPosition = position; 
@@ -250,4 +262,5 @@ private:
     glm::vec3 modelPosition = glm::vec3(0.0f);
     glm::mat4 modelMatrix = glm::mat4(1.0f);
     uint32_t runtimeModelId = 0;
+    uint64_t geometryIdentity = 0;
 }; 

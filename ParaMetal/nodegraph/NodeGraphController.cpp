@@ -13,17 +13,25 @@
 #include "NodeGraphUtils.hpp"
 #include "NodeTransform.hpp"
 #include "NodePayloadRegistry.hpp"
+#include "domain/GeometryData.hpp"
+#include "domain/RemeshData.hpp"
+#include "mesh/SubselectionEditState.hpp"
+#include "util/GeometryUtils.hpp"
 #include "runtime/RuntimeHeatDisplayTransport.hpp"
 #include "runtime/RuntimeCFDDisplayTransport.hpp"
 #include "runtime/RuntimeModelDisplayTransport.hpp"
 #include "runtime/RuntimePointDisplayTransport.hpp"
-#include "runtime/RuntimeProductManager.hpp"
 #include "runtime/RuntimeRemeshDisplayTransport.hpp"
 #include "runtime/RuntimeVoronoiDisplayTransport.hpp"
-#include "simgraph/SimGraphRuntime.hpp"
 
+#include <glm/gtc/matrix_inverse.hpp>
+
+#include <algorithm>
+#include <cassert>
+#include <cmath>
 #include <iostream>
 #include <unordered_set>
+#include <utility>
 
 NodeGraphController::NodeGraphController(
     NodePayloadRegistry& payloadRegistry,
@@ -31,10 +39,33 @@ NodeGraphController::NodeGraphController(
     const RuntimeTransports& transportBindings)
     : payloadRegistry(payloadRegistry),
       compute(computeContext),
-      transports(transportBindings),
       runtime(&payloadRegistry),
       packageController(transportBindings) {
     plan.isValid = false;
+}
+
+static bool buildSelectionOverlayIndices(
+    const GeometryData& geometry,
+    std::vector<uint32_t>& outIndices) {
+    if (geometry.renderIndices.empty()) {
+        outIndices.clear();
+        return true;
+    }
+
+    const std::size_t vertexCount = geometry.renderPositions.size() / 3;
+    if (geometry.renderIndices.size() != geometry.triangleIndices.size() ||
+        geometry.renderPositions.size() % 3 != 0 ||
+        std::any_of(
+            geometry.renderIndices.begin(),
+            geometry.renderIndices.end(),
+            [vertexCount](uint32_t index) {
+                return index >= vertexCount;
+            })) {
+        return false;
+    }
+
+    outIndices = geometry.renderIndices;
+    return true;
 }
 
 void NodeGraphController::rebuildForDelta(const NodeGraphDelta& delta) {
@@ -56,22 +87,26 @@ void NodeGraphController::rebuildForDelta(const NodeGraphDelta& delta) {
 }
 
 void NodeGraphController::tick() {
-    if (plan.isValid && packageCompilationPending) {
+    packageController.retryPendingRemovals();
+
+    if (plan.isValid &&
+        packageCompilationPending &&
+        !packageController.hasRetiringGenerations() &&
+        !packageController.hasPendingRemovals()) {
         packageCompilationPending = false;
         packageCompilationFailed = !compileRuntimePackages();
+        ++evaluationRevisionCounter;
         // sync simulation nodes before sim graph run
-        syncSimulationNodes();
+        compute.syncSimulationNodes(packageController.packages());
     }
 
-    const RuntimeProductManager* products = packageController.products();
     const uint64_t stateRevision = runtime.state().revision;
-    const uint64_t productRevision = products != nullptr ? products->getRevision() : 0;
+    const uint64_t productRevision = packageController.publicationRevision();
     const bool fullDisplaySync =
         stateRevision != lastDisplaySyncStateRevision ||
         productRevision != lastDisplaySyncProductRevision ||
         packageCompileRevision != lastDisplaySyncPackageRevision;
-    if (fullDisplaySync) {
-        updateDisplayTransports();
+    if (fullDisplaySync && updateDisplayTransports()) {
         lastDisplaySyncStateRevision = stateRevision;
         lastDisplaySyncProductRevision = productRevision;
         lastDisplaySyncPackageRevision = packageCompileRevision;
@@ -80,7 +115,6 @@ void NodeGraphController::tick() {
 
 void NodeGraphController::detachRuntimeBindings() {
     packageController.detachAllDisplayBindings();
-    // unblock interop waits before quiescing gpu
     if (compute.heatSystemComputeController()) {
         compute.heatSystemComputeController()->releaseWaits();
     }
@@ -95,70 +129,15 @@ void NodeGraphController::quiescedClear() {
     plan.isValid = false;
     packageCompilationPending = false;
     packageCompilationFailed = false;
-    simulationSockets.clear();
     lastDisplaySyncStateRevision = UINT64_MAX;
     lastDisplaySyncProductRevision = UINT64_MAX;
     lastDisplaySyncPackageRevision = UINT64_MAX;
     lastPackageErrors_.clear();
 }
 
-// sync committed simulation systems into sim graph
-void NodeGraphController::syncSimulationNodes() {
-    SimGraphRuntime* simGraph = compute.simGraphRuntime();
-    if (simGraph == nullptr) return;
-
-    const RuntimePackageManager& packages = packageController.packages();
-    std::unordered_set<uint64_t> desired;
-    desired.reserve(packages.cfdSystems().size() + packages.heatSystems().size());
-
-    if (compute.cfdSystemComputeController()) {
-        for (const auto& [socketKey, package] : packages.cfdSystems()) {
-            (void)package;
-            cfd::CFDSystem* system = compute.cfdSystemComputeController()->getSystem(socketKey);
-            if (system == nullptr) continue;
-            simGraph->registerNode(socketKey, system);
-            desired.insert(socketKey);
-        }
-    }
-
-    if (compute.heatSystemComputeController()) {
-        for (const auto& [socketKey, package] : packages.heatSystems()) {
-            HeatSystem* system = compute.heatSystemComputeController()->getSystem(socketKey);
-            if (system == nullptr) continue;
-            simGraph->registerNode(socketKey, system);
-            desired.insert(socketKey);
-
-            const HeatSystemComputeController::Config* heatConfig =
-                compute.heatSystemComputeController()->getConfig(socketKey);
-            const uint64_t producerSocket =
-                heatConfig && heatConfig->hasAdvection && package.cfdProduct.isValid()
-                    ? package.cfdProduct.outputSocketKey
-                    : 0;
-            if (producerSocket == 0 ||
-                compute.cfdSystemComputeController() == nullptr ||
-                compute.cfdSystemComputeController()->getSystem(producerSocket) == nullptr) {
-                simGraph->disconnect(socketKey);
-                continue;
-            }
-            SimConnection connection{};
-            connection.connectionId = socketKey;
-            connection.producerSocket = producerSocket;
-            connection.consumerSocket = socketKey;
-            connection.mode = SimConnectionMode::Staged;
-            simGraph->connect(connection);
-        }
-    }
-
-    for (uint64_t socketKey : simulationSockets) {
-        if (desired.find(socketKey) == desired.end()) {
-            simGraph->unregisterNode(socketKey);
-        }
-    }
-    simulationSockets = std::move(desired);
-}
-
 void NodeGraphController::resetGraph(const NodeGraphState& state) {
     NodeGraphDelta delta{};
+    delta.graphInstanceId = state.instanceId;
     delta.fromRevision = runtime.state().revision;
     delta.toRevision = state.revision;
     NodeGraphChange resetChange{};
@@ -183,7 +162,9 @@ void NodeGraphController::resetGraph(const NodeGraphState& state) {
 }
 
 bool NodeGraphController::applyGraphDelta(const NodeGraphDelta& delta) {
-    if (delta.fromRevision != runtime.state().revision) return false;
+    if (!canApplyNodeGraphDelta(runtime.state(), delta)) {
+        return false;
+    }
     rebuildForDelta(delta);
     return true;
 }
@@ -192,61 +173,343 @@ const NodeGraphState& NodeGraphController::graphState() const {
     return runtime.state();
 }
 
+bool NodeGraphController::beginMeshSelection(
+    const NodeInteractionSession& session,
+    SubselectionEditState& outState) const {
+    outState = {};
+    if (session.sourceSocketKey == 0 || session.displaySocketKey == 0 ||
+        session.runtimeModelId == 0) {
+        return false;
+    }
+
+    const EvaluatedSocketValue* evaluated =
+        runtime.evaluation().outputFor(session.sourceSocketKey);
+    if (!evaluated || evaluated->status != EvaluatedSocketStatus::Value) {
+        return false;
+    }
+
+    SubselectionEditState state{};
+    state.sourceSocketKey = session.sourceSocketKey;
+    state.displaySocketKey = session.displaySocketKey;
+    state.binding = session.binding;
+    state.runtimeModelId = session.runtimeModelId;
+
+    if (session.binding == SurfaceBinding::Intrinsic) {
+        NodeDataHandle remeshHandle{};
+        const RemeshData* remesh = payloadRegistry.resolveRemesh(
+            evaluated->data.payloadHandle, &remeshHandle);
+        if (!remesh ||
+            remesh->surfacePositions.empty() ||
+            remesh->surfaceTriangleIndices.empty() ||
+            remesh->surfaceTriangleIndices.size() % 3 != 0 ||
+            remesh->surfaceFaceIds.size() !=
+                remesh->surfaceTriangleIndices.size() / 3 ||
+            remesh->surfaceVertexIds.size() != remesh->surfacePositions.size() ||
+            remesh->surfaceEdgeIds.empty() ||
+            !std::is_sorted(
+                remesh->surfaceEdgeIds.begin(), remesh->surfaceEdgeIds.end()) ||
+            std::adjacent_find(
+                remesh->surfaceEdgeIds.begin(), remesh->surfaceEdgeIds.end()) !=
+                remesh->surfaceEdgeIds.end() ||
+            (session.sourceSurfaceIdentity != 0 &&
+             session.sourceSurfaceIdentity != remesh->surfaceGeometryHash)) {
+            return false;
+        }
+
+        state.surfaceIdentity = remesh->surfaceGeometryHash;
+        state.pickGeometryIdentity = remesh->surfaceGeometryHash;
+        state.faceCount =
+            static_cast<uint32_t>(remesh->surfaceTriangleIndices.size() / 3);
+        state.vertexPositions = remesh->surfacePositions;
+        state.triangleIndices = remesh->surfaceTriangleIndices;
+        state.surfaceFaceIds = remesh->surfaceFaceIds;
+        state.surfaceVertexIds = remesh->surfaceVertexIds;
+        state.surfaceEdgeIds = remesh->surfaceEdgeIds;
+    } else {
+        NodeDataHandle geometryHandle{};
+        const GeometryData* geometry = payloadRegistry.resolveGeometry(
+            evaluated->data.payloadHandle, &geometryHandle);
+        if (!geometry ||
+            geometry->vertexPositions.empty() ||
+            geometry->triangleIndices.empty() ||
+            geometry->triangleIndices.size() % 3 != 0) {
+            return false;
+        }
+
+        const uint64_t geometryIdentity =
+            payloadRegistry.resolveHash(
+                geometryHandle, HashDomain::Geometry);
+        if (geometryIdentity == 0 ||
+            (session.sourceSurfaceIdentity != 0 &&
+             session.sourceSurfaceIdentity != geometryIdentity)) {
+            return false;
+        }
+
+        const float canonicalToWorld =
+            units::canonicalToWorldScale(activeWorldUnit);
+
+        state.surfaceIdentity = geometryIdentity;
+        state.faceCount =
+            static_cast<uint32_t>(geometry->triangleIndices.size() / 3);
+        state.vertexPositions.reserve(geometry->vertexPositions.size() / 3);
+        for (std::size_t index = 0;
+             index + 2 < geometry->vertexPositions.size();
+             index += 3) {
+            state.vertexPositions.emplace_back(
+                geometry->vertexPositions[index] * canonicalToWorld,
+                geometry->vertexPositions[index + 1] * canonicalToWorld,
+                geometry->vertexPositions[index + 2] * canonicalToWorld);
+        }
+        state.triangleIndices = geometry->triangleIndices;
+        if (!buildSelectionOverlayIndices(*geometry, state.overlayIndices)) {
+            return false;
+        }
+    }
+
+    std::vector<uint32_t> modelIds;
+    if (!packageController.appendRuntimeModelIdsForSocket(
+            state.displaySocketKey, modelIds) ||
+        modelIds.size() != 1 ||
+        modelIds.front() != state.runtimeModelId) {
+        return false;
+    }
+
+    outState = std::move(state);
+    return true;
+}
+
+bool NodeGraphController::meshSelectionIsCurrent(
+    const SubselectionEditState& state) const {
+    if (!packageController.isDisplayActive(
+            state.displaySocketKey, state.surfaceIdentity)) {
+        return false;
+    }
+
+    uint64_t surfaceIdentity = 0;
+    if (!sourceSurfaceIdentity(
+            state.sourceSocketKey, surfaceIdentity) ||
+        surfaceIdentity != state.surfaceIdentity) {
+        return false;
+    }
+
+    std::vector<uint32_t> modelIds;
+    if (!packageController.appendRuntimeModelIdsForSocket(
+            state.displaySocketKey, modelIds) ||
+        modelIds.size() != 1 ||
+        modelIds.front() != state.runtimeModelId) {
+        return false;
+    }
+
+    return true;
+}
+
+bool NodeGraphController::inspect(
+    NodeGraphNodeId nodeId,
+    NodeInspection& out) const {
+    out = {};
+    const NodeGraphNode* node = runtime.state().node(nodeId);
+    if (!node) {
+        return false;
+    }
+    const NodeKernel* kernel = runtime.kernelFor(node->typeId);
+    if (!kernel) {
+        return false;
+    }
+
+    const NodeAuthoringContext context{
+        *node,
+        runtime.state(),
+        runtime.evaluation(),
+        payloadRegistry,
+    };
+    kernel->inspect(context, out);
+    return true;
+}
+
+bool NodeGraphController::beginAction(
+    NodeGraphNodeId nodeId,
+    uint64_t nodeInstanceId,
+    uint32_t actionId,
+    NodeInteractionRequest& outRequest,
+    NodeInteractionSession& outSession,
+    std::string& error) {
+    outRequest = {};
+    outSession = {};
+    error.clear();
+
+    const NodeGraphNode* node = runtime.state().node(nodeId);
+    if (!node || node->instanceId != nodeInstanceId) {
+        error = "Interaction target changed.";
+        return false;
+    }
+    const NodeKernel* kernel = runtime.kernelFor(node->typeId);
+    if (!kernel) {
+        error = "Node does not provide interactions.";
+        return false;
+    }
+
+    const NodeAuthoringContext context{
+        *node,
+        runtime.state(),
+        runtime.evaluation(),
+        payloadRegistry,
+    };
+    NodeInteractionRequest request{};
+    if (!kernel->beginInteraction(
+            context, actionId, request, error)) {
+        return false;
+    }
+
+    NodeInteractionSession session{};
+    session.nodeId = node->id;
+    session.nodeInstanceId = node->instanceId;
+    session.actionId = actionId;
+    session.type = request.type;
+    session.binding = request.binding;
+    session.sourceSocketKey = request.sourceSocketKey;
+    session.displaySocketKey = request.displaySocketKey;
+    if (session.sourceSocketKey != 0 &&
+        !sourceSurfaceIdentity(
+            session.sourceSocketKey,
+            session.sourceSurfaceIdentity)) {
+        error = "Interaction source is not available.";
+        return false;
+    }
+
+    if (request.type == NodeInteractionType::MeshSubselection) {
+        std::vector<uint32_t> modelIds;
+        if (!packageController.appendRuntimeModelIdsForSocket(
+                session.displaySocketKey, modelIds) ||
+            modelIds.size() != 1) {
+            error = "Interaction requires one current display model.";
+            return false;
+        }
+        session.runtimeModelId = modelIds.front();
+
+        RuntimePackageController::DisplayedSurface surface{};
+        if (!packageController.findDisplayedSurface(
+                session.runtimeModelId, surface) ||
+            surface.intrinsic !=
+                (session.binding == SurfaceBinding::Intrinsic)) {
+            error = "Interaction surface is not displayed.";
+            return false;
+        }
+        session.displaySocketKey = surface.socketKey;
+    }
+
+    outRequest = std::move(request);
+    outSession = session;
+    return true;
+}
+
+bool NodeGraphController::completeAction(
+    const NodeInteractionSession& session,
+    const NodeInteractionResult& result,
+    std::vector<NodeGraphParamValue>& outPatch,
+    std::string& error) {
+    outPatch.clear();
+    error.clear();
+    if (result.sessionId != session.id) {
+        error = "Interaction result does not match the active session.";
+        return false;
+    }
+
+    const NodeGraphNode* node = runtime.state().node(session.nodeId);
+    if (!node || node->instanceId != session.nodeInstanceId) {
+        error = "Interaction target changed.";
+        return false;
+    }
+    const NodeKernel* kernel = runtime.kernelFor(node->typeId);
+    if (!kernel) {
+        error = "Node does not provide interactions.";
+        return false;
+    }
+
+    if (session.sourceSocketKey != 0) {
+        uint64_t currentSourceSurfaceIdentity = 0;
+        if (!sourceSurfaceIdentity(
+                session.sourceSocketKey,
+                currentSourceSurfaceIdentity) ||
+            currentSourceSurfaceIdentity != session.sourceSurfaceIdentity) {
+            error = "Interaction source changed during editing.";
+            return false;
+        }
+    }
+
+    const NodeAuthoringContext context{
+        *node,
+        runtime.state(),
+        runtime.evaluation(),
+        payloadRegistry,
+    };
+    return kernel->completeInteraction(
+        context, session, result, outPatch, error);
+}
+
+bool NodeGraphController::previewAction(
+    const NodeInteractionSession& session,
+    const NodeInteractionValue& authored,
+    NodeInteractionValue& display,
+    std::string& error) const {
+    error.clear();
+
+    const NodeGraphNode* node = runtime.state().node(session.nodeId);
+    if (!node || node->instanceId != session.nodeInstanceId) {
+        error = "Interaction target changed.";
+        return false;
+    }
+
+    uint64_t currentSourceSurfaceIdentity = 0;
+    if (session.sourceSocketKey &&
+        (!sourceSurfaceIdentity(
+             session.sourceSocketKey, currentSourceSurfaceIdentity) ||
+         currentSourceSurfaceIdentity != session.sourceSurfaceIdentity)) {
+        error = "Interaction source changed.";
+        return false;
+    }
+
+    const NodeKernel* kernel = runtime.kernelFor(node->typeId);
+    if (!kernel) {
+        error = "Interaction kernel is unavailable.";
+        return false;
+    }
+
+    const NodeAuthoringContext context{
+        *node,
+        runtime.state(),
+        runtime.evaluation(),
+        payloadRegistry,
+    };
+    return kernel->previewInteraction(
+        context, session, authored, display, error);
+}
+
+uint64_t NodeGraphController::runtimeModelRevision() const {
+    return packageController.publicationRevision();
+}
+
+
 bool NodeGraphController::resolveGizmoTransformNode(
     uint64_t outputSocketKey,
     NodeGraphNodeId& outNodeId) const {
     outNodeId = {};
-    return outputSocketKey != 0 &&
-        findFirstUpstreamNodeByType(
-            runtime.state(), outputSocketKey, nodegraphtypes::Transform, outNodeId);
+    return outputSocketKey != 0 && findFirstUpstreamNodeByType(runtime.state(), outputSocketKey, nodegraphtypes::Transform, outNodeId);
 }
 
 bool NodeGraphController::hasRetiringGenerations() const {
-    const RuntimeProductManager* products = packageController.products();
-    if (products != nullptr && products->hasAnyRetiring()) {
-        return true;
-    }
-    if (compute.modelComputeController() &&
-        compute.modelComputeController()->hasAnyRetiring()) {
-        return true;
-    }
-    if (compute.pointComputeRuntime() &&
-        compute.pointComputeRuntime()->hasAnyRetiring()) {
-        return true;
-    }
-    if (compute.remeshController() &&
-        compute.remeshController()->hasAnyRetiring()) {
-        return true;
-    }
-    if (compute.voronoiSystemComputeController() &&
-        compute.voronoiSystemComputeController()->hasAnyRetiring()) {
-        return true;
-    }
-    if (compute.heatSystemComputeController() &&
-        compute.heatSystemComputeController()->hasAnyRetiring()) {
-        return true;
-    }
-    if (compute.cfdSystemComputeController() &&
-        compute.cfdSystemComputeController()->hasAnyRetiring()) {
-        return true;
-    }
-    return false;
+    return packageController.hasRetiringGenerations();
 }
 
 void NodeGraphController::clearRetiringGenerations() {
-    if (RuntimeProductManager* products = packageController.products()) {
-        products->clearAllRetiring();
-    }
-    if (compute.modelComputeController()) compute.modelComputeController()->clearAllRetiring();
-    if (compute.pointComputeRuntime()) compute.pointComputeRuntime()->clearAllRetiring();
-    if (compute.remeshController()) compute.remeshController()->clearAllRetiring();
-    if (compute.voronoiSystemComputeController()) compute.voronoiSystemComputeController()->clearAllRetiring();
-    if (compute.heatSystemComputeController()) compute.heatSystemComputeController()->clearAllRetiring();
-    if (compute.cfdSystemComputeController()) compute.cfdSystemComputeController()->clearAllRetiring();
+    packageController.clearRetiringProducts();
+    compute.clearRetiringGenerations();
+    packageController.retryPendingRemovals();
 }
 
 bool NodeGraphController::compileRuntimePackages() {
-    runtime.execute(plan);
+    assert(!packageController.hasRetiringGenerations());
+    assert(!packageController.hasPendingRemovals());
+    runtime.beginEvaluation(plan);
     const NodeGraphEvaluation& evaluation = runtime.evaluation();
     const RuntimePackageCompiler::FrozenPackages frozenPackages =
         frozenPackageRebuildPending
@@ -254,15 +517,7 @@ bool NodeGraphController::compileRuntimePackages() {
             : RuntimePackageCompiler::FrozenPackages::Preserve;
     std::vector<std::string> messages;
     bool failed = false;
-    if (!packageCompiler.validate(
-            runtime.state(),
-            plan,
-            evaluation,
-            payloadRegistry,
-            messages)) {
-        publishPackageErrors(messages);
-        return false;
-    }
+    bool backpressured = false;
 
     packageController.beginCompilation();
     for (NodeGraphNodeId nodeId : plan.executionOrder) {
@@ -274,37 +529,52 @@ bool NodeGraphController::compileRuntimePackages() {
         }
 
         const std::string label = node->title.empty() ? node->typeId : node->title;
+        std::vector<std::string> missingInputs;
         for (const NodeGraphSocket& input : node->inputs) {
             if (!input.required) continue;
             if (!runtime.state().edges.incoming(node->id, input.id).empty()) continue;
-            messages.push_back(label + ": input '" + input.name + "' is not connected.");
+            missingInputs.push_back(
+                label + ": input '" + input.name + "' is not connected.");
         }
-
-        std::vector<std::string> nodeErrors;
-        if (!packageCompiler.compileNode(
-                runtime.state(),
-                *node,
-                evaluation,
-                payloadRegistry,
-                activeWorldUnit,
-                frozenPackages,
-                packageController.packages(),
-                packageController.products(),
-                nodeErrors)) {
+        if (!missingInputs.empty()) {
+            messages.insert(messages.end(), missingInputs.begin(), missingInputs.end());
             packageController.invalidateOutputsForNode(*node);
-            messages.insert(messages.end(), nodeErrors.begin(), nodeErrors.end());
+            runtime.failNode(nodeId, missingInputs.front());
             failed = true;
             continue;
         }
 
-        if (!packageController.applyNode(*node)) {
+        runtime.evaluateNode(nodeId);
+        if (runtime.nodeBackpressured(nodeId)) {
+            packageCompilationPending = true;
+            backpressured = true;
+            break;
+        }
+
+        std::vector<std::string> nodeErrors;
+        if (!packageCompiler.executeNode(
+                runtime.state(), *node, runtime, payloadRegistry,
+                activeWorldUnit, frozenPackages, packageController,
+                nodeErrors, backpressured)) {
+            if (backpressured) {
+                packageCompilationPending = true;
+                break;
+            }
             packageController.invalidateOutputsForNode(*node);
-            messages.push_back(label + ": runtime update failed; node invalidated.");
+            runtime.failNode(nodeId, nodeErrors.empty() ? "Node execution failed." : nodeErrors.front());
+            messages.insert(messages.end(), nodeErrors.begin(), nodeErrors.end());
             failed = true;
         }
     }
-    packageController.finishCompilation(!failed);
+    if (backpressured) {
+        packageController.abortCompilationPreservingUnprocessed();
+    } else {
+        packageController.finishCompilation(!failed);
+    }
     publishPackageErrors(messages);
+    if (backpressured) {
+        return true;
+    }
     if (failed) {
         return false;
     }
@@ -323,7 +593,7 @@ void NodeGraphController::publishPackageErrors(const std::vector<std::string>& e
         joined += error;
     }
     if (joined == lastPackageErrors_) return;
-    lastPackageErrors_ = joined;
+    lastPackageErrors_ = std::move(joined);
 }
 
 void NodeGraphController::setWorldUnit(units::LengthUnit unit) {
@@ -335,96 +605,46 @@ void NodeGraphController::setWorldUnit(units::LengthUnit unit) {
     ++packageCompileRevision;
 }
 
-void NodeGraphController::updateDisplayTransports() {
-    const bool hasDisplayTransports = transports.modelDisplayTransport ||
-        transports.remeshDisplayTransport ||
-        transports.voronoiDisplayTransport ||
-        transports.heatDisplayTransport ||
-        transports.cfdDisplayTransport ||
-        transports.pointDisplayTransport;
-    if (!hasDisplayTransports) return;
-
-    RuntimePackageManager& packages = packageController.packages();
-    const std::unordered_set<uint64_t> visibleKeys =
+bool NodeGraphController::updateDisplayTransports() {
+    return packageController.syncDisplay(
         nodeGraphDisplay.computeDisplayKeys(
             runtime.state(),
             runtime.evaluation(),
-            packages,
-            &payloadRegistry);
-
-    if (transports.modelDisplayTransport) {
-        transports.modelDisplayTransport->sync(packages, visibleKeys);
-        transports.modelDisplayTransport->finalizeSync();
-    }
-    if (transports.remeshDisplayTransport) {
-        transports.remeshDisplayTransport->sync(packages, visibleKeys);
-        transports.remeshDisplayTransport->finalizeSync();
-    }
-    if (transports.voronoiDisplayTransport) {
-        transports.voronoiDisplayTransport->sync(packages, visibleKeys);
-        transports.voronoiDisplayTransport->finalizeSync();
-    }
-    if (transports.heatDisplayTransport) {
-        transports.heatDisplayTransport->sync(packages, visibleKeys);
-        transports.heatDisplayTransport->finalizeSync();
-    }
-    if (transports.cfdDisplayTransport) {
-        transports.cfdDisplayTransport->sync(packages, visibleKeys);
-        transports.cfdDisplayTransport->finalizeSync();
-    }
-    if (transports.pointDisplayTransport) {
-        transports.pointDisplayTransport->sync(packages, visibleKeys);
-        transports.pointDisplayTransport->finalizeSync();
-    }
+            packageController.packages(),
+            &payloadRegistry));
 }
 
 const NodeGraphCompiled& NodeGraphController::compiledState() const {
     return plan;
 }
 
-void NodeGraphController::addRuntimeModelId(
-    std::vector<uint32_t>& outIds,
-    uint32_t id) const {
-    if (id == 0) return;
-    for (uint32_t existing : outIds) {
-        if (existing == id) return;
-    }
-    outIds.push_back(id);
-}
-
-bool NodeGraphController::runtimeModelIdsForSocket(
+bool NodeGraphController::sourceSurfaceIdentity(
     uint64_t socketKey,
-    std::vector<uint32_t>& outIds) const {
-    const RuntimeProductManager* products = packageController.products();
-    const RuntimePackageManager& packages = packageController.packages();
-    if (socketKey == 0 || !products) return false;
+    uint64_t& outSurfaceIdentity) const {
+    outSurfaceIdentity = 0;
 
-    if (const ModelPackage* package = packages.findAny<ModelPackage>(socketKey)) {
-        if (const ModelProduct* product = products->resolve<ModelProduct>(package->productHandle))
-            addRuntimeModelId(outIds, product->runtimeModelId);
-        return true;
+    const EvaluatedSocketValue* evaluated =
+        runtime.evaluation().outputFor(socketKey);
+    if (!evaluated ||
+        evaluated->status != EvaluatedSocketStatus::Value) {
+        return false;
     }
-    if (const RemeshPackage* package = packages.findAny<RemeshPackage>(socketKey)) {
-        if (const RemeshProduct* product = products->resolve<RemeshProduct>(package->productHandle))
-            addRuntimeModelId(outIds, product->runtimeModelId);
-        return true;
+
+    NodeDataHandle geometryHandle{};
+    if (payloadRegistry.resolveGeometry(
+            evaluated->data.payloadHandle, &geometryHandle)) {
+        outSurfaceIdentity = payloadRegistry.resolveHash(
+            geometryHandle, HashDomain::Geometry);
+        return outSurfaceIdentity != 0;
     }
-    if (const VoronoiPackage* package = packages.findAny<VoronoiPackage>(socketKey)) {
-        if (const VoronoiProduct* product = products->resolve<VoronoiProduct>(package->productHandle)) {
-            for (uint32_t modelId : product->globalDisplayRuntimeModelIds) {
-                addRuntimeModelId(outIds, modelId);
-            }
-        }
-        return true;
+
+    const RemeshData* remesh = payloadRegistry.resolveRemesh(
+        evaluated->data.payloadHandle);
+    if (!remesh || remesh->surfaceGeometryHash == 0) {
+        return false;
     }
-    if (const HeatPackage* package = packages.findAny<HeatPackage>(socketKey)) {
-        for (const HeatModelPackage& model : package->models) {
-            if (const ModelProduct* product = products->resolve<ModelProduct>(model.modelProduct))
-                addRuntimeModelId(outIds, product->runtimeModelId);
-        }
-        return true;
-    }
-    return packages.findAny<PointPackage>(socketKey) != nullptr;
+    outSurfaceIdentity = remesh->surfaceGeometryHash;
+    return true;
 }
 
 bool NodeGraphController::runtimeModelIdsForNode(
@@ -436,7 +656,24 @@ bool NodeGraphController::runtimeModelIdsForNode(
 
     for (const NodeGraphSocket& output : nodeIt->second.outputs) {
         const uint64_t socketKey = NodeSocketKey(nodeIt->second.id, output.id).value;
-        if (runtimeModelIdsForSocket(socketKey, outIds)) return true;
+        packageController.appendRuntimeModelIdsForSocket(socketKey, outIds);
     }
-    return false;
+    return !outIds.empty();
 }
+
+bool NodeGraphController::primaryDisplayNode(NodeGraphNodeId& outNodeId) const {
+    outNodeId = {};
+    for (const auto& [id, node] : runtime.state().nodes) {
+        (void)id;
+        if (!node.state.isPrimaryDisplay()) {
+            continue;
+        }
+        if (outNodeId.isValid()) {
+            outNodeId = {};
+            return false;
+        }
+        outNodeId = node.id;
+    }
+    return outNodeId.isValid();
+}
+

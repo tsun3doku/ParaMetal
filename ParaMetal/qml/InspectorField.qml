@@ -16,6 +16,7 @@ Item {
     property int decimals: 3
     property var choices: []
     property bool compact: false
+    property bool editable: false
     signal valueEdited(var value)
 
     readonly property bool hasRange: (root.editor === "slider") || (minimum !== null && maximum !== null)
@@ -31,6 +32,18 @@ Item {
                 return String(item.text === undefined ? item : item.text)
         }
         return ""
+    }
+
+    function resolveChoiceValue(text) {
+        const needle = String(text).toLocaleLowerCase()
+        const items = root.choices.length > 0 ? root.choices : (root.parameter ? root.parameter.options : [])
+        for (let index = 0; index < items.length; ++index) {
+            const item = items[index]
+            const itemText = String(item.text === undefined ? item : item.text)
+            if (itemText.toLocaleLowerCase() === needle)
+                return item.value === undefined ? item : item.value
+        }
+        return text
     }
 
     implicitHeight: 22
@@ -102,6 +115,8 @@ Item {
             visible: root.editor === "combo"
             Layout.fillWidth: visible
             Layout.preferredHeight: 22
+            searchable: root.editable
+            fallbackText: root.editable && root.parameter ? String(root.parameter.value) : ""
             model: root.choices.length > 0 ? root.choices : (root.parameter ? root.parameter.options : [])
             textRole: model && model.length > 0 && model[0].text !== undefined ? "text" : ""
             valueRole: model && model.length > 0 && model[0].value !== undefined ? "value" : ""
@@ -116,16 +131,10 @@ Item {
             }
             onActivated: {
                 const item = model[currentIndex]
-                root.valueEdited(item.value === undefined ? item : item.value)
+                if (item !== undefined)
+                    root.valueEdited(item.value === undefined ? item : item.value)
             }
-            contentItem: Text {
-                leftPadding: 7
-                text: root.selectedChoiceText()
-                color: root.theme.text
-                font: combo.font
-                verticalAlignment: Text.AlignVCenter
-                elide: Text.ElideRight
-            }
+            onTextCommitted: text => root.valueEdited(root.resolveChoiceValue(text))
         }
     }
 }

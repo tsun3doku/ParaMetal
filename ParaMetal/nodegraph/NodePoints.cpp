@@ -289,6 +289,10 @@ void NodePoints::execute(NodeKernelEval& eval) const {
         payload.active = true;
         const uint64_t payloadKey = NodeSocketKey(eval.node.id, outputSocket.id);
         outputValue.payloadHandle = payloadRegistry->store(payloadKey, payload, eval.outputHashes);
+        if (outputValue.payloadHandle.key == 0) {
+            eval.error = "Payload publication backpressured.";
+            return;
+        }
     }
 }
 

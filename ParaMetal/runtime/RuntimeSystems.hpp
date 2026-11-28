@@ -16,6 +16,7 @@
 #include "RuntimeInterfaces.hpp"
 #include "nodegraph/NodeGraphState.hpp"
 #include "nodegraph/NodeGraphTypes.hpp"
+#include "nodegraph/NodeInteraction.hpp"
 #include "SceneContext.hpp"
 #include "interaction/InteractionContext.hpp"
 #include "TimelineController.hpp"
@@ -28,7 +29,9 @@ class ConnectionTelemetryReceiver;
 enum class CameraProjectionMode : uint8_t;
 class ModelSelection;
 class NodeGraphController;
+class RuntimeNotifier;
 class TemperatureTelemetryReceiver;
+class ViewportMailbox;
 struct WindowRuntimeState;
 
 class RuntimeSystems : public RuntimeQuery {
@@ -40,17 +43,17 @@ public:
     void tickFrame(float deltaTime, VkCommandBuffer commandBuffer, uint32_t frameIndex);
     bool updateViewportTarget(VkImage image, VkFormat format, VkExtent2D extent);
     bool replaceGraphState(const NodeGraphState& state);
-    bool applyGraphDelta(const NodeGraphDelta& delta);
-    bool takePendingNodeParameters(NodeGraphNodeId& outNodeId, std::vector<NodeGraphParamValue>& outParameters);
+    bool applyGraphMailbox(ViewportMailbox& mailbox, bool force = false);
+    void applyInteractionMailbox(ViewportMailbox& mailbox, bool force = false);
     void requestExport(int nodeId);
     void requestExportProducts(int nodeId, uint64_t requestId, uint64_t graphRevision);
     void processDeferredWork();
+    void publishRuntimeEvents(RuntimeNotifier& notifier);
     bool takePendingExportResult(int& outNodeId, bool& outSuccess, std::string& outMessage);
     bool takeExportProductsReady(ExportProductsReply& outReply);
     void shutdown();
     bool isInitialized() const;
 
-    const RuntimeQuery* runtimeQuery() const;
     void publishProbeTelemetry(TemperatureTelemetryReceiver& receiver) const;
     void publishSerialTelemetry(ConnectionTelemetryReceiver& receiver) const;
     TimelineController* timelineController();
@@ -120,4 +123,8 @@ private:
     TimelineController timelineControllerInstance{&timelineRuntime};
     bool hadSimulationTimeline = false;
     RuntimeExport runtimeExport;
+    bool publishedSubselectionActive = false;
+    bool publishedSubselectionCommitRequired = false;
+    int publishedSubselectionCount = -1;
+    int publishedSubselectionElementType = -1;
 };

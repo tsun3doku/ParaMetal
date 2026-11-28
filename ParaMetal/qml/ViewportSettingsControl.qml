@@ -37,7 +37,7 @@ Item {
     UiPanelPopup {
         id: settingsPopup
         theme: root.theme
-        x: 0
+        x: root.width - width
         y: root.height + 4
         width: 178
 

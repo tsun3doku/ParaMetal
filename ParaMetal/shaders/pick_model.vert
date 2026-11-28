@@ -10,6 +10,9 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
 layout(push_constant) uniform PushConstants {
     mat4 modelMatrix;
     uint pickId;
+    uint elementMode;
+    uint primitiveBase;
+    uint padding;
 } pc;
 
 layout(location = 0) in vec3 inPos;

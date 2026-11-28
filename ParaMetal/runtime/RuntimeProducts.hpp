@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -47,6 +48,9 @@ struct RemeshProduct {
     std::vector<glm::vec3> surfacePositions;
     std::vector<glm::vec3> surfaceNormals;
     std::vector<uint32_t> surfaceTriangleIndices;
+    std::vector<uint32_t> surfaceFaceIds;
+    std::vector<uint32_t> surfaceVertexIds;
+    std::vector<uint32_t> surfaceEdgeIds;
     VkBuffer intrinsicTriangleBuffer = VK_NULL_HANDLE;
     VkDeviceSize intrinsicTriangleBufferOffset = 0;
     VkBuffer intrinsicVertexBuffer = VK_NULL_HANDLE;
@@ -54,6 +58,10 @@ struct RemeshProduct {
     size_t intrinsicTriangleCount = 0;
     size_t intrinsicVertexCount = 0;
     float averageTriangleArea = 0.0f;
+
+    VkBuffer faceIdBuffer = VK_NULL_HANDLE;
+    VkDeviceSize faceIdOffset = 0;
+    VkBufferView faceIdView = VK_NULL_HANDLE;
 
     VkBuffer supportingHalfedgeBuffer = VK_NULL_HANDLE;
     VkDeviceSize supportingHalfedgeOffset = 0;
@@ -103,8 +111,23 @@ struct RemeshProduct {
             !surfacePositions.empty() &&
             surfaceNormals.size() == surfacePositions.size() &&
             !surfaceTriangleIndices.empty() &&
+            surfaceTriangleIndices.size() % 3u == 0u &&
+            surfaceFaceIds.size() == surfaceTriangleIndices.size() / 3u &&
+            surfaceVertexIds.size() == surfacePositions.size() &&
+            std::is_sorted(surfaceFaceIds.begin(), surfaceFaceIds.end()) &&
+            std::adjacent_find(surfaceFaceIds.begin(), surfaceFaceIds.end()) ==
+                surfaceFaceIds.end() &&
+            std::is_sorted(surfaceVertexIds.begin(), surfaceVertexIds.end()) &&
+            std::adjacent_find(surfaceVertexIds.begin(), surfaceVertexIds.end()) ==
+                surfaceVertexIds.end() &&
+            !surfaceEdgeIds.empty() &&
+            std::is_sorted(surfaceEdgeIds.begin(), surfaceEdgeIds.end()) &&
+            std::adjacent_find(surfaceEdgeIds.begin(), surfaceEdgeIds.end()) ==
+                surfaceEdgeIds.end() &&
             intrinsicTriangleBuffer != VK_NULL_HANDLE &&
             intrinsicVertexBuffer != VK_NULL_HANDLE &&
+            faceIdBuffer != VK_NULL_HANDLE &&
+            faceIdView != VK_NULL_HANDLE &&
             supportingHalfedgeBuffer != VK_NULL_HANDLE &&
             supportingAngleBuffer != VK_NULL_HANDLE &&
             halfedgeBuffer != VK_NULL_HANDLE &&

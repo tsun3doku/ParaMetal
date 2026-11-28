@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <vulkan/vulkan.h>
 
@@ -16,8 +16,7 @@
 #include "HeatSystemPresets.hpp"
 
 #include "serial/SerialTemperatureRuntime.hpp"
-#include "domain/FluidData.hpp"
-#include "domain/HeatProbeData.hpp"
+#include "heat/HeatProbeConfig.hpp"
 
 class VulkanDevice;
 class MemoryAllocator;
@@ -55,12 +54,12 @@ public:
         float domainBoundaryHeatFluxes[6] = {};
         float domainBoundaryHeatTransferCoefficients[6] = {};
         float domainBoundaryInflowTemperaturesC[6] = {
-            FluidData{}.initialTemperatureC,
-            FluidData{}.initialTemperatureC,
-            FluidData{}.initialTemperatureC,
-            FluidData{}.initialTemperatureC,
-            FluidData{}.initialTemperatureC,
-            FluidData{}.initialTemperatureC
+            HeatSimDefaults::fluidInitialTemperatureC,
+            HeatSimDefaults::fluidInitialTemperatureC,
+            HeatSimDefaults::fluidInitialTemperatureC,
+            HeatSimDefaults::fluidInitialTemperatureC,
+            HeatSimDefaults::fluidInitialTemperatureC,
+            HeatSimDefaults::fluidInitialTemperatureC
         };
         uint32_t solverMaxIterations = 0;
         float solverConvergenceTolerance = 0.0f;
@@ -78,7 +77,7 @@ public:
         std::unordered_map<uint64_t, bool> serialEnabledBySourceKey;
         std::unordered_map<uint64_t, std::string> serialPortNamesBySourceKey;
         std::unordered_map<uint64_t, uint32_t> serialBaudRatesBySourceKey;
-        std::unordered_map<uint64_t, HeatProbeData> heatProbesBySourceKey;
+        std::unordered_map<uint64_t, HeatProbeConfig> heatProbesBySourceKey;
         std::vector<uint32_t> fragmentInstanceIds;
         std::vector<uint32_t> fragmentSeedIds;
         std::vector<glm::dvec3> fragmentCentroids;
@@ -132,7 +131,7 @@ public:
         uint32_t maxFramesInFlight);
 
     bool apply(uint64_t socketKey, const Config& config);
-    void remove(uint64_t socketKey);
+    bool remove(uint64_t socketKey);
     void syncSerialInputs();
     void updateSerialInputs();
     void publishProbeTelemetry(TemperatureTelemetryReceiver& receiver) const;
@@ -151,12 +150,12 @@ public:
 
     bool hasAnyRetiring() const;
     void clearAllRetiring();
-    void commitPending(uint64_t socketKey) noexcept;
+    bool commitPending(uint64_t socketKey) noexcept;
     void cancelCandidate(uint64_t socketKey);
     void quiescedClear() noexcept;
 
 private:
-    void retireCurrent(uint64_t socketKey);
+    bool retireCurrent(uint64_t socketKey);
 
     struct GenerationSlot {
         std::unique_ptr<HeatSystem> current;

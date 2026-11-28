@@ -1,6 +1,13 @@
 #include "RuntimeSystems.hpp"
 #include "telemetry/RuntimeTelemetry.hpp"
 
+#include "app/RuntimeNotifier.hpp"
+#include "app/ViewportMailbox.hpp"
+
+#include <QtCore/QString>
+#include <QtCore/QVariantList>
+#include <QtCore/QVariantMap>
+
 #include "cuda/CudaVulkanDevice.hpp"
 #include "cfd/CFDSystemComputeController.hpp"
 #include "heat/HeatSystemComputeController.hpp"
@@ -10,7 +17,10 @@
 #include "render/SceneRenderer.hpp"
 #include "render/CFDOverlayRenderer.hpp"
 #include "render/HeatOverlayRenderer.hpp"
+#include "scene/DomainFaceInteractionController.hpp"
+#include "scene/MarkerInteractionController.hpp"
 #include "scene/NavigationGizmoController.hpp"
+#include "scene/SubselectionInteractionController.hpp"
 #include "simgraph/SimGraphRuntime.hpp"
 #include "vulkan/ModelRegistry.hpp"
 
@@ -171,9 +181,6 @@ bool RuntimeSystems::replaceGraphState(const NodeGraphState& state) {
     if (controller) {
         controller->detachRuntimeBindings();
     }
-    if (SimGraphRuntime* simGraph = compute.simGraphRuntime()) {
-        simGraph->clear();
-    }
 
     // Device may not exist yet during early initialization
     if (!cudaVulkan::waitForGpuIdle(
@@ -186,6 +193,7 @@ bool RuntimeSystems::replaceGraphState(const NodeGraphState& state) {
     if (controller) {
         controller->quiescedClear();
     }
+    runtimeController.invalidateSelection();
     compute.quiescedClear();
     runtimeExport.clear();
 
@@ -201,9 +209,89 @@ bool RuntimeSystems::replaceGraphState(const NodeGraphState& state) {
     return true;
 }
 
-bool RuntimeSystems::applyGraphDelta(const NodeGraphDelta& delta) {
+void RuntimeSystems::applyInteractionMailbox(ViewportMailbox& mailbox, bool force) {
+    std::vector<NodeGraphNodeId> selectedNodes;
+    int primarySelectedNode = 0;
+    if (mailbox.takeSelection(
+            selectedNodes, primarySelectedNode, force)) {
+        runtimeController.setSelectedNodes(
+            selectedNodes, primarySelectedNode);
+    }
+
+    runtimeController.reconcileSelection();
+
+    std::vector<NodeActionMessage> nodeActions;
+    mailbox.takeNodeActions(nodeActions);
+    for (const NodeActionMessage& message : nodeActions) {
+        if (message.type != NodeActionMessage::Type::Begin) {
+            continue;
+        }
+        runtimeController.beginNodeAction(
+            message.nodeId,
+            message.nodeInstanceId,
+            message.actionId);
+    }
+
+    bool viewportMeshSelection = false;
+    if (mailbox.takeViewportMeshSelection(viewportMeshSelection, force)) {
+        if (viewportMeshSelection) {
+            runtimeController.beginViewportSelection();
+        } else {
+            runtimeController.cancelNodeAction();
+        }
+    }
+
+    int elementType = static_cast<int>(MeshElementType::Face);
+    if (mailbox.takeSubselectionElementType(elementType, force)) {
+        runtimeController.setSubselectionElementType(elementType);
+    }
+
+    for (const NodeActionMessage& message : nodeActions) {
+        switch (message.type) {
+        case NodeActionMessage::Type::Begin:
+            break;
+        case NodeActionMessage::Type::Complete:
+            runtimeController.completeNodeAction();
+            break;
+        case NodeActionMessage::Type::Cancel:
+            runtimeController.cancelNodeAction();
+            break;
+        case NodeActionMessage::Type::Clear:
+            runtimeController.clearNodeActionSelection();
+            break;
+        }
+    }
+}
+
+bool RuntimeSystems::applyGraphMailbox(ViewportMailbox& mailbox, bool force) {
+    if (const NodeGraphState* graphState = mailbox.graphReplacement(force)) {
+        if (!replaceGraphState(*graphState)) {
+            return false;
+        }
+        mailbox.graphReplacementApplied();
+        return true;
+    }
+
+    bool deltasApplied = true;
+    bool graphReplaced = false;
     NodeGraphController* controller = getNodeGraphController();
-    return controller && controller->applyGraphDelta(delta);
+    for (const NodeGraphDelta& delta : mailbox.graphDeltas()) {
+        if (!controller || !controller->applyGraphDelta(delta)) {
+            mailbox.clearNodeActions();
+            const NodeGraphState* cachedState = mailbox.graphReplacement(true);
+            Q_ASSERT(cachedState);
+            if (!cachedState || !replaceGraphState(*cachedState)) {
+                deltasApplied = false;
+            } else {
+                graphReplaced = true;
+            }
+            break;
+        }
+    }
+    if (deltasApplied) {
+        mailbox.graphDeltasApplied();
+    }
+    return graphReplaced;
 }
 
 void RuntimeSystems::dispatchViewportCommands() {
@@ -222,12 +310,6 @@ void RuntimeSystems::dispatchViewportCommands() {
             break;
         }
     }
-}
-
-bool RuntimeSystems::takePendingNodeParameters(
-    NodeGraphNodeId& outNodeId,
-    std::vector<NodeGraphParamValue>& outParameters) {
-    return runtimeController.takePendingNodeParameters(outNodeId, outParameters);
 }
 
 void RuntimeSystems::requestExport(int nodeId) {
@@ -256,6 +338,105 @@ void RuntimeSystems::processDeferredWork() {
         compute.cfdSystemComputeController());
 }
 
+void RuntimeSystems::publishRuntimeEvents(RuntimeNotifier& notifier) {
+    NodeGraphNodeId nodeId{};
+    uint64_t originInstanceId = 0;
+    std::vector<NodeGraphParamValue> parameters;
+    while (runtimeController.takePendingNodeParameters(
+            nodeId, originInstanceId, parameters)) {
+        notifier.publishNodeParametersRequested(
+            nodeId, originInstanceId, parameters);
+    }
+
+    for (const RuntimeEvent& event : runtimeController.takePendingRuntimeEvents()) {
+        if (const auto* inspection = std::get_if<NodeInspectionChanged>(&event)) {
+            QVariantList fields;
+            fields.reserve(static_cast<qsizetype>(inspection->inspection.fields.size()));
+            for (const NodeInspectionField& field : inspection->inspection.fields) {
+                QVariantMap row;
+                row.insert(QStringLiteral("name"), QString::fromStdString(field.name));
+                row.insert(QStringLiteral("value"), QString::fromStdString(field.value));
+                fields.push_back(row);
+            }
+
+            QVariantMap choices;
+            for (const NodeParameterChoices& parameter : inspection->inspection.parameterChoices) {
+                QVariantList parameterChoices;
+                parameterChoices.reserve(static_cast<qsizetype>(parameter.choices.size()));
+                for (const NodeChoice& choice : parameter.choices) {
+                    QVariantMap row;
+                    row.insert(QStringLiteral("text"), QString::fromStdString(choice.label));
+                    row.insert(QStringLiteral("value"), QString::fromStdString(choice.value));
+                    parameterChoices.push_back(row);
+                }
+                choices.insert(
+                    QString::number(parameter.parameterId),
+                    parameterChoices);
+            }
+
+            notifier.publishNodeInspection(
+                inspection->graphInstanceId,
+                static_cast<int>(inspection->nodeId.value),
+                fields,
+                choices);
+            continue;
+        }
+
+        if (const auto* request = std::get_if<RuntimeNodeSelectionRequested>(&event)) {
+            notifier.publishViewportSelectionRequested(
+                request->graphInstanceId,
+                request->nodeId,
+                request->nodeInstanceId,
+                request->additive);
+            continue;
+        }
+
+        if (const auto* completed = std::get_if<NodeActionCompleted>(&event)) {
+            notifier.publishNodeActionCompleted(
+                static_cast<int>(completed->nodeId.value),
+                completed->success,
+                QString::fromStdString(completed->error));
+        }
+    }
+
+    if (const NodeGraphController* graphController = getNodeGraphController()) {
+        notifier.publishHeatSolveError(
+            QString::fromStdString(graphController->lastPackageErrors()));
+    }
+
+    if (interaction.isInitialized()) {
+        if (auto selection = interaction.domainFaceInteractionController().takePendingSelection()) {
+            notifier.publishBoundaryFaceSelection(
+                static_cast<int>(selection->nodeId), selection->face);
+        }
+        if (auto selectedNode = interaction.markerInteractionController().takePendingSelectedNodeId()) {
+            notifier.notifyGraphSelectionChanged(NodeGraphNodeId{*selectedNode});
+        }
+        const SubselectionInteractionController& subselection =
+            interaction.subselectionInteractionController();
+        const bool subselectionActive = subselection.isActive();
+        const int subselectionCount = subselection.isActive()
+            ? static_cast<int>(subselection.selectedElements().size()) : 0;
+        const int subselectionElementType = subselection.isActive()
+            ? static_cast<int>(subselection.authoredSelection().elementType)
+            : static_cast<int>(MeshElementType::Face);
+        const bool selectionCommitRequired =
+            runtimeController.selectionCommitRequired();
+        if (subselectionActive != publishedSubselectionActive ||
+            selectionCommitRequired != publishedSubselectionCommitRequired ||
+            subselectionCount != publishedSubselectionCount ||
+            subselectionElementType != publishedSubselectionElementType) {
+            publishedSubselectionActive = subselectionActive;
+            publishedSubselectionCommitRequired = selectionCommitRequired;
+            publishedSubselectionCount = subselectionCount;
+            publishedSubselectionElementType = subselectionElementType;
+            notifier.publishSubselectionState(
+                subselectionActive, subselectionCount, subselectionElementType,
+                selectionCommitRequired);
+        }
+    }
+}
+
 void RuntimeSystems::shutdown() {
     if (!initialized && !core.isInitialized() && !scene.isInitialized() && !render.isInitialized() &&
         !runtimeController.isInitialized() && !windowRuntimeState) {
@@ -274,10 +455,6 @@ bool RuntimeSystems::isInitialized() const {
 
 void RuntimeSystems::noteFramePresented() {
     render.runtime()->getFrameStats().notePresentedFrame();
-}
-
-const RuntimeQuery* RuntimeSystems::runtimeQuery() const {
-    return this;
 }
 
 void RuntimeSystems::publishProbeTelemetry(TemperatureTelemetryReceiver& receiver) const {

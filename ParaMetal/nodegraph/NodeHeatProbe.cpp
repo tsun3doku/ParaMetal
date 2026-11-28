@@ -3,6 +3,7 @@
 #include "NodeGraphDefinitionUtils.hpp"
 #include "NodeGraphPayloadTypes.hpp"
 #include "NodeGraphRegistry.hpp"
+#include "NodeGraphState.hpp"
 #include "NodeGraphUtils.hpp"
 #include "NodePayloadRegistry.hpp"
 #include "NodeHeatProbeParams.hpp"
@@ -83,4 +84,63 @@ HashValues NodeHeatProbe::computeOutputHashes(const NodeKernelHash& hash) const 
     hashes.properties = fullValue;
     hashes.simulation = fullValue;
     return hashes;
+}
+
+std::vector<NodeHeatProbeMarker> collectHeatProbeMarkers(
+    const NodeGraphState& state) {
+    std::vector<NodeHeatProbeMarker> markers;
+    for (const auto& [nodeId, node] : state.nodes) {
+        if (node.typeId != nodegraphtypes::HeatProbe) {
+            continue;
+        }
+        const HeatProbeNodeParams params = readHeatProbeNodeParams(node);
+        if (!params.enabled) {
+            continue;
+        }
+        for (int index = 0;
+             index < static_cast<int>(params.items.size());
+             ++index) {
+            const HeatProbeItem& item =
+                params.items[static_cast<std::size_t>(index)];
+            if (!item.enabled) {
+                continue;
+            }
+            markers.push_back(NodeHeatProbeMarker{
+                nodeId,
+                index,
+                item.id,
+                item.worldPosition});
+        }
+    }
+    return markers;
+}
+
+bool buildHeatProbePositionParameters(
+    const NodeGraphState& state,
+    uint32_t nodeId,
+    int probeIndex,
+    const glm::vec3& position,
+    uint64_t& outOriginInstanceId,
+    std::vector<NodeGraphParamValue>& outParameters) {
+    outParameters.clear();
+    outOriginInstanceId = 0;
+    const NodeGraphNode* node = state.node(NodeGraphNodeId{nodeId});
+    if (!node || node->typeId != nodegraphtypes::HeatProbe) {
+        return false;
+    }
+    outOriginInstanceId = node->instanceId;
+    HeatProbeNodeParams params = readHeatProbeNodeParams(*node);
+    if (probeIndex < 0 ||
+        probeIndex >= static_cast<int>(params.items.size())) {
+        return false;
+    }
+    params.items[static_cast<std::size_t>(probeIndex)].worldPosition = position;
+    outParameters.push_back(NodeGraphParamValue{
+        nodegraphparams::heatprobe::ProbesJson,
+        NodeGraphParamType::String,
+        0.0,
+        0,
+        false,
+        serializeHeatProbesJson(params.items)});
+    return true;
 }

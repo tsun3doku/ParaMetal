@@ -48,6 +48,7 @@ public:
         std::vector<IntrinsicVertex> vertices;      // Deduplicated vertices (one per unique vertex)
         std::vector<uint32_t> indices;              // Triangle indices (3 per triangle)
         std::vector<uint32_t> faceIds;              // Intrinsic face ID per triangle
+        std::vector<uint32_t> edgeIds;              // Sorted unique raw intrinsic edge IDs
         std::vector<IntrinsicTriangle> triangles;   // Triangle geometric data
     };
 
@@ -68,6 +69,7 @@ public:
         VkBuffer bufferLInput = VK_NULL_HANDLE;
         VkBuffer intrinsicTriangleBuffer = VK_NULL_HANDLE;
         VkBuffer intrinsicVertexBuffer = VK_NULL_HANDLE;
+        VkBuffer faceIdBuffer = VK_NULL_HANDLE;
 
         VkDeviceSize offsetS = 0;
         VkDeviceSize offsetA = 0;
@@ -81,6 +83,7 @@ public:
         VkDeviceSize offsetLInput = 0;
         VkDeviceSize triangleGeometryOffset = 0;
         VkDeviceSize vertexGeometryOffset = 0;
+        VkDeviceSize faceIdOffset = 0;
 
         VkBufferView viewS = VK_NULL_HANDLE;
         VkBufferView viewA = VK_NULL_HANDLE;
@@ -92,6 +95,7 @@ public:
         VkBufferView viewEInput = VK_NULL_HANDLE;
         VkBufferView viewTInput = VK_NULL_HANDLE;
         VkBufferView viewLInput = VK_NULL_HANDLE;
+        VkBufferView faceIdView = VK_NULL_HANDLE;
     };
 
     struct GPUBuffers {

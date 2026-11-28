@@ -8,7 +8,9 @@
 
 #include "AppTypes.hpp"
 #include "UiRuntimeTypes.hpp"
+#include "mesh/MeshElementType.hpp"
 #include "nodegraph/NodeGraphState.hpp"
+#include "nodegraph/NodeInteraction.hpp"
 #include "project/ProjectFile.hpp"
 #include "render/WindowRuntimeState.hpp"
 
@@ -45,7 +47,9 @@ public:
     void requestTimelineScrub(uint32_t frame);
     void requestTimelineStep(int delta);
     void requestTimelineRange(uint32_t frameCount, float fps);
-    void requestSelection(int nodeId);
+    void requestSelection(
+        const std::vector<NodeGraphNodeId>& nodeIds,
+        int primaryNodeId);
     void requestHeatPaletteRange(float minimum, float maximum);
     void requestHeatPalette(int palette);
     void requestVelocityPaletteRange(float minimum, float maximum);
@@ -53,6 +57,9 @@ public:
     void requestWorldUnit(int unit);
     void requestProbePicking(int nodeId, int probeIndex = 0);
     void requestBoundaryFaceEditing(int nodeId, bool armed);
+    void requestNodeAction(const NodeActionMessage& message);
+    void requestViewportMeshSelection(bool active);
+    void requestSubselectionElementType(int elementType);
     void requestExport(int nodeId);
     void requestExportProducts(int nodeId, uint64_t requestId, uint64_t graphRevision);
     void replaceGraphState(const NodeGraphState& graphState);
@@ -62,6 +69,10 @@ public:
 
     bool takeProbePicking(int& outNodeId, int& outProbeIndex);
     bool takeBoundaryFaceEditing(int& outNodeId, bool& outArmed, bool force = false);
+    void takeNodeActions(std::vector<NodeActionMessage>& outMessages);
+    void clearNodeActions();
+    bool takeViewportMeshSelection(bool& outActive, bool force = false);
+    bool takeSubselectionElementType(int& outElementType, bool force = false);
     bool takeWireframeMode(app::WireframeMode& mode, bool force = false);
     bool takeGridEnabled(bool& enabled, bool force = false);
     bool takeBackgroundMode(app::BackgroundMode& mode, bool force = false);
@@ -78,7 +89,10 @@ public:
     int takeTimelineStep();
     uint32_t takeTimelineScrub();
     bool takeTimelineRange(uint32_t& frameCount, float& fps, bool force = false);
-    bool takeSelection(int& nodeId, bool force = false);
+    bool takeSelection(
+        std::vector<NodeGraphNodeId>& nodeIds,
+        int& primaryNodeId,
+        bool force = false);
     bool takeHeatPaletteRange(float& minimum, float& maximum, bool force = false);
     bool takeHeatPalette(int& palette, bool force = false);
     bool takeVelocityPaletteRange(float& minimum, float& maximum, bool force = false);
@@ -132,7 +146,8 @@ private:
     float requestedTimelineFps = 60.0f;
     bool timelineRangeDirty = false;
 
-    int requestedSelectedNode = 0;
+    std::vector<NodeGraphNodeId> requestedSelectedNodes;
+    int requestedPrimaryNode = 0;
     bool selectionDirty = false;
     int requestedProbePickingNode = 0;
     int requestedProbePickingIndex = 0;
@@ -140,6 +155,11 @@ private:
     int requestedBoundaryFaceNode = 0;
     bool requestedBoundaryFaceArmed = false;
     bool boundaryFaceDirty = false;
+    std::vector<NodeActionMessage> pendingNodeActions;
+    bool requestedViewportMeshSelection = false;
+    bool viewportMeshSelectionDirty = false;
+    int requestedSubselectionElementType = static_cast<int>(MeshElementType::Face);
+    bool subselectionElementTypeDirty = false;
 
     float requestedHeatPaletteMin = 0.0f;
     float requestedHeatPaletteMax = 100.0f;

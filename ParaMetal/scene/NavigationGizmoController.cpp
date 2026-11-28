@@ -8,7 +8,8 @@
 #include <limits>
 
 static constexpr float logicalSize = 100.0f;
-static constexpr float logicalMargin = 12.0f;
+static constexpr float logicalTopMargin = 52.0f;
+static constexpr float logicalRightMargin = 12.0f;
 static constexpr float logicalDragThreshold = 4.0f;
 static constexpr float edgeThreshold = 0.58f;
 static constexpr float cubeProjectionScale = 0.54f;
@@ -59,10 +60,11 @@ void NavigationGizmoController::setViewport(VkExtent2D extent, float scale) {
     viewportExtent = extent;
     dpiScale = glm::clamp(scale, 0.5f, 4.0f);
     sizePx = logicalSize * dpiScale;
-    const float margin = logicalMargin * dpiScale;
+    const float topMargin = logicalTopMargin * dpiScale;
+    const float rightMargin = logicalRightMargin * dpiScale;
     originPx = glm::vec2(
-        (std::max)(0.0f, static_cast<float>(extent.width) - sizePx - margin),
-        margin);
+        (std::max)(0.0f, static_cast<float>(extent.width) - sizePx - rightMargin),
+        topMargin);
 }
 
 uint8_t NavigationGizmoController::encodeRegion(const glm::ivec3& side) {

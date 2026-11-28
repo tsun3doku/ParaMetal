@@ -21,6 +21,7 @@ class CameraController;
 class SceneContext;
 class InteractionContext;
 class ModelSelection;
+class SubselectionPickService;
 class VkFrameGraphRuntime;
 
 class FrameController {
@@ -36,6 +37,7 @@ public:
         SceneContext& scene,
         InteractionContext& interaction,
         ModelSelection& modelSelection,
+        SubselectionPickService& subselectionPickService,
         std::atomic<bool>& isOperating,
         std::atomic<bool>& isShuttingDown);
 

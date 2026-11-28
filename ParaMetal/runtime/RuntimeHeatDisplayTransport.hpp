@@ -1,6 +1,6 @@
 #pragma once
 
-#include "nodegraph/NodeGraphProductTypes.hpp"
+#include "runtime/ProductHandle.hpp"
 #include "runtime/HeatDisplayController.hpp"
 #include "runtime/package/RuntimePackageManager.hpp"
 #include "runtime/RuntimeProductManager.hpp"
@@ -123,7 +123,15 @@ private:
             outConfig.fluidTemperatureVolumeSampler = computeProduct->fluidTemperatureVolumeSampler;
             outConfig.hasFluidVolume = true;
         }
+        std::vector<uint64_t> probeNodeIds;
+        probeNodeIds.reserve(package.resolvedHeatProbes.size());
         for (const auto& [nodeId, probeData] : package.resolvedHeatProbes) {
+            (void)probeData;
+            probeNodeIds.push_back(nodeId);
+        }
+        std::sort(probeNodeIds.begin(), probeNodeIds.end());
+        for (uint64_t nodeId : probeNodeIds) {
+            const HeatProbeConfig& probeData = package.resolvedHeatProbes.at(nodeId);
             if (!probeData.enabled) continue;
             for (const auto& item : probeData.items) {
                 if (!item.enabled) continue;

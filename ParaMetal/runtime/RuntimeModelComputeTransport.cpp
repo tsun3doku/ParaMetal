@@ -28,14 +28,39 @@ ComputeApplyResult RuntimeModelComputeTransport::apply(
 
     outProduct = {};
     if (!controller->buildProduct(socketKey, outProduct)) {
+        controller->cancelPending(socketKey);
         return ComputeApplyResult::Failed;
     }
     return ComputeApplyResult::Prepared;
 }
 
-void RuntimeModelComputeTransport::remove(uint64_t socketKey) {
+bool RuntimeModelComputeTransport::commitPending(uint64_t socketKey) {
+    return controller && socketKey != 0 && controller->commitPending(socketKey);
+}
+
+void RuntimeModelComputeTransport::cancelPending(uint64_t socketKey) {
     if (!controller || socketKey == 0) {
         return;
     }
-    controller->remove(socketKey);
+    controller->cancelPending(socketKey);
+}
+
+bool RuntimeModelComputeTransport::remove(uint64_t socketKey) {
+    if (!controller) {
+        return false;
+    }
+    if (socketKey == 0) {
+        return true;
+    }
+    return controller->remove(socketKey);
+}
+
+bool RuntimeModelComputeTransport::hasAnyRetiring() const {
+    return controller && controller->hasAnyRetiring();
+}
+
+void RuntimeModelComputeTransport::quiescedClear() {
+    if (controller) {
+        controller->disableAll();
+    }
 }

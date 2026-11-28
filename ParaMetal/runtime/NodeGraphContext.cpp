@@ -19,6 +19,7 @@
 #include "runtime/RuntimeTransports.hpp"
 #include "runtime/RuntimeVoronoiComputeTransport.hpp"
 #include "runtime/RuntimeVoronoiDisplayTransport.hpp"
+#include "scene/SceneController.hpp"
 
 NodeGraphContext::NodeGraphContext() = default;
 
@@ -101,8 +102,9 @@ bool NodeGraphContext::initialize(
 }
 
 void NodeGraphContext::shutdown() {
-    if (nodeGraphControllerState && nodeGraphControllerState->getProductManager()) {
-        nodeGraphControllerState->getProductManager()->clear();
+    if (nodeGraphControllerState) {
+        nodeGraphControllerState->detachRuntimeBindings();
+        nodeGraphControllerState->quiescedClear();
     }
     nodeGraphControllerState.reset();
     runtimeModelDisplayTransportState.reset();
@@ -132,4 +134,10 @@ NodeGraphController* NodeGraphContext::nodeGraphController() {
 
 const NodeGraphController* NodeGraphContext::nodeGraphController() const {
     return nodeGraphControllerState.get();
+}
+
+void NodeGraphContext::setSceneController(SceneController* sceneController) {
+    if (runtimeModelDisplayTransportState) {
+        runtimeModelDisplayTransportState->setSceneController(sceneController);
+    }
 }
